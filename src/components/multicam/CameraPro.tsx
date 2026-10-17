@@ -1,10 +1,10 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useRef, useState, type FormEvent, type RefObject } from "react";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { useMulticamStore, type ShootSettings } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { HelpDot } from "./Help";
-import { buildLimiter } from "@/lib/audio-limiter";
+import { clipCurve } from "@/lib/audio-limiter";
 
 /* ---------- Track helpers (all features are capability-checked at runtime) ---------- */
 type Caps = Record<string, unknown>;
