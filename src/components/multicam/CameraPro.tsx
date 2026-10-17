@@ -119,23 +119,41 @@ export function FalseColorOverlay({ videoRef }: { videoRef: RefObject<HTMLVideoE
 }
 
 /* ---------- Vertical VU meter + gain + peak limiter ceiling ---------- */
-/** Knob position 0…30 (0 = mic muted, 30 = MAX). Maps to a live GainNode value and to the limiter ceiling,
- *  so the VU bar (−60…0 dB scale) can never rise above the knob. */
-export const KNOB_MAX = 30;
-export const knobToGain = (k: number) => k <= 0 ? 0 : Math.pow(10, (k - 18) / 20);
+/** Native range 0…24 dB (default +18). 0 = mic muted, 18 = unity gain. The value drives a live GainNode and
+ *  the limiter ceiling, so the VU bar (−60…0 dB scale) can never rise above the slider position. */
+export const KNOB_MAX = 24;
+export const KNOB_DEFAULT = 18;
+export const knobToGain = (k: number) => k <= 0 ? 0 : Math.pow(10, (k - KNOB_DEFAULT) / 20);
 export const knobToCeiling = (k: number) => -60 + (Math.max(0, Math.min(KNOB_MAX, k)) * 60) / KNOB_MAX;
-export const ceilingToKnob = (c: number) => Math.round(((Math.max(-60, Math.min(0, c)) + 60) * KNOB_MAX) / 60);
-const SCALE = ["0 дБ", "+6 дБ", "+12 дБ", "+18 дБ", "+24 дБ", "MAX"];
+export const ceilingToKnob = (c: number) => Math.round((((Math.max(-60, Math.min(0, c)) + 60) * KNOB_MAX) / 60) * 10) / 10;
+const SCALE = ["0 дБ", "+6 дБ", "+12 дБ", "+18 дБ", "+24 дБ"];
+type LiveGraph = { ctx: AudioContext; g: GainNode; comp: DynamicsCompressorNode; clip: WaveShaperNode };
 export function AudioRail({ stream }: { stream: MediaStream | null }) {
-  const gain = useMulticamStore((x) => x.audioGain); const ceiling = useMulticamStore((x) => x.audioCeiling); const set = useMulticamStore((x) => x.set);
+  const ceiling = useMulticamStore((x) => x.audioCeiling); const set = useMulticamStore((x) => x.set);
   const [rms, setRms] = useState(-90);
-  const gainNode = useRef<GainNode | null>(null);
-  // Audio graph is built once per stream; the knob updates the live GainNode / limiter without rebuilding.
-  const graph = useRef<{ ctx: AudioContext; src: MediaStreamAudioSourceNode; an: AnalyserNode } | null>(null);
+  const [knob, setKnobState] = useState(KNOB_DEFAULT);
+  const knobRef = useRef(KNOB_DEFAULT);
+  const graph = useRef<LiveGraph | null>(null);
+  // Push a value straight into the live Web Audio nodes (no graph rebuild, no React round-trip).
+  const applyLive = (k: number) => {
+    const n = graph.current; if (!n) return;
+    const t = n.ctx.currentTime; const c = knobToCeiling(k);
+    n.g.gain.setTargetAtTime(knobToGain(k), t, 0.01);
+    n.comp.threshold.setTargetAtTime(Math.max(-100, Math.min(0, c)), t, 0.01);
+    n.clip.curve = clipCurve(c);
+  };
+  // Mount: strictly start at +18 dB.
+  useEffect(() => { set({ audioGain: knobToGain(KNOB_DEFAULT), audioCeiling: knobToCeiling(KNOB_DEFAULT) }); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!stream?.getAudioTracks().length) return;
-    const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(stream); const an = ctx.createAnalyser(); an.fftSize = 1024;
-    graph.current = { ctx, src, an };
+    const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(stream);
+    const g = ctx.createGain(); const comp = ctx.createDynamicsCompressor();
+    comp.knee.value = 0; comp.ratio.value = 20; comp.attack.value = 0.001; comp.release.value = 0.05;
+    const clip = ctx.createWaveShaper(); clip.oversample = "4x";
+    const an = ctx.createAnalyser(); an.fftSize = 1024;
+    src.connect(g); g.connect(comp); comp.connect(clip); clip.connect(an);
+    graph.current = { ctx, g, comp, clip };
+    const k0 = knobRef.current; g.gain.value = knobToGain(k0); comp.threshold.value = knobToCeiling(k0); clip.curve = clipCurve(knobToCeiling(k0));
     const buf = new Float32Array(an.fftSize); let raf = 0; let last = 0;
     const tick = (t: number) => {
       an.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v;
@@ -143,29 +161,28 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
-    return () => { cancelAnimationFrame(raf); graph.current = null; gainNode.current = null; void ctx.close(); };
+    return () => { cancelAnimationFrame(raf); graph.current = null; void ctx.close(); };
   }, [stream]);
-  useEffect(() => {
-    const g = graph.current; if (!g) return;
-    g.src.disconnect();
-    const out = buildLimiter(g.ctx, g.src, gain, ceiling); out.connect(g.an);
-    return () => { out.disconnect(); };
-  }, [gain, ceiling, stream]);
   const hasMic = !!stream?.getAudioTracks().length;
-  const knob = ceilingToKnob(ceiling);
-  const setKnob = (k: number) => set({ audioCeiling: knobToCeiling(k), audioGain: knobToGain(k) });
+  const onSlide = (e: React.FormEvent<HTMLInputElement>) => {
+    const k = Number(e.currentTarget.value);
+    knobRef.current = k; setKnobState(k); applyLive(k);
+    void graph.current?.ctx.resume();
+    set({ audioCeiling: knobToCeiling(k), audioGain: knobToGain(k) });
+  };
   const pct = (v: number) => Math.min(100, Math.max(0, ((v + 60) / 60) * 100));
-  const level = hasMic && knob > 0 ? Math.min(pct(rms), (knob / KNOB_MAX) * 100) : 0;
+  const ceilPct = pct(ceiling);
+  const level = hasMic && knob > 0 ? Math.min(pct(rms), ceilPct) : 0;
   return <div className="glass-panel absolute end-2 top-1/2 z-20 flex -translate-y-1/2 rounded-2xl py-3 ps-2 pe-3">
-    <div className="flex h-40 items-stretch gap-2">
+    <div className="flex h-40 items-stretch gap-1">
       <div className="flex w-5 flex-col items-center py-2">
         <div className="relative h-full w-1.5 overflow-hidden rounded-full bg-secondary" role="meter" aria-valuenow={Math.round(level)} aria-valuemin={0} aria-valuemax={100} aria-label="Уровень звука">
           <div className="vu-fill absolute inset-x-0 bottom-0 transition-[height] duration-75" style={{ height: `${level}%` }} />
         </div>
       </div>
-      <Slider orientation="vertical" aria-label="Усиление микрофона" disabled={!hasMic} className="gain-knob h-full w-5" value={[knob]} min={0} max={KNOB_MAX} step={1} onValueChange={([v = 0]) => setKnob(v)} />
+      <input type="range" className="gain-range" aria-label="Усиление микрофона" aria-valuetext={`+${knob.toFixed(1)} дБ`} min={0} max={KNOB_MAX} step={0.1} value={knob} onInput={onSlide} onChange={onSlide} />
       <div className="relative w-9 py-2" aria-hidden>
-        <div className="relative h-full">{SCALE.map((l, i) => <span key={l} className={`absolute start-0 -translate-y-1/2 whitespace-nowrap font-mono text-[8px] leading-none ${i === SCALE.length - 1 ? "font-bold text-foreground" : "text-muted-foreground"}`} style={{ bottom: `calc(${(i / (SCALE.length - 1)) * 100}% - 4px)` }}>{l}</span>)}</div>
+        <div className="relative h-full">{SCALE.map((l, i) => <span key={l} className={`absolute start-0 -translate-y-1/2 whitespace-nowrap font-mono text-[8px] leading-none ${i === 3 ? "font-bold text-foreground" : "text-muted-foreground"}`} style={{ bottom: `calc(${(i / (SCALE.length - 1)) * 100}% - 4px)` }}>{l}</span>)}</div>
       </div>
     </div>
   </div>;
