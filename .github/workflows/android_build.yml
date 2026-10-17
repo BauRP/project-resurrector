@@ -1,0 +1,430 @@
+name: Android APK
+
+on:
+  push:
+    branches: ["**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Safely update Capacitor Config
+        run: |
+          cat << 'EOF' > update_config.cjs
+          const fs = require("fs");
+          const path = require("path");
+
+          const cfgPath = path.join(process.cwd(), "capacitor.config.json");
+          if (fs.existsSync(cfgPath)) {
+            try {
+              const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
+              if (cfg.server && cfg.server.url) {
+                delete cfg.server.url;
+              }
+              cfg.webDir = ".output/public";
+              fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
+              console.log("✅ capacitor.config.json успешно обновлен");
+            } catch (e) {
+              console.log("Ошибка чтения capacitor.config.json:", e.message);
+            }
+          }
+          EOF
+          node update_config.cjs
+
+      - name: Build web app
+        run: bun run build
+
+      - name: Prepare web assets & inject Polyfills
+        run: |
+          cat << 'EOF' > prepare_assets.cjs
+          const fs = require("fs");
+          const path = require("path");
+
+          const root = process.cwd();
+          const targetDir = path.join(root, ".output", "public");
+
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+
+          function findHtml(dir) {
+            if (!fs.existsSync(dir)) return null;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                if (["node_modules", ".git", "android", "ios"].includes(entry.name)) continue;
+                const res = findHtml(fullPath);
+                if (res) return res;
+              } else if (entry.isFile() && (entry.name === "index.html" || entry.name.endsWith(".html"))) {
+                return fullPath;
+              }
+            }
+            return null;
+          }
+
+          const searchDirs = ["dist", "build", "out", ".output", "public"];
+          let foundHtmlPath = null;
+
+          for (const dirName of searchDirs) {
+            const p = path.join(root, dirName);
+            const match = findHtml(p);
+            if (match) {
+              foundHtmlPath = match;
+              break;
+            }
+          }
+
+          if (foundHtmlPath) {
+            const foundSourceDir = path.dirname(foundHtmlPath);
+            console.log(`🔍 Найден HTML файл в: ${foundHtmlPath}`);
+            if (foundSourceDir !== targetDir) {
+              fs.cpSync(foundSourceDir, targetDir, { recursive: true });
+            }
+          }
+
+          const htmlPath = path.join(targetDir, "index.html");
+
+          if (!fs.existsSync(htmlPath)) {
+            const anyHtml = findHtml(targetDir);
+            if (anyHtml) {
+              fs.copyFileSync(anyHtml, htmlPath);
+            }
+          }
+
+          if (!fs.existsSync(htmlPath)) {
+            let cssTags = [];
+            let jsTags = [];
+
+            const scanAssets = (dir, prefix = "./") => {
+              if (!fs.existsSync(dir)) return;
+              const files = fs.readdirSync(dir, { withFileTypes: true });
+              for (const f of files) {
+                const fullPath = path.join(dir, f.name);
+                const relPath = prefix + f.name;
+                if (f.isDirectory()) {
+                  scanAssets(fullPath, relPath + "/");
+                } else if (f.name.endsWith(".css")) {
+                  cssTags.push(`<link rel="stylesheet" href="${relPath}">`);
+                } else if (f.name.endsWith(".js")) {
+                  jsTags.push(`<script type="module" src="${relPath}"></script>`);
+                }
+              }
+            };
+
+            scanAssets(targetDir);
+
+            const fallbackHtml = `<!DOCTYPE html>
+            <html lang="ru">
+              <head>
+                <meta charset="UTF-8" />
+                <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+                <script src="capacitor.js"></script>
+                <title>MULTI-CAM POV</title>
+                ${cssTags.join("\n    ")}
+              </head>
+              <body>
+                <div id="root"></div>
+                <div id="app"></div>
+                ${jsTags.join("\n    ")}
+              </body>
+            </html>`;
+
+            fs.writeFileSync(htmlPath, fallbackHtml, "utf8");
+          }
+
+          let html = fs.readFileSync(htmlPath, "utf8");
+
+          html = html.replace(/href="\/assets\//g, "href=\"./assets/");
+          html = html.replace(/src="\/assets\//g, "src=\"./assets/");
+          html = html.replace(/href="\//g, "href=\"./");
+          html = html.replace(/src="\//g, "src=\"./");
+
+          if (!html.includes('src="capacitor.js"') && !html.includes("src='./capacitor.js'")) {
+            if (html.includes("</head>")) {
+              html = html.replace("</head>", '  <script src="capacitor.js"></script>\n</head>');
+            }
+          }
+
+          const polyfills = `
+          <script>
+            window.global = window;
+            if (!window.process) window.process = { env: {} };
+            if (!window.Capacitor) window.Capacitor = { Plugins: {} };
+
+            try {
+              var k = "__test_ls__";
+              window.localStorage.setItem(k, k);
+              window.localStorage.removeItem(k);
+            } catch (e) {
+              var store = {};
+              Object.defineProperty(window, "localStorage", {
+                value: {
+                  getItem: function(key) { return store[key] || null; },
+                  setItem: function(key, val) { store[key] = String(val); },
+                  removeItem: function(key) { delete store[key]; },
+                  clear: function() { store = {}; }
+                },
+                writable: true
+              });
+            }
+
+            try {
+              var sk = "__test_ss__";
+              window.sessionStorage.setItem(sk, sk);
+              window.sessionStorage.removeItem(sk);
+            } catch (e) {
+              var sstore = {};
+              Object.defineProperty(window, "sessionStorage", {
+                value: {
+                  getItem: function(key) { return sstore[key] || null; },
+                  setItem: function(key, val) { sstore[key] = String(val); },
+                  removeItem: function(key) { delete sstore[key]; },
+                  clear: function() { sstore = {}; }
+                },
+                writable: true
+              });
+            }
+
+            if (!window.matchMedia) {
+              window.matchMedia = function() {
+                return {
+                  matches: false,
+                  addListener: function() {},
+                  removeListener: function() {},
+                  addEventListener: function() {},
+                  removeEventListener: function() {}
+                };
+              };
+            }
+
+            (function() {
+              function showErr(msg) {
+                var div = document.createElement("div");
+                div.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:#b00020;color:#ffffff;z-index:999999;padding:24px;font-size:14px;line-height:1.5;word-break:break-all;overflow:auto;font-family:sans-serif;box-sizing:border-box;";
+                div.innerHTML = "<h2 style=\"margin-top:0;color:#ff8a80;\">🚨 ОШИБКА ЗАПУСКА ПРИЛОЖЕНИЯ</h2><p>Сделайте скриншот этого экрана:</p><pre style=\"background:#4a0000;padding:12px;border-radius:8px;white-space:pre-wrap;font-family:monospace;\">" + msg + "</pre>";
+                if (document.body) {
+                  document.body.appendChild(div);
+                } else {
+                  document.addEventListener("DOMContentLoaded", function() { document.body.appendChild(div); });
+                }
+              }
+              window.onerror = function(m, u, l, c, e) {
+                showErr("Сообщение: " + m + "\nФайл: " + u + "\nСтрока: " + l + "\nСтек: " + (e ? e.stack : "нет"));
+              };
+              window.addEventListener("unhandledrejection", function(e) {
+                showErr("Ошибка Promise: " + (e.reason ? (e.reason.stack || e.reason) : e));
+              });
+            })();
+          </script>
+          `;
+
+          if (!html.includes("window.global")) {
+            if (html.includes("<head>")) {
+              html = html.replace("<head>", "<head>\n" + polyfills);
+            } else {
+              html = polyfills + html;
+            }
+          }
+
+          fs.writeFileSync(htmlPath, html, "utf8");
+          console.log("✅ index.html полностью подготовлен с поддержкой Capacitor!");
+          EOF
+          node prepare_assets.cjs
+
+      - name: Sync Android project
+        run: |
+          if [ ! -d "android" ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+
+      - name: Safe Patch MainActivity for WebView Settings
+        run: |
+          cat << 'EOF' > patch_activity.cjs
+          const fs = require("fs");
+          const path = require("path");
+
+          const findFile = (dir, fileName) => {
+            if (!fs.existsSync(dir)) return null;
+            const files = fs.readdirSync(dir, { withFileTypes: true });
+            for (const f of files) {
+              const res = path.resolve(dir, f.name);
+              if (f.isDirectory()) {
+                const found = findFile(res, fileName);
+                if (found) return found;
+              } else if (f.name === fileName) {
+                return res;
+              }
+            }
+            return null;
+          };
+
+          const mainActivityPath = findFile(path.join(process.cwd(), "android/app/src/main/java"), "MainActivity.java");
+
+          if (mainActivityPath) {
+            let code = fs.readFileSync(mainActivityPath, "utf8");
+
+            if (!code.includes("setDomStorageEnabled")) {
+              const importsToInject = "\nimport android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\n";
+              code = code.replace(/package\s+[\w\.]+;/, match => match + importsToInject);
+
+              const webViewPatch = `
+                  try {
+                      WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
+                      if (webView != null) {
+                          WebSettings settings = webView.getSettings();
+                          settings.setDomStorageEnabled(true);
+                          settings.setDatabaseEnabled(true);
+                          settings.setAllowFileAccess(true);
+                          settings.setAllowContentAccess(true);
+                          settings.setJavaScriptEnabled(true);
+                      }
+                  } catch (Exception e) {}
+              `;
+
+              if (code.includes("super.onCreate(")) {
+                code = code.replace(/super\.onCreate\([^)]*\);/, match => match + "\n" + webViewPatch);
+              } else {
+                const fullOnCreate = `
+                @Override
+                public void onCreate(Bundle savedInstanceState) {
+                    super.onCreate(savedInstanceState);
+                    ${webViewPatch}
+                }
+                `;
+                code = code.replace(/public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{/, match => match + "\n" + fullOnCreate);
+              }
+
+              fs.writeFileSync(mainActivityPath, code, "utf8");
+              console.log("✅ MainActivity.java пропатчен!");
+            }
+          }
+          EOF
+          node patch_activity.cjs
+
+      - name: Decode upload keystore
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_B64" ]; then
+            echo "$KEYSTORE_B64" \vert{} base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          else
+            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — generating a temporary key (APK installable, NOT suitable for Google Play updates)."
+            keytool -genkeypair -keystore "$RUNNER_TEMP/upload.jks" -alias multicam -keyalg RSA -keysize 2048 -validity 10000 -storepass multicampov -keypass multicampov -dname "CN=MULTI-CAM POV"
+            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=multicampov" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=multicam" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build signed release APK and AAB
+        working-directory: android
+        env:
+          ANDROID_KEYSTORE_PASSWORD: ${{ env.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ env.ANDROID_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleRelease bundleRelease --no-daemon -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+          mkdir -p ../output
+          cp app/build/outputs/apk/release/*.apk ../output/multi-cam-pov-release.apk
+          cp app/build/outputs/bundle/release/*.aab ../output/multi-cam-pov-release.aab
+
+      - name: Create Release & Upload APK (Official GitHub API)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os
+          import urllib.request
+          import json
+          from pathlib import Path
+
+          github_token = os.environ.get("GITHUB_TOKEN")
+          repository = os.environ.get("GITHUB_REPOSITORY")
+          run_number = os.environ.get("GITHUB_RUN_NUMBER")
+          ref_name = os.environ.get("GITHUB_REF_NAME", "main")
+
+          apk_path = Path("output/multi-cam-pov-release.apk")
+          aab_path = Path("output/multi-cam-pov-release.aab")
+
+          if not apk_path.exists():
+              raise SystemExit("КРИТИЧЕСКАЯ ОШИБКА: APK файл не найден!")
+
+          headers = {
+              "Authorization": f"Bearer {github_token}",
+              "Accept": "application/vnd.github+json",
+              "Content-Type": "application/json",
+              "X-GitHub-Api-Version": "2022-11-28"
+          }
+
+          tag_name = f"v1.0.{run_number}"
+          release_data = json.dumps({
+              "tag_name": tag_name,
+              "target_commitish": ref_name,
+              "name": f"APK Build #{run_number}",
+              "body": "Автоматическая сборка APK и AAB с поддержкой Capacitor.",
+              "draft": False,
+              "prerelease": True
+          }).encode("utf-8")
+
+          print("Создание релиза на GitHub...")
+          req = urllib.request.Request(f"https://api.github.com/repos/{repository}/releases", data=release_data, headers=headers, method="POST")
+          try:
+              with urllib.request.urlopen(req) as resp:
+                  release_json = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as e:
+              print(f"Релиз уже существует или ошибка API: {e.code}. Получаем существующий релиз...")
+              req_get = urllib.request.Request(f"https://api.github.com/repos/{repository}/releases/tags/{tag_name}", headers=headers, method="GET")
+              with urllib.request.urlopen(req_get) as resp_get:
+                  release_json = json.loads(resp_get.read().decode("utf-8"))
+
+          upload_url_template = release_json["upload_url"]
+          download_url = ""
+
+          for path_obj in [apk_path, aab_path]:
+              if path_obj.exists():
+                  print(f"Загрузка файла {path_obj.name} в релиз...")
+                  upload_url = upload_url_template.split("{")[0] + f"?name={path_obj.name}"
+                  file_data = path_obj.read_bytes()
+                  upload_headers = {
+                      "Authorization": f"Bearer {github_token}",
+                      "Content-Type": "application/vnd.android.package-archive" if path_obj.name.endswith(".apk") else "application/octet-stream",
+                      "Content-Length": str(len(file_data))
+                  }
+                  req_upload = urllib.request.Request(upload_url, data=file_data, headers=upload_headers, method="POST")
+                  try:
+                      with urllib.request.urlopen(req_upload) as resp_upload:
+                          asset_json = json.loads(resp_upload.read().decode("utf-8"))
+                          if path_obj.name.endswith(".apk"):
+                              download_url = asset_json["browser_download_url"]
+                  except Exception as ex:
+                      print(f"Файл {path_obj.name} уже загружен или произошла ошибка: {ex}")
+
+          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary_path and download_url:
+              with open(summary_path, "a", encoding="utf-8") as f:
+                  f.write("## 📱 Готовый файл APK:\n\n")
+                  f.write(f"[🚀 НАЖМИ СЮДА, ЧТОБЫ СКАЧАТЬ APK]({download_url})\n")
+          print(f"Ссылка успешно создана: {download_url}")
+          PY
