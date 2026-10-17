@@ -616,3 +616,9 @@ routes/index.tsx ─► MulticamApp ─► MulticamStoreProvider (context)
 - `ui/slider.tsx`: `aria-label` теперь пробрасывается на Thumb (элемент `[role=slider]`), а не на Root — раньше accessible name терялся.
 - `.gain-knob [role=slider]`: невидимая touch-зона 48px (`::before` inset −16px), `cursor: grab/grabbing`, `touch-action: none`. Драг — штатный Radix pointer-механизм (мышь+тач), обновляет GainNode/лимитер в реальном времени через `onValueChange`.
 - Проверено Playwright (390×844, fake media): стартовое значение 18, драг вверх → 27, вниз → 3; VU-бар и трек одинаковой геометрии, шкала 0 дБ…MAX справа.
+
+## 2026-10-17 — Звук-метр: native range slider
+- Gain control is now a native `<input type="range" min=0 max=24 step=0.1>` (`.gain-range`), vertical via `writing-mode: vertical-lr; direction: rtl`. 48×48px thumb: white ring, black core. Browser handles all mouse/touch drag.
+- Always starts at +18 dB on mount. 0 = mute, 18 = unity gain (1×), 24 = +6 dB. Limiter ceiling = −60 + v/24·60 dB (default −15 dB).
+- `input`/`change` update the live GainNode, compressor threshold and clipper curve right away (the audio chain isn't rebuilt), then save `audioGain`/`audioCeiling` to the store so recording uses them too.
+- The slider works even when no mic is available. Scale labels: 0 / +6 / +12 / +18 (bold) / +24 dB. The older Radix `.gain-knob` notes above no longer apply.
