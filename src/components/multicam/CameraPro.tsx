@@ -174,14 +174,14 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
   const ceilPct = pct(ceiling);
   const level = hasMic && knob > 0 ? Math.min(pct(rms), ceilPct) : 0;
   return <div className="glass-panel absolute end-2 top-1/2 z-20 flex -translate-y-1/2 rounded-2xl py-3 ps-2 pe-3">
-    <div className="flex h-40 items-stretch gap-1">
-      <div className="flex w-5 flex-col items-center py-2">
-        <div className="relative h-full w-1.5 overflow-hidden rounded-full bg-secondary" role="meter" aria-valuenow={Math.round(level)} aria-valuemin={0} aria-valuemax={100} aria-label="Уровень звука">
+    <div className="flex h-48 items-stretch">
+      <div className="flex w-3 flex-col items-center py-[24px]">
+        <div className="relative h-full w-2.5 overflow-hidden rounded-full bg-secondary" role="meter" aria-valuenow={Math.round(level)} aria-valuemin={0} aria-valuemax={100} aria-label="Уровень звука">
           <div className="vu-fill absolute inset-x-0 bottom-0 transition-[height] duration-75" style={{ height: `${level}%` }} />
         </div>
       </div>
       <input type="range" className="gain-range" aria-label="Усиление микрофона" aria-valuetext={`+${knob.toFixed(1)} дБ`} min={0} max={KNOB_MAX} step={0.1} value={knob} onInput={onSlide} onChange={onSlide} />
-      <div className="relative w-9 py-2" aria-hidden>
+      <div className="relative w-8 py-[24px]" aria-hidden>
         <div className="relative h-full">{SCALE.map((l, i) => <span key={l} className={`absolute start-0 -translate-y-1/2 whitespace-nowrap font-mono text-[8px] leading-none ${i === 3 ? "font-bold text-foreground" : "text-muted-foreground"}`} style={{ bottom: `calc(${(i / (SCALE.length - 1)) * 100}% - 4px)` }}>{l}</span>)}</div>
       </div>
     </div>

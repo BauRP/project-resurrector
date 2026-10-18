@@ -622,3 +622,13 @@ routes/index.tsx ─► MulticamApp ─► MulticamStoreProvider (context)
 - Always starts at +18 dB on mount. 0 = mute, 18 = unity gain (1×), 24 = +6 dB. Limiter ceiling = −60 + v/24·60 dB (default −15 dB).
 - `input`/`change` update the live GainNode, compressor threshold and clipper curve right away (the audio chain isn't rebuilt), then save `audioGain`/`audioCeiling` to the store so recording uses them too.
 - The slider works even when no mic is available. Scale labels: 0 / +6 / +12 / +18 (bold) / +24 dB. The older Radix `.gain-knob` notes above no longer apply.
+
+## Visual Skin (Screenshot 43, light premium)
+- Tokens in `src/styles.css` `:root`: light lavender background, white cards, indigo→violet `--gradient-primary`, `--shadow-soft`, `--shadow-glow`, `--gradient-stage` (radial shell backdrop), radius 1rem.
+- Skin overrides live in the "Light premium skin" block at the end of `styles.css`; they change colors/shadows only — no control moved, resized or reordered.
+- Active states (nav tab, editor tab, connect pill, segmented, HUD chips) use the gradient + glow.
+
+## Audio Meter ("Звук‑метр") geometry
+- Column height `h-48`. VU bar `w-2.5` (widened), no gap to the native gain range; scale column `w-8`.
+- VU bar and scale use `py-[24px]` = half the 48px thumb hitbox, so the bar's 0–100 % maps exactly to the thumb's travel; the level is clamped to the knob's ceiling, so the bar never passes the thumb.
+- Range 0…+24, default +18 (unity). Thumb = 48px invisible hitbox around a white ring with primary core.
