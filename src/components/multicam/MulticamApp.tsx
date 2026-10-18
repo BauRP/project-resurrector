@@ -31,6 +31,8 @@ function MulticamAppContent() {
   const setStore = useMulticamStore((x) => x.set); const ready = useMulticamStore((x) => x.capMatrix !== null); const mediaOpen = useMulticamStore((x) => x.mediaOpen);
   const onProbed = useCallback((capMatrix: import("@/lib/capabilities").CapabilityMatrix) => setStore({ capMatrix }), [setStore]);
   useEffect(() => { document.documentElement.dir = language === "ar" ? "rtl" : "ltr"; document.documentElement.lang = language; }, [language]);
+  const theme = useMulticamStore((x) => x.theme);
+  useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
   const current = labels[language] ?? [t("camera"), t("editor"), t("settings")];
   return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
     {!clean && <header className="app-header">
