@@ -76,8 +76,58 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
   };
 }
 
+/** A bounded camera opener that closes a stream even when a timed-out permission request resolves late. */
+export { gum as requestMediaStream };
+
+/** Read Android Camera2 capabilities without opening or requesting access to the camera. */
+async function probeNativeDevice(onStage: (stage: number, progress: number) => void): Promise<CapabilityMatrix> {
+  onStage(0, 5);
+  const matrix = emptyCapabilityMatrix({ camera: "prompt", microphone: "prompt", storage: "unavailable" });
+  try {
+    const n = await withTimeout(MultiCamNative.getCapabilities(), 3500, "Camera2 scan");
+    const camera = (facing: "back" | "front"): CameraCaps => {
+      const c = n.cameras.find((item) => item.facing === facing);
+      if (!c) return empty();
+      const sizes = c.sizes.map((x) => x.split("x").map(Number));
+      const frames = c.fpsRanges.map((x) => Number(x.split("-").at(-1))).filter(Number.isFinite);
+      return {
+        ...empty(), available: true,
+        label: `Camera2 ${c.cameraId}`,
+        maxWidth: Math.max(0, ...sizes.map(([w = 0, h = 0]) => Math.max(w, h))),
+        maxHeight: Math.max(0, ...sizes.map(([w = 0, h = 0]) => Math.min(w, h))),
+        maxFps: Math.max(0, ...frames),
+        resolutions: Object.entries(RES).filter(([, [rw, rh]]) => sizes.some(([w = 0, h = 0]) => Math.max(w, h) === rw && Math.min(w, h) === rh)).map(([name]) => name),
+        fps: [24, 30, 60].filter((fps) => frames.some((maximum) => maximum >= fps)),
+        highSpeed: [...new Set(c.highSpeed.flatMap((mode) => mode.fps))],
+        // Camera2 sensor support does not guarantee WebView ISO controls.
+        iso: null,
+      };
+    };
+    onStage(1, 30);
+    matrix.rear = camera("back");
+    onStage(2, 60);
+    matrix.front = camera("front");
+  } catch (e) {
+    console.warn("[capabilities] native scan unavailable", e);
+    matrix.permissions.camera = "unavailable";
+  }
+  onStage(3, 80);
+  if (typeof MediaRecorder !== "undefined" && typeof MediaRecorder.isTypeSupported === "function") {
+    matrix.codecs = Object.entries(CODEC_MIMES).filter(([, mime]) => MediaRecorder.isTypeSupported(mime)).map(([name]) => name);
+  }
+  try {
+    const devices = await withTimeout(navigator.mediaDevices?.enumerateDevices?.() ?? Promise.resolve([] as MediaDeviceInfo[]), 1000, "enumerateDevices");
+    matrix.microphones = devices.filter((d) => d.kind === "audioinput").length;
+  } catch { /* Permissions have not yet been requested. */ }
+  matrix.probedAt = Date.now();
+  try { window.localStorage.setItem(KEY, JSON.stringify(matrix)); } catch { /* No storage required for startup. */ }
+  onStage(3, 100);
+  return matrix;
+}
+
 /** Runs real permission requests and hardware probes, reporting each stage. Duration = real execution time. */
 export async function probeDevice(onStage: (stage: number, progress: number) => void): Promise<CapabilityMatrix> {
+  if (isNative()) return probeNativeDevice(onStage);
   onStage(0, 5);
   const permissions = { camera: "denied", microphone: "denied", storage: "denied" };
   try { const s = await gum({ video: true, audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; permissions.microphone = "granted"; }
