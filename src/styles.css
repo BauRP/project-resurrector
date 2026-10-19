@@ -329,3 +329,44 @@
 .gain-range::-webkit-slider-runnable-track, .gain-range::-moz-range-track { background: var(--track); }
 .gain-range::-webkit-slider-thumb { background: radial-gradient(circle, var(--primary) 0 7px, var(--card) 7.5px 11px, transparent 11.5px); filter: drop-shadow(0 2px 4px oklch(0.4 0.1 275 / .45)); }
 .gain-range::-moz-range-thumb { background: radial-gradient(circle, var(--primary) 0 7px, var(--card) 7.5px 11px, transparent 11.5px); }
+
+/* ===== Contrast hardening: zero-blending in light & dark ===== */
+.bg-card, .glass-panel, .settings-item, .lut-tile {
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-soft);
+}
+.settings-item { border-width: 0 0 1px; box-shadow: none; }
+.settings-item:last-child { border-bottom-width: 0; }
+section > .bg-card, .overflow-hidden.rounded-lg.bg-card, .overflow-hidden.rounded-xl.bg-card {
+  border-radius: 20px;
+}
+button, [role="button"], .connect-pill, .hud-chip, .editor-tab, .segmented-mini, .upload-zone {
+  border: 1px solid var(--border);
+}
+.connect-pill { border-color: transparent; }
+.connect-pill.active { border-color: var(--border); }
+.bg-secondary:where(button, [role="button"]) { border: 1px solid var(--border); box-shadow: var(--shadow-soft); }
+.bg-timeline, .rounded-md.bg-timeline { border: 1px solid var(--border); }
+select.bg-secondary, input.bg-secondary { border: 1px solid var(--border); }
+/* Hover/active lift on interactive triggers */
+button:not(:disabled) { transition: transform .12s ease, box-shadow .15s ease, background-color .15s ease; }
+button:not(:disabled):active { transform: scale(.96); }
+@media (hover: hover) {
+  button:not(:disabled):hover { box-shadow: 0 6px 16px -6px oklch(0 0 0 / .18); }
+  .dark button:not(:disabled):hover { box-shadow: 0 6px 18px -6px oklch(0 0 0 / .6), 0 0 0 1px color-mix(in oklab, var(--primary) 35%, transparent); }
+}
+/* Dark mode: purple-tinted definition rings */
+.dark .bg-card, .dark .glass-panel, .dark .bg-timeline, .dark .editor-tab, .dark .segmented-mini, .dark .hud-chip {
+  border-color: color-mix(in oklab, var(--border) 70%, var(--primary) 30%);
+}
+.dark .app-header { border-bottom-color: var(--border); }
+.dark .bottom-nav { border-top-color: var(--border); }
+/* Bottom nav active pill glow (both themes) */
+.bottom-nav { border-top: 1px solid var(--border); }
+.bottom-nav button.active { color: var(--primary); }
+.dark .bottom-nav button.active { color: oklch(0.8 0.18 300); }
+/* Theme segment control */
+.theme-seg { display: flex; gap: .4rem; padding: .3rem; border-radius: 16px; border: 1px solid var(--border); background: var(--secondary); }
+.theme-seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 48px; border-radius: 12px; border: 1px solid transparent; font-size: .8rem; font-weight: 600; color: var(--muted-foreground); }
+.theme-seg button.active { background: var(--gradient-primary); color: #fff; box-shadow: var(--shadow-glow); }
+.theme-seg button svg { width: 1rem; height: 1rem; }
