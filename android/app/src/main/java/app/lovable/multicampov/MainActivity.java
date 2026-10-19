@@ -9,8 +9,8 @@ import com.getcapacitor.BridgeActivity;
 public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
         registerPlugin(MultiCamNativePlugin.class);
+        super.onCreate(savedInstanceState);
         configureWebView();
     }
 
@@ -20,17 +20,15 @@ public class MainActivity extends BridgeActivity {
             if (webView == null) return;
 
             WebSettings settings = webView.getSettings();
-            settings.setDomStorageEnabled(true);        // localStorage — обязателен для стора приложения
+            settings.setDomStorageEnabled(true);
             settings.setDatabaseEnabled(true);
             settings.setAllowFileAccess(true);
             settings.setAllowContentAccess(true);
             settings.setJavaScriptEnabled(true);
-            settings.setMediaPlaybackRequiresUserGesture(false); // автоплей видео для камеры/превью
-
-            // Тёмный фон WebView — убирает «белую вспышку» и разницу между эмуляторами
+            settings.setMediaPlaybackRequiresUserGesture(false);
             webView.setBackgroundColor(0xFF12161F);
-        } catch (Exception e) {
-            e.printStackTrace();
+        } catch (Exception error) {
+            error.printStackTrace();
         }
     }
 }
