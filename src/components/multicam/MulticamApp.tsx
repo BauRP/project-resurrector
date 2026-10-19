@@ -34,7 +34,7 @@ function MulticamAppContent() {
   const theme = useMulticamStore((x) => x.theme);
   useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
   const current = labels[language] ?? [t("camera"), t("editor"), t("settings")];
-  return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
+  return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}{ready && <div className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
     {!clean && <header className="app-header">
       <div className="min-w-0">{tab !== "settings" && <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">MULTI-CAM POV</p>}</div>
       <div className="flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
@@ -45,8 +45,8 @@ function MulticamAppContent() {
       </motion.button></div>
     </header>}
     <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}>{tab === "camera" ? <CameraTab /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</motion.div></AnimatePresence>
-    </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => setTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
-    <AnimatePresence>{connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}</AnimatePresence>
+    </div>}{ready && !clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => setTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
+    <AnimatePresence>{ready && connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}</AnimatePresence>
   </div></div>;
 }
 
