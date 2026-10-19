@@ -632,3 +632,10 @@ routes/index.tsx ─► MulticamApp ─► MulticamStoreProvider (context)
 - Column height `h-48`. VU bar `w-2.5` (widened), no gap to the native gain range; scale column `w-8`.
 - VU bar and scale use `py-[24px]` = half the 48px thumb hitbox, so the bar's 0–100 % maps exactly to the thumb's travel; the level is clamped to the knob's ceiling, so the bar never passes the thumb.
 - Range 0…+24, default +18 (unity). Thumb = 48px invisible hitbox around a white ring with primary core.
+
+## Theme engine & contrast hardening (2026-10-18)
+- `theme: "light" | "dark"` lives in the global store (`multicam-store.tsx`), persisted to localStorage with the other settings. `MulticamApp` toggles the `dark` class on `<html>`; all colors resolve through the semantic tokens in `src/styles.css` (`:root` = light, `.dark` = dark).
+- Light palette: bg #F8FAFC with ambient gradient glow, cards #FFFFFF, borders slate-200, text #0F172A/#334155. Dark palette: bg #0B0F17, cards #1E293B, borders slate-700 with a 30% purple tint, text #F8FAFC/#CBD5E1.
+- Primary accent gradient: `linear-gradient(135deg, #6366F1, #A855F7, #EC4899)` (`--gradient-primary`) used for the play button, active tabs/pills and the theme segment control.
+- Zero-blending rule: every card, button, chip, timeline container and settings row carries a 1px `var(--border)` ring plus `--shadow-soft`; buttons get an active scale press and a hover lift. Card radius 20px, pill/button radius 12–16px.
+- Settings opens with a "Theme" section: a 48px-high segmented Light/Dark control (Sun/Moon icons) localized for all 17 languages.
