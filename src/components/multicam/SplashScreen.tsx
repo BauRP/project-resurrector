@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { probeDevice, type CapabilityMatrix } from "@/lib/capabilities";
+import { probeDeviceSafe, type CapabilityMatrix } from "@/lib/capabilities";
 
 const STAGES = ["Запрос разрешений...", "Проверяю основную камеру...", "Проверяю фронтальную камеру...", "Проверяю все функции, кодеки и системные возможности..."];
 
@@ -8,7 +8,7 @@ export function SplashScreen({ onDone }: { onDone: (m: CapabilityMatrix) => void
   const [stage, setStage] = useState(0); const [progress, setProgress] = useState(0);
   useEffect(() => {
     let alive = true;
-    void probeDevice((st, p) => { if (alive) { setStage(st); setProgress(p); } }).then((m) => { if (alive) onDone(m); });
+    void probeDeviceSafe((st, p) => { if (alive) { setStage(st); setProgress(p); } }).then((m) => { if (alive) onDone(m); });
     return () => { alive = false; };
   }, [onDone]);
   return <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center">
