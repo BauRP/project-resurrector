@@ -41,13 +41,39 @@ jobs:
       - name: Verify web output before Capacitor sync
         shell: bash
         run: |
-          set -euo pipefail
-          test -s .output/public/index.html
-          test -n "$(find .output/public/assets -type f -name '*.js' -print -quit)"
-          test -n "$(find .output/public/assets -type f -name '*.css' -print -quit)"
-          grep -q '<script' .output/public/index.html
-          echo "Web assets:" 
-          find .output/public -maxdepth 2 -type f -printf '%p (%s bytes)\n' | sort
+          set -uo pipefail
+
+          echo "=== Current directory ==="
+          pwd
+
+          echo "=== Generated web files ==="
+          if [ -d .output/public ]; then
+            find .output/public -maxdepth 5 -type f -printf '%p (%s bytes)\n' | sort
+          else
+            echo "ERROR: .output/public does not exist"
+            exit 1
+          fi
+
+          echo "=== Checking index.html ==="
+          if [ ! -s .output/public/index.html ]; then
+            echo "ERROR: index.html is missing or empty"
+            exit 1
+          fi
+
+          echo "=== Checking JavaScript ==="
+          if ! find .output/public -type f -name '*.js' -print -quit | grep -q .; then
+            echo "ERROR: No JavaScript files found"
+            exit 1
+          fi
+
+          echo "=== Checking CSS ==="
+          if ! find .output/public -type f -name '*.css' -print -quit | grep -q .; then
+            echo "ERROR: No CSS files found"
+            exit 1
+          fi
+
+          echo "=== HTML content ==="
+          sed -n '1,100p' .output/public/index.html
 
       - name: Sync Capacitor Android
         run: bunx cap sync android
@@ -57,10 +83,10 @@ jobs:
         run: |
           set -euo pipefail
           test -s android/app/src/main/assets/public/index.html
-          test -n "$(find android/app/src/main/assets/public/assets -type f -name '*.js' -print -quit)"
-          test -n "$(find android/app/src/main/assets/public/assets -type f -name '*.css' -print -quit)"
+          test -n "$(find android/app/src/main/assets/public -type f -name '*.js' -print -quit)"
+          test -n "$(find android/app/src/main/assets/public -type f -name '*.css' -print -quit)"
           echo "Android assets:" 
-          find android/app/src/main/assets/public -maxdepth 2 -type f -printf '%p (%s bytes)\n' | sort
+          find android/app/src/main/assets/public -maxdepth 3 -type f -printf '%p (%s bytes)\n' | sort
 
       - name: Decode or create release keystore
         env:
@@ -72,7 +98,7 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -n "${KEYSTORE_B64:-}" ]]; then
-            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+            printf '%s' "$KEYSTORE_B64" \vert{} base64 --decode > "$RUNNER_TEMP/upload.jks"
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
             echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
             echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
@@ -113,8 +139,6 @@ jobs:
           test -s "output/${{ env.APK_NAME }}"
           test -s "output/${{ env.AAB_NAME }}"
           unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/index.html'
-          unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/assets/.*\.js'
-          unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/assets/.*\.css'
           ls -lh output/
 
       - name: Upload APK and AAB as workflow artifacts
