@@ -13,6 +13,7 @@ import { HelpDot } from "./Help";
 import { CaptureProPanel, codecMime, toneFilter } from "./CaptureProPanel";
 import { AudioRail, ColorTuning, FalseColorOverlay, FocusRail, LensZoomBlock, ShootingModes, applyAdvanced, capRange, faceDetectorAvailable, grabFrames, kelvinFilter, savePhoto, trackCaps, tuneActive, tuneFilter, useFaceTracking } from "./CameraPro";
 import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native";
+import { requestMediaStream } from "@/lib/capabilities";
 import { buildLimiter } from "@/lib/audio-limiter";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
@@ -40,7 +41,9 @@ export function CameraTab() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [cameraState, setCameraState] = useState<"loading" | "live" | "simulated">("loading");
+  const [cameraState, setCameraState] = useState<"loading" | "live" | "simulated">("simulated");
+  const [cameraEnabled, setCameraEnabled] = useState(false);
+  const [cameraError, setCameraError] = useState("");
   const [elapsed, setElapsed] = useState(0);
   const facingMode = s.facing === "front" ? "user" : "environment";
   const camCaps = s.capMatrix ? s.capMatrix[s.facing] : null;
@@ -54,14 +57,35 @@ export function CameraTab() {
   useEffect(() => { void mesh.sendTelemetry().then(setSelf); const id = window.setInterval(() => void mesh.sendTelemetry().then(setSelf), 5000); return () => window.clearInterval(id); }, []);
   useEffect(() => () => s.set({ cleanFrame: false }), []);
 
+  // Hardware detection never starts camera preview or requests permissions.
   useEffect(() => {
+    if (s.recording && !cameraEnabled) setCameraEnabled(true);
+  }, [s.recording, cameraEnabled]);
+  useEffect(() => {
+    if (!cameraEnabled) return;
     let mounted = true;
-    navigator.mediaDevices?.getUserMedia({ video: s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode }, audio: s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true }).then((next) => {
-      if (!mounted) { next.getTracks().forEach((track) => track.stop()); return; }
-      setStream(next); setCameraState("live");
-    }).catch(() => setCameraState("simulated"));
-    return () => { mounted = false; setStream((current) => { current?.getTracks().forEach((track) => track.stop()); return null; }); };
-  }, [facingMode, s.capture.micId, s.lensDeviceId]);
+    setCameraState("loading");
+    setCameraError("");
+    const video = s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode };
+    const audio = s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true;
+    void requestMediaStream({ video, audio })
+      .catch(() => requestMediaStream({ video, audio: false }))
+      .then((next) => {
+        if (!mounted) { next.getTracks().forEach((track) => track.stop()); return; }
+        setStream(next);
+        setCameraState("live");
+        if (!next.getAudioTracks().length) setCameraError("Микрофон недоступен — видео без звука");
+      })
+      .catch(() => {
+        if (!mounted) return;
+        setCameraState("simulated");
+        setCameraError("Камера недоступна. Проверьте разрешения Android и настройки эмулятора.");
+      });
+    return () => {
+      mounted = false;
+      setStream((current) => { current?.getTracks().forEach((track) => track.stop()); return null; });
+    };
+  }, [cameraEnabled, facingMode, s.capture.micId, s.lensDeviceId]);
   // Pro tools: AI engine, metering, face tracking, RAW capability, photo capture.
   const [aiEngine, setAiEngine] = useState<"native" | "web" | null>(null);
   useEffect(() => { if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [s.aiEnabled, s.focusModeAI]);
@@ -177,6 +201,11 @@ export function CameraTab() {
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
     <section className={`absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="simulated-feed absolute inset-0"><div className="horizon" /></div>}
+      {!clean && cameraState !== "live" && <div className="absolute inset-x-5 top-1/3 z-10 flex flex-col items-center gap-2 rounded-xl bg-background/85 p-4 text-center text-sm backdrop-blur-sm">
+        <span>{cameraState === "loading" ? "Подключаю камеру..." : cameraEnabled ? "Камера пока недоступна" : "Проверка завершена. Камера не открывалась."}</span>
+        {cameraError && <span className="text-xs text-muted-foreground">{cameraError}</span>}
+        {cameraState !== "loading" && <Button type="button" size="sm" onClick={() => { setCameraEnabled(false); window.setTimeout(() => setCameraEnabled(true), 0); }}>Включить камеру</Button>}
+      </div>}
       {!clean && <>
         {s.dualCamera && <div className="absolute end-3 top-28 aspect-[3/4] w-[22%] min-w-20 overflow-hidden rounded-md border border-glass bg-viewfinder shadow-2xl"><div className="simulated-feed h-full" /></div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
