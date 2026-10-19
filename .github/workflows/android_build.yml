@@ -63,20 +63,20 @@ jobs:
             CSS_FILE=$(find .output/public/assets -name "*.css" 2>/dev/null | head -n 1 | sed 's|^\.output/public/||')
             
             cat << 'HTML_EOF' > .output/public/index.html
-<!DOCTYPE html>
-<html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-    <title>MULTI-CAM POV</title>
-    $CSS_REF
-  </head>
-  <body class="bg-[#EFF3F8] dark:bg-[#12161F] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
-    <div id="root"></div>
-    $JS_REF
-  </body>
-</html>
-HTML_EOF
+          <!DOCTYPE html>
+          <html lang="ru">
+            <head>
+              <meta charset="UTF-8" />
+              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+              <title>MULTI-CAM POV</title>
+              $CSS_REF
+            </head>
+            <body class="bg-[#EFF3F8] dark:bg-[#12161F] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
+              <div id="root"></div>
+              $JS_REF
+            </body>
+          </html>
+          HTML_EOF
 
             if [ -n "$JS_FILE" ]; then
               sed -i "s|\$JS_REF|<script type=\"module\" src=\"./$JS_FILE\"></script>|g" .output/public/index.html
@@ -290,7 +290,7 @@ HTML_EOF
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" \vert{} base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
           else
             echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — generating a temporary key (APK installable, NOT suitable for Google Play updates)."
