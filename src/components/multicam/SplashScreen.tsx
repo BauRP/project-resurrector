@@ -1,19 +1,66 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { probeDeviceSafe, type CapabilityMatrix } from "@/lib/capabilities";
+import { emptyCapabilityMatrix, probeDeviceSafe, type CapabilityMatrix } from "@/lib/capabilities";
 
-const STAGES = ["Запрос разрешений...", "Проверяю основную камеру...", "Проверяю фронтальную камеру...", "Проверяю все функции, кодеки и системные возможности..."];
+const STAGES = [
+  "Запрос разрешений...",
+  "Проверяю основную камеру...",
+  "Проверяю фронтальную камеру...",
+  "Проверяю все функции, кодеки и системные возможности...",
+];
+const STARTUP_TIMEOUT_MS = 9000;
 
-export function SplashScreen({ onDone }: { onDone: (m: CapabilityMatrix) => void }) {
-  const [stage, setStage] = useState(0); const [progress, setProgress] = useState(0);
+export function SplashScreen({ onDone }: { onDone: (matrix: CapabilityMatrix) => void }) {
+  const [stage, setStage] = useState(0);
+  const [progress, setProgress] = useState(0);
+
   useEffect(() => {
     let alive = true;
-    void probeDeviceSafe((st, p) => { if (alive) { setStage(st); setProgress(p); } }).then((m) => { if (alive) onDone(m); });
-    return () => { alive = false; };
+    let completed = false;
+
+    const finish = (matrix: CapabilityMatrix) => {
+      if (!alive || completed) return;
+      completed = true;
+      onDone(matrix);
+    };
+
+    const timeout = window.setTimeout(() => {
+      console.warn("Capability probe timeout; continuing without camera capabilities");
+      finish(emptyCapabilityMatrix({ camera: "timeout", microphone: "unavailable", storage: "unavailable" }));
+    }, STARTUP_TIMEOUT_MS);
+
+    void probeDeviceSafe((nextStage, nextProgress) => {
+      if (alive) {
+        setStage(nextStage);
+        setProgress(nextProgress);
+      }
+    })
+      .then(finish)
+      .catch((error: unknown) => {
+        console.warn("Capability probe failed; continuing without camera", error);
+        finish(emptyCapabilityMatrix({ camera: "error", microphone: "unavailable", storage: "unavailable" }));
+      })
+      .finally(() => window.clearTimeout(timeout));
+
+    return () => {
+      alive = false;
+      window.clearTimeout(timeout);
+    };
   }, [onDone]);
-  return <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center">
-    <p className="text-sm font-semibold uppercase tracking-[0.25em]">MULTI-CAM POV</p>
-    <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary"><motion.div className="h-full bg-primary" animate={{ width: `${progress}%` }} transition={{ type: "spring", stiffness: 120, damping: 20 }} /></div>
-    <p aria-live="polite" className="min-h-10 text-xs text-muted-foreground">{STAGES[stage]}</p>
-  </div>;
+
+  return (
+    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center">
+      <p className="text-sm font-semibold uppercase tracking-[0.25em]">MULTI-CAM POV</p>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
+        <motion.div
+          className="h-full bg-primary"
+          animate={{ width: `${progress}%` }}
+          transition={{ type: "spring", stiffness: 120, damping: 20 }}
+        />
+      </div>
+      <p aria-live="polite" className="min-h-10 text-xs text-muted-foreground">
+        {STAGES[stage] ?? STAGES[0]}
+      </p>
+    </div>
+  );
 }
