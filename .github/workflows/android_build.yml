@@ -24,72 +24,161 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Safely update Capacitor Config
+      # ИСПРАВЛЕНО: проект использует capacitor.config.ts, а не .json
+      - name: Verify Capacitor Config
         run: |
-          cat << 'EOF' > update_config.cjs
-          const fs = require("fs");
-          const path = require("path");
-
-          const cfgPath = path.join(process.cwd(), "capacitor.config.json");
-          if (fs.existsSync(cfgPath)) {
-            try {
-              const cfg = JSON.parse(fs.readFileSync(cfgPath, "utf8"));
-              if (cfg.server && cfg.server.url) {
-                delete cfg.server.url;
-              }
-              cfg.webDir = ".output/public";
-              fs.writeFileSync(cfgPath, JSON.stringify(cfg, null, 2));
-              console.log("✅ capacitor.config.json успешно обновлен");
-            } catch (e) {
-              console.log("Ошибка чтения capacitor.config.json:", e.message);
-            }
-          }
-          EOF
-          node update_config.cjs
+          if [ -f "capacitor.config.ts" ]; then
+            echo "✅ Используется capacitor.config.ts (webDir уже '.output/public')"
+          elif [ -f "capacitor.config.json" ]; then
+            node <<'EOF'
+            const fs = require("fs");
+            const cfg = JSON.parse(fs.readFileSync("capacitor.config.json", "utf8"));
+            if (cfg.server && cfg.server.url) delete cfg.server.url;
+            cfg.webDir = ".output/public";
+            fs.writeFileSync("capacitor.config.json", JSON.stringify(cfg, null, 2));
+            console.log("✅ capacitor.config.json успешно обновлен");
+            EOF
+          else
+            echo "::warning::capacitor config не найден — пропускаем"
+          fi
 
       - name: Build web app
         run: |
+          set -euo pipefail
           bun run build
-          
+
           mkdir -p .output/public
-          
+
           if [ -f ".output/index.html" ] && [ ! -f ".output/public/index.html" ]; then
             cp -rf .output/* .output/public/ 2>/dev/null || true
           fi
 
-          if [ ! -f ".output/public/index.html" ]; then
-            echo "⚠️ Создание безопасного моста index.html для скомпилированных ассетов..."
-            JS_FILE=$(find .output/public/assets -name "*.js" 2>/dev/null | head -n 1 | sed 's|^\.output/public/||')
-            CSS_FILE=$(find .output/public/assets -name "*.css" 2>/dev/null | head -n 1 | sed 's|^\.output/public/||')
-            
-            cat << 'HTML_EOF' > .output/public/index.html
-          <!DOCTYPE html>
+      - name: Ensure index.html (fallback: loader for ALL chunks)
+        run: |
+          node <<'EOF'
+          const fs = require("fs");
+          const path = require("path");
+
+          const out = path.join(".output", "public");
+          const htmlPath = path.join(out, "index.html");
+
+          if (fs.existsSync(htmlPath)) {
+            console.log("✅ index.html сгенерирован сборкой — fallback не нужен");
+            process.exit(0);
+          }
+
+          const assetsDir = path.join(out, "assets");
+          if (!fs.existsSync(assetsDir)) {
+            console.error("::error:: .output/public/assets отсутствует — веб-сборка пуста!");
+            process.exit(1);
+          }
+
+          const js = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js")).sort();
+          const css = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".css")).sort();
+
+          if (!js.length) {
+            console.error("::error:: Ни одного .js-файла в assets — приложение не смонтируется!");
+            process.exit(1);
+          }
+
+          // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: подключаем ВСЕ чанки как модули.
+          // Entry-чанк среди них гарантированно смонтирует приложение;
+          // не-entry чанки просто определяют модули и безвредны.
+          const polyfills = `
+          <script>
+            window.global = window;
+            if (!window.process) window.process = { env: {} };
+            if (!window.Capacitor) window.Capacitor = { Plugins: {} };
+
+            try {
+              var k = "__test_ls__";
+              window.localStorage.setItem(k, k);
+              window.localStorage.removeItem(k);
+            } catch (e) {
+              var store = {};
+              Object.defineProperty(window, "localStorage", {
+                value: {
+                  getItem: function(key) { return store[key] || null; },
+                  setItem: function(key, val) { store[key] = String(val); },
+                  removeItem: function(key) { delete store[key]; },
+                  clear: function() { store = {}; }
+                },
+                writable: true
+              });
+            }
+
+            try {
+              var sk = "__test_ss__";
+              window.sessionStorage.setItem(sk, sk);
+              window.sessionStorage.removeItem(sk);
+            } catch (e) {
+              var sstore = {};
+              Object.defineProperty(window, "sessionStorage", {
+                value: {
+                  getItem: function(key) { return sstore[key] || null; },
+                  setItem: function(key, val) { sstore[key] = String(val); },
+                  removeItem: function(key) { delete sstore[key]; },
+                  clear: function() { store = {}; }
+                },
+                writable: true
+              });
+            }
+
+            if (!window.matchMedia) {
+              window.matchMedia = function() {
+                return {
+                  matches: false,
+                  addListener: function() {},
+                  removeListener: function() {},
+                  addEventListener: function() {},
+                  removeEventListener: function() {}
+                };
+              };
+            }
+
+            (function() {
+              function showErr(msg) {
+                var div = document.createElement("div");
+                div.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:#b00020;color:#ffffff;z-index:999999;padding:24px;font-size:14px;line-height:1.5;word-break:break-all;overflow:auto;font-family:sans-serif;box-sizing:border-box;";
+                div.innerHTML = '<h2 style="margin-top:0;color:#ff8a80;">🚨 ОШИБКА ЗАПУСКА ПРИЛОЖЕНИЯ</h2><p>Сделайте скриншот этого экрана:</p><pre style="background:#4a0000;padding:12px;border-radius:8px;white-space:pre-wrap;font-family:monospace;">' + msg + '</pre>';
+                if (document.body) {
+                  document.body.appendChild(div);
+                } else {
+                  document.addEventListener("DOMContentLoaded", function() { document.body.appendChild(div); });
+                }
+              }
+              window.onerror = function(m, u, l, c, e) {
+                showErr("Сообщение: " + m + "\nФайл: " + u + "\nСтрока: " + l + "\nСтек: " + (e ? e.stack : "нет"));
+              };
+              window.addEventListener("unhandledrejection", function(e) {
+                showErr("Ошибка Promise: " + (e.reason ? (e.reason.stack || e.reason) : e));
+              });
+            })();
+          </script>`;
+
+          const cssTags = css.map((f) => `    <link rel="stylesheet" href="./assets/${f}">`).join("\n");
+          const jsTags = js.map((f) => `    <script type="module" src="./assets/${f}"></script>`).join("\n");
+
+          const html = `<!DOCTYPE html>
           <html lang="ru">
             <head>
               <meta charset="UTF-8" />
               <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
               <title>MULTI-CAM POV</title>
-              $CSS_REF
+              <script src="capacitor.js"></script>
+          ${cssTags}
+          ${polyfills}
             </head>
-            <body class="bg-[#EFF3F8] dark:bg-[#12161F] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
+            <body style="background:#12161F">
               <div id="root"></div>
-              $JS_REF
+          ${jsTags}
             </body>
           </html>
-          HTML_EOF
+          `;
 
-            if [ -n "$JS_FILE" ]; then
-              sed -i "s|\$JS_REF|<script type=\"module\" src=\"./$JS_FILE\"></script>|g" .output/public/index.html
-            else
-              sed -i "s|\$JS_REF||g" .output/public/index.html
-            fi
-
-            if [ -n "$CSS_FILE" ]; then
-              sed -i "s|\$CSS_REF|<link rel=\"stylesheet\" href=\"./$CSS_FILE\">|g" .output/public/index.html
-            else
-              sed -i "s|\$CSS_REF||g" .output/public/index.html
-            fi
-          fi
+          fs.writeFileSync(htmlPath, html, "utf8");
+          console.log("✅ Создан загрузчик: " + js.length + " JS, " + css.length + " CSS");
+          EOF
 
       - name: Verify web build output
         run: |
@@ -99,11 +188,15 @@ jobs:
             echo "::error::$OUT/index.html все еще отсутствует после сборки."
             exit 1
           fi
-          echo "Web build successfully verified at $OUT/index.html"
+          if [ ! -f "$OUT/capacitor.js" ]; then
+            echo "::error::capacitor.js отсутствует — нативный мост Capacitor не будет работать!"
+            exit 1
+          fi
+          echo "✅ Web build successfully verified at $OUT/index.html"
 
       - name: Prepare web assets & inject Polyfills
         run: |
-          cat << 'EOF' > prepare_assets.cjs
+          node <<'EOF'
           const fs = require("fs");
           const path = require("path");
 
@@ -212,7 +305,6 @@ jobs:
           fs.writeFileSync(htmlPath, html, "utf8");
           console.log("✅ index.html полностью подготовлен с поддержкой Capacitor!");
           EOF
-          node prepare_assets.cjs
 
       - name: Sync Android project
         run: |
@@ -223,7 +315,7 @@ jobs:
 
       - name: Safe Patch MainActivity for WebView Settings
         run: |
-          cat << 'EOF' > patch_activity.cjs
+          node <<'EOF'
           const fs = require("fs");
           const path = require("path");
 
@@ -248,8 +340,8 @@ jobs:
             let code = fs.readFileSync(mainActivityPath, "utf8");
 
             if (!code.includes("setDomStorageEnabled")) {
-              const importsToInject = "\nimport android.os.Bundle;\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\n";
-              code = code.replace(/package\s+[\w\.]+;/, match => match + importsToInject);
+              const importsToInject = "\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\n";
+              code = code.replace(/package\s+[\w\.]+;/, (match) => match + importsToInject);
 
               const webViewPatch = `
                   try {
@@ -266,7 +358,7 @@ jobs:
               `;
 
               if (code.includes("super.onCreate(")) {
-                code = code.replace(/super\.onCreate\([^)]*\);/, match => match + "\n" + webViewPatch);
+                code = code.replace(/super\.onCreate\([^)]*\);/, (match) => match + "\n" + webViewPatch);
               } else {
                 const fullOnCreate = `
                 @Override
@@ -275,15 +367,16 @@ jobs:
                     ${webViewPatch}
                 }
                 `;
-                code = code.replace(/public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{/, match => match + "\n" + fullOnCreate);
+                code = code.replace(/public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{/, (match) => match + "\n" + fullOnCreate);
               }
 
               fs.writeFileSync(mainActivityPath, code, "utf8");
               console.log("✅ MainActivity.java пропатчен!");
+            } else {
+              console.log("✅ MainActivity.java уже содержит настройки WebView — пропускаем");
             }
           }
           EOF
-          node patch_activity.cjs
 
       - name: Decode upload keystore
         env:
