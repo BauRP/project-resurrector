@@ -1,7 +1,7 @@
 import { HelpDot } from "./Help";
 import { useEffect, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, RotateCcw, ShieldCheck, Trash2, X } from "lucide-react";
+import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useMulticamStore } from "@/lib/multicam-store";
@@ -12,6 +12,13 @@ import { useMeshPeers } from "./useMesh";
 const languages = [
   ["en","English"],["ru","Русский"],["kk","Қазақ тілі"],["pt","Português"],["es","Español"],["fr","Français"],["ar","العربية"],["zh","中文"],["ko","한국어"],["ja","日本語"],["de","Deutsch"],["it","Italiano"],["tr","Türkçe"],["pl","Polski"],["hi","हिन्दी"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],
 ];
+const themeCopy: Record<string, { theme:string; light:string; dark:string }> = {
+ en:{theme:"Theme",light:"Light",dark:"Dark"}, ru:{theme:"Тема",light:"Светлая",dark:"Тёмная"}, kk:{theme:"Тақырып",light:"Жарық",dark:"Қараңғы"},
+ ar:{theme:"المظهر",light:"فاتح",dark:"داكن"}, zh:{theme:"主题",light:"浅色",dark:"深色"}, ko:{theme:"테마",light:"라이트",dark:"다크"}, ja:{theme:"テーマ",light:"ライト",dark:"ダーク"},
+ pt:{theme:"Tema",light:"Claro",dark:"Escuro"}, es:{theme:"Tema",light:"Claro",dark:"Oscuro"}, fr:{theme:"Thème",light:"Clair",dark:"Sombre"},
+ de:{theme:"Design",light:"Hell",dark:"Dunkel"}, it:{theme:"Tema",light:"Chiaro",dark:"Scuro"}, tr:{theme:"Tema",light:"Açık",dark:"Koyu"}, pl:{theme:"Motyw",light:"Jasny",dark:"Ciemny"},
+ hi:{theme:"थीम",light:"लाइट",dark:"डार्क"}, vi:{theme:"Giao diện",light:"Sáng",dark:"Tối"}, id:{theme:"Tema",light:"Terang",dark:"Gelap"},
+};
 const copy: Record<string, { title:string; language:string; network:string; storage:string; engine:string; privacy:string; clear:string }> = {
  en:{title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache"},
  ru:{title:"Настройки",language:"Язык",network:"Диагностика сети",storage:"Хранилище и кэш",engine:"Движок рендера",privacy:"Политика конфиденциальности",clear:"Очистить кэш"},
