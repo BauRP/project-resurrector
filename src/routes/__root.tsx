@@ -12,6 +12,7 @@ import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
+import { loadOptionalFonts } from "../lib/fonts";
 
 function NotFoundComponent() {
   return (
@@ -91,9 +92,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         href: appCss,
       },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
-      { rel: "preconnect", href: "https://fonts.googleapis.com" },
-      { rel: "preconnect", href: "https://fonts.gstatic.com", crossOrigin: "anonymous" },
-      { rel: "stylesheet", href: "https://fonts.googleapis.com/css2?family=Montserrat:wght@400;700&family=Roboto:wght@400;700&family=Open+Sans:wght@400;700&family=Raleway:wght@400;700&family=Nunito:wght@400;700&family=Rubik:wght@400;700&family=Manrope:wght@400;700&family=Jost:wght@400;700&family=Exo+2:wght@400;700&family=Ubuntu:wght@400;700&family=Fira+Sans:wght@400;700&family=IBM+Plex+Sans:wght@400;700&family=PT+Sans:wght@400;700&family=PT+Serif:wght@400;700&family=Playfair+Display:wght@400;700&family=Lora:wght@400;700&family=Merriweather:wght@400;700&family=Cormorant+Garamond:wght@400;700&family=Alice&family=Yeseva+One&family=Oswald:wght@400;700&family=Russo+One&family=Unbounded:wght@400;700&family=Comfortaa:wght@400;700&family=Philosopher&family=Lobster&family=Pacifico&family=Caveat:wght@400;700&family=Marck+Script&family=Press+Start+2P&subset=cyrillic&display=swap" },
     ],
   }),
   shellComponent: RootShell,
@@ -118,6 +116,7 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  useEffect(() => loadOptionalFonts(), []);
 
   return (
     <QueryClientProvider client={queryClient}>
