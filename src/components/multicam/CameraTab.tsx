@@ -221,15 +221,16 @@ export function CameraTab() {
 
     {/* HUD status bar */}
     <div className="absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
-      {!clean && <div className="scrollbar-none flex min-w-0 flex-1 gap-1 overflow-x-auto">
+      {!clean && <div className="camera-quick-controls scrollbar-none flex min-w-0 flex-1 items-center gap-1 overflow-x-auto overscroll-x-contain whitespace-nowrap">
         <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : t("sim")}</span>
         <button className={`hud-chip ${hud === "shutter" ? "active" : ""}`} onClick={() => toggleHud("shutter")}>{s.shutter}s</button>
         <button className={`hud-chip ${hud === "iso" ? "active" : ""} ${camCaps && !camCaps.iso ? "opacity-40" : ""}`} onClick={() => toggleHud("iso")}>ISO {s.capture.iso ?? "A"}</button>
         <button className={`hud-chip ${hud === "wb" ? "active" : ""}`} onClick={() => toggleHud("wb")}>WB {s.wbKelvin ? `${s.wbKelvin}K` : "A"}</button>
         <button className={`hud-chip ${hud === "grid" ? "active" : ""}`} onClick={() => toggleHud("grid")}>#{gridName}</button>
         <button className={`hud-chip ${meterOk ? "" : "opacity-40"}`} title={meterOk ? `Замер: ${meterLabel}` : "Камера не поддерживает выбор точки замера"} aria-label={`Режим замера: ${meterLabel}`} onClick={() => s.set({ meterMode: s.meterMode === "matrix" ? "center" : s.meterMode === "center" ? "spot" : "matrix" })}>{meterIcon}</button>
+        <button aria-label="ИИ-ассистент" aria-pressed={s.aiEnabled} title={s.aiEnabled ? `ИИ включён (${aiEngine === "native" ? "ML Kit" : faceDetectorAvailable() ? "браузер: лица" : "браузер: без детектора лиц"})` : "Включить ИИ"} onClick={() => s.set({ aiEnabled: !s.aiEnabled })} className={`hud-chip shrink-0 ${s.aiEnabled ? "active" : ""}`}><Sparkles className="size-3.5" />AI</button>
       </div>}
-      <div className="ms-auto flex shrink-0 items-center gap-1.5"><button aria-label="ИИ-ассистент" aria-pressed={s.aiEnabled} title={s.aiEnabled ? `ИИ включён (${aiEngine === "native" ? "ML Kit" : faceDetectorAvailable() ? "браузер: лица" : "браузер: без детектора лиц"})` : "Включить ИИ"} onClick={() => s.set({ aiEnabled: !s.aiEnabled })} className={`hud-chip shrink-0 ${s.aiEnabled ? "active" : ""}`}><Sparkles className="size-3.5" />AI</button><button aria-label={clean ? "Показать интерфейс" : "Режим чистого кадра"} title="Режим чистого кадра" onClick={() => { setHud(null); setSheet(false); s.set({ cleanFrame: !clean }); }} className={`hud-chip shrink-0 ${clean ? "opacity-60" : ""}`}>{clean ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}</button></div>
+      <button aria-label={clean ? "Показать интерфейс" : "Режим чистого кадра"} title="Режим чистого кадра" onClick={() => { setHud(null); setSheet(false); s.set({ cleanFrame: !clean }); }} className={`hud-chip shrink-0 ${clean ? "opacity-60" : ""}`}>{clean ? <Eye className="size-3.5" /> : <EyeOff className="size-3.5" />}</button>
     </div>
 
     {!clean && <div className="absolute start-2 top-11 z-20 flex flex-col items-start gap-1">

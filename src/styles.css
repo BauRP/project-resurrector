@@ -370,3 +370,23 @@ button:not(:disabled):active { transform: scale(.96); }
 .theme-seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 48px; border-radius: 12px; border: 1px solid transparent; font-size: .8rem; font-weight: 600; color: var(--muted-foreground); }
 .theme-seg button.active { background: var(--gradient-primary); color: #fff; box-shadow: var(--shadow-glow); }
 .theme-seg button svg { width: 1rem; height: 1rem; }
+
+/* Compact, non-scrolling chrome, responsive controls and light WebView painting. */
+.app-shell { display: flex; flex-direction: column; --nav-h: calc(3.5rem + env(safe-area-inset-bottom)); }
+.app-scroll { flex: 1 1 auto; height: auto; min-height: 0; overflow-y: auto; }
+.app-header { position: relative; z-index: 45; flex: 0 0 auto; min-width: 0; background: var(--card); border-bottom: 1px solid var(--border); box-shadow: 0 3px 12px -10px oklch(0 0 0 / .3); }
+.app-header--editor { display: flex; padding-block: .45rem; padding-inline: .55rem; }
+.app-header--editor > .min-w-0 { display: none; }
+.app-header-actions { flex: 1; min-width: 0; }
+.app-header--editor .connect-pill { flex-shrink: 1; min-width: 0; max-width: none; min-height: 2.3rem; padding-inline: .65rem; font-size: .72rem; white-space: nowrap; }
+.app-header--editor .connect-pill:first-child { flex-shrink: 0; padding-inline: .65rem; }
+.bottom-nav { position: relative; flex: 0 0 var(--nav-h); }
+.bottom-nav button { height: 3.5rem; gap: .1rem; min-height: 3rem; }
+.bottom-nav button svg { width: 1.1rem; height: 1.1rem; }
+.bottom-nav button i { top: .18rem; }
+.camera-screen { height: 100%; min-height: 0; }
+.camera-quick-controls { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.camera-quick-controls::-webkit-scrollbar { display: none; }
+.camera-quick-controls > .hud-chip { flex: none; white-space: nowrap; }
+button:not(:disabled) { transition: transform .12s ease, background-color .15s ease, color .15s ease; }
+@media (max-width: 600px) { .glass-panel { backdrop-filter: none; -webkit-backdrop-filter: none; } }

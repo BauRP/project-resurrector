@@ -128,7 +128,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const urlsRef = useRef<Set<string>>(new Set());
   const rulerRef = useRef<HTMLDivElement>(null);
   const setStore = useMulticamStore((x) => x.set); const mediaOpen = useMulticamStore((x) => x.mediaOpen); const setMediaOpen = (mediaOpen: boolean) => setStore({ mediaOpen });
-  const [zoom, setZoom] = useState(40);
+  const [zoom, setZoom] = useState(8);
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -413,8 +413,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
-  const minZoom = Math.min(600, Math.max(8, tlW > 0 ? (tlW - HEAD - 8) / total : 8));
+  const minZoom = Math.min(600, Math.max(8, tlW > 0 ? (tlW - 8) / total : 8));
   useEffect(() => { setZoom((z) => z < minZoom ? minZoom : z); }, [minZoom]);
+  useEffect(() => { if (zoom <= minZoom + 0.01 && tlRef.current) tlRef.current.scrollLeft = 0; }, [zoom, minZoom]);
   const zoomPos = Math.round((Math.log(Math.max(zoom, minZoom) / minZoom) / Math.log(600 / minZoom || 1.0001)) * 100);
   const scrub = (e: React.PointerEvent) => {
     e.stopPropagation(); e.preventDefault(); setPlaying(false);
@@ -426,11 +427,6 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   };
   // Lanes do not depend on the playhead, so they are memoised and skipped during 60 fps playback re-renders.
   const laneEls = useMemo(() => lanes.map((lane) => <div key={lane.key} className="relative flex border-b border-border/40" style={{ height: ROW }}>
-    <div className="sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
-      <span className="w-8 truncate text-[9px] font-semibold">{lane.label}</span>
-      {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
-      <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={muted[lane.key] ? "text-record" : "text-muted-foreground"}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
-    </div>
     <div className="relative flex-1" ref={(el) => { laneRefs.current[lane.key] = el; }}>
       {items.filter((i) => i.track === lane.track && i.kind === lane.kind).map((i) => {
         const m = mediaById.get(i.mediaId); const w = Math.max(6, len(i) * zoom);
@@ -446,7 +442,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks]);
 
-  return <section className="mb-4 min-w-0 space-y-3 overflow-x-hidden px-4 pt-3 text-xs">
+  return <section className="mb-2 min-w-0 space-y-2 overflow-x-hidden px-3 pt-2 text-xs">
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
     <div className="relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
@@ -491,20 +487,31 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
 
     <div className={pinTl ? "sticky z-10 -mx-4 bg-background px-4 pb-1" : "relative"} style={pinTl ? { top: headerH + (pinMon ? monH : 0) } : undefined}>
-    <div ref={tlRef} className="w-full max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-md bg-timeline" onPointerDown={() => { setSelected(null); setSelTr(null); }}>
-      <div className="relative" style={{ width: Math.max(tlW, HEAD + total * zoom + 8) }}>
-        <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
-        <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
+    <div className="flex w-full min-w-0 overflow-hidden rounded-md border border-border bg-timeline">
+      <div className="relative z-20 shrink-0 border-r border-border bg-timeline" style={{ width: HEAD }}>
+        <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onClick={() => setPinTl(!pinTl)} className={`flex h-5 w-full items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
+        {lanes.map((lane) => <div key={lane.key} className="border-b border-border/40" style={{ height: ROW }}>
+    <div className="flex h-full min-w-0 items-center gap-1 bg-timeline px-1">
+      <span className="w-8 truncate text-[9px] font-semibold">{lane.label}</span>
+      {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
+      <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={muted[lane.key] ? "text-record" : "text-muted-foreground"}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
+    </div>
+        </div>)}
+      </div>
+      <div ref={tlRef} className={`min-w-0 flex-1 overscroll-x-contain overflow-y-hidden ${zoom <= minZoom + 0.01 ? "overflow-x-hidden" : "overflow-x-auto"}`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
+      <div className="relative" style={{ width: Math.max(tlW, total * zoom + 8) }}>
+        <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" onPointerDown={scrub}>
           {Array.from({ length: Math.ceil(total) + 1 }, (_, s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
         </div>
         {laneEls}
-        <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: HEAD + t * zoom }} />
-        <div role="slider" aria-label="Курсор воспроизведения" aria-valuemin={0} aria-valuemax={Math.round(total * 100) / 100} aria-valuenow={Math.round(t * 100) / 100} onPointerDown={scrub} className="absolute top-0 z-30 -translate-x-1/2 cursor-ew-resize px-2 pb-2 [touch-action:none]" style={{ left: HEAD + t * zoom }}><div className="playhead-handle" /></div>
+        <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: Math.max(0, t * zoom) }} />
+        <div role="slider" aria-label="Курсор воспроизведения" aria-valuemin={0} aria-valuemax={Math.round(total * 100) / 100} aria-valuenow={Math.round(t * 100) / 100} onPointerDown={scrub} className="absolute top-0 z-30 -translate-x-1/2 cursor-ew-resize px-2 pb-2 [touch-action:none]" style={{ left: Math.max(0, t * zoom) }}><div className="playhead-handle" /></div>
       </div>
     </div>
     </div>
+    </div>
 
-    <div className="grid grid-cols-5 place-items-center gap-1 px-1 pb-1" role="toolbar" aria-label="Инструменты таймлайна">
+    <div className="grid grid-cols-5 place-items-center gap-1 px-1 pb-0.5" role="toolbar" aria-label="Инструменты таймлайна">
       <Button size="icon" variant={addOpen ? "default" : "outline"} title="Добавить" aria-label="Добавить" aria-expanded={addOpen} onClick={() => setAddOpen(!addOpen)}><Plus /></Button>
       <Button size="icon" variant="outline" title="Разрезать" aria-label="Разрезать" onClick={split}><Scissors /></Button>
       <Button size="icon" variant="outline" title="Удалить" aria-label="Удалить" disabled={!selItem && !selTr} onClick={deleteSelection}><Trash2 /></Button>

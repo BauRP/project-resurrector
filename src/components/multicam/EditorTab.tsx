@@ -16,7 +16,7 @@ const frequencies = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "1
 
 export function EditorTab() {
   const s = useMulticamStore(); const { t } = useT();
-  return <div className="pb-[calc(6.5rem+env(safe-area-inset-bottom))] text-foreground">
+  return <div className="pb-4 text-foreground">
     <EditorPro chroma={<ChromaPanel />} audio={<AudioPanel />} />
     <AnimatePresence>{s.exportOpen && <ExportDrawer />}</AnimatePresence>
   </div>;
