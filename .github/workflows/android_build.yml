@@ -8,482 +8,200 @@ on:
 permissions:
   contents: write
 
+env:
+  APP_ID: app.lovable.multicampov
+  APK_NAME: multi-cam-pov-release.apk
+  AAB_NAME: multi-cam-pov-release.aab
+
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: oven-sh/setup-bun@v2
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
 
-      - uses: actions/setup-java@v4
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
+          cache: gradle
 
       - name: Install dependencies
-        run: bun install
+        run: bun install --frozen-lockfile
 
-      # ИСПРАВЛЕНО: проект использует capacitor.config.ts, а не .json
-      - name: Verify Capacitor Config
-        run: |
-          if [ -f "capacitor.config.ts" ]; then
-            echo "✅ Используется capacitor.config.ts (webDir уже '.output/public')"
-          elif [ -f "capacitor.config.json" ]; then
-            node <<'EOF'
-            const fs = require("fs");
-            const cfg = JSON.parse(fs.readFileSync("capacitor.config.json", "utf8"));
-            if (cfg.server && cfg.server.url) delete cfg.server.url;
-            cfg.webDir = ".output/public";
-            fs.writeFileSync("capacitor.config.json", JSON.stringify(cfg, null, 2));
-            console.log("✅ capacitor.config.json успешно обновлен");
-            EOF
-          else
-            echo "::warning::capacitor config не найден — пропускаем"
-          fi
+      - name: Build Capacitor SPA
+        run: bun run build:android
 
-      - name: Build web app
+      - name: Verify web output before Capacitor sync
+        shell: bash
         run: |
           set -euo pipefail
-          bun run build
+          test -s .output/public/index.html
+          test -n "$(find .output/public/assets -type f -name '*.js' -print -quit)"
+          test -n "$(find .output/public/assets -type f -name '*.css' -print -quit)"
+          grep -q '<script' .output/public/index.html
+          echo "Web assets:" 
+          find .output/public -maxdepth 2 -type f -printf '%p (%s bytes)\n' | sort
 
-          mkdir -p .output/public
+      - name: Sync Capacitor Android
+        run: bunx cap sync android
 
-          if [ -f ".output/index.html" ] && [ ! -f ".output/public/index.html" ]; then
-            cp -rf .output/* .output/public/ 2>/dev/null || true
-          fi
-
-      - name: Ensure index.html (fallback: loader for ALL chunks)
-        run: |
-          node <<'EOF'
-          const fs = require("fs");
-          const path = require("path");
-
-          const out = path.join(".output", "public");
-          const htmlPath = path.join(out, "index.html");
-
-          if (fs.existsSync(htmlPath)) {
-            console.log("✅ index.html сгенерирован сборкой — fallback не нужен");
-            process.exit(0);
-          }
-
-          const assetsDir = path.join(out, "assets");
-          if (!fs.existsSync(assetsDir)) {
-            console.error("::error:: .output/public/assets отсутствует — веб-сборка пуста!");
-            process.exit(1);
-          }
-
-          const js = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".js")).sort();
-          const css = fs.readdirSync(assetsDir).filter((f) => f.endsWith(".css")).sort();
-
-          if (!js.length) {
-            console.error("::error:: Ни одного .js-файла в assets — приложение не смонтируется!");
-            process.exit(1);
-          }
-
-          // КЛЮЧЕВОЕ ИСПРАВЛЕНИЕ: подключаем ВСЕ чанки как модули.
-          // Entry-чанк среди них гарантированно смонтирует приложение;
-          // не-entry чанки просто определяют модули и безвредны.
-          const polyfills = `
-          <script>
-            window.global = window;
-            if (!window.process) window.process = { env: {} };
-            if (!window.Capacitor) window.Capacitor = { Plugins: {} };
-
-            try {
-              var k = "__test_ls__";
-              window.localStorage.setItem(k, k);
-              window.localStorage.removeItem(k);
-            } catch (e) {
-              var store = {};
-              Object.defineProperty(window, "localStorage", {
-                value: {
-                  getItem: function(key) { return store[key] || null; },
-                  setItem: function(key, val) { store[key] = String(val); },
-                  removeItem: function(key) { delete store[key]; },
-                  clear: function() { store = {}; }
-                },
-                writable: true
-              });
-            }
-
-            try {
-              var sk = "__test_ss__";
-              window.sessionStorage.setItem(sk, sk);
-              window.sessionStorage.removeItem(sk);
-            } catch (e) {
-              var sstore = {};
-              Object.defineProperty(window, "sessionStorage", {
-                value: {
-                  getItem: function(key) { return sstore[key] || null; },
-                  setItem: function(key, val) { sstore[key] = String(val); },
-                  removeItem: function(key) { delete sstore[key]; },
-                  clear: function() { store = {}; }
-                },
-                writable: true
-              });
-            }
-
-            if (!window.matchMedia) {
-              window.matchMedia = function() {
-                return {
-                  matches: false,
-                  addListener: function() {},
-                  removeListener: function() {},
-                  addEventListener: function() {},
-                  removeEventListener: function() {}
-                };
-              };
-            }
-
-            (function() {
-              function showErr(msg) {
-                var div = document.createElement("div");
-                div.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:#b00020;color:#ffffff;z-index:999999;padding:24px;font-size:14px;line-height:1.5;word-break:break-all;overflow:auto;font-family:sans-serif;box-sizing:border-box;";
-                div.innerHTML = '<h2 style="margin-top:0;color:#ff8a80;">🚨 ОШИБКА ЗАПУСКА ПРИЛОЖЕНИЯ</h2><p>Сделайте скриншот этого экрана:</p><pre style="background:#4a0000;padding:12px;border-radius:8px;white-space:pre-wrap;font-family:monospace;">' + msg + '</pre>';
-                if (document.body) {
-                  document.body.appendChild(div);
-                } else {
-                  document.addEventListener("DOMContentLoaded", function() { document.body.appendChild(div); });
-                }
-              }
-              window.onerror = function(m, u, l, c, e) {
-                showErr("Сообщение: " + m + "\nФайл: " + u + "\nСтрока: " + l + "\nСтек: " + (e ? e.stack : "нет"));
-              };
-              window.addEventListener("unhandledrejection", function(e) {
-                showErr("Ошибка Promise: " + (e.reason ? (e.reason.stack || e.reason) : e));
-              });
-            })();
-          </script>`;
-
-          const cssTags = css.map((f) => `    <link rel="stylesheet" href="./assets/${f}">`).join("\n");
-          const jsTags = js.map((f) => `    <script type="module" src="./assets/${f}"></script>`).join("\n");
-
-          const html = `<!DOCTYPE html>
-          <html lang="ru">
-            <head>
-              <meta charset="UTF-8" />
-              <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-              <title>MULTI-CAM POV</title>
-              <script src="capacitor.js"></script>
-          ${cssTags}
-          ${polyfills}
-            </head>
-            <body style="background:#12161F">
-              <div id="root"></div>
-          ${jsTags}
-            </body>
-          </html>
-          `;
-
-          fs.writeFileSync(htmlPath, html, "utf8");
-          console.log("✅ Создан загрузчик: " + js.length + " JS, " + css.length + " CSS");
-          EOF
-
-      - name: Verify web build output
+      - name: Verify assets copied into Android project
+        shell: bash
         run: |
           set -euo pipefail
-          OUT=.output/public
-          if [ ! -f "$OUT/index.html" ]; then
-            echo "::error::$OUT/index.html все еще отсутствует после сборки."
-            exit 1
-          fi
-          if [ ! -f "$OUT/capacitor.js" ]; then
-            echo "::error::capacitor.js отсутствует — нативный мост Capacitor не будет работать!"
-            exit 1
-          fi
-          echo "✅ Web build successfully verified at $OUT/index.html"
+          test -s android/app/src/main/assets/public/index.html
+          test -n "$(find android/app/src/main/assets/public/assets -type f -name '*.js' -print -quit)"
+          test -n "$(find android/app/src/main/assets/public/assets -type f -name '*.css' -print -quit)"
+          echo "Android assets:" 
+          find android/app/src/main/assets/public -maxdepth 2 -type f -printf '%p (%s bytes)\n' | sort
 
-      - name: Prepare web assets & inject Polyfills
-        run: |
-          node <<'EOF'
-          const fs = require("fs");
-          const path = require("path");
-
-          const root = process.cwd();
-          const targetDir = path.join(root, ".output", "public");
-
-          const htmlPath = path.join(targetDir, "index.html");
-          if (!fs.existsSync(htmlPath)) {
-            console.error("::error::.output/public/index.html is missing after build.");
-            process.exit(1);
-          }
-          let html = fs.readFileSync(htmlPath, "utf8");
-
-          html = html.replace(/href="\/assets\//g, 'href="./assets/');
-          html = html.replace(/src="\/assets\//g, 'src="./assets/');
-          html = html.replace(/href="\//g, 'href="./');
-          html = html.replace(/src="\//g, 'src="./');
-
-          if (!html.includes('src="capacitor.js"') && !html.includes("src='./capacitor.js'")) {
-            if (html.includes("</head>")) {
-              html = html.replace("</head>", '  <script src="capacitor.js"></script>\n</head>');
-            }
-          }
-
-          const polyfills = `
-          <script>
-            window.global = window;
-            if (!window.process) window.process = { env: {} };
-            if (!window.Capacitor) window.Capacitor = { Plugins: {} };
-
-            try {
-              var k = "__test_ls__";
-              window.localStorage.setItem(k, k);
-              window.localStorage.removeItem(k);
-            } catch (e) {
-              var store = {};
-              Object.defineProperty(window, "localStorage", {
-                value: {
-                  getItem: function(key) { return store[key] || null; },
-                  setItem: function(key, val) { store[key] = String(val); },
-                  removeItem: function(key) { delete store[key]; },
-                  clear: function() { store = {}; }
-                },
-                writable: true
-              });
-            }
-
-            try {
-              var sk = "__test_ss__";
-              window.sessionStorage.setItem(sk, sk);
-              window.sessionStorage.removeItem(sk);
-            } catch (e) {
-              var sstore = {};
-              Object.defineProperty(window, "sessionStorage", {
-                value: {
-                  getItem: function(key) { return sstore[key] || null; },
-                  setItem: function(key, val) { sstore[key] = String(val); },
-                  removeItem: function(key) { delete sstore[key]; },
-                  clear: function() { sstore = {}; }
-                },
-                writable: true
-              });
-            }
-
-            if (!window.matchMedia) {
-              window.matchMedia = function() {
-                return {
-                  matches: false,
-                  addListener: function() {},
-                  removeListener: function() {},
-                  addEventListener: function() {},
-                  removeEventListener: function() {}
-                };
-              };
-            }
-
-            (function() {
-              function showErr(msg) {
-                var div = document.createElement("div");
-                div.style = "position:fixed;top:0;left:0;width:100%;height:100%;background:#b00020;color:#ffffff;z-index:999999;padding:24px;font-size:14px;line-height:1.5;word-break:break-all;overflow:auto;font-family:sans-serif;box-sizing:border-box;";
-                div.innerHTML = '<h2 style="margin-top:0;color:#ff8a80;">🚨 ОШИБКА ЗАПУСКА ПРИЛОЖЕНИЯ</h2><p>Сделайте скриншот этого экрана:</p><pre style="background:#4a0000;padding:12px;border-radius:8px;white-space:pre-wrap;font-family:monospace;">' + msg + '</pre>';
-                if (document.body) {
-                  document.body.appendChild(div);
-                } else {
-                  document.addEventListener("DOMContentLoaded", function() { document.body.appendChild(div); });
-                }
-              }
-              window.onerror = function(m, u, l, c, e) {
-                showErr("Сообщение: " + m + "\nФайл: " + u + "\nСтрока: " + l + "\nСтек: " + (e ? e.stack : "нет"));
-              };
-              window.addEventListener("unhandledrejection", function(e) {
-                showErr("Ошибка Promise: " + (e.reason ? (e.reason.stack || e.reason) : e));
-              });
-            })();
-          </script>
-          `;
-
-          if (!html.includes("window.global")) {
-            if (html.includes("<head>")) {
-              html = html.replace("<head>", "<head>\n" + polyfills);
-            } else {
-              html = polyfills + html;
-            }
-          }
-
-          fs.writeFileSync(htmlPath, html, "utf8");
-          console.log("✅ index.html полностью подготовлен с поддержкой Capacitor!");
-          EOF
-
-      - name: Sync Android project
-        run: |
-          if [ ! -d "android" ]; then
-            npx cap add android
-          fi
-          npx cap sync android
-
-      - name: Safe Patch MainActivity for WebView Settings
-        run: |
-          node <<'EOF'
-          const fs = require("fs");
-          const path = require("path");
-
-          const findFile = (dir, fileName) => {
-            if (!fs.existsSync(dir)) return null;
-            const files = fs.readdirSync(dir, { withFileTypes: true });
-            for (const f of files) {
-              const res = path.resolve(dir, f.name);
-              if (f.isDirectory()) {
-                const found = findFile(res, fileName);
-                if (found) return found;
-              } else if (f.name === fileName) {
-                return res;
-              }
-            }
-            return null;
-          };
-
-          const mainActivityPath = findFile(path.join(process.cwd(), "android/app/src/main/java"), "MainActivity.java");
-
-          if (mainActivityPath) {
-            let code = fs.readFileSync(mainActivityPath, "utf8");
-
-            if (!code.includes("setDomStorageEnabled")) {
-              const importsToInject = "\nimport android.webkit.WebSettings;\nimport android.webkit.WebView;\n";
-              code = code.replace(/package\s+[\w\.]+;/, (match) => match + importsToInject);
-
-              const webViewPatch = `
-                  try {
-                      WebView webView = this.bridge != null ? this.bridge.getWebView() : null;
-                      if (webView != null) {
-                          WebSettings settings = webView.getSettings();
-                          settings.setDomStorageEnabled(true);
-                          settings.setDatabaseEnabled(true);
-                          settings.setAllowFileAccess(true);
-                          settings.setAllowContentAccess(true);
-                          settings.setJavaScriptEnabled(true);
-                      }
-                  } catch (Exception e) {}
-              `;
-
-              if (code.includes("super.onCreate(")) {
-                code = code.replace(/super\.onCreate\([^)]*\);/, (match) => match + "\n" + webViewPatch);
-              } else {
-                const fullOnCreate = `
-                @Override
-                public void onCreate(Bundle savedInstanceState) {
-                    super.onCreate(savedInstanceState);
-                    ${webViewPatch}
-                }
-                `;
-                code = code.replace(/public\s+class\s+MainActivity\s+extends\s+BridgeActivity\s*\{/, (match) => match + "\n" + fullOnCreate);
-              }
-
-              fs.writeFileSync(mainActivityPath, code, "utf8");
-              console.log("✅ MainActivity.java пропатчен!");
-            } else {
-              console.log("✅ MainActivity.java уже содержит настройки WebView — пропускаем");
-            }
-          }
-          EOF
-
-      - name: Decode upload keystore
+      - name: Decode or create release keystore
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS_SECRET: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD_SECRET: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        shell: bash
         run: |
-          if [ -n "$KEYSTORE_B64" ]; then
-            echo "$KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/upload.jks"
+          set -euo pipefail
+          if [[ -n "${KEYSTORE_B64:-}" ]]; then
+            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
           else
-            echo "::warning::ANDROID_KEYSTORE_BASE64 secret is not set — generating a temporary key (APK installable, NOT suitable for Google Play updates)."
-            keytool -genkeypair -keystore "$RUNNER_TEMP/upload.jks" -alias multicam -keyalg RSA -keysize 2048 -validity 10000 -storepass multicampov -keypass multicampov -dname "CN=MULTI-CAM POV"
+            echo "::warning::ANDROID_KEYSTORE_BASE64 is not configured; a temporary signing key will be generated."
+            keytool -genkeypair \
+              -keystore "$RUNNER_TEMP/upload.jks" \
+              -alias multicam \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass multicampov \
+              -keypass multicampov \
+              -dname "CN=MULTI-CAM POV"
             echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
             echo "ANDROID_KEYSTORE_PASSWORD=multicampov" >> "$GITHUB_ENV"
             echo "ANDROID_KEY_ALIAS=multicam" >> "$GITHUB_ENV"
+            echo "ANDROID_KEY_PASSWORD=multicampov" >> "$GITHUB_ENV"
           fi
 
-      - name: Build signed release APK and AAB
+      - name: Build release APK and AAB
         working-directory: android
-        env:
-          ANDROID_KEYSTORE_PASSWORD: ${{ env.ANDROID_KEYSTORE_PASSWORD || secrets.ANDROID_KEYSTORE_PASSWORD }}
-          ANDROID_KEY_ALIAS: ${{ env.ANDROID_KEY_ALIAS || secrets.ANDROID_KEY_ALIAS }}
-          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
+          set -euo pipefail
           chmod +x gradlew
-          ./gradlew assembleRelease bundleRelease --no-daemon -PversionCode=${{ github.run_number }} -PversionName=1.0.${{ github.run_number }}
+          ./gradlew clean assembleRelease bundleRelease --no-daemon \
+            -PversionCode=${{ github.run_number }} \
+            -PversionName=1.0.${{ github.run_number }}
           mkdir -p ../output
-          cp app/build/outputs/apk/release/*.apk ../output/multi-cam-pov-release.apk
-          cp app/build/outputs/bundle/release/*.aab ../output/multi-cam-pov-release.aab
+          cp app/build/outputs/apk/release/*.apk ../output/${{ env.APK_NAME }}
+          cp app/build/outputs/bundle/release/*.aab ../output/${{ env.AAB_NAME }}
 
-      - name: Create Release & Upload APK (Official GitHub API)
+      - name: Verify APK files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "output/${{ env.APK_NAME }}"
+          test -s "output/${{ env.AAB_NAME }}"
+          unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/index.html'
+          unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/assets/.*\.js'
+          unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/assets/.*\.css'
+          ls -lh output/
+
+      - name: Upload APK and AAB as workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: multi-cam-pov-${{ github.run_number }}
+          if-no-files-found: error
+          path: |
+            output/${{ env.APK_NAME }}
+            output/${{ env.AAB_NAME }}
+
+      - name: Create GitHub Release and upload files
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
+        shell: bash
         run: |
           python3 - <<'PY'
-          import os
-          import urllib.request
           import json
+          import os
+          import urllib.error
+          import urllib.request
           from pathlib import Path
 
-          github_token = os.environ.get("GITHUB_TOKEN")
-          repository = os.environ.get("GITHUB_REPOSITORY")
-          run_number = os.environ.get("GITHUB_RUN_NUMBER")
+          token = os.environ["GITHUB_TOKEN"]
+          repository = os.environ["GITHUB_REPOSITORY"]
+          run_number = os.environ["GITHUB_RUN_NUMBER"]
           ref_name = os.environ.get("GITHUB_REF_NAME", "main")
-
           apk_path = Path("output/multi-cam-pov-release.apk")
           aab_path = Path("output/multi-cam-pov-release.aab")
-
-          if not apk_path.exists():
-              raise SystemExit("КРИТИЧЕСКАЯ ОШИБКА: APK файл не найден!")
-
           headers = {
-              "Authorization": f"Bearer {github_token}",
+              "Authorization": f"Bearer {token}",
               "Accept": "application/vnd.github+json",
               "Content-Type": "application/json",
-              "X-GitHub-Api-Version": "2022-11-28"
+              "X-GitHub-Api-Version": "2022-11-28",
           }
-
           tag_name = f"v1.0.{run_number}"
           release_data = json.dumps({
               "tag_name": tag_name,
               "target_commitish": ref_name,
               "name": f"APK Build #{run_number}",
-              "body": "Автоматическая сборка APK и AAB с поддержкой Capacitor.",
+              "body": "Автоматическая сборка Multi-Cam Studio.",
               "draft": False,
-              "prerelease": True
+              "prerelease": True,
           }).encode("utf-8")
 
-          print("Создание релиза на GitHub...")
-          req = urllib.request.Request(f"https://api.github.com/repos/{repository}/releases", data=release_data, headers=headers, method="POST")
+          release_url = f"https://api.github.com/repos/{repository}/releases"
+          request = urllib.request.Request(release_url, data=release_data, headers=headers, method="POST")
           try:
-              with urllib.request.urlopen(req) as resp:
-                  release_json = json.loads(resp.read().decode("utf-8"))
-          except urllib.error.HTTPError as e:
-              print(f"Релиз уже существует или ошибка API: {e.code}. Получаем существующий релиз...")
-              req_get = urllib.request.Request(f"https://api.github.com/repos/{repository}/releases/tags/{tag_name}", headers=headers, method="GET")
-              with urllib.request.urlopen(req_get) as resp_get:
-                  release_json = json.loads(resp_get.read().decode("utf-8"))
+              with urllib.request.urlopen(request) as response:
+                  release = json.loads(response.read().decode("utf-8"))
+          except urllib.error.HTTPError as error:
+              if error.code != 422:
+                  raise
+              existing_url = f"{release_url}/tags/{tag_name}"
+              with urllib.request.urlopen(urllib.request.Request(existing_url, headers=headers)) as response:
+                  release = json.loads(response.read().decode("utf-8"))
 
-          upload_url_template = release_json["upload_url"]
+          upload_url = release["upload_url"].split("{")[0]
           download_url = ""
+          for path in (apk_path, aab_path):
+              data = path.read_bytes()
+              upload = f"{upload_url}?name={path.name}"
+              upload_headers = {
+                  "Authorization": f"Bearer {token}",
+                  "Content-Type": "application/vnd.android.package-archive" if path.suffix == ".apk" else "application/octet-stream",
+                  "Content-Length": str(len(data)),
+              }
+              request = urllib.request.Request(upload, data=data, headers=upload_headers, method="POST")
+              try:
+                  with urllib.request.urlopen(request) as response:
+                      asset = json.loads(response.read().decode("utf-8"))
+                      if path.suffix == ".apk":
+                          download_url = asset.get("browser_download_url", "")
+              except urllib.error.HTTPError as error:
+                  if error.code != 422:
+                      raise
+                  print(f"Asset {path.name} already exists in release {tag_name}")
 
-          for path_obj in [apk_path, aab_path]:
-              if path_obj.exists():
-                  print(f"Загрузка файла {path_obj.name} в релиз...")
-                  upload_url = upload_url_template.split("{")[0] + f"?name={path_obj.name}"
-                  file_data = path_obj.read_bytes()
-                  upload_headers = {
-                      "Authorization": f"Bearer {github_token}",
-                      "Content-Type": "application/vnd.android.package-archive" if path_obj.name.endswith(".apk") else "application/octet-stream",
-                      "Content-Length": str(len(file_data))
-                  }
-                  req_upload = urllib.request.Request(upload_url, data=file_data, headers=upload_headers, method="POST")
-                  try:
-                      with urllib.request.urlopen(req_upload) as resp_upload:
-                          asset_json = json.loads(resp_upload.read().decode("utf-8"))
-                          if path_obj.name.endswith(".apk"):
-                              download_url = asset_json["browser_download_url"]
-                  except Exception as ex:
-                      print(f"Файл {path_obj.name} уже загружен или произошла ошибка: {ex}")
-
-          summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary_path and download_url:
-              with open(summary_path, "a", encoding="utf-8") as f:
-                  f.write("## 📱 Готовый файл APK:\n\n")
-                  f.write(f"[🚀 НАЖМИ СЮДА, ЧТОБЫ СКАЧАТЬ APK]({download_url})\n")
-          print(f"Ссылка успешно создана: {download_url}")
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as file:
+                  file.write("## Готовый APK\n\n")
+                  file.write(f"- Workflow artifact: `multi-cam-pov-{run_number}`\n")
+                  if download_url:
+                      file.write(f"- [Скачать APK из GitHub Release]({download_url})\n")
+          print(download_url or "APK uploaded as workflow artifact")
           PY
