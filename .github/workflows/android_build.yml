@@ -51,7 +51,6 @@ jobs:
         run: |
           bun run build
           
-          # Гарантированное создание структуры и страховочного index.html, если Nitro сбросил статику иначе
           mkdir -p .output/public
           
           if [ -f ".output/index.html" ] && [ ! -f ".output/public/index.html" ]; then
