@@ -1,14 +1,19 @@
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { defineConfig } from "vite";
+import react from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import viteTsConfigPaths from "vite-tsconfig-paths";
 
 export default defineConfig({
-  tanstackStart: {
-    ssr: false, // Отключаем SSR для работы в мобильном WebView
-  },
-  vite: {
-    base: "./", // Обязательно для относительных путей в Android APK
-    build: {
-      outDir: ".output/public",
-      emptyOutDir: true,
-    },
+  base: "./",
+  plugins: [
+    react(),
+    tailwindcss(),
+    viteTsConfigPaths({
+      projects: ["./tsconfig.json"],
+    }),
+  ],
+  build: {
+    outDir: ".output/public",
+    emptyOutDir: true,
   },
 });
