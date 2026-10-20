@@ -1,6 +1,7 @@
 import type React from "react";
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
 import type { CapabilityMatrix, Facing } from "./capabilities";
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useRef, type ReactNode } from "react";
 
 export type AppTab = "camera" | "editor" | "settings";
 export type Role = "solo" | "host" | "slave";
@@ -53,29 +54,21 @@ const defaults: StateData = {
   tint: 0, tuneContrast: 0, tuneShadows: 0, tuneSaturation: 0, shoot: { timer: 0, burst: false, bracket: false, interval: 0, raw: false, night: false, longExp: false }, zoom: 1, lensDeviceId: "",
   exportConfig: { aspect: "16:9", resolution: "4K", fps: "24", videoCodec: "H.264", bitrate: 48, audioCodec: "AAC", sampleRate: "48kHz", audioBitrate: 256 },
 };
-// Keep one context instance across hot reloads so provider and consumers always match.
-const g = globalThis as { __multicamStoreCtx?: React.Context<MulticamState | null> };
-const StoreContext = g.__multicamStoreCtx ??= createContext<MulticamState | null>(null);
-
-export function MulticamStoreProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<StateData>(defaults);
-  useEffect(() => {
-    try {
-      const saved = window.localStorage.getItem("multicam-pov-state-native");
-      if (saved) setData((current) => ({ ...current, ...JSON.parse(saved) as Partial<StateData> }));
-    } catch { /* A restricted webview can disable local storage. */ }
-  }, []);
-  useEffect(() => {
-    try {
-      const { language, hardwareAcceleration, selectedLut, exportConfig, markers, cuts, subtitles, teleprompterText, teleprompterSpeed, teleprompterSize, theme } = data;
-      window.localStorage.setItem("multicam-pov-state-native", JSON.stringify({ language, hardwareAcceleration, selectedLut, exportConfig, markers, cuts, subtitles, teleprompterText, teleprompterSpeed, teleprompterSize, theme }));
-    } catch { /* State remains available for this session. */ }
-  }, [data.language, data.hardwareAcceleration, data.selectedLut, data.exportConfig, data.markers, data.cuts, data.subtitles, data.teleprompterText, data.teleprompterSpeed, data.teleprompterSize, data.theme]);
-
-  const value = useMemo<MulticamState>(() => ({
-    ...data,
-    set: (patch) => setData((current) => ({ ...current, ...patch })),
-    setTab: (tab) => setData((current) => ({ ...current, tab })),
+type StoreApi = { getSnapshot: () => MulticamState; subscribe: (fn: () => void) => () => void };
+export function patchState(current: StateData, patch: Partial<StateData>): StateData {
+  return Object.entries(patch).every(([key, value]) => Object.is(current[key as keyof StateData], value)) ? current : { ...current, ...patch };
+}
+export function createMulticamStore(): StoreApi {
+  let data: StateData = { ...defaults };
+  const listeners = new Set<() => void>();
+  const setData = (update: (current: StateData) => StateData) => {
+    const next = update(data);
+    if (Object.is(next, data) || Object.keys(next).every((k) => Object.is(next[k as keyof StateData], data[k as keyof StateData]))) return;
+    data = next; snapshot = { ...data, ...actions }; listeners.forEach((fn) => fn());
+  };
+  const actions: Omit<MulticamState, keyof StateData> = {
+    set: (patch) => setData((current) => patchState(current, patch)),
+    setTab: (tab) => setData((current) => patchState(current, { tab })),
     startSession: (role) => setData((current) => ({ ...current, role, sessionCode: `POV-${Math.floor(100 + Math.random() * 900)}` })),
     toggleRecording: () => setData((current) => current.role === "slave" ? current : ({ ...current, recording: !current.recording, paused: false, recordingStartedAt: current.recording ? null : Date.now(), duration: current.recording ? Math.max(current.duration, 68) : current.duration })),
     addMarker: () => setData((current) => ({ ...current, markers: [...current.markers, { id: makeId(), time: current.recordingStartedAt ? (Date.now() - current.recordingStartedAt) / 1000 : current.playhead, label: `Marker ${current.markers.length + 1}` }] })),
@@ -85,14 +78,50 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     updateSubtitle: (subtitleId, text) => setData((current) => ({ ...current, subtitles: current.subtitles.map((item) => item.id === subtitleId ? { ...item, text } : item) })),
     applyPreset: (preset) => setData((current) => ({ ...current, exportConfig: preset === "cinema" ? { aspect: "21:9", resolution: "4K", fps: "24", videoCodec: "H.265/HEVC", bitrate: 80, audioCodec: "FLAC", sampleRate: "96kHz", audioBitrate: 320 } : preset === "reels" ? { aspect: "9:16", resolution: "1080p", fps: "60", videoCodec: "H.264", bitrate: 20, audioCodec: "AAC", sampleRate: "48kHz", audioBitrate: 256 } : { aspect: "16:9", resolution: "720p", fps: "30", videoCodec: "H.264", bitrate: 5, audioCodec: "AAC", sampleRate: "44.1kHz", audioBitrate: 128 } })),
     resetProject: () => setData((current) => ({ ...current, ...projectDefaults, recording: false, recordingStartedAt: null, exportProgress: 0 })),
-  }), [data]);
-  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
+  };
+  let snapshot: MulticamState = { ...data, ...actions };
+  return { getSnapshot: () => snapshot, subscribe: (fn) => { listeners.add(fn); return () => { listeners.delete(fn); }; } };
 }
-
+const g = globalThis as { __multicamStoreApiCtx?: React.Context<StoreApi | null> };
+const StoreContext = g.__multicamStoreApiCtx ??= createContext<StoreApi | null>(null);
+const persistedKeys = ["language", "hardwareAcceleration", "selectedLut", "exportConfig", "markers", "cuts", "subtitles", "teleprompterText", "teleprompterSpeed", "teleprompterSize", "theme"] as const;
+export function MulticamStoreProvider({ children }: { children: ReactNode }) {
+  const ref = useRef<StoreApi | null>(null);
+  if (!ref.current) ref.current = createMulticamStore();
+  const store = ref.current;
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(window.localStorage.getItem("multicam-pov-state-native") ?? "{}") as Partial<StateData>;
+      const patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
+      if (patch.theme !== "light" && patch.theme !== "dark") delete patch.theme;
+      store.getSnapshot().set(patch);
+    } catch { /* Restricted storage: retain in-memory state. */ }
+    let previous = persistedKeys.map((k) => store.getSnapshot()[k]);
+    return store.subscribe(() => {
+      const state = store.getSnapshot(); const values = persistedKeys.map((k) => state[k]);
+      if (values.every((v, i) => Object.is(v, previous[i]))) return;
+      previous = values;
+      try { window.localStorage.setItem("multicam-pov-state-native", JSON.stringify(Object.fromEntries(persistedKeys.map((k) => [k, state[k]])))); } catch { /* Memory remains available. */ }
+    });
+  }, [store]);
+  return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
+}
+const identity = (state: MulticamState) => state;
 export function useMulticamStore(): MulticamState;
 export function useMulticamStore<T>(selector: (state: MulticamState) => T): T;
 export function useMulticamStore<T>(selector?: (state: MulticamState) => T) {
   const store = useContext(StoreContext);
   if (!store) throw new Error("MulticamStoreProvider is missing");
-  return selector ? selector(store) : store;
+  return useSyncExternalStoreWithSelector(store.subscribe, store.getSnapshot, store.getSnapshot, selector ?? identity as (s: MulticamState) => T, Object.is);
 }
+const cameraExcluded = new Set(["markers", "cuts", "subtitles", "playhead", "duration", "playing", "exportMix", "exportOpen", "mediaOpen", "exportProgress", "exportConfig", "eq", "deEsser", "noiseReduction", "autoGain", "diagnostics", "cacheMB"]);
+const settingsKeys: (keyof MulticamState)[] = ["language", "theme", "hardwareAcceleration", "cacheMB", "diagnostics", "sessionCode", "set", "resetProject"];
+function useDomainStore(equal: (a: MulticamState, b: MulticamState) => boolean) {
+  const store = useContext(StoreContext);
+  if (!store) throw new Error("MulticamStoreProvider is missing");
+  return useSyncExternalStoreWithSelector(store.subscribe, store.getSnapshot, store.getSnapshot, identity, equal);
+}
+const cameraEqual = (a: MulticamState, b: MulticamState) => Object.keys(a).every((k) => cameraExcluded.has(k) || Object.is(a[k as keyof MulticamState], b[k as keyof MulticamState]));
+const settingsEqual = (a: MulticamState, b: MulticamState) => settingsKeys.every((k) => Object.is(a[k], b[k]));
+export const useCameraStore = () => useDomainStore(cameraEqual);
+export const useSettingsStore = () => useDomainStore(settingsEqual);
