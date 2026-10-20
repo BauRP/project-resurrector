@@ -16,7 +16,7 @@ const Slider = React.forwardRef<
       <SliderPrimitive.Range className="absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full" />
     </SliderPrimitive.Track>
     {/* aria-label belongs on the thumb (the [role=slider] element), not the root. */}
-    <SliderPrimitive.Thumb aria-label={ariaLabel} className="block h-4 w-4 rounded-full border border-primary/50 bg-background shadow transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50" />
+    <SliderPrimitive.Thumb aria-label={ariaLabel} className="relative block h-5 w-5 rounded-full border border-primary bg-card shadow before:absolute before:left-1/2 before:top-1/2 before:size-12 before:-translate-x-1/2 before:-translate-y-1/2 before:content-[''] transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50" />
   </SliderPrimitive.Root>
 ));
 Slider.displayName = SliderPrimitive.Root.displayName;
