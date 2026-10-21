@@ -8,6 +8,7 @@ import { mesh } from "@/lib/mesh";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
 import { useMeshPeers } from "./useMesh";
+import { bounded, retry } from "@/lib/async";
 
 type Step = "choose" | "id" | "qr";
 
@@ -80,24 +81,33 @@ function QrFlow() {
   const [phase, setPhase] = useState<"idle" | "busy" | "show" | "scan" | "done">("idle");
   const [error, setError] = useState(""); const [paste, setPaste] = useState("");
 
-  const show = async (c: string, a: string[]) => { setCode(c); setAddresses(a); setQr(await QRCode.toDataURL(c, { errorCorrectionLevel: "L", margin: 1, width: 480 })); setPhase("show"); };
+  const operation = useRef(0); const alive = useRef(true); const busy = useRef(false);
+  useEffect(() => { alive.current = true; return () => { alive.current = false; operation.current++; }; }, []);
+  const current = (id: number) => alive.current && id === operation.current;
+  const show = async (c: string, a: string[], id: number) => {
+    const image = await retry(() => bounded(QRCode.toDataURL(c, { errorCorrectionLevel: "L", margin: 1, width: 480 }), 4000, "QR generation"));
+    if (current(id)) { setCode(c); setAddresses(a); setQr(image); setPhase("show"); }
+  };
   const makeOffer = async () => {
+    if (busy.current) return; busy.current = true; const id = ++operation.current;
     setError(""); setPhase("busy");
     const session = s.role === "host" ? s.sessionCode : `POV-${Math.floor(100 + Math.random() * 900)}`;
-    s.set({ role: "host", sessionCode: session });
-    const r = await mesh.createOffer(session); await show(r.code, r.addresses);
+    try { const r = await bounded(mesh.createOffer(session), 16000, "Connection offer"); if (!current(id)) return; s.set({ role: "host", sessionCode: session }); await show(r.code, r.addresses, id); }
+    catch { if (current(id)) { setError(t("scanError")); setPhase("idle"); } }
+    finally { busy.current = false; }
   };
   const handleCode = async (text: string) => {
-    setError("");
+    if (busy.current) return; busy.current = true; const id = ++operation.current; setError(""); setPhase("busy");
     try {
-      if (host) { await mesh.acceptAnswer(text); setPhase("done"); }
-      else { setPhase("busy"); const r = await mesh.answerOffer(text); s.set({ role: "slave", sessionCode: r.session }); await show(r.code, r.addresses); }
-    } catch { setError(t("scanError")); setPhase(host ? "show" : "idle"); }
+      if (host) { await bounded(mesh.acceptAnswer(text), 12000, "Connection answer"); if (current(id)) setPhase("done"); }
+      else { const r = await bounded(mesh.answerOffer(text), 16000, "Connection answer"); if (!current(id)) return; s.set({ role: "slave", sessionCode: r.session }); await show(r.code, r.addresses, id); }
+    } catch { if (current(id)) { setError(t("scanError")); setPhase(host && qr ? "show" : "idle"); } }
+    finally { busy.current = false; }
   };
   useEffect(() => { if (!host && phase === "show" && peers.length) setPhase("done"); }, [host, phase, peers.length]);
 
   return <div>
-    <RoleSwitch host={host} onChange={(h) => { setHost(h); setPhase("idle"); setQr(null); }} />
+    <RoleSwitch host={host} onChange={(h) => { operation.current++; busy.current = false; setHost(h); setPhase("idle"); setQr(null); }} />
     {phase === "busy" && <p className="py-10 text-center text-sm text-muted-foreground">{t("generating")}</p>}
     {phase === "idle" && (host ? <Button className="w-full" size="lg" onClick={() => void makeOffer()}><QrCode />{t("createSession")}</Button>
       : <Scanner label={t("scanHostQr")} onCode={(c) => void handleCode(c)} />)}
@@ -120,23 +130,24 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
   const { t } = useT();
   const video = useRef<HTMLVideoElement>(null); const canvas = useRef<HTMLCanvasElement>(null);
   const [blocked, setBlocked] = useState(false);
+  const callback = useRef(onCode); callback.current = onCode;
   useEffect(() => {
     let stream: MediaStream | null = null; let raf = 0; let alive = true;
-    navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }).then((st) => {
+    bounded(navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? Promise.reject(new Error("Camera unavailable")), 6000, "QR camera", (late) => late.getTracks().forEach((track) => track.stop())).then((st) => {
       if (!alive) { st.getTracks().forEach((x) => x.stop()); return; }
-      stream = st; if (video.current) { video.current.srcObject = st; void video.current.play(); }
+      stream = st; if (video.current) { video.current.srcObject = st; void video.current.play().catch(() => { if (alive) setBlocked(true); }); }
       const tick = () => {
         const v = video.current; const c = canvas.current;
         if (v && c && v.videoWidth) {
           c.width = v.videoWidth; c.height = v.videoHeight; const ctx = c.getContext("2d", { willReadFrequently: true });
-          if (ctx) { ctx.drawImage(v, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height); const hit = jsQR(img.data, img.width, img.height); if (hit?.data) { alive = false; onCode(hit.data); return; } }
+          if (ctx) { ctx.drawImage(v, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height); const hit = jsQR(img.data, img.width, img.height); if (hit?.data) { alive = false; stream?.getTracks().forEach((track) => track.stop()); callback.current(hit.data); return; } }
         }
         if (alive) raf = requestAnimationFrame(tick);
       };
       raf = requestAnimationFrame(tick);
-    }).catch(() => setBlocked(true));
-    return () => { alive = false; cancelAnimationFrame(raf); stream?.getTracks().forEach((x) => x.stop()); };
-  }, [onCode]);
+    }).catch(() => { if (alive) setBlocked(true); });
+    return () => { alive = false; cancelAnimationFrame(raf); stream?.getTracks().forEach((x) => x.stop()); if (video.current) video.current.srcObject = null; };
+  }, []);
   return <div><p className="mb-2 text-center text-xs text-muted-foreground">{label}</p>
     {blocked ? <p className="rounded-xl bg-card p-4 text-center text-sm text-warning">{t("cameraBlocked")}</p>
       : <div className="relative mx-auto aspect-square w-full max-w-72 overflow-hidden rounded-xl bg-viewfinder"><video ref={video} muted playsInline className="h-full w-full object-cover" /><div className="absolute inset-8 rounded-lg border-2 border-tracking" /></div>}
