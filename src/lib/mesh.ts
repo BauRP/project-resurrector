@@ -1,5 +1,6 @@
 // Serverless P2P mesh: WebRTC data channels with QR/copy-paste signaling (LAN, no internet),
 // plus BroadcastChannel sessions for windows/tabs on the same device (numeric ID).
+import { bounded } from "./async";
 export interface PeerInfo { id: string; name: string; battery: number | null; storageMB: number | null; latency: number | null; via: "webrtc" | "local"; lastSeen: number; recording: boolean }
 export type MeshMessage =
   | { type: "telemetry"; from: string; name: string; battery: number | null; storageMB: number | null; recording: boolean }
@@ -34,8 +35,10 @@ async function decode<T>(code: string): Promise<T> {
 }
 const waitIce = (pc: RTCPeerConnection) => new Promise<void>((resolve) => {
   if (pc.iceGatheringState === "complete") return resolve();
-  const done = () => { if (pc.iceGatheringState === "complete") { pc.removeEventListener("icegatheringstatechange", done); resolve(); } };
-  pc.addEventListener("icegatheringstatechange", done); window.setTimeout(resolve, 2500);
+  const finish = () => { pc.removeEventListener("icegatheringstatechange", done); clearTimeout(timer); resolve(); };
+  const done = () => { if (pc.iceGatheringState === "complete") finish(); };
+  const timer = window.setTimeout(finish, 2500);
+  pc.addEventListener("icegatheringstatechange", done);
 });
 export const candidateAddresses = (sdp: string) => Array.from(new Set(sdp.split("\n").filter((l) => l.startsWith("a=candidate")).map((l) => { const p = l.split(" "); return `${p[4]}:${p[5]}`; })));
 
@@ -46,6 +49,8 @@ class Mesh {
   private channels = new Map<RTCDataChannel, string | null>();
   private bc: BroadcastChannel | null = null;
   private pending: RTCPeerConnection | null = null;
+  private connections = new Set<RTCPeerConnection>();
+  private generation = 0;
   private listeners = new Set<() => void>();
   private handlers = new Set<(m: MeshMessage) => void>();
   private snapshot: PeerInfo[] = [];
@@ -104,37 +109,60 @@ class Mesh {
     this.start(); void this.sendTelemetry();
   }
   leave() {
+    this.generation++;
     this.send({ type: "bye", from: this.selfId });
     this.bc?.close(); this.bc = null; this.localId = null;
     this.channels.forEach((_, ch) => ch.close()); this.channels.clear();
-    this.pending?.close(); this.pending = null; this.peers.clear(); this.emit();
+    this.pending?.close(); this.pending = null;
+    this.connections.forEach((pc) => pc.close()); this.connections.clear();
+    if (this.timer !== null) clearInterval(this.timer); this.timer = null;
+    this.peers.clear(); this.emit();
+  }
+
+  async diagnose(): Promise<{ latency: number; bandwidth: number; online: boolean }> {
+    if (!this.peers.size) return { latency: 0, bandwidth: 0, online: navigator.onLine };
+    const at = performance.now(); let unsubscribe = () => {};
+    try {
+      const latency = await bounded(new Promise<number>((resolve) => {
+        unsubscribe = this.onMessage((message) => { if (message.type === "pong" && message.to === this.selfId && message.t === at) resolve(Math.round((performance.now() - at) / 2)); });
+        this.send({ type: "ping", from: this.selfId, t: at });
+      }), 2500, "Peer response");
+      return { latency, bandwidth: 0, online: navigator.onLine };
+    } finally { unsubscribe(); }
   }
 
   /** Director: create an offer code for one more camera (unlimited, one per camera). */
   async createOffer(session: string) {
-    this.pending?.signalingState === "have-local-offer" && this.pending.close();
+    this.pending?.close();
     const pc = new RTCPeerConnection({ iceServers: [] });
+    this.pending = pc; this.connections.add(pc); const generation = this.generation;
+    try {
     this.wire(pc.createDataChannel("pov", { ordered: true }));
-    await pc.setLocalDescription(await pc.createOffer()); await waitIce(pc);
-    this.pending = pc;
+    await bounded(pc.setLocalDescription(await bounded(pc.createOffer(), 4000, "Offer")), 4000, "Offer description"); await waitIce(pc);
+    if (generation !== this.generation) throw new Error("Session closed");
     const sdp = pc.localDescription?.sdp ?? "";
-    return { code: await encode({ k: "o", s: session, sdp }), addresses: candidateAddresses(sdp) };
+    return { code: await bounded(encode({ k: "o", s: session, sdp }), 3000, "Offer encoding"), addresses: candidateAddresses(sdp) };
+    } catch (error) { pc.close(); this.connections.delete(pc); if (this.pending === pc) this.pending = null; throw error; }
   }
   async acceptAnswer(code: string) {
-    const data = await decode<{ k: string; sdp: string }>(code);
+    const data = await bounded(decode<{ k: string; sdp: string }>(code), 3000, "Answer decoding");
     if (data.k !== "a" || !this.pending) throw new Error("Not an answer");
-    await this.pending.setRemoteDescription({ type: "answer", sdp: data.sdp }); this.pending = null;
+    await bounded(this.pending.setRemoteDescription({ type: "answer", sdp: data.sdp }), 4000, "Answer description"); this.pending = null;
   }
   /** Camera: answer the director's offer. Returns the reply code + session id. */
   async answerOffer(code: string) {
-    const data = await decode<{ k: string; s: string; sdp: string }>(code);
+    const data = await bounded(decode<{ k: string; s: string; sdp: string }>(code), 3000, "Offer decoding");
     if (data.k !== "o") throw new Error("Not an offer");
     const pc = new RTCPeerConnection({ iceServers: [] });
+    this.connections.add(pc); const generation = this.generation;
+    try {
     pc.ondatachannel = (e) => this.wire(e.channel);
-    await pc.setRemoteDescription({ type: "offer", sdp: data.sdp });
-    await pc.setLocalDescription(await pc.createAnswer()); await waitIce(pc);
+    await bounded(pc.setRemoteDescription({ type: "offer", sdp: data.sdp }), 4000, "Offer description");
+    await bounded(pc.setLocalDescription(await bounded(pc.createAnswer(), 4000, "Answer")), 4000, "Answer description"); await waitIce(pc);
+    if (generation !== this.generation) throw new Error("Session closed");
     const sdp = pc.localDescription?.sdp ?? "";
-    return { code: await encode({ k: "a", sdp }), session: data.s, addresses: candidateAddresses(sdp) };
+    return { code: await bounded(encode({ k: "a", sdp }), 3000, "Answer encoding"), session: data.s, addresses: candidateAddresses(sdp) };
+    } catch (error) { pc.close(); this.connections.delete(pc); throw error; }
   }
 }
 

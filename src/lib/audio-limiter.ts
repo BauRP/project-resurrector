@@ -16,11 +16,19 @@ export function clipCurve(ceilingDb: number, size = 2048): Float32Array<ArrayBuf
 }
 
 export function buildLimiter(ctx: BaseAudioContext, input: AudioNode, gain: number, ceilingDb: number): AudioNode {
+  return createLimiter(ctx, input, gain, ceilingDb).output;
+}
+
+export function createLimiter(ctx: BaseAudioContext, input: AudioNode, gain: number, ceilingDb: number) {
   const g = ctx.createGain(); g.gain.value = gain;
   const comp = ctx.createDynamicsCompressor();
   comp.threshold.value = Math.max(-100, Math.min(0, ceilingDb));
   comp.knee.value = 0; comp.ratio.value = 20; comp.attack.value = 0.001; comp.release.value = 0.05;
   const clip = ctx.createWaveShaper(); clip.curve = clipCurve(ceilingDb); clip.oversample = "4x";
   input.connect(g); g.connect(comp); comp.connect(clip);
-  return clip;
+  return { output: clip, update: (value: number, ceiling: number) => {
+    g.gain.setTargetAtTime(value, ctx.currentTime, 0.01);
+    comp.threshold.setTargetAtTime(Math.max(-100, Math.min(0, ceiling)), ctx.currentTime, 0.01);
+    clip.curve = clipCurve(ceiling);
+  } };
 }

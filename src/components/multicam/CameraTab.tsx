@@ -4,7 +4,7 @@ import { Camera, ChevronDown, CircleDot, Eye, EyeOff, Focus, Lock, Maximize, Pau
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
-import { useMulticamStore, type GridMode } from "@/lib/multicam-store";
+import { useCameraStore, type GridMode } from "@/lib/multicam-store";
 import { useT, type TipKey } from "@/lib/i18n";
 import { mesh } from "@/lib/mesh";
 import { LongPressLabel, ProTipPopover, useLongPress } from "./ProTip";
@@ -13,7 +13,8 @@ import { HelpDot } from "./Help";
 import { CaptureProPanel, codecMime, toneFilter } from "./CaptureProPanel";
 import { AudioRail, ColorTuning, FalseColorOverlay, FocusRail, LensZoomBlock, ShootingModes, applyAdvanced, capRange, faceDetectorAvailable, grabFrames, kelvinFilter, savePhoto, trackCaps, tuneActive, tuneFilter, useFaceTracking } from "./CameraPro";
 import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native";
-import { buildLimiter } from "@/lib/audio-limiter";
+import { createLimiter } from "@/lib/audio-limiter";
+import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 const tools = [
@@ -29,11 +30,11 @@ function applyManual(stream: MediaStream | null, c: Record<string, unknown>) {
   const caps = track.getCapabilities() as Record<string, unknown>;
   const adv: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(c)) if (k in caps || k.endsWith("Mode")) adv[k] = v;
-  void track.applyConstraints({ advanced: [adv] } as MediaTrackConstraints).catch(() => undefined);
+  void cameraController.apply(stream, adv);
 }
 
 export function CameraTab() {
-  const s = useMulticamStore();
+  const s = useCameraStore();
   const { t } = useT();
   const peers = useMeshPeers();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -54,14 +55,28 @@ export function CameraTab() {
   useEffect(() => { void mesh.sendTelemetry().then(setSelf); const id = window.setInterval(() => void mesh.sendTelemetry().then(setSelf), 5000); return () => window.clearInterval(id); }, []);
   useEffect(() => () => s.set({ cleanFrame: false }), []);
 
+  const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");
+  const owner = useRef(Symbol("camera"));
   useEffect(() => {
-    let mounted = true;
-    navigator.mediaDevices?.getUserMedia({ video: s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode }, audio: s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true }).then((next) => {
-      if (!mounted) { next.getTracks().forEach((track) => track.stop()); return; }
-      setStream(next); setCameraState("live");
-    }).catch(() => setCameraState("simulated"));
-    return () => { mounted = false; setStream((current) => { current?.getTracks().forEach((track) => track.stop()); return null; }); };
+    let alive = true; const token = owner.current;
+    setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
+    void cameraController.acquire(token, { video: s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode }, audio: s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true }).then((next) => {
+      if (alive) { setStream(next); setCameraState("live"); }
+    }).catch(() => { if (alive) setCameraState("simulated"); });
+    return () => { alive = false; cameraController.release(token); };
   }, [facingMode, s.capture.micId, s.lensDeviceId]);
+  const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
+    if (s.touchLocked) return;
+    const caps = trackCaps(stream); const support = focusSupport(caps);
+    setFocusWarning(support === "unsupported"); setFocusError("");
+    if (support === "unsupported") return;
+    if (!("pointsOfInterest" in caps)) { setFocusError("Камера не сообщает поддержку фокуса по точке"); return; }
+    const video = event.currentTarget;
+    if (!video.videoWidth || !video.videoHeight) return;
+    const point = focusPoint(video.getBoundingClientRect(), video.videoWidth, video.videoHeight, event.clientX, event.clientY);
+    const ok = await cameraController.apply(stream, { focusMode: "continuous", pointsOfInterest: [point] });
+    if (!ok) setFocusError("Камера не применила фокус по точке");
+  };
   // Pro tools: AI engine, metering, face tracking, RAW capability, photo capture.
   const [aiEngine, setAiEngine] = useState<"native" | "web" | null>(null);
   useEffect(() => { if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [s.aiEnabled, s.focusModeAI]);
@@ -82,11 +97,11 @@ export function CameraTab() {
   const [countdown, setCountdown] = useState(0); const [flash, setFlash] = useState(0); const [photoMsg, setPhotoMsg] = useState("");
   const [lastPhoto, setLastPhoto] = useState<string | null>(null); const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
   useEffect(() => () => { if (intervalRef.current) window.clearInterval(intervalRef.current); }, []);
-  useEffect(() => { if (videoRef.current && stream) videoRef.current.srcObject = stream; }, [stream, cameraState]);
+  useEffect(() => { const video = videoRef.current; if (!video) return; video.srcObject = stream; return () => { if (video.srcObject === stream) video.srcObject = null; }; }, [stream, cameraState]);
 
   useEffect(() => {
     if (!s.recording || !s.recordingStartedAt) { setElapsed(0); return; }
-    const update = () => setElapsed((Date.now() - s.recordingStartedAt!) / 1000);
+    const started = s.recordingStartedAt; const update = () => setElapsed((Date.now() - started) / 1000);
     update(); const timer = window.setInterval(update, 100); return () => window.clearInterval(timer);
   }, [s.recording, s.recordingStartedAt]);
 
@@ -97,6 +112,8 @@ export function CameraTab() {
 
   // Recorder follows global recording state — works for local presses and the director's remote trigger.
   const pipeRef = useRef<{ stop: () => void } | null>(null);
+  const recordingAudio = useRef<ReturnType<typeof createLimiter> | null>(null);
+  useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
     mesh.selfRecording = s.recording;
     if (s.recording && stream && typeof MediaRecorder !== "undefined" && recorderRef.current?.state !== "recording" && recorderRef.current?.state !== "paused") {
@@ -108,7 +125,7 @@ export function CameraTab() {
       if ((profile !== "standard" || lapse || graded) && videoRef.current) {
         const video = videoRef.current; const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
-        const ctx = canvas.getContext("2d")!; ctx.filter = [profile === "standard" ? "" : toneFilter(profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ") || "none";
+        const ctx = canvas.getContext("2d"); if (!ctx) { s.set({ recording: false, recordingStartedAt: null }); return; } ctx.filter = [profile === "standard" ? "" : toneFilter(profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ") || "none";
         const draw = () => ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const cs = canvas.captureStream(lapse ? 0 : fps);
         const vt = cs.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
@@ -120,24 +137,31 @@ export function CameraTab() {
       }
       let gainCtx: AudioContext | null = null;
       if ((s.audioGain !== 1 || s.audioCeiling < 0) && source.getAudioTracks().length) {
-        gainCtx = new AudioContext(); const src = gainCtx.createMediaStreamSource(new MediaStream(source.getAudioTracks())); const out = buildLimiter(gainCtx, src, s.audioGain, s.audioCeiling); const dest = gainCtx.createMediaStreamDestination(); out.connect(dest);
+        gainCtx = new AudioContext(); const src = gainCtx.createMediaStreamSource(new MediaStream(source.getAudioTracks())); const limiter = createLimiter(gainCtx, src, s.audioGain, s.audioCeiling); recordingAudio.current = limiter; const out = limiter.output; const dest = gainCtx.createMediaStreamDestination(); out.connect(dest);
         source = new MediaStream([...source.getVideoTracks(), ...dest.stream.getAudioTracks()]);
       }
       const preferred = codecMime(codec);
       const mime = MediaRecorder.isTypeSupported(preferred) ? preferred : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm";
       const recorder = new MediaRecorder(source, { mimeType: mime });
       const camera = s.activeCamera; const startedAt = Date.now();
-      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recorder.onstop = () => {
-        pipeRef.current?.stop(); pipeRef.current = null; void gainCtx?.close();
-        const blob = new Blob(chunksRef.current, { type: mime });
+        pipeRef.current?.stop(); pipeRef.current = null; recordingAudio.current = null; void gainCtx?.close();
+        const blob = new Blob(chunks, { type: mime });
         const request = indexedDB.open("multicam-pov-media", 1);
         request.onupgradeneeded = () => request.result.createObjectStore("clips", { keyPath: "id" });
-        request.onsuccess = () => { const tx = request.result.transaction("clips", "readwrite"); tx.objectStore("clips").put({ id: `clip-${Date.now()}`, createdAt: startedAt, camera, mode, profile, playbackRate: lapse ? lapse / (1000 / 30) : 1, blob }); tx.oncomplete = () => window.dispatchEvent(new Event("multicam-clips-changed")); };
+        request.onsuccess = () => { const tx = request.result.transaction("clips", "readwrite"); tx.objectStore("clips").put({ id: `clip-${Date.now()}`, createdAt: startedAt, camera, mode, profile, playbackRate: lapse ? lapse / (1000 / 30) : 1, blob }); tx.oncomplete = () => { request.result.close(); window.dispatchEvent(new Event("multicam-clips-changed")); }; tx.onerror = () => request.result.close(); };
       };
       recorder.start(1000); recorderRef.current = recorder;
     } else if (!s.recording && recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
   }, [s.recording, stream]);
+  useEffect(() => () => {
+    const recorder = recorderRef.current;
+    if (recorder && recorder.state !== "inactive") recorder.stop();
+    pipeRef.current?.stop(); mesh.selfRecording = false;
+    s.set({ recording: false, recordingStartedAt: null, paused: false });
+  }, [s.set]);
   useEffect(() => {
     const r = recorderRef.current; if (!r) return;
     if (s.paused && r.state === "recording") r.pause(); else if (!s.paused && r.state === "paused") r.resume();
@@ -176,7 +200,7 @@ export function CameraTab() {
 
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
     <section className={`absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
-      {cameraState === "live" ? <video ref={videoRef} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="simulated-feed absolute inset-0"><div className="horizon" /></div>}
+      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="simulated-feed absolute inset-0"><div className="horizon" /></div>}
       {!clean && <>
         {s.dualCamera && <div className="absolute end-3 top-28 aspect-[3/4] w-[22%] min-w-20 overflow-hidden rounded-md border border-glass bg-viewfinder shadow-2xl"><div className="simulated-feed h-full" /></div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
@@ -222,7 +246,7 @@ export function CameraTab() {
       {peers.map((n, i) => <button key={n.id} onClick={() => s.set({ activeCamera: i + 2 })} className={`glass-panel min-w-[7rem] rounded-md px-2 py-1.5 text-start text-[10px] ${s.activeCamera === i + 2 ? "ring-1 ring-primary" : ""}`}><div className="flex items-center justify-between gap-1"><span className="truncate font-semibold">CAM {i + 2} · {n.name}</span><span className={n.recording ? "text-record" : "text-status"}>●</span></div><div className="mt-0.5 flex justify-between gap-1 text-muted-foreground"><span>{n.battery ?? "–"}%</span><span>{n.storageMB ?? "–"} MB</span><span>{n.latency ?? "–"}ms</span></div></button>)}
     </div>}
 
-    {!clean && <div className="absolute inset-x-3 bottom-[12.25rem] z-10"><FocusRail stream={stream} /></div>}
+    {!clean && <div className="absolute inset-x-3 bottom-[12.25rem] z-10"><FocusRail stream={stream} />{focusWarning && <p role="alert" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">Ручной фокус: камера не сообщает диапазон фокусировки</p>}{focusError && <p role="status" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">{focusError}</p>}</div>}
 
     {/* Settings sheet with accordions */}
     <AnimatePresence>{sheet && !clean && <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 380, damping: 34 }} className="glass-panel absolute inset-x-2 bottom-2 top-2 z-30 overflow-y-auto overscroll-contain rounded-2xl p-2 text-xs">
@@ -268,14 +292,14 @@ export function CameraTab() {
     <div className="absolute inset-x-0 bottom-6 z-20 px-4">
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
         <div className="mb-4 flex items-center justify-start gap-1.5">{!clean && <>
-          <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={s.capMatrix ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>
+          <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={cameraState === "loading" || s.recording || (s.capMatrix ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false)} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>
           <Button size="icon" variant={sheet ? "default" : "secondary"} aria-label="Параметры" aria-expanded={sheet} onClick={() => { setHud(null); setSheet(!sheet); }}><SlidersHorizontal /></Button>
         </>}</div>
         <div className="flex flex-col items-center gap-2">{!clean && <>
-          <div className="flex flex-col items-center"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span><p className="mt-0.5 max-w-[60vw] truncate text-center text-[10px] uppercase text-muted-foreground">{s.role === "slave" ? t("controlledByHost") : s.paused ? "Пауза" : s.recording ? t("recording") : `${t(s.role)} · ${s.sessionCode}`}</p></div>
+          <div className="flex flex-col items-center pt-1"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span></div>
           <div className="segmented-mini" role="radiogroup" aria-label="Фото или видео">{(["photo", "video"] as const).map((k) => <button key={k} role="radio" aria-checked={s.captureKind === k} disabled={s.recording || intervalOn} onClick={() => s.set({ captureKind: k })} className={s.captureKind === k ? "active" : ""}>{k === "photo" ? "ФОТО" : "ВИДЕО"}</button>)}</div>
         </>}
-          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave"} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
+          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
         </div>
         <div className="mb-4 flex justify-end gap-1.5">{!clean && <>
           {s.captureKind === "photo" ? (lastPhoto ? <a href={lastPhoto} download={`multicam-photo-${Date.now()}.jpg`} aria-label="Скачать последнее фото" className="size-9 overflow-hidden rounded-md border border-border"><img src={lastPhoto} alt="Последнее фото" className="h-full w-full object-cover" /></a> : <Button size="icon" variant="secondary" disabled aria-label="Нет фото"><Download /></Button>) :
@@ -289,7 +313,7 @@ export function CameraTab() {
 }
 
 export function TeleprompterControls() {
-  const s = useMulticamStore(); const { t } = useT();
+  const s = useCameraStore(); const { t } = useT();
   return <div className="space-y-3 text-xs">
     <label className="flex items-center justify-between"><span>{t("teleprompter")}</span> <Switch checked={s.teleprompter} onCheckedChange={(teleprompter) => s.set({ teleprompter })} /></label>
     <span className="flex items-center gap-1 text-muted-foreground">Текст<HelpDot id="promptText" /></span><textarea value={s.teleprompterText} onChange={(e) => s.set({ teleprompterText: e.target.value })} rows={3} placeholder="Текст для суфлёра" className="w-full resize-none rounded-md border border-border bg-secondary p-2 outline-none" />

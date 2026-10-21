@@ -7,6 +7,11 @@ import { HelpDot } from "./Help";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
+import { bounded, retry } from "@/lib/async";
+import { analysisCache, thumbCache } from "@/lib/media-cache";
+import { generateProxy } from "@/lib/video-proxy";
+import { timelineMinZoom, timelineTime, visibleTiles } from "@/lib/timeline";
+
 interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
 interface Media { id: string; camera: number; kind: "video" | "audio"; name: string; url: string; duration: number; peaks: number[] }
 interface CropBox { x: number; y: number; w: number; h: number }
@@ -71,19 +76,18 @@ function saveClip(clip: StoredClip): Promise<void> {
     const req = indexedDB.open("multicam-pov-media", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("clips", { keyPath: "id" });
     req.onerror = () => reject(req.error);
-    req.onsuccess = () => { const tx = req.result.transaction("clips", "readwrite"); tx.objectStore("clips").put(clip); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); };
+    req.onsuccess = () => { const tx = req.result.transaction("clips", "readwrite"); tx.objectStore("clips").put(clip); tx.oncomplete = () => { req.result.close(); resolve(); }; tx.onerror = () => { req.result.close(); reject(tx.error); }; };
   });
 }
 function readClips(): Promise<StoredClip[]> {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const req = indexedDB.open("multicam-pov-media", 1);
     req.onupgradeneeded = () => req.result.createObjectStore("clips", { keyPath: "id" });
-    req.onerror = () => resolve([]);
-    req.onsuccess = () => { const all = req.result.transaction("clips").objectStore("clips").getAll(); all.onsuccess = () => resolve(all.result as StoredClip[]); all.onerror = () => resolve([]); };
+    req.onerror = () => reject(req.error);
+    req.onsuccess = () => { const all = req.result.transaction("clips").objectStore("clips").getAll(); all.onsuccess = () => { req.result.close(); resolve(all.result as StoredClip[]); }; all.onerror = () => { req.result.close(); reject(all.error); }; };
   });
 }
-const analysisCache = new Map<string, { duration: number; peaks: number[] }>();
-const thumbCache = new Map<string, string[]>();
+
 /** Extracts evenly spaced JPEG frames for the filmstrip; cached per clip id. */
 async function makeThumbs(url: string, duration: number, n = 10): Promise<string[]> {
   const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; v.src = url;
@@ -104,11 +108,19 @@ async function analyse(clip: StoredClip): Promise<Media> {
   const url = URL.createObjectURL(clip.blob);
   const cached = analysisCache.get(clip.id);
   if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
-  const duration = await new Promise<number>((res) => { const v = document.createElement("video"); v.preload = "metadata"; v.src = url; v.onloadedmetadata = () => { if (Number.isFinite(v.duration)) res(v.duration); else { v.currentTime = 1e7; v.ontimeupdate = () => { v.ontimeupdate = null; res(v.duration || 1); }; } }; v.onerror = () => res(1); });
+  const v = document.createElement("video"); v.preload = "metadata"; v.src = url;
+  let duration: number;
+  try {
+    duration = await bounded(new Promise<number>((resolve, reject) => {
+      v.onloadedmetadata = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); else { v.currentTime = 1e7; v.ontimeupdate = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); }; } };
+      v.onerror = () => reject(new Error("Не удалось прочитать видео"));
+    }), 6000, "Video metadata");
+  } catch (error) { URL.revokeObjectURL(url); throw error; }
+  finally { v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null; v.removeAttribute("src"); v.load(); }
   let peaks: number[] = [];
   try {
     const ctx = new OfflineAudioContext(1, 44100, 44100);
-    const buf = await ctx.decodeAudioData(await clip.blob.arrayBuffer());
+    const buf = await bounded(ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")), 6000, "Audio analysis");
     const data = buf.getChannelData(0); const n = Math.max(20, Math.round(duration * 20)); const step = Math.floor(data.length / n) || 1;
     for (let i = 0; i < n; i++) { let m = 0; for (let j = i * step; j < (i + 1) * step && j < data.length; j++) m = Math.max(m, Math.abs(data[j]!)); peaks.push(m); }
   } catch { peaks = []; }
@@ -128,7 +140,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const urlsRef = useRef<Set<string>>(new Set());
   const rulerRef = useRef<HTMLDivElement>(null);
   const setStore = useMulticamStore((x) => x.set); const mediaOpen = useMulticamStore((x) => x.mediaOpen); const setMediaOpen = (mediaOpen: boolean) => setStore({ mediaOpen });
-  const [zoom, setZoom] = useState(40);
+  const [zoom, setZoom] = useState(8);
+  const zoomTouched = useRef(false); const [scrollX, setScrollX] = useState(0);
+  const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
@@ -138,8 +152,34 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const videoRef = useRef<HTMLVideoElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
-  const load = useCallback(async () => { setLoading(true); const clips = await readClips(); clips.sort((a, b) => a.createdAt - b.createdAt); setMedia(await Promise.all(clips.map(analyse))); setLoading(false); }, []);
-  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => window.removeEventListener("multicam-clips-changed", on); }, [load]);
+  const loadGeneration = useRef(0);
+  const load = useCallback(async () => {
+    const generation = ++loadGeneration.current; setLoading(true);
+    const results: Media[] = []; const errors: string[] = [];
+    try {
+      const clips = await bounded(readClips(), 5000, "Media library"); clips.sort((a, b) => a.createdAt - b.createdAt);
+      for (const clip of clips) {
+        if (generation !== loadGeneration.current) break;
+        try { results.push(await retry(() => analyse(clip))); } catch { errors.push(clip.name || clip.id); }
+      }
+      if (generation !== loadGeneration.current) { results.forEach((m) => URL.revokeObjectURL(m.url)); return; }
+      setMedia(results); if (errors.length) setImportErr(`Не удалось открыть: ${errors.join(", ")}`);
+    } catch { if (generation === loadGeneration.current) setImportErr("Хранилище недоступно. Повторите открытие медиатеки."); }
+    finally { if (generation === loadGeneration.current) setLoading(false); }
+  }, []);
+  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => { loadGeneration.current++; window.removeEventListener("multicam-clips-changed", on); }; }, [load]);
+  useEffect(() => {
+    const abort = new AbortController();
+    void (async () => { for (const m of media) {
+      if (m.kind !== "video" || abort.signal.aborted) continue;
+      try { const blob = await generateProxy(m.id, m.url, abort.signal); if (blob && !abort.signal.aborted) { const url = URL.createObjectURL(blob); proxyUrls.current.add(url); setProxies((cur) => ({ ...cur, [m.id]: url })); } }
+      catch { /* Originals remain playable when proxy encoding is unavailable. */ }
+    } })();
+    const clear = () => { abort.abort(); proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)); proxyUrls.current.clear(); setProxies({}); setThumbs({}); };
+    window.addEventListener("multicam-preview-cache-cleared", clear);
+    return () => { abort.abort(); window.removeEventListener("multicam-preview-cache-cleared", clear); };
+  }, [media]);
+  useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   useEffect(() => { const now = new Set(media.map((m) => m.url)); urlsRef.current.forEach((u) => { if (!now.has(u)) URL.revokeObjectURL(u); }); urlsRef.current = now; }, [media]);
   useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
   useEffect(() => {
@@ -159,8 +199,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => { setStore({ exportMix: { excludedAudio: Object.keys(muted).filter((k) => muted[k]), hiddenVideo: Object.keys(hidden).filter((k) => hidden[k]) } }); }, [muted, hidden, setStore]);
 
   const total = useMemo(() => Math.max(10, ...items.map((i) => i.start + len(i))), [items]);
-  const first = useMemo(() => items.length ? Math.min(...items.map((i) => i.start)) : 0, [items]);
-  useEffect(() => { setT((v) => v < first ? first : v); }, [first]);
+  const first = 0;
   const [aspOpen, setAspOpen] = useState(false); const [snap, setSnap] = useState<{ v: boolean; h: boolean }>({ v: false, h: false }); const tlRef = useRef<HTMLDivElement>(null); const [tlW, setTlW] = useState(0);
   useEffect(() => { const el = tlRef.current; if (!el) return; const ro = new ResizeObserver(() => setTlW(el.clientWidth)); ro.observe(el); setTlW(el.clientWidth); return () => ro.disconnect(); }, []);
   const [vTracks, setVTracks] = useState(1); const [aTracks, setATracks] = useState(1);
@@ -199,13 +238,26 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     catch { setImportErr("Не удалось сохранить файл в хранилище"); }
   };
 
-  // Playback: always starts from 00:00 of the track and advances frame-accurately.
+  // The indicator runs independently at display refresh rate; heavy preview state runs at 30 Hz.
+  const timeRef = useRef(t); timeRef.current = t;
+  const playheadLine = useRef<HTMLDivElement>(null); const playheadHandle = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!playing) return;
-    let raf = 0; let last = performance.now();
-    const tick = (now: number) => { const dt = (now - last) / 1000; last = now; setT((v) => { const n = v + dt; if (n >= total) { setPlaying(false); return total; } return n; }); raf = requestAnimationFrame(tick); };
-    raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
-  }, [playing, total, first]);
+    let raf = 0; let last = performance.now(); let publish = last; let clock = timeRef.current;
+    const tick = (now: number) => {
+      clock = Math.min(total, clock + (now - last) / 1000); last = now;
+      const left = `${HEAD + clock * zoom}px`;
+      if (playheadLine.current) playheadLine.current.style.left = left;
+      if (playheadHandle.current) playheadHandle.current.style.left = left;
+      if (now - publish >= 33 || clock >= total) { publish = now; setT(clock); }
+      if (clock >= total) { setPlaying(false); return; }
+      raf = requestAnimationFrame(tick);
+    };
+    const hidden = () => { if (document.hidden) { setT(clock); setPlaying(false); } };
+    document.addEventListener("visibilitychange", hidden);
+    raf = requestAnimationFrame(tick);
+    return () => { cancelAnimationFrame(raf); document.removeEventListener("visibilitychange", hidden); };
+  }, [playing, total, zoom]);
 
   const active = useMemo(() => [...items].filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i)).sort((a, b) => a.track - b.track)[0] ?? null, [items, t, hidden]);
   /** Items whose sound is heard: audio clips on unmuted lanes, and video clips with attached (not detached) audio on unmuted lanes. Visibility does not affect sound. */
@@ -259,7 +311,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => {
     const v = videoRef.current; if (!v || !active) return;
     const m = mediaById.get(active.mediaId); if (!m) return;
-    if (v.dataset["src"] !== m.url) { v.dataset["src"] = m.url; v.src = m.url; }
+    const source = proxies[m.id] ?? m.url;
+    if (v.dataset["src"] !== source) { v.dataset["src"] = source; v.src = source; }
     v.muted = true;
     const local = (t - active.start) * active.speed;
     const target = Math.max(0, active.reverse ? active.out - local : active.in + local);
@@ -271,7 +324,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       if (!v.paused) v.pause();
       if (!v.seeking && Math.abs(v.currentTime - target) > (playing ? 0.06 : 0.02)) v.currentTime = target;
     }
-  }, [active, t, mediaById, playing]);
+  }, [active, t, mediaById, playing, proxies]);
   useEffect(() => {
     for (const i of audible) {
       const el = audioRefs.current[i.id]; if (!el) continue;
@@ -413,20 +466,20 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
-  const minZoom = Math.min(600, Math.max(8, tlW > 0 ? (tlW - HEAD - 8) / total : 8));
-  useEffect(() => { setZoom((z) => z < minZoom ? minZoom : z); }, [minZoom]);
+  const minZoom = timelineMinZoom(tlW, total);
+  useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
   const zoomPos = Math.round((Math.log(Math.max(zoom, minZoom) / minZoom) / Math.log(600 / minZoom || 1.0001)) * 100);
   const scrub = (e: React.PointerEvent) => {
     e.stopPropagation(); e.preventDefault(); setPlaying(false);
-    const at = (x: number) => { const r = rulerRef.current?.getBoundingClientRect(); if (r) setT(Math.min(total, Math.max(0, (x - r.left) / zoom))); };
+    const at = (x: number) => { const r = rulerRef.current?.getBoundingClientRect(); if (r) setT(timelineTime(x - r.left, zoom, total)); };
     at(e.clientX);
     const move = (ev: PointerEvent) => at(ev.clientX);
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
   // Lanes do not depend on the playhead, so they are memoised and skipped during 60 fps playback re-renders.
-  const laneEls = useMemo(() => lanes.map((lane) => <div key={lane.key} className="relative flex border-b border-border/40" style={{ height: ROW }}>
-    <div className="sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
+  const laneEls = useMemo(() => lanes.filter((lane) => items.some((i) => i.kind === lane.kind && i.track === lane.track)).map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
+    <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
       <span className="w-8 truncate text-[9px] font-semibold">{lane.label}</span>
       {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
       <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={muted[lane.key] ? "text-record" : "text-muted-foreground"}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
@@ -434,21 +487,22 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     <div className="relative flex-1" ref={(el) => { laneRefs.current[lane.key] = el; }}>
       {items.filter((i) => i.track === lane.track && i.kind === lane.kind).map((i) => {
         const m = mediaById.get(i.mediaId); const w = Math.max(6, len(i) * zoom);
+        const tiles = visibleTiles(HEAD + i.start * zoom, w, scrollX, tlW);
         const th = lane.kind === "video" ? thumbs[i.mediaId] : undefined; const n = th?.length && m ? Math.max(1, Math.ceil(w / TILE)) : 0;
-        return <div key={i.id} onPointerDown={dragItem(i)} className={`absolute inset-y-1 cursor-grab overflow-hidden rounded [touch-action:none] ${lane.kind === "video" ? "bg-primary/30" : "bg-status/25"} ${selected === i.id ? "ring-2 ring-primary" : ""} ${(lane.kind === "video" ? hidden[lane.key] : muted[lane.key]) ? "opacity-40" : ""}`} style={{ left: i.start * zoom, width: w }}>
-          {n > 0 && th && m && <div className="pointer-events-none absolute inset-0 flex">{Array.from({ length: n }, (_, k) => { const frac = (k + 0.5) / n; const src = i.reverse ? i.out - frac * (i.out - i.in) : i.in + frac * (i.out - i.in); const idx = Math.min(th.length - 1, Math.max(0, Math.floor((src / m.duration) * th.length))); return <img key={k} src={th[idx]} alt="" draggable={false} className="h-full shrink-0 object-cover" style={{ width: TILE }} />; })}</div>}
-          <svg className={`pointer-events-none absolute inset-x-0 bottom-0 w-full ${n > 0 ? "h-1/3 opacity-70" : "h-full"}`} preserveAspectRatio="none" viewBox="0 0 100 100">{m && m.peaks.length > 0 && (() => { const a = Math.floor((i.in / m.duration) * m.peaks.length); const b = Math.max(a + 1, Math.ceil((i.out / m.duration) * m.peaks.length)); const seg = m.peaks.slice(a, b); if (i.reverse) seg.reverse(); return seg.map((p, k) => <rect key={k} x={(k / seg.length) * 100} width={100 / seg.length * 0.8} y={50 - p * 48} height={Math.max(1, p * 96)} className="fill-foreground/60" />); })()}</svg>
+        return <div key={i.id} onPointerDown={dragItem(i)} className={`timeline-clip absolute inset-y-1 cursor-grab overflow-hidden rounded [touch-action:none] ${lane.kind === "video" ? "bg-primary/30" : "bg-status/25"} ${selected === i.id ? "ring-2 ring-primary" : ""} ${(lane.kind === "video" ? hidden[lane.key] : muted[lane.key]) ? "opacity-40" : ""}`} style={{ left: i.start * zoom, width: w }}>
+          {n > 0 && th && m && <div className="pointer-events-none absolute inset-0">{Array.from({ length: Math.max(0, tiles.end - tiles.first) }, (_, offset) => { const k = tiles.first + offset; const frac = (k + 0.5) / n; const src = i.reverse ? i.out - frac * (i.out - i.in) : i.in + frac * (i.out - i.in); const idx = Math.min(th.length - 1, Math.max(0, Math.floor((src / m.duration) * th.length))); return <img key={k} src={th[idx]} alt="" draggable={false} className="absolute h-full object-cover" style={{ left: k * TILE, width: TILE }} />; })}</div>}
+          <svg className={`pointer-events-none absolute inset-x-0 bottom-0 w-full ${n > 0 ? "h-1/3 opacity-70" : "h-full"}`} preserveAspectRatio="none" viewBox="0 0 100 100">{m && m.peaks.length > 0 && (() => { const a = Math.floor((i.in / m.duration) * m.peaks.length); const b = Math.max(a + 1, Math.ceil((i.out / m.duration) * m.peaks.length)); const seg = m.peaks.slice(a, b); if (i.reverse) seg.reverse(); return seg.map((p, k) => (HEAD + i.start * zoom + (k / seg.length) * w >= scrollX - TILE && HEAD + i.start * zoom + (k / seg.length) * w <= scrollX + tlW + TILE) ? <rect key={k} x={(k / seg.length) * 100} width={100 / seg.length * 0.8} y={50 - p * 48} height={Math.max(1, p * 96)} className="fill-foreground/60" /> : null); })()}</svg>
           <span className="relative rounded-br bg-background px-1 text-[8px] font-semibold">{i.speed !== 1 && `${i.speed}× `}{i.reverse && "⟲"}</span>
         </div>; })}
       {lane.kind === "video" && validTr.filter((tr) => tr.track === lane.track).map((tr) => { const b = items.find((i) => i.id === tr.bId)!; return <button key={tr.id} aria-label={`Переход ${TR_NAME[tr.type]}`} title={TR_NAME[tr.type]} onPointerDown={(e) => { e.stopPropagation(); setSelTr(tr.id); setSelected(null); }} className={`absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 rotate-45 items-center justify-center rounded-sm border ${selTr === tr.id ? "border-primary bg-primary text-primary-foreground ring-2 ring-primary" : "border-foreground/60 bg-background"}`} style={{ left: b.start * zoom }}><Blend className="size-3 -rotate-45" /></button>; })}
     </div>
   </div>),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks]);
+  [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks, scrollX, tlW]);
 
   return <section className="mb-4 min-w-0 space-y-3 overflow-x-hidden px-4 pt-3 text-xs">
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
-    <div className="relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
+    <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
       {active && <svg className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${active.id}`} c={colorOf(active)} /></defs></svg>}
       {audible.map((i) => <audio key={i.id} ref={(el) => { audioRefs.current[i.id] = el; }} src={mediaById.get(i.mediaId)?.url} preload="auto" className="hidden" />)}
@@ -465,7 +519,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         {snap.h && <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-warning" />}
       </div>}
     </div>
-      <span className="absolute left-2 top-2 rounded bg-background px-1.5 py-0.5 font-mono text-[10px]">{fmt(t)}</span>
+      <span className="studio-timecode absolute left-2 top-2 rounded bg-background px-1.5 py-0.5 font-mono text-[10px]">{fmt(t)}</span>
       <button aria-label={pinMon ? "Открепить монитор" : "Закрепить монитор"} aria-pressed={pinMon} onClick={(e) => { e.stopPropagation(); setPinMon(!pinMon); }} className={`absolute right-2 top-2 z-10 flex size-7 items-center justify-center rounded-full ${pinMon ? "bg-primary text-primary-foreground" : "bg-background text-foreground"}`}>{pinMon ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
       {!cropDraft && <button aria-label="Формат кадра" aria-expanded={aspOpen} onClick={(e) => { e.stopPropagation(); setAspOpen(!aspOpen); }} className="absolute bottom-2 right-2 z-30 flex h-7 items-center gap-1 rounded-full bg-background px-2.5 font-mono text-[10px] font-semibold"><RectangleHorizontal className="size-3.5" />{aspect}<ChevronDown className="size-3" /></button>}
       <AnimatePresence>{aspOpen && <motion.div role="menu" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 6 }} transition={{ duration: .15 }} onClick={(e) => e.stopPropagation()} className="glass-panel absolute bottom-11 right-2 z-40 grid w-44 gap-0.5 rounded-xl p-1">
@@ -480,26 +534,26 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       {cropDraft ? <Button size="icon" variant="secondary" title="Отменить обрезку" aria-label="Отменить обрезку" onClick={cancelCrop}><X /></Button>
         : <Button size="icon" variant="secondary" title="В начало" aria-label="В начало" onClick={() => { setPlaying(false); setT(first); }}><Rewind /></Button>}
       <Button size="icon" variant="secondary" aria-label="Кадр назад" onClick={() => setT((v) => Math.max(first, v - FRAME))}><SkipBack /></Button>
-      <Button size="icon" aria-label={playing ? "Пауза" : "Играть"} onClick={() => { if (!playing && (t >= total || t < first)) setT(first); setPlaying(!playing); }}>{playing ? <Pause /> : <Play />}</Button>
+      <Button size="icon" className="timeline-play" aria-label={playing ? "Пауза" : "Играть"} onClick={() => { if (!playing && (t >= total || t < first)) setT(first); setPlaying(!playing); }}>{playing ? <Pause /> : <Play />}</Button>
       <Button size="icon" variant="secondary" aria-label="Кадр вперёд" onClick={() => setT((v) => Math.min(total, v + FRAME))}><SkipForward /></Button>
     </div>
     <div className="flex w-full min-w-0 items-center gap-2 overflow-hidden">
-      <Button size="icon" variant="secondary" className="size-8 shrink-0" aria-label="Уменьшить масштаб" onClick={() => setZoom((z) => Math.max(minZoom, z / 1.5))}><Minus /></Button>
-      <Slider aria-label="Масштаб таймлайна" className="zoom-slider min-w-0 flex-1" value={[zoomPos]} min={0} max={100} step={1} onValueChange={([v = zoomPos]) => setZoom(minZoom * Math.pow(600 / minZoom, v / 100))} />
-      <Button size="icon" variant="secondary" className="size-8 shrink-0" aria-label="Увеличить масштаб" onClick={() => setZoom((z) => Math.min(600, z * 1.5))}><Plus /></Button>
+      <Button size="icon" variant="secondary" className="size-8 shrink-0" aria-label="Уменьшить масштаб" onClick={() => { zoomTouched.current = true; setZoom((z) => Math.max(minZoom, z / 1.5)); }}><Minus /></Button>
+      <Slider aria-label="Масштаб таймлайна" className="zoom-slider min-w-0 flex-1" value={[zoomPos]} min={0} max={100} step={1} onValueChange={([v = zoomPos]) => { zoomTouched.current = true; setZoom(minZoom * Math.pow(600 / minZoom, v / 100)); }} />
+      <Button size="icon" variant="secondary" className="size-8 shrink-0" aria-label="Увеличить масштаб" onClick={() => { zoomTouched.current = true; setZoom((z) => Math.min(600, z * 1.5)); }}><Plus /></Button>
     </div>
 
 
     <div className={pinTl ? "sticky z-10 -mx-4 bg-background px-4 pb-1" : "relative"} style={pinTl ? { top: headerH + (pinMon ? monH : 0) } : undefined}>
-    <div ref={tlRef} className="w-full max-w-full overflow-x-auto overflow-y-hidden overscroll-x-contain rounded-md bg-timeline" onPointerDown={() => { setSelected(null); setSelTr(null); }}>
-      <div className="relative" style={{ width: Math.max(tlW, HEAD + total * zoom + 8) }}>
+    <div ref={tlRef} onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
+      <div className="relative" style={{ width: items.length ? Math.max(tlW, HEAD + total * zoom + 8) : tlW }}>
         <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
         <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
           {Array.from({ length: Math.ceil(total) + 1 }, (_, s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
         </div>
         {laneEls}
-        <div className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: HEAD + t * zoom }} />
-        <div role="slider" aria-label="Курсор воспроизведения" aria-valuemin={0} aria-valuemax={Math.round(total * 100) / 100} aria-valuenow={Math.round(t * 100) / 100} onPointerDown={scrub} className="absolute top-0 z-30 -translate-x-1/2 cursor-ew-resize px-2 pb-2 [touch-action:none]" style={{ left: HEAD + t * zoom }}><div className="playhead-handle" /></div>
+        <div ref={playheadLine} className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: HEAD + t * zoom }} />
+        <div ref={playheadHandle} role="slider" aria-label="Курсор воспроизведения" aria-valuemin={0} aria-valuemax={Math.round(total * 100) / 100} aria-valuenow={Math.round(t * 100) / 100} onPointerDown={scrub} className="absolute top-0 z-30 -translate-x-1/2 cursor-ew-resize px-2 pb-2 [touch-action:none]" style={{ left: HEAD + t * zoom }}><div className="playhead-handle" /></div>
       </div>
     </div>
     </div>

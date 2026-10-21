@@ -4,6 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { useMulticamStore, type ShootSettings } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { HelpDot } from "./Help";
+import { cameraController } from "@/lib/camera-controller";
 import { clipCurve } from "@/lib/audio-limiter";
 
 /* ---------- Track helpers (all features are capability-checked at runtime) ---------- */
@@ -15,8 +16,7 @@ export const capRange = (caps: Caps, key: string): [number, number, number] | nu
 };
 export const capModes = (caps: Caps, key: string) => (caps[key] as string[] | undefined) ?? [];
 export function applyAdvanced(stream: MediaStream | null, c: Record<string, unknown>) {
-  const track = stream?.getVideoTracks()[0]; if (!track?.applyConstraints) return Promise.resolve(false);
-  return track.applyConstraints({ advanced: [c] } as MediaTrackConstraints).then(() => true).catch(() => false);
+  return cameraController.apply(stream, c);
 }
 
 /* ---------- Color tuning (preview + recording canvas) ---------- */
@@ -190,13 +190,13 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
 
 /* ---------- Manual focus rail ---------- */
 export function FocusRail({ stream }: { stream: MediaStream | null }) {
-  const s = useMulticamStore(); const caps = trackCaps(stream); const range = capRange(caps, "focusDistance") ?? (s.capMatrix?.[s.facing].focus ? [...s.capMatrix[s.facing].focus!, 0.01] as [number, number, number] : null);
-  if (!range) return <p className="glass-panel rounded-full px-3 py-1 text-center text-[10px] text-muted-foreground">Ручной фокус: камера не сообщает диапазон фокусировки</p>;
-  const [min, max, step] = range; const v = s.capture.focus;
+  const capture = useMulticamStore((s) => s.capture); const set = useMulticamStore((s) => s.set); const caps = trackCaps(stream); const range = capRange(caps, "focusDistance");
+  if (!range) return null;
+  const [min, max, step] = range; const v = capture.focus;
   return <div className="glass-panel flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px]">
-    <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`} onClick={() => { s.set({ capture: { ...s.capture, focus: null } }); void applyAdvanced(stream, { focusMode: "continuous" }); }}>AF</button>
+    <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`} onClick={() => { void applyAdvanced(stream, { focusMode: "continuous" }).then((ok) => { if (ok) set({ capture: { ...capture, focus: null } }); }); }}>AF</button>
     <span className="shrink-0 text-muted-foreground">Близко</span>
-    <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step} onValueChange={([x = min]) => { s.set({ capture: { ...s.capture, focus: x } }); void applyAdvanced(stream, { focusMode: "manual", focusDistance: x }); }} />
+    <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step} onValueChange={([x = min]) => { void applyAdvanced(stream, { focusMode: "manual", focusDistance: x }).then((ok) => { if (ok) set({ capture: { ...capture, focus: x } }); }); }} />
     <span className="shrink-0 text-muted-foreground">Далеко</span>
     <span className="w-10 shrink-0 text-end font-mono">{v === null ? "Авто" : v.toFixed(2)}</span>
   </div>;
