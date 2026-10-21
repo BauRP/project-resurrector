@@ -2,8 +2,8 @@ import { bounded } from "./async";
 
 export type FocusSupport = "supported" | "unsupported" | "unknown";
 export function focusSupport(caps: Record<string, unknown>): FocusSupport {
-  const range = caps.focusDistance as { min?: number; max?: number } | undefined;
-  const modes = caps.focusMode as string[] | undefined;
+  const range = caps['focusDistance'] as { min?: number; max?: number } | undefined;
+  const modes = caps['focusMode'] as string[] | undefined;
   if (range && typeof range.max === "number" && range.max > (range.min ?? 0)) return "supported";
   if (modes && !modes.includes("manual")) return "unsupported";
   if (range && typeof range.max === "number" && range.max <= (range.min ?? 0)) return "unsupported";
