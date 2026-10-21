@@ -3,7 +3,7 @@ import { readProxy, writeProxy } from "./media-cache";
 
 /** Real 480p silent scrubbing proxy; audio and export continue using the original. */
 export async function generateProxy(id: string, source: string, signal: AbortSignal): Promise<Blob | null> {
-  const cached = await readProxy(id); if (cached) return cached;
+  const cached = await readProxy(id); if (signal.aborted) return null; if (cached) return cached;
   if (signal.aborted || typeof MediaRecorder === "undefined") return null;
   const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto"; video.src = source;
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
@@ -32,7 +32,7 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
     recorder.start(1000); draw(); await bounded(video.play(), 5000, "Proxy playback");
     const duration = Number.isFinite(video.duration) ? video.duration : 60;
     const blob = await bounded(done, Math.min(600000, duration * 1000 + 10000), "Proxy encoding");
-    if (blob.size && !signal.aborted) { await writeProxy(id, blob); return blob; }
+    if (blob.size && !signal.aborted) { await writeProxy(id, blob, signal); return signal.aborted ? null : blob; }
     return null;
   } finally { signal.removeEventListener("abort", stop); stop(); video.removeAttribute("src"); video.load(); }
 }

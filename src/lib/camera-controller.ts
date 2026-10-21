@@ -19,9 +19,7 @@ class CameraController {
   private stream: MediaStream | null = null;
   private owner: symbol | null = null;
   private generation = 0;
-  private command: Record<string, unknown> | null = null;
-  private draining = false;
-  private waiters: ((value: boolean) => void)[] = [];
+  private queues = new Map<MediaStreamTrack, { command: Record<string, unknown> | null; waiters: ((value: boolean) => void)[]; draining: boolean }>();
   async acquire(owner: symbol, constraints: MediaStreamConstraints): Promise<MediaStream> {
     this.release(); this.owner = owner; const generation = this.generation;
     if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
@@ -32,27 +30,31 @@ class CameraController {
   release(owner?: symbol) {
     if (owner && owner !== this.owner) return;
     this.generation++; this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; this.owner = null;
-    this.command = null; this.waiters.splice(0).forEach((resolve) => resolve(false));
+    this.queues.forEach((queue) => { queue.command = null; queue.waiters.splice(0).forEach((resolve) => resolve(false)); });
+    this.queues.clear();
   }
   /** Merge rapid slider commands, serialize device calls, never build a backlog. */
   apply(stream: MediaStream | null, constraints: Record<string, unknown>): Promise<boolean> {
     const track = stream?.getVideoTracks()[0];
     if (!track?.applyConstraints || track.readyState === "ended") return Promise.resolve(false);
-    this.command = { ...this.command, ...constraints };
-    const result = new Promise<boolean>((resolve) => this.waiters.push(resolve));
-    if (!this.draining) void this.drain(track);
+    const queue = this.queues.get(track) ?? { command: null, waiters: [], draining: false };
+    this.queues.set(track, queue);
+    queue.command = { ...queue.command, ...constraints };
+    const result = new Promise<boolean>((resolve) => queue.waiters.push(resolve));
+    if (!queue.draining) void this.drain(track, queue);
     return result;
   }
-  private async drain(track: MediaStreamTrack) {
-    this.draining = true;
-    while (this.command) {
+  private async drain(track: MediaStreamTrack, queue: { command: Record<string, unknown> | null; waiters: ((value: boolean) => void)[]; draining: boolean }) {
+    queue.draining = true;
+    while (queue.command) {
       await new Promise((resolve) => setTimeout(resolve, 32));
-      const command = this.command; this.command = null; const waiters = this.waiters.splice(0);
+      const command = queue.command; queue.command = null; const waiters = queue.waiters.splice(0);
       let ok = false;
       try { if (command && track.readyState !== "ended") { await bounded(track.applyConstraints({ advanced: [command] } as MediaTrackConstraints), 2500, "Camera setting"); ok = true; } } catch { /* Report rejected device commands to callers. */ }
       waiters.forEach((resolve) => resolve(ok));
     }
-    this.draining = false;
+    queue.draining = false;
+    if (this.queues.get(track) === queue) this.queues.delete(track);
   }
 }
 export const cameraController = new CameraController();

@@ -17,9 +17,18 @@ export async function readProxy(id: string): Promise<Blob | null> {
   try { return await bounded(new Promise<Blob | null>((resolve, reject) => { const req = db.transaction("proxies").objectStore("proxies").get(id); req.onsuccess = () => resolve(req.result ?? null); req.onerror = () => reject(req.error); }), 4000, "Read proxy"); }
   finally { db.close(); }
 }
-export async function writeProxy(id: string, blob: Blob): Promise<void> {
+export async function writeProxy(id: string, blob: Blob, signal?: AbortSignal): Promise<void> {
   const db = await previewCache();
-  try { await bounded(new Promise<void>((resolve, reject) => { const tx = db.transaction("proxies", "readwrite"); tx.objectStore("proxies").put(blob, id); tx.oncomplete = () => resolve(); tx.onerror = () => reject(tx.error); }), 4000, "Save proxy"); }
+  try { await bounded(new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) { reject(new Error("Proxy cancelled")); return; }
+    const tx = db.transaction("proxies", "readwrite"); const abort = () => { try { tx.abort(); } catch { /* Already committed. */ } };
+    signal?.addEventListener("abort", abort, { once: true });
+    const cleanup = () => signal?.removeEventListener("abort", abort);
+    tx.objectStore("proxies").put(blob, id);
+    tx.oncomplete = () => { cleanup(); resolve(); };
+    tx.onerror = () => { cleanup(); reject(tx.error); };
+    tx.onabort = () => { cleanup(); reject(new Error("Proxy cancelled")); };
+  }), 4000, "Save proxy"); }
   finally { db.close(); }
 }
 export async function cacheBytes(): Promise<number> {
