@@ -68,8 +68,8 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     return () => window.clearInterval(id);
   }, [videoRef]);
 
-  const resOk = (r: string) => (!m || m.resolutions.includes(r)) && (!caps || !caps.maxW || (RES[r]![0] <= Math.max(caps.maxW, caps.maxH) && RES[r]![1] <= Math.min(caps.maxW, caps.maxH) + 1));
-  const fpsOk = (f: number) => !m || m.fps.includes(f) || (caps?.highSpeed ?? []).includes(f);
+  const resOk = (r: string) => (!m || m.resolutions.includes(r) || (m.candidateResolutions ?? []).includes(r)) && (!caps || !caps.maxW || (RES[r]![0] <= Math.max(caps.maxW, caps.maxH) && RES[r]![1] <= Math.min(caps.maxW, caps.maxH) + 1));
+  const fpsOk = (f: number) => !m || m.fps.includes(f) || (m.candidateFps ?? []).includes(f) || (caps?.highSpeed ?? []).includes(f);
   // Available FPS is a candidate only: verify the selected camera/size/FPS together at runtime.
   const codecOk = (k: string) => (!s.capMatrix || s.capMatrix.codecs.includes(k)) && typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(CODECS[k]!);
   const modeOk = (md: CaptureMode) => { const hs = [...(caps?.highSpeed ?? []), ...(m?.highSpeed ?? [])]; const mx = Math.max(caps?.maxFps ?? 0, m?.maxFps ?? 0); return md === "slowmo120" ? hs.includes(120) || mx >= 120 : md === "slowmo240" ? hs.includes(240) || mx >= 240 : true; };

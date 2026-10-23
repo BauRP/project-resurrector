@@ -2,6 +2,8 @@ import { MultiCamNative, isNative, type NativeCameraProfile } from "./native";
 
 export interface CameraCaps {
   available: boolean; deviceId: string | null; label: string;
+  /** Candidate modes computed from maximum bounds; not verified supported modes. */
+  candidateResolutions?: string[]; candidateFps?: number[];
   maxWidth: number; maxHeight: number; maxFps: number;
   resolutions: string[]; fps: number[]; highSpeed: number[];
   iso: [number, number] | null; exposure: [number, number] | null; focus: [number, number] | null;
@@ -71,8 +73,8 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
     available: true, deviceId: (tc["deviceId"] as string) ?? track?.getSettings().deviceId ?? null, label: track?.label ?? "",
     maxWidth: w, maxHeight: h, maxFps: f,
     // A maximum width/FPS does NOT establish that individual width+height+FPS modes work.
-    resolutions: [],
-    fps: [], highSpeed: [],
+    resolutions: [], candidateResolutions: Object.entries(RES).filter(([, [rw, rh]]) => !w || (rw <= Math.max(w, h) && rh <= Math.min(w, h) + 1)).map(([k]) => k),
+    fps: [], candidateFps: [24, 30, 60].filter((x) => !f || x <= f), highSpeed: [],
     iso: range("iso"), exposure: range("exposureTime"), focus: range("focusDistance"),
     whiteBalance: wbModes.includes("manual"), colorTemperature: range("colorTemperature"), torch: tc["torch"] === true, zoom: range("zoom"),
   };
