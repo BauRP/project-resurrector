@@ -24,7 +24,8 @@ interface MultiCamNativePlugin {
   listAudioInputs(): Promise<{ inputs: NativeAudioInput[] }>;
   setPreferredAudioInput(options: { id: string }): Promise<{ ok: boolean }>;
   startHighSpeedRecording(options: { cameraId: string; width: number; height: number; fps: number }): Promise<{ path: string }>;
-  stopHighSpeedRecording(): Promise<{ path: string; durationMs: number }>;
+  stopHighSpeedRecording(): Promise<{ path: string; durationMs: number; bytes: number }>;
+  addListener(eventName: "highSpeedStateChanged", listener: (event: {state: string; message: string}) => void): Promise<PluginListenerHandle>;
   /** Hybrid AI (ML Kit semantics + YUV physics). Optional on the native side — callers must handle rejection. */
   toggleHybridAI(options: { enabled: boolean }): Promise<{ enabled: boolean; engines: string[] }>;
   setFocusMode(options: { mode: HybridFocusMode }): Promise<{ mode: HybridFocusMode }>;
