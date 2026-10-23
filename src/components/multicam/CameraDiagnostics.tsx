@@ -5,6 +5,7 @@ import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
+import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -24,6 +25,9 @@ export function CameraDiagnostics() {
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
   const [rawBusy, setRawBusy] = useState(false);
   const [rawMessage, setRawMessage] = useState("");
+  const [stabilizationBusy, setStabilizationBusy] = useState(false);
+  const [stabilizationResults, setStabilizationResults] = useState<StabilizationProbeResult[]>([]);
+  const [stabilizationMessage, setStabilizationMessage] = useState("");
   const job = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -142,6 +146,21 @@ export function CameraDiagnostics() {
       if (mounted.current) setRawBusy(false);
     }
   };
+  const checkStabilization = async (cameraId: string) => {
+    if (stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle") return;
+    if (!window.confirm("Проверить реальную EIS/OIS через Camera2 CaptureResult на " + cameraId + " в тестовой YUV 1280×720 сессии? Файл не записывается, WebView-камера должна быть свободна.")) return;
+    setStabilizationBusy(true);
+    setStabilizationMessage("Открытие Camera2 для проверки стабилизации…");
+    try {
+      const result = await probeStabilization(cameraId, 1280, 720, 30);
+      if (mounted.current) {
+        setStabilizationResults(previous => [...previous.filter(p => p.cameraId !== cameraId), result]);
+        setStabilizationMessage("CAM " + cameraId + ": " + result.message);
+      }
+    } catch (e) {
+      if (mounted.current) setStabilizationMessage("Camera2 стабилизация не подтверждена: " + String(e));
+    } finally { if (mounted.current) setStabilizationBusy(false); }
+  };
   const download = () => {
     const report = {
       checkedAt: new Date().toISOString(),
@@ -149,6 +168,7 @@ export function CameraDiagnostics() {
       camerasDeclaredByCamera2: nativeCameras,
       cameraModeEvidence: tests,
       encoderEvidence: encoder,
+      stabilizationCaptureResults: stabilizationResults,
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
     const a = document.createElement("a");
@@ -194,8 +214,15 @@ export function CameraDiagnostics() {
         <p className="text-muted-foreground">Физические ID: {c.physicalCameraIds?.join(", ") || "не раскрыты"}</p>
         <p className="text-muted-foreground">EIS: {c.eisDeclared ? "заявлена" : "состояние неизвестно"} · OIS: {c.oisDeclared ? "заявлена" : "состояние неизвестно"}</p>
         <p className="text-muted-foreground">Разрешения: {c.sizes.length}; заявленные высокоскоростные режимы: {c.highSpeed.length}</p>
-        {c.raw && <Button size="sm" variant="outline" className="mt-2" disabled={rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void testRaw(c.cameraId)}>Снять настоящий DNG · CAM {c.cameraId}</Button>}
+        <div className="mt-2 flex flex-wrap gap-2">
+          {c.raw && <Button size="sm" variant="outline" disabled={rawBusy || stabilizationBusy || recording || running || highSpeedState !== "idle"} onClick={() => void testRaw(c.cameraId)}>Снять настоящий DNG · CAM {c.cameraId}</Button>}
+          <Button size="sm" variant="outline" disabled={stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void checkStabilization(c.cameraId)}>Проверить OIS/EIS · CAM {c.cameraId}</Button>
+        </div>
+        {stabilizationResults.filter(x => x.cameraId === c.cameraId).map(x =>
+          <p key={x.cameraId} className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · файл не проверялся</p>
+        )}
       </div>)}
+      {stabilizationMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{stabilizationMessage}</p>}
       {rawMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{rawMessage}</p>}
       {encoder && <div className="rounded-md border border-border p-2 text-xs">
         <p className="font-semibold">MediaCodec 1920×1080/30 FPS (заявленные ограничения)</p>
