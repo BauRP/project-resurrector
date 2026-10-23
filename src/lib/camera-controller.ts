@@ -5,9 +5,9 @@ export function focusSupport(caps: Record<string, unknown>): FocusSupport {
   const range = caps['focusDistance'] as { min?: number; max?: number } | undefined;
   const modes = caps['focusMode'] as string[] | undefined;
   if (range && typeof range.max === "number" && range.max > (range.min ?? 0)) return "supported";
-  // Manual-focus support is not equivalent to touch-to-focus support.
+  // Reports manual-focus ability. Touch-to-focus is checked independently by CameraTab.
   // A fixed-focus sensor may still support exposure metering points.
-  if (modes && !modes.includes("manual") && !modes.includes("continuous") && !modes.includes("single-shot")) return "unsupported";
+  if (modes && !modes.includes("manual")) return "unsupported";
   if (range && typeof range.max === "number" && range.max <= (range.min ?? 0)) return "unsupported";
   return "unknown";
 }
