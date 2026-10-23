@@ -1,5 +1,6 @@
 import { saveRecordedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
 import { verifyDecodedVideoBlob } from "./clip-playback";
+import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "./fold-recording-evidence";
 
 export interface DualRecordingResult {
   savedIds: string[];
@@ -54,6 +55,12 @@ export function startDualRecording(
   let stopReason = "";
   let startupTimer = 0, stopTimer = 0;
   const startTime = Date.now();
+  let folds: FoldTransitionEvidence[] = [];
+  const onFold = (event: Event) => {
+    const reading = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
+    if (reading) folds = appendFoldTransition(folds, reading);
+  };
+  window.addEventListener(FOLD_EVENT, onFold);
   const finishers: ((value: Blob | null) => void)[] = [];
   const collected = recorders.map((_recorder, i) => new Promise<Blob | null>(resolve => {
     finishers[i] = resolve;
@@ -109,6 +116,7 @@ export function startDualRecording(
     completed = true;
     window.clearTimeout(startupTimer);
     window.clearTimeout(stopTimer);
+    window.removeEventListener(FOLD_EVENT, onFold);
     recorders.forEach(recorder => {
       recorder.onstart = null; recorder.ondataavailable = null;
       recorder.onerror = null; recorder.onstop = null;
@@ -122,6 +130,8 @@ export function startDualRecording(
         cameraDeviceId: captures[index]!.getVideoTracks()[0]!.getSettings().deviceId,
         monotonicStartMs: starts[index] ?? undefined,
         synchronizationVerified: false,
+        foldTransitions: folds,
+        foldContinuityVerified: false,
       }] : []);
     if (!clips.length) throw new Error("Оба кодировщика не выдали пригодных файлов. " + [stopReason, ...failures].filter(Boolean).join("; "));
     // A successful encoder output is checked for an actual decoded first frame
@@ -157,6 +167,7 @@ export function startDualRecording(
           [stopReason, ...failures].filter(Boolean).join("; "),
     };
   }).finally(() => {
+    window.removeEventListener(FOLD_EVENT, onFold);
     completed = true;
     window.clearTimeout(startupTimer);
     window.clearTimeout(stopTimer);

@@ -1,4 +1,5 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import { FOLD_EVENT } from "./fold-recording-evidence";
 export interface FoldFeature {
   leftPx: number; topPx: number; rightPx: number; bottomPx: number;
   orientation: string; state: string; occlusion: string; separating: boolean;
@@ -142,6 +143,13 @@ export function startDisplayAdaptation(): () => void {
     if (disposed || state.revision < lastRevision) return;
     lastRevision = state.revision;
     lastNative = state;
+    window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: {
+      revision: state.revision,
+      posture: state.foldingFeatures.map(f => f.state).join(",") || state.posture,
+      hingeCount: state.foldingFeatures.length,
+      usableRegions: calculateDisplayRegions(state, width(), height()).regions.length,
+      layout: calculateDisplayRegions(state, width(), height()).split,
+    } }));
     layout(state);
     measure();
   };

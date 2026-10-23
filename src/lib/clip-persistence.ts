@@ -9,6 +9,8 @@ export interface RecordedClip {
   cameraDeviceId?: string;
   monotonicStartMs?: number;
   synchronizationVerified?: false;
+  foldTransitions?: import("./fold-recording-evidence").FoldTransitionEvidence[];
+  foldContinuityVerified?: false;
 }
 export async function saveRecordedClip(clip: RecordedClip): Promise<void> {
   return saveRecordedClipsAtomically([clip]);
