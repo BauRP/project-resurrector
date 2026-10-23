@@ -88,3 +88,81 @@ export async function verifyStoredClipPlayback(clipId: string): Promise<DecodedV
   const clip = await readPersistedClip(clipId);
   return verifyDecodedVideoBlob(clip.blob);
 }
+
+
+export interface PlaybackFrameSample {
+  presentationTimeMs: number;
+  presentedFrames: number;
+}
+export interface VideoFrameRateEvidence {
+  approximateFps: number | null;
+  observedFrames: number;
+  sampledDurationMs: number;
+  status: "sampled" | "unavailable";
+  limitation: string;
+}
+/** Video playback sampling measures presented frames, not necessarily encoded
+ * frames. Browser throttling, dropped frames or playback speed can change it.
+ */
+export function summarizePresentedFrames(samples: readonly PlaybackFrameSample[]): VideoFrameRateEvidence {
+  const ordered = [...samples].filter(x => Number.isFinite(x.presentationTimeMs) &&
+    Number.isFinite(x.presentedFrames)).sort((a,b) => a.presentationTimeMs-b.presentationTimeMs);
+  const first = ordered[0], last = ordered[ordered.length-1];
+  const duration = first && last ? last.presentationTimeMs - first.presentationTimeMs : 0;
+  const frames = first && last ? last.presentedFrames - first.presentedFrames : 0;
+  const sufficient = ordered.length >= 5 && duration >= 350 && frames >= 3;
+  return {
+    approximateFps: sufficient ? Math.round((frames * 1000 / duration) * 10) / 10 : null,
+    observedFrames: Math.max(0, frames),
+    sampledDurationMs: Math.max(0, Math.round(duration)),
+    status: sufficient ? "sampled" : "unavailable",
+    limitation: "Оценка FPS по показанным WebView кадрам; не частота кадров кодека. Пропуски/троттлинг возможны.",
+  };
+}
+/** Conservative bounded measurement; never mark the encoded FPS as verified. */
+export async function sampleStoredClipDisplayedFps(
+  clipId: string,
+  maxSamplingMs = 3500,
+): Promise<VideoFrameRateEvidence> {
+  const clip = await readPersistedClip(clipId);
+  const video = document.createElement("video");
+  if (!("requestVideoFrameCallback" in video)) return summarizePresentedFrames([]);
+  const frameVideo = video as HTMLVideoElement & {
+    requestVideoFrameCallback(callback: (now: number, metadata: { mediaTime: number; presentedFrames: number }) => void): number;
+    cancelVideoFrameCallback(handle: number): void;
+  };
+  const url = URL.createObjectURL(clip.blob);
+  const container = document.createElement("div");
+  container.style.cssText = "position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+  video.muted = true; video.playsInline = true;
+  container.appendChild(video); document.body.appendChild(container);
+  const observations: PlaybackFrameSample[] = [];
+  let handle = 0;
+  try {
+    return await new Promise<VideoFrameRateEvidence>(resolve => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true; clearTimeout(timer);
+        if (handle) frameVideo.cancelVideoFrameCallback(handle);
+        resolve(summarizePresentedFrames(observations));
+      };
+      const tick = (_now: number, metadata: { mediaTime: number; presentedFrames: number }) => {
+        if (done) return;
+        observations.push({ presentationTimeMs: metadata.mediaTime * 1000, presentedFrames: metadata.presentedFrames });
+        if (observations.length >= 110) { finish(); return; }
+        handle = frameVideo.requestVideoFrameCallback(tick);
+      };
+      const timer = window.setTimeout(finish, Math.max(1000, Math.min(5500, maxSamplingMs)));
+      video.onended = finish;
+      video.onerror = finish;
+      handle = frameVideo.requestVideoFrameCallback(tick);
+      video.src = url;
+      void video.play().catch(finish);
+    });
+  } finally {
+    video.pause();
+    video.removeAttribute("src"); video.load();
+    container.remove(); URL.revokeObjectURL(url);
+  }
+}
