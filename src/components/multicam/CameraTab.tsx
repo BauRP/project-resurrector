@@ -16,7 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
-import { verifyStoredClipPlayback } from "@/lib/clip-playback";
+import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
@@ -290,7 +290,15 @@ export function CameraTab() {
           void verifyStoredClipPlayback(clipId).then(evidence => {
             s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
               "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
-              ". FPS, HDR и остальные кадры не проверены." });
+              ". Измеряю отображаемые кадры…" });
+            void sampleStoredClipDisplayedFps(clipId).then(sample => {
+              s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
+                "Клип сохранён; первый кадр декодирован. " +
+                (sample.approximateFps !== null ? "Оценка показанных кадров: " + sample.approximateFps + " FPS. " : "Оценка FPS недоступна. ") +
+                "FPS кодека, HDR, EIS/OIS и все кадры не подтверждены." });
+            }).catch(() => {
+              s.set({ captureSaveError: "Клип сохранён и первый кадр декодирован; оценка FPS недоступна." });
+            });
           }).catch(error => {
             s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
               "Видео сохранено, но декодирование не подтверждено: " +
