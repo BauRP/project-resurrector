@@ -1,29 +1,27 @@
-# Progress and verification — independent branch
+# MULTI-CAM POV — independent backup branch implementation status
 
-This branch is isolated from `main`.
+Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 
-Implemented (code present):
-- Responsive application shell for standard phones, tablets and large windows.
-- Real Android Jetpack WindowManager fold-feature event source and Capacitor listener.
-- Fold-state data with multiple hinge objects; unknown remains unknown.
-- Diagnostic camera results distinguish unverified candidate resolutions/FPS from verified modes.
-- Per-native-camera data including physical camera identifiers and minimum focus distance.
-- UI indicates unavailable camera rather than presenting a simulated view as real camera.
-- Capture controls read back actual applied geometry before updating the displayed selection.
+## Implemented in source (build-checked, **not device-verified**)
+- Android Jetpack WindowManager observes reported window hinge geometry, posture and occlusion. CSS viewport regions are computed from reported bounds; conventional narrow screens get normal camera UI.
+- One actual separating hinge can split preview and controls. Two reported separating hinges can divide viewfinder, camera controls and shutter into **three zones** when each zone is large enough. Short hinge segments are ignored; no synthetic third hinge is invented.
+- WebView video acquisition controls track ownership, timeouts and late media streams; video-only permission fallback exists.
+- Camera2 enumerates cameras/physical IDs, theoretical sensor modes, OIS/EIS modes, dynamic range, codec candidates, RAW, and high-speed declarations.
+- Camera diagnostics run short sample recordings per WebView device and requested resolution/FPS. Per-device/mode queue survives interruption and keeps separate waiting, running, verified, retry, deferred and error statuses.
+- Camera2 test sessions expose stabilization CaptureResult; DNG RAW is captured through a separate native Camera2 pipeline; high-speed Camera2 capture has bounded state reporting.
+- Dual WebView camera preview and short simultaneous two-encoder diagnostic are available where independent streams work; paired clips use one IndexedDB transaction.
+- Ordinary camera recording saves encoded blobs to IndexedDB and reads persisted copies back before confirming storage success; separate WebView playback verifies that the **first frame decodes**. A bounded requestVideoFrameCallback sample can report **approximate displayed FPS**, never encoded FPS.
+- Clip loss/error statuses do not claim recording succeeded; leaving camera while saving is postponed; fold resize alone does not restart recording.
+- GitHub Actions runs unit tests and builds APK/AAB for the backup branch.
 
-NOT completed / NOT proven:
-- Full 27-section camera acceptance matrix, individual per-mode persistent test passport, robust recording state machine, actual optical/physical lens selection and real dual camera pipeline.
-- End-to-end recording persistence / error recovery and background recording.
-- All camera focus/stabilization/HDR controls functioning on physical devices.
-- Two/three-pane detailed layouts per fold posture: responsive large screen exists, hinge geometry is reported but not fully used for controls avoidance and pane partitioning.
-- True application running preview / APK build is not verified in this execution context.
-- Java/Android build and emulator/physical hardware tests must be run in Android CI.
+## Not completed / cannot yet be proven
+- A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
+- Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
+- Production-grade synchronized simultaneous multi-camera recording, common timeline/audio clock, physical-lens choice and sustained heat/battery handling.
+- Guaranteed uninterrupted user video during Android Activity recreation, backgrounding, or camera/device transitions. WebView records cannot claim background continuation.
+- Complete diagnostic Cartesian compatibility planning with thermal/battery/load gating for every lens+mode+codec and repeat policy.
+- Exhaustive per-pane application-wide controls avoidance in editor/settings/connection views, cover display third-party access, and vendor-specific multi-window behavior.
+- Physical device validation on actual book folds, vertical flips, tri-folds and different Android vendors/OS releases.
 
-Do not call this a completed implementation of either uploaded requirements document.
-
-Additional independent changes:
-- MediaRecorder events and durable IndexedDB transaction completion before saved status.
-- Explicit saving/error state; no success message on quota or encoder failure.
-- Camera acquisition retries video-only if microphone permission fails.
-- Fixed double subtraction of bottom navigation height in the camera viewport.
-Still no verified Android APK build or physical-device recording; no unsupported-mode claims.
+## Acceptance
+A **successful CI build only confirms compilation/tests/packaging**. Neither technical requirements document is complete at 100%. Evidence from actual supported Android devices is required before declaring hardware feature support.
