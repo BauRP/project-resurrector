@@ -16,6 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
+import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 const tools = [
@@ -46,6 +47,21 @@ export function CameraTab() {
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("loading");
   const [elapsed, setElapsed] = useState(0);
   const facingMode = s.facing === "front" ? "user" : "environment";
+  // UI selection and actual camera ownership are intentionally separate.
+  // Never re-acquire getUserMedia while MediaRecorder owns a live capture.
+  const cameraSwitchBlocked = isCameraSwitchBlocked(s.recording, s.recordingPhase);
+  const [appliedDevice, setAppliedDevice] = useState(() => ({
+    facing: facingMode, lens: s.lensDeviceId, mic: s.capture.micId,
+  }));
+  const deviceSwitchQueued = cameraSwitchBlocked &&
+    (appliedDevice.facing !== facingMode || appliedDevice.lens !== s.lensDeviceId || appliedDevice.mic !== s.capture.micId);
+  useEffect(() => {
+    if (cameraSwitchBlocked) return;
+    setAppliedDevice(current =>
+      current.facing === facingMode && current.lens === s.lensDeviceId && current.mic === s.capture.micId
+        ? current
+        : { facing: facingMode, lens: s.lensDeviceId, mic: s.capture.micId });
+  }, [cameraSwitchBlocked, facingMode, s.lensDeviceId, s.capture.micId]);
   const camCaps = s.capMatrix ? s.capMatrix[s.facing] : null;
   const NS = "Не поддерживается";
   const [tipKey, setTipKey] = useState<TipKey | null>(null);
@@ -62,17 +78,21 @@ export function CameraTab() {
   useEffect(() => {
     let alive = true; const token = owner.current;
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
-    const video = s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode };
-    const audio = s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true;
+    const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
+    const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
     // Microphone permission/routing is independent of camera permission.
     void cameraController.acquire(token, { video, audio })
-      .catch(() => cameraController.acquire(token, { video, audio: false }))
+      .catch((error: unknown) => {
+        // A retired component must never reopen a camera during microphone fallback.
+        if (!alive) throw error;
+        return cameraController.acquire(token, { video, audio: false });
+      })
       .then((next) => {
         if (alive) { setStream(next); setCameraState("live"); }
         else next.getTracks().forEach((track) => track.stop());
       }).catch(() => { if (alive) setCameraState("unavailable"); });
     return () => { alive = false; cameraController.release(token); };
-  }, [facingMode, s.capture.micId, s.lensDeviceId]);
+  }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
     if (s.touchLocked) return;
     const caps = trackCaps(stream); const support = focusSupport(caps);
@@ -321,6 +341,7 @@ export function CameraTab() {
       {countdown > 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center text-7xl font-bold text-foreground drop-shadow-lg">{countdown}</div>}
     </section>
 
+    {!clean && deviceSwitchQueued && <div role="status" className="absolute inset-x-3 bottom-40 z-30 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground">Смена объектива/микрофона отложена до завершения сохранения текущего видео.</div>}
     {!clean && s.captureSaveError && <div role="alert" className="absolute inset-x-3 bottom-28 z-30 rounded-md border border-warning bg-card px-3 py-2 text-xs text-foreground">{s.captureSaveError}</div>}
     {/* HUD status bar */}
     <div className="camera-hud absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
