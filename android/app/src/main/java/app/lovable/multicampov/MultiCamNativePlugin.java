@@ -277,7 +277,7 @@ public class MultiCamNativePlugin extends Plugin {
                 cam.put("toneCurve", curve);
                 // Android 13+ advertises real Camera2 per-camera dynamic-range profiles.
                 // These are declarations, not proof of an HDR recording/encoding/export path.
-                JSArray ranges = new JSArray();
+                JSArray hdrProfiles = new JSArray();
                 boolean tenBitCapability = false;
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                     tenBitCapability = hasMode(caps, CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_DYNAMIC_RANGE_TEN_BIT);
@@ -294,13 +294,13 @@ public class MultiCamNativePlugin extends Plugin {
                                 compatible.put(dynamicRangeName(possible));
                             }
                             item.put("compatibleProfiles", compatible);
-                            ranges.put(item);
+                            hdrProfiles.put(item);
                         }
                     }
                 }
                 cam.put("dynamicRangeApiAvailable", Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU);
                 cam.put("tenBitOutputDeclared", tenBitCapability);
-                cam.put("dynamicRangeProfiles", ranges);
+                cam.put("dynamicRangeProfiles", hdrProfiles);
                 cam.put("hdrRecordedAndVerified", false);
                 list.put(cam);
             }
