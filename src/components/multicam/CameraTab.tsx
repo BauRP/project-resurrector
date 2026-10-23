@@ -17,6 +17,7 @@ import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
+import { DualCameraPreview } from "./DualCameraPreview";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 const tools = [
@@ -50,6 +51,7 @@ export function CameraTab() {
   // UI selection and actual camera ownership are intentionally separate.
   // Never re-acquire getUserMedia while MediaRecorder owns a live capture.
   const cameraSwitchBlocked = isCameraSwitchBlocked(s.recording, s.recordingPhase);
+  const dualPreviewEnabled = s.dualCamera && !cameraSwitchBlocked && cameraState === "live";
   const [appliedDevice, setAppliedDevice] = useState(() => ({
     facing: facingMode, lens: s.lensDeviceId, mic: s.capture.micId,
   }));
@@ -329,7 +331,8 @@ export function CameraTab() {
     <section className={`camera-live-view absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
       {!clean && <>
-        {s.dualCamera && <div className="absolute end-3 top-28 flex aspect-[3/4] w-[22%] min-w-20 items-center justify-center rounded-md border border-glass bg-viewfinder p-2 text-center text-[10px] text-muted-foreground">Вторая камера не подключена</div>}
+        {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} />}
+        {s.dualCamera && cameraSwitchBlocked && <div className="absolute end-3 top-20 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Второй предпросмотр отключён во время записи. Записывается только основная камера.</div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
         {s.zebras && <div className="zebra-overlay pointer-events-none absolute inset-0 opacity-30" />}
         {s.grid !== "off" && <div className={`pointer-events-none absolute inset-0 grid-overlay grid-${s.grid}`} />}
