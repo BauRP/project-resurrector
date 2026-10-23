@@ -20,3 +20,10 @@ NOT completed / NOT proven:
 - Java/Android build and emulator/physical hardware tests must be run in Android CI.
 
 Do not call this a completed implementation of either uploaded requirements document.
+
+Additional independent changes:
+- MediaRecorder events and durable IndexedDB transaction completion before saved status.
+- Explicit saving/error state; no success message on quota or encoder failure.
+- Camera acquisition retries video-only if microphone permission fails.
+- Fixed double subtraction of bottom navigation height in the camera viewport.
+Still no verified Android APK build or physical-device recording; no unsupported-mode claims.

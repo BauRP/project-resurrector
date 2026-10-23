@@ -446,3 +446,15 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
   .app-shell, .app-scroll { scroll-behavior: auto; }
 }
+
+/* The scroll container already excludes bottom navigation; do not subtract it twice. */
+.app-scroll { position: relative; display: flex; flex-direction: column; }
+.app-scroll > div:not(.app-header) { min-height: 0; }
+.camera-screen { height: 100%; min-height: 0; width: 100%; }
+.camera-screen.clean { height: 100%; }
+/* Fold and compact-window fixes are layout-only and retain original color palette. */
+[data-separating-fold="true"] .app-header { isolation: isolate; }
+@media (min-width: 840px) and (min-height: 540px) {
+  .app-header .connect-pill { max-width: none; }
+  .camera-screen { max-height: 100%; }
+}

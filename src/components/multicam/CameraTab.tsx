@@ -224,7 +224,9 @@ export function CameraTab() {
   useEffect(() => () => {
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== "inactive") recorder.stop();
-    pipeRef.current?.stop(); mesh.selfRecording = false;
+    // Recorder onstop owns encoder buffers until its save transaction completes.
+    if (!recorder || recorder.state === "inactive") pipeRef.current?.stop();
+    mesh.selfRecording = false;
     s.set({ recording: false, recordingStartedAt: null, paused: false });
   }, [s.set]);
   useEffect(() => {
@@ -365,7 +367,7 @@ export function CameraTab() {
           <div className="flex flex-col items-center pt-1"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span></div>
           <div className="segmented-mini" role="radiogroup" aria-label="Фото или видео">{(["photo", "video"] as const).map((k) => <button key={k} role="radio" aria-checked={s.captureKind === k} disabled={s.recording || intervalOn} onClick={() => s.set({ captureKind: k })} className={s.captureKind === k ? "active" : ""}>{k === "photo" ? "ФОТО" : "ВИДЕО"}</button>)}</div>
         </>}
-          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
+          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || ["starting", "stopping", "saving"].includes(s.recordingPhase)} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
         </div>
         <div className="mb-4 flex justify-end gap-1.5">{!clean && <>
           {s.captureKind === "photo" ? (lastPhoto ? <a href={lastPhoto} download={`multicam-photo-${Date.now()}.jpg`} aria-label="Скачать последнее фото" className="size-9 overflow-hidden rounded-md border border-border"><img src={lastPhoto} alt="Последнее фото" className="h-full w-full object-cover" /></a> : <Button size="icon" variant="secondary" disabled aria-label="Нет фото"><Download /></Button>) :
