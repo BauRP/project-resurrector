@@ -21,6 +21,7 @@ import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
+import { startDualRecording, independentStreamsReady, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 const tools = [
@@ -54,7 +55,10 @@ export function CameraTab() {
   // UI selection and actual camera ownership are intentionally separate.
   // Never re-acquire getUserMedia while MediaRecorder owns a live capture.
   const cameraSwitchBlocked = isCameraSwitchBlocked(s.recording, s.recordingPhase);
-  const dualPreviewEnabled = s.dualCamera && !cameraSwitchBlocked && cameraState === "live";
+  const dualPreviewEnabled = s.dualCamera && cameraState === "live";
+  const [secondaryStream, setSecondaryStream] = useState<MediaStream | null>(null);
+  const dualSession = useRef<DualRecordingSession | null>(null);
+  const dualSessionStarting = useRef(false);
   const [appliedDevice, setAppliedDevice] = useState(() => ({
     facing: facingMode, lens: s.lensDeviceId, mic: s.capture.micId,
   }));
@@ -155,6 +159,7 @@ export function CameraTab() {
     const onEnded = () => {
       setCameraState("unavailable");
       const active = recorderRef.current;
+      if (dualSession.current) { dualSession.current.stop("Приложение скрыто"); s.set({ recording: false, recordingPhase: "stopping" }); }
       if (active && active.state !== "inactive") {
         stopReasonRef.current = "Поток камеры прервался; запись завершается. Проверьте сохранённый файл.";
         s.set({ recording: false, recordingPhase: "stopping" });
@@ -201,6 +206,8 @@ export function CameraTab() {
   useEffect(() => {
     mesh.selfRecording = s.recording;
     const active = recorderRef.current;
+    // A separate two-encoder recording session owns both live camera streams.
+    if (s.dualCamera && s.captureKind === "video") return;
     if (!s.recording) {
       if (active && active.state !== "inactive") {
         s.set({ recordingPhase: "stopping" });
@@ -317,9 +324,41 @@ export function CameraTab() {
       void gainCtx?.close();
       s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
     }
-  }, [s.recording, stream]);
+  }, [s.recording, stream, s.dualCamera, s.captureKind]);
+  useEffect(() => {
+    if (!s.dualCamera || s.captureKind !== "video") return;
+    if (!s.recording) {
+      if (dualSession.current) dualSession.current.stop();
+      return;
+    }
+    if (dualSession.current || dualSessionStarting.current) return;
+    if (!independentStreamsReady(stream, secondaryStream)) {
+      s.set({ recording: false, recordingPhase: "error", captureSaveError: "Dual Camera: две разные живые камеры не подтверждены. Выберите вторую камеру." });
+      return;
+    }
+    dualSessionStarting.current = true;
+    try {
+      s.set({ recordingPhase: "starting", captureSaveError: "" });
+      const session = startDualRecording(stream!, secondaryStream!, skew => {
+        s.set({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording",
+          captureSaveError: "Два кодировщика запущены. Разница старта " + skew + " мс; синхронизация кадров не проверена." });
+      });
+      dualSession.current = session;
+      void session.done.then(result => {
+        s.set({ recording: false, recordingStartedAt: null,
+          recordingPhase: result.paired ? "saved" : "error", captureSaveError: result.message });
+        window.dispatchEvent(new Event("multicam-clips-changed"));
+      }).catch(error => {
+        s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error",
+          captureSaveError: "Dual Camera: " + String(error) });
+      }).finally(() => { if (dualSession.current === session) dualSession.current = null; });
+    } catch (error) {
+      s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: String(error) });
+    } finally { dualSessionStarting.current = false; }
+  }, [s.recording, s.dualCamera, s.captureKind, stream, secondaryStream]);
   useEffect(() => () => {
     const recorder = recorderRef.current;
+    dualSession.current?.stop("Экран камеры закрыт");
     if (recorder && recorder.state !== "inactive") recorder.stop();
     // Recorder onstop owns encoder buffers until its save transaction completes.
     if (!recorder || recorder.state === "inactive") pipeRef.current?.stop();
@@ -412,8 +451,8 @@ export function CameraTab() {
     <section className={`camera-live-view absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
       {!clean && <>
-        {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} />}
-        {s.dualCamera && cameraSwitchBlocked && <div className="absolute end-3 top-20 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Второй предпросмотр отключён во время записи. Записывается только основная камера.</div>}
+        {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording} />}
+        {s.dualCamera && s.recording && <div className="absolute end-3 top-10 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Dual Camera · две отдельные дорожки (без покадровой синхронизации)</div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
         {s.zebras && <div className="zebra-overlay pointer-events-none absolute inset-0 opacity-30" />}
         {s.grid !== "off" && <div className={`pointer-events-none absolute inset-0 grid-overlay grid-${s.grid}`} />}
@@ -470,7 +509,7 @@ export function CameraTab() {
           <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.eyeAF ? "default" : "outline"} title={faceDetectorAvailable() ? "Следящий автофокус по лицу/глазам" : "Следящий AF (детектор лиц в этом браузере недоступен — только AF-C)"} onClick={() => s.set({ eyeAF: !s.eyeAF })}><ScanFace />Трекинг / Глаза</Button><HelpDot id="track" /></span>
           <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.falseColor ? "default" : "outline"} onClick={() => s.set({ falseColor: !s.falseColor })}><Palette />Ложные цвета</Button><HelpDot id="falseColor" /></span>
           <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.audioUi ? "default" : "outline"} onClick={() => s.set({ audioUi: !s.audioUi })}><AudioLines />Звук‑метр</Button><HelpDot id="audioMeter" /></span>
-          <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.dualCamera ? "default" : "outline"} onClick={() => s.set({ dualCamera: !s.dualCamera })}><Video />{t("dual")}</Button><HelpDot id="dual" /></span>
+          <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.dualCamera ? "default" : "outline"} disabled={cameraSwitchBlocked} onClick={() => s.set({ dualCamera: !s.dualCamera })}><Video />{t("dual")}</Button><HelpDot id="dual" /></span>
         </div>
       </Accordion>
       <Accordion title="Объектив">
