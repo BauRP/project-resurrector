@@ -399,3 +399,50 @@ button:not([class*="bg-"]):not(.active):not(.record-shutter) { background-color:
 .studio-monitor { border: 1px solid var(--border); box-shadow: var(--shadow-soft); }
 .studio-timecode { border: 1px solid var(--border); background: var(--glass); color: var(--foreground); }
 button:disabled { cursor: not-allowed; opacity: .45; }
+
+
+/* Responsive windows / book-fold / tri-fold / tablets.
+   Never scale the app or invent a device posture from a screen resolution.
+   The UI keeps the original visual design and its export/connect/capture actions. */
+.app-stage { width: 100%; min-width: 0; height: 100dvh; }
+.app-shell {
+  width: min(100%, 1600px);
+  max-width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+}
+.app-scroll {
+  min-width: 0;
+  height: calc(100% - var(--nav-h));
+  scrollbar-gutter: stable;
+}
+.app-header { min-width: 0; }
+.app-header > :last-child { min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-end; }
+.app-header .connect-pill { max-width: 100%; white-space: nowrap; }
+.app-header .connect-pill > span { min-width: 0; }
+@media (max-width: 359px) {
+  .app-header { gap: .25rem; padding-inline: max(.4rem, env(safe-area-inset-left)); }
+  .app-header > :last-child { gap: .25rem; }
+  .app-header .connect-pill { padding-inline: .5rem; font-size: .68rem; }
+}
+@media (min-width: 600px) {
+  .app-shell { --nav-h: calc(4.6rem + env(safe-area-inset-bottom)); }
+  .app-header { padding-inline: max(1.25rem, env(safe-area-inset-left)); }
+  .bottom-nav { max-width: 100%; }
+  .bottom-nav button { height: 4.6rem; }
+}
+@media (min-width: 840px) {
+  .app-shell { --nav-h: calc(4.8rem + env(safe-area-inset-bottom)); }
+  .app-header { padding-inline: max(1.5rem, env(safe-area-inset-left)); }
+  .bottom-nav button { height: 4.8rem; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .app-shell { --nav-h: calc(3.1rem + env(safe-area-inset-bottom)); }
+  .bottom-nav button { height: 3.1rem; flex-direction: row; }
+  .bottom-nav button svg { width: 1rem; height: 1rem; }
+  .app-header { padding-block: .2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell, .app-scroll { scroll-behavior: auto; }
+}

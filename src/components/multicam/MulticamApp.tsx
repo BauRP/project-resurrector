@@ -10,6 +10,7 @@ import { useMeshPeers } from "./useMesh";
 import { MulticamStoreProvider, useMulticamStore, type AppTab } from "@/lib/multicam-store";
 import { mesh } from "@/lib/mesh";
 import { useT } from "@/lib/i18n";
+import { startDisplayAdaptation } from "@/lib/display-topology";
 
 const nav: { id: AppTab; icon: typeof Camera }[] = [{ id: "camera", icon: Camera }, { id: "editor", icon: SlidersHorizontal }, { id: "settings", icon: Settings }];
 const labels: Record<string, string[]> = { kk: ["Камера", "Редактор", "Баптаулар"], pt: ["Câmera", "Editor", "Ajustes"], es: ["Cámara", "Editor", "Ajustes"], fr: ["Caméra", "Montage", "Réglages"], ar: ["الكاميرا", "المحرر", "الإعدادات"], zh: ["相机", "编辑", "设置"], ko: ["카메라", "편집기", "설정"], ja: ["カメラ", "編集", "設定"], de: ["Kamera", "Editor", "Einstellungen"], it: ["Camera", "Editor", "Impostazioni"], tr: ["Kamera", "Kurgu", "Ayarlar"], pl: ["Kamera", "Edytor", "Ustawienia"], hi: ["कैमरा", "संपादक", "सेटिंग्स"], vi: ["Máy quay", "Biên tập", "Cài đặt"], id: ["Kamera", "Editor", "Pengaturan"] };
@@ -28,6 +29,8 @@ function MulticamAppContent() {
   const tab = useMulticamStore((x) => x.tab); const setTab = useMulticamStore((x) => x.setTab); const language = useMulticamStore((x) => x.language); const role = useMulticamStore((x) => x.role); const clean = useMulticamStore((x) => x.cleanFrame && x.tab === "camera");
   const { t } = useT(); const peers = useMeshPeers(); const [connectOpen, setConnectOpen] = useState(false);
   useMeshBridge();
+  // Window changes only rearrange UI; they never restart the camera pipeline.
+  useEffect(() => startDisplayAdaptation(), []);
   const setStore = useMulticamStore((x) => x.set); const ready = useMulticamStore((x) => x.capMatrix !== null); const mediaOpen = useMulticamStore((x) => x.mediaOpen);
   const onProbed = useCallback((capMatrix: import("@/lib/capabilities").CapabilityMatrix) => setStore({ capMatrix }), [setStore]);
   useEffect(() => { document.documentElement.dir = language === "ar" ? "rtl" : "ltr"; document.documentElement.lang = language; }, [language]);
