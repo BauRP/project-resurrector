@@ -214,6 +214,8 @@ export function CameraDiagnostics() {
         <p className="text-muted-foreground">Физические ID: {c.physicalCameraIds?.join(", ") || "не раскрыты"}</p>
         <p className="text-muted-foreground">EIS: {c.eisDeclared ? "заявлена" : "состояние неизвестно"} · OIS: {c.oisDeclared ? "заявлена" : "состояние неизвестно"}</p>
         <p className="text-muted-foreground">Разрешения: {c.sizes.length}; заявленные высокоскоростные режимы: {c.highSpeed.length}</p>
+        <p className="text-muted-foreground">HDR Camera2: {c.dynamicRangeApiAvailable ? (c.dynamicRangeProfiles?.map(p => p.name).join(", ") || "нет раскрытых профилей") : "API недоступен"} · 10-бит: {c.tenBitOutputDeclared ? "заявлено" : "не подтверждено"}</p>
+        <p className="text-muted-foreground">HDR-файл, редактор и экспорт не проверены. Цветовые фильтры не считаются аппаратным HDR/LOG.</p>
         <div className="mt-2 flex flex-wrap gap-2">
           {c.raw && <Button size="sm" variant="outline" disabled={rawBusy || stabilizationBusy || recording || running || highSpeedState !== "idle"} onClick={() => void testRaw(c.cameraId)}>Снять настоящий DNG · CAM {c.cameraId}</Button>}
           <Button size="sm" variant="outline" disabled={stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void checkStabilization(c.cameraId)}>Проверить OIS/EIS · CAM {c.cameraId}</Button>
@@ -227,7 +229,7 @@ export function CameraDiagnostics() {
       {encoder && <div className="rounded-md border border-border p-2 text-xs">
         <p className="font-semibold">MediaCodec 1920×1080/30 FPS (заявленные ограничения)</p>
         {encoder.encoders.map((item, i) => <p key={i} className="mt-1 text-muted-foreground">
-          {item.encoderName} · {item.mime} · {item.declaredSizeRate ? "размер и частота заявлены" : "не заявлены"} · аппаратный: {item.hardwareAccelerated}
+          {item.encoderName} · {item.mime} · {item.declaredSizeRate ? "размер и частота заявлены" : "не заявлены"} · аппаратный: {item.hardwareAccelerated} · HEVC 10-bit: {item.hevcTenBitCandidate ? "профиль заявлен" : "не заявлен"} · HDR10: {item.hdr10ProfileDeclared ? "профиль заявлен" : "не заявлен"}
         </p>)}
       </div>}
       {!!tests.length && <div className="max-h-56 overflow-y-auto rounded-md border border-border p-2">
