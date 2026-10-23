@@ -18,9 +18,8 @@ export function cameraTaskKey(cameraId: string, mode: TestMode): string {
 const isTask = (value: unknown): value is CameraTestTask => {
   if (!value || typeof value !== "object") return false;
   const t = value as Partial<CameraTestTask>;
-  return typeof t.cameraId === "string" && !!t.cameraId &&
-    t.key === cameraTaskKey(t.cameraId, t.mode as TestMode) &&
-    !!t.mode && Number.isFinite(t.mode.width) && Number.isFinite(t.mode.height) &&
+  return typeof t.cameraId === "string" && !!t.cameraId && !!t.mode &&
+    t.key === cameraTaskKey(t.cameraId, t.mode) && Number.isFinite(t.mode.width) && Number.isFinite(t.mode.height) &&
     Number.isFinite(t.mode.fps) && typeof t.attempts === "number" &&
     ["pending", "running", "verified", "retry", "deferred", "error"].includes(t.status ?? "");
 };
