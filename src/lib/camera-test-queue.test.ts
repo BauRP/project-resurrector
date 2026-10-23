@@ -1,0 +1,27 @@
+import { describe, it, expect } from "vitest";
+import { cameraTaskKey, prepareCameraTestQueue, updateCameraTestTask, queueSummary } from "./camera-test-queue";
+import type { ModeEvidence } from "./camera-passport";
+
+const base = { width:1920, height:1080, fps:30 };
+const proof: ModeEvidence = { api:"webview",cameraId:"rear",requested:base,checkedAt:12,state:"verified" };
+describe("per-lens resumable diagnostic queue", () => {
+  it("only marks the exact tested camera, size and frame rate verified", () => {
+    const tasks = prepareCameraTestQueue(["rear","front"],[base,{ ...base, fps:60 }],[],[proof]);
+    expect(tasks).toHaveLength(4);
+    expect(tasks.filter(t=>t.status==="verified").map(t=>t.key)).toEqual([cameraTaskKey("rear",base)]);
+    expect(queueSummary(tasks,["rear","front"])).toEqual({total:4,verified:1,pending:3,failed:0,deferred:0});
+  });
+  it("resumes an interrupted in-progress task without inventing a success", () => {
+    const prior = prepareCameraTestQueue(["rear"],[base],[],[]);
+    const inProgress = updateCameraTestTask(prior,prior[0]!.key,"running","Открывается камера",1);
+    const resumed = prepareCameraTestQueue(["rear"],[base],inProgress,[]);
+    expect(resumed[0]?.status).toBe("retry");
+    expect(resumed[0]?.attempts).toBe(1);
+  });
+  it("keeps a verified result even if another mode fails", () => {
+    const start = prepareCameraTestQueue(["rear"],[base,{...base,fps:60}],[],[proof]);
+    const next = updateCameraTestTask(start,cameraTaskKey("rear",{...base,fps:60}),"error","кодировщик отказал");
+    expect(next.find(t=>t.mode.fps===30)?.status).toBe("verified");
+    expect(next.find(t=>t.mode.fps===60)?.status).toBe("error");
+  });
+});
