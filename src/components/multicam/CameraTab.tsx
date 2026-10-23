@@ -450,8 +450,8 @@ export function CameraTab() {
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
     <section className={`camera-live-view absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
+      {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording} hidden={clean} />}
       {!clean && <>
-        {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording} />}
         {s.dualCamera && s.recording && <div className="absolute end-3 top-10 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Dual Camera · две отдельные дорожки (без покадровой синхронизации)</div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
         {s.zebras && <div className="zebra-overlay pointer-events-none absolute inset-0 opacity-30" />}

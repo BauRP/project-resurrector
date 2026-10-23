@@ -23,7 +23,7 @@ const release = (stream: MediaStream) => stream.getTracks().forEach(track => tra
  * Recording is intentionally blocked while this preview is enabled because
  * the current main recorder encodes only one camera.
  */
-export function DualCameraPreview({ primaryStream, onSecondaryStream, recording }: { primaryStream: MediaStream | null; onSecondaryStream: (stream: MediaStream | null) => void; recording: boolean }) {
+export function DualCameraPreview({ primaryStream, onSecondaryStream, recording, hidden }: { primaryStream: MediaStream | null; onSecondaryStream: (stream: MediaStream | null) => void; recording: boolean; hidden?: boolean }) {
   const mainTrack = primaryStream?.getVideoTracks()[0] ?? null;
   const primaryId = mainTrack?.getSettings().deviceId ?? "";
   const [devices, setDevices] = useState<CameraOption[]>([]);
@@ -110,7 +110,7 @@ export function DualCameraPreview({ primaryStream, onSecondaryStream, recording 
     return () => { if (player.srcObject === secondStream) player.srcObject = null; };
   }, [secondStream]);
 
-  return <div className="absolute end-2 top-16 z-10 w-[min(43%,220px)] rounded-lg border border-border bg-card p-2 text-foreground shadow-lg">
+  return <div className={`absolute end-2 top-16 z-10 w-[min(43%,220px)] rounded-lg border border-border bg-card p-2 text-foreground shadow-lg ${hidden ? "pointer-events-none opacity-0" : ""}`}>
     <p className="mb-1 text-[10px] font-semibold">Вторая камера · живой предпросмотр</p>
     <select className="mb-1 w-full min-w-0 rounded-md border border-border bg-secondary p-1 text-[10px]" aria-label="Выбрать вторую камеру" value={selected} disabled={recording} onChange={event => setSelected(event.target.value)}>
       <option value="">Выбрать камеру</option>
