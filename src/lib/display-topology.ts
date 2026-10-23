@@ -149,11 +149,24 @@ export function startDisplayAdaptation(): () => void {
   window.addEventListener("orientationchange", measure);
   window.visualViewport?.addEventListener("resize", measure);
   const content = document.querySelector(".app-scroll");
-  const mutations = content && typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
+  const scheduleMeasure = () => {
     if (refreshFrame) cancelAnimationFrame(refreshFrame);
     refreshFrame = requestAnimationFrame(measure);
+  };
+  const geometryObserver = typeof ResizeObserver !== "undefined"
+    ? new ResizeObserver(scheduleMeasure) : null;
+  const shell = document.querySelector(".app-shell");
+  if (shell) geometryObserver?.observe(shell);
+  const camera = document.querySelector(".camera-screen");
+  if (camera) geometryObserver?.observe(camera);
+  const mutations = content && typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
+    // React replaces the camera/editor/settings inside an animated child.
+    // Track nested mounts and recalculate pane offsets without touching streams.
+    const nextCamera = document.querySelector(".camera-screen");
+    if (nextCamera) geometryObserver?.observe(nextCamera);
+    scheduleMeasure();
   }) : null;
-  if (content) mutations?.observe(content, { childList: true });
+  if (content) mutations?.observe(content, { childList: true, subtree: true });
   measure();
   if (Capacitor.isNativePlatform()) {
     void NativeDisplay.addListener("topologyChanged", apply).then(handle => {
@@ -168,6 +181,7 @@ export function startDisplayAdaptation(): () => void {
     window.removeEventListener("orientationchange", measure);
     window.visualViewport?.removeEventListener("resize", measure);
     mutations?.disconnect();
+    geometryObserver?.disconnect();
     cancelAnimationFrame(refreshFrame);
     void listener?.remove();
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving().catch(() => {});
