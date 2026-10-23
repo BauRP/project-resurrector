@@ -15,6 +15,10 @@ export function CameraDiagnostics() {
   const [error, setError] = useState("");
   const [encoder, setEncoder] = useState<NativeEncoderSupport | null>(null);
   const [encoderBusy, setEncoderBusy] = useState(false);
+  const [highSpeedState, setHighSpeedState] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
+  const [highSpeedMessage, setHighSpeedMessage] = useState("");
+  const [highSpeedCamera, setHighSpeedCamera] = useState("");
+  const [highSpeedMode, setHighSpeedMode] = useState("");
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
   const job = useRef<AbortController | null>(null);
   const mounted = useRef(true);
@@ -72,6 +76,38 @@ export function CameraDiagnostics() {
       if (job.current === current) job.current = null;
     }
   };
+  const highSpeedOptions = nativeCameras.flatMap(cam => cam.highSpeed.flatMap(mode =>
+    mode.fps.filter(fps => fps >= 120).map(fps => ({
+      key: cam.cameraId + "|" + mode.size + "|" + fps,
+      cameraId: cam.cameraId, size: mode.size, fps,
+    }))
+  ));
+  const beginHighSpeed = async () => {
+    const option = highSpeedOptions.find(x => x.key === highSpeedMode);
+    if (!option || running || recording || highSpeedState !== "idle") return;
+    if (!window.confirm("Открыть настоящую Camera2 high-speed запись " + option.size + "@" + option.fps + " на камере " + option.cameraId + "? Экран предпросмотра WebView отключён в этой сессии. Устройство может ограничивать такой режим.")) return;
+    const [width, height] = option.size.split("x").map(Number);
+    if (!width || !height) { setError("Некорректный размер native high-speed"); return; }
+    setHighSpeedState("starting"); setHighSpeedMessage("Запуск Camera2 high-speed…");
+    try {
+      await MultiCamNative.startHighSpeedRecording({ cameraId: option.cameraId, width, height, fps: option.fps });
+      if (mounted.current) { setHighSpeedCamera(option.cameraId); setHighSpeedState("recording"); setHighSpeedMessage("Запись началась, остановите её вручную"); }
+    } catch (e) {
+      if (mounted.current) { setHighSpeedState("idle"); setHighSpeedMessage("Ошибка запуска: " + String(e)); }
+    }
+  };
+  const finishHighSpeed = async () => {
+    if (highSpeedState !== "recording") return;
+    setHighSpeedState("stopping");
+    try {
+      const file = await MultiCamNative.stopHighSpeedRecording();
+      if (mounted.current) setHighSpeedMessage("Сохранён файл Camera2: " + file.bytes + " байт за " + file.durationMs + " мс. FPS в MP4 не измерен. Путь: " + file.path);
+    } catch (e) {
+      if (mounted.current) setHighSpeedMessage("Ошибка сохранения: " + String(e));
+    } finally {
+      if (mounted.current) { setHighSpeedState("idle"); setHighSpeedCamera(""); }
+    }
+  };
   const checkEncoder = async () => {
     if (!isNative() || encoderBusy) return;
     setEncoderBusy(true); setError("");
@@ -105,6 +141,20 @@ export function CameraDiagnostics() {
       <Button size="sm" variant="outline" disabled={!nativeCameras.length && !tests.length && !encoder} onClick={download}>Скачать паспорт</Button>
       {isNative() && <Button size="sm" variant="secondary" disabled={encoderBusy || running || recording} onClick={() => void checkEncoder()}>{encoderBusy ? "Проверяю…" : "Кодировщики 1080p30"}</Button>}
     </div>
+    {isNative() && <div className="mt-3 rounded-md border border-border p-2 text-xs">
+      <p className="font-semibold">Нативная Camera2 Slow-mo · реальные FPS</p>
+      <p className="mt-1 text-muted-foreground">Доступны только заявленные постоянные высокоскоростные режимы. Проверка запускает настоящий MediaRecorder Camera2. Аудио и предпросмотр могут быть недоступны; результат записывается во внутреннюю папку приложения.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <select className="min-w-0 max-w-full rounded-md border border-border bg-secondary p-2" aria-label="Выбрать Camera2 high-speed режим" value={highSpeedMode} onChange={e => setHighSpeedMode(e.target.value)} disabled={highSpeedState !== "idle"}>
+          <option value="">Выберите камеру, разрешение и FPS</option>
+          {highSpeedOptions.map(x => <option key={x.key} value={x.key}>CAM {x.cameraId} · {x.size} · {x.fps} FPS</option>)}
+        </select>
+        <Button size="sm" disabled={!highSpeedMode || running || recording || highSpeedState !== "idle"} onClick={() => void beginHighSpeed()}>Начать Slow-mo</Button>
+        <Button size="sm" variant="secondary" disabled={highSpeedState !== "recording"} onClick={() => void finishHighSpeed()}>Остановить Slow-mo</Button>
+      </div>
+      {highSpeedState !== "idle" && <p className="mt-1">Состояние: {highSpeedState} · CAM {highSpeedCamera || "…"}</p>}
+      {highSpeedMessage && <p role="status" className="mt-1 break-words text-muted-foreground">{highSpeedMessage}</p>}
+    </div>}
     {recording && <p className="mt-2 text-xs text-warning">Во время записи диагностика недоступна</p>}
     {!!progress && <p className="mt-2 text-xs" role="status">{progress}</p>}
     {!!error && <p className="mt-2 text-xs text-warning" role="alert">{error}</p>}
