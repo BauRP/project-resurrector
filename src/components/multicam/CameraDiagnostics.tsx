@@ -6,6 +6,7 @@ import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
+import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-camera-verification";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -15,6 +16,11 @@ export function CameraDiagnostics() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  const [dualBusy, setDualBusy] = useState(false);
+  const [dualMessage, setDualMessage] = useState("");
+  const [dualFirst, setDualFirst] = useState("");
+  const [dualSecond, setDualSecond] = useState("");
+  const [dualEvidence, setDualEvidence] = useState<DualCameraEvidence[]>([]);
   const [encoder, setEncoder] = useState<NativeEncoderSupport | null>(null);
   const [encoderBusy, setEncoderBusy] = useState(false);
   const [highSpeedState, setHighSpeedState] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
@@ -29,6 +35,7 @@ export function CameraDiagnostics() {
   const [stabilizationResults, setStabilizationResults] = useState<StabilizationProbeResult[]>([]);
   const [stabilizationMessage, setStabilizationMessage] = useState("");
   const job = useRef<AbortController | null>(null);
+  const dualJob = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
     mounted.current = true;
@@ -56,7 +63,7 @@ export function CameraDiagnostics() {
       .then(result => { if (mounted.current) setNativeCameras(result.cameras); })
       .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
-      mounted.current = false; job.current?.abort();
+      mounted.current = false; job.current?.abort(); dualJob.current?.abort();
       if (highSpeedSession.current) {
         highSpeedSession.current = false;
         void MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
@@ -161,6 +168,29 @@ export function CameraDiagnostics() {
       if (mounted.current) setStabilizationMessage("Camera2 стабилизация не подтверждена: " + String(e));
     } finally { if (mounted.current) setStabilizationBusy(false); }
   };
+  const testDual = async () => {
+    if (dualBusy || recording || running || rawBusy || stabilizationBusy || highSpeedState !== "idle") return;
+    if (!dualFirst || !dualSecond || dualFirst === dualSecond) {
+      setDualMessage("Выберите две разные камеры WebView"); return;
+    }
+    if (!window.confirm("Проверить одновременную короткую запись ДВУХ камер и двух кодировщиков? Тест может нагреть телефон. Оба файла сохраняются в медиатеку только при общем успехе.")) return;
+    const test = new AbortController(); dualJob.current = test;
+    setDualBusy(true); setDualMessage("Проверяю две независимые камеры и два видеокодировщика…");
+    try {
+      const result = await verifyDualCameraRecording(dualFirst, dualSecond, test.signal);
+      if (mounted.current) {
+        setDualEvidence(prev => [...prev, result]);
+        setDualMessage("Два видео сохранены: " + result.first.bytes + " и " + result.second.bytes +
+          " байт. Разница старта: " + result.startedSkewMs + " мс. Синхронизация кадров не подтверждена.");
+        window.dispatchEvent(new Event("multicam-clips-changed"));
+      }
+    } catch (error) {
+      if (mounted.current) setDualMessage("Двухкамерная запись не подтверждена: " + String(error));
+    } finally {
+      if (mounted.current) setDualBusy(false);
+      if (dualJob.current === test) dualJob.current = null;
+    }
+  };
   const download = () => {
     const report = {
       checkedAt: new Date().toISOString(),
@@ -169,6 +199,7 @@ export function CameraDiagnostics() {
       cameraModeEvidence: tests,
       encoderEvidence: encoder,
       stabilizationCaptureResults: stabilizationResults,
+      dualCameraRecordedEvidence: dualEvidence,
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
     const a = document.createElement("a");
@@ -199,6 +230,21 @@ export function CameraDiagnostics() {
       {highSpeedState !== "idle" && <p className="mt-1">Состояние: {highSpeedState} · CAM {highSpeedCamera || "…"}</p>}
       {highSpeedMessage && <p role="status" className="mt-1 break-words text-muted-foreground">{highSpeedMessage}</p>}
     </div>}
+    <div className="mt-3 rounded-md border border-border p-2 text-xs">
+      <p className="font-semibold">Две камеры одновременно · пробная запись</p>
+      <p className="mt-1 text-muted-foreground">Выберите два разных устройства WebView. Проверка открывает два реальных потока, записывает два коротких видео и сохраняет их вместе. Это НЕ подтверждает постоянную синхронизацию или работу Camera2-мультикамеры.</p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        <select aria-label="Первая камера" value={dualFirst} onChange={e => setDualFirst(e.target.value)} disabled={dualBusy} className="min-w-0 rounded-md border border-border bg-secondary p-2">
+          <option value="">Камера №1</option>{devices.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Камера " + (i+1)}</option>)}
+        </select>
+        <select aria-label="Вторая камера" value={dualSecond} onChange={e => setDualSecond(e.target.value)} disabled={dualBusy} className="min-w-0 rounded-md border border-border bg-secondary p-2">
+          <option value="">Камера №2</option>{devices.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || "Камера " + (i+1)}</option>)}
+        </select>
+        <Button size="sm" disabled={dualBusy || devices.length < 2 || recording || running || rawBusy || stabilizationBusy || highSpeedState !== "idle"} onClick={() => void testDual()}>Проверить две записи</Button>
+        <Button size="sm" variant="outline" disabled={!dualBusy} onClick={() => dualJob.current?.abort()}>Остановить</Button>
+      </div>
+      {dualMessage && <p role="status" className="mt-2 break-words">{dualMessage}</p>}
+    </div>
     {recording && <p className="mt-2 text-xs text-warning">Во время записи диагностика недоступна</p>}
     {!!progress && <p className="mt-2 text-xs" role="status">{progress}</p>}
     {!!error && <p className="mt-2 text-xs text-warning" role="alert">{error}</p>}
