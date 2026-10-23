@@ -21,6 +21,7 @@ import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
+import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "@/lib/fold-recording-evidence";
 import { startDualRecording, independentStreamsReady, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
@@ -267,8 +268,15 @@ export function CameraTab() {
       recorderRef.current = recorder;
       const camera = s.activeCamera; const startedAt = Date.now();
       const chunks: Blob[] = [];
+      let foldTransitions: FoldTransitionEvidence[] = [];
+      const onFold = (event: Event) => {
+        const evidence = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
+        if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
+      };
+      window.addEventListener(FOLD_EVENT, onFold);
       let recorderError = "";
       const cleanUp = () => {
+        window.removeEventListener(FOLD_EVENT, onFold);
         pipeRef.current?.stop(); pipeRef.current = null;
         recordingAudio.current = null; void gainCtx?.close();
         if (recorderRef.current === recorder) recorderRef.current = null;
@@ -293,6 +301,7 @@ export function CameraTab() {
         void saveRecordedClip({
           id: clipId, createdAt: startedAt, camera, mode, profile,
           playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
+          foldTransitions, foldContinuityVerified: false,
         }).then(() => {
           // Save is durable and independently read back. Decoding is checked
           // separately: failure must not destroy or hide an already saved clip.
