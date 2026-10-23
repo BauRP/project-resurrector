@@ -15,6 +15,7 @@ export function CameraDiagnostics() {
   const [error, setError] = useState("");
   const [encoder, setEncoder] = useState<NativeEncoderSupport | null>(null);
   const [encoderBusy, setEncoderBusy] = useState(false);
+  const [availability, setAvailability] = useState<Record<string, boolean>>({});
   const job = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -26,11 +27,26 @@ export function CameraDiagnostics() {
     };
     refresh();
     navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
+    let removeAvailability: (() => void) | undefined;
+    if (isNative()) {
+      void MultiCamNative.addListener("cameraAvailabilityChanged", event => {
+        if (mounted.current) {
+          setAvailability(previous => ({ ...previous, [event.cameraId]: event.available }));
+          refresh();
+        }
+      }).then(listener => {
+        if (!mounted.current) { void listener.remove(); return; }
+        removeAvailability = () => { void listener.remove(); };
+        void MultiCamNative.startCameraAvailability().catch(() => setError("События доступности Camera2 недоступны"));
+      }).catch(() => { if (mounted.current) setError("События доступности Camera2 недоступны"); });
+    }
     if (isNative()) void MultiCamNative.getCapabilities()
       .then(result => { if (mounted.current) setNativeCameras(result.cameras); })
       .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
       mounted.current = false; job.current?.abort();
+      removeAvailability?.();
+      if (isNative()) void MultiCamNative.stopCameraAvailability().catch(() => undefined);
       navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
     };
   }, []);
@@ -100,7 +116,7 @@ export function CameraDiagnostics() {
       </div>)}
       <p className="pt-2 text-xs font-semibold">Camera2: {nativeCameras.length} логических камер</p>
       {nativeCameras.map(c => <div key={c.cameraId} className="rounded-md border border-border p-2 text-xs">
-        <p className="font-medium">ID {c.cameraId} · {c.facing}</p>
+        <p className="font-medium">ID {c.cameraId} · {c.facing} · {availability[c.cameraId] === true ? "сейчас доступна" : availability[c.cameraId] === false ? "сейчас занята или недоступна" : "текущая доступность неизвестна"}</p>
         <p className="text-muted-foreground">Физические ID: {c.physicalCameraIds?.join(", ") || "не раскрыты"}</p>
         <p className="text-muted-foreground">EIS: {c.eisDeclared ? "заявлена" : "состояние неизвестно"} · OIS: {c.oisDeclared ? "заявлена" : "состояние неизвестно"}</p>
         <p className="text-muted-foreground">Разрешения: {c.sizes.length}; заявленные высокоскоростные режимы: {c.highSpeed.length}</p>
