@@ -15,6 +15,7 @@ import { AudioRail, ColorTuning, FalseColorOverlay, FocusRail, LensZoomBlock, Sh
 import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native";
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
+import { saveRecordedClip } from "@/lib/clip-persistence";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 const tools = [
@@ -60,9 +61,15 @@ export function CameraTab() {
   useEffect(() => {
     let alive = true; const token = owner.current;
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
-    void cameraController.acquire(token, { video: s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode }, audio: s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true }).then((next) => {
-      if (alive) { setStream(next); setCameraState("live"); }
-    }).catch(() => { if (alive) setCameraState("unavailable"); });
+    const video = s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode };
+    const audio = s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true;
+    // Microphone permission/routing is independent of camera permission.
+    void cameraController.acquire(token, { video, audio })
+      .catch(() => cameraController.acquire(token, { video, audio: false }))
+      .then((next) => {
+        if (alive) { setStream(next); setCameraState("live"); }
+        else next.getTracks().forEach((track) => track.stop());
+      }).catch(() => { if (alive) setCameraState("unavailable"); });
     return () => { alive = false; cameraController.release(token); };
   }, [facingMode, s.capture.micId, s.lensDeviceId]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
@@ -110,14 +117,31 @@ export function CameraTab() {
   useEffect(() => { if (s.capture.iso !== null) applyManual(stream, { exposureMode: "manual", iso: s.capture.iso }); }, [s.capture.iso, stream]);
   useEffect(() => { applyManual(stream, s.wbKelvin === null ? { whiteBalanceMode: "continuous" } : { whiteBalanceMode: "manual", colorTemperature: s.wbKelvin }); }, [s.wbKelvin, stream]);
 
-  // Recorder follows global recording state — works for local presses and the director's remote trigger.
+  // Recorder is driven by the session command but only shows confirmed recording
+  // after MediaRecorder has actually started. All completion paths report errors.
   const pipeRef = useRef<{ stop: () => void } | null>(null);
   const recordingAudio = useRef<ReturnType<typeof createLimiter> | null>(null);
   useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
     mesh.selfRecording = s.recording;
-    if (s.recording && stream && typeof MediaRecorder !== "undefined" && recorderRef.current?.state !== "recording" && recorderRef.current?.state !== "paused") {
+    const active = recorderRef.current;
+    if (!s.recording) {
+      if (active && active.state !== "inactive") {
+        s.set({ recordingPhase: "stopping" });
+        try { active.stop(); } catch (error) { s.set({ recordingPhase: "error", captureSaveError: String(error) }); }
+      }
+      return;
+    }
+    if (!stream?.getVideoTracks().some((t) => t.readyState === "live") || typeof MediaRecorder === "undefined") {
+      s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: "Камера или видеозапись недоступна" });
+      return;
+    }
+    if (active && active.state !== "inactive") return;
+    let gainCtx: AudioContext | null = null;
+    let createdRecorder: MediaRecorder | null = null;
+    try {
       chunksRef.current = [];
+      s.set({ recordingPhase: "starting", captureSaveError: "" });
       const { mode, profile, codec, fps } = s.capture;
       const lapse = mode === "timelapse" ? 1000 : mode === "hyperlapse" ? 200 : 0;
       let source = stream;
@@ -125,36 +149,77 @@ export function CameraTab() {
       if ((profile !== "standard" || lapse || graded) && videoRef.current) {
         const video = videoRef.current; const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
-        const ctx = canvas.getContext("2d"); if (!ctx) { s.set({ recording: false, recordingStartedAt: null }); return; } ctx.filter = [profile === "standard" ? "" : toneFilter(profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ") || "none";
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Видеообработка недоступна");
+        ctx.filter = [profile === "standard" ? "" : toneFilter(profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ") || "none";
         const draw = () => ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const cs = canvas.captureStream(lapse ? 0 : fps);
         const vt = cs.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
         let raf = 0; let timer = 0;
         if (lapse) timer = window.setInterval(() => { draw(); vt.requestFrame?.(); }, lapse);
-        else { const loop = () => { draw(); raf = requestAnimationFrame(loop); }; loop(); }
+        else { const loop = () => { if (video.readyState >= 2) draw(); raf = requestAnimationFrame(loop); }; loop(); }
         source = new MediaStream([...cs.getVideoTracks(), ...(lapse ? [] : stream.getAudioTracks())]);
         pipeRef.current = { stop: () => { cancelAnimationFrame(raf); window.clearInterval(timer); cs.getTracks().forEach((t) => t.stop()); } };
       }
-      let gainCtx: AudioContext | null = null;
       if ((s.audioGain !== 1 || s.audioCeiling < 0) && source.getAudioTracks().length) {
-        gainCtx = new AudioContext(); const src = gainCtx.createMediaStreamSource(new MediaStream(source.getAudioTracks())); const limiter = createLimiter(gainCtx, src, s.audioGain, s.audioCeiling); recordingAudio.current = limiter; const out = limiter.output; const dest = gainCtx.createMediaStreamDestination(); out.connect(dest);
+        gainCtx = new AudioContext();
+        const src = gainCtx.createMediaStreamSource(new MediaStream(source.getAudioTracks()));
+        const limiter = createLimiter(gainCtx, src, s.audioGain, s.audioCeiling);
+        recordingAudio.current = limiter;
+        const dest = gainCtx.createMediaStreamDestination();
+        limiter.output.connect(dest);
         source = new MediaStream([...source.getVideoTracks(), ...dest.stream.getAudioTracks()]);
       }
       const preferred = codecMime(codec);
-      const mime = MediaRecorder.isTypeSupported(preferred) ? preferred : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm";
+      const candidates = [preferred, "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+      const mime = candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      if (!mime) throw new Error("Поддерживаемый видеокодировщик не найден");
       const recorder = new MediaRecorder(source, { mimeType: mime });
+      createdRecorder = recorder;
+      recorderRef.current = recorder;
       const camera = s.activeCamera; const startedAt = Date.now();
       const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      recorder.onstop = () => {
-        pipeRef.current?.stop(); pipeRef.current = null; recordingAudio.current = null; void gainCtx?.close();
-        const blob = new Blob(chunks, { type: mime });
-        const request = indexedDB.open("multicam-pov-media", 1);
-        request.onupgradeneeded = () => request.result.createObjectStore("clips", { keyPath: "id" });
-        request.onsuccess = () => { const tx = request.result.transaction("clips", "readwrite"); tx.objectStore("clips").put({ id: `clip-${Date.now()}`, createdAt: startedAt, camera, mode, profile, playbackRate: lapse ? lapse / (1000 / 30) : 1, blob }); tx.oncomplete = () => { request.result.close(); window.dispatchEvent(new Event("multicam-clips-changed")); }; tx.onerror = () => request.result.close(); };
+      let recorderError = "";
+      const cleanUp = () => {
+        pipeRef.current?.stop(); pipeRef.current = null;
+        recordingAudio.current = null; void gainCtx?.close();
+        if (recorderRef.current === recorder) recorderRef.current = null;
       };
-      recorder.start(1000); recorderRef.current = recorder;
-    } else if (!s.recording && recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
+      recorder.onstart = () => {
+        s.set({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
+      };
+      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder.onerror = (event) => {
+        recorderError = (event as Event & { error?: Error }).error?.message || "Ошибка кодировщика";
+        s.set({ recordingPhase: "error", captureSaveError: recorderError });
+        if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* already stopped */ }
+      };
+      recorder.onstop = () => {
+        cleanUp();
+        s.set({ recording: false, recordingStartedAt: null, paused: false });
+        if (recorderError) { s.set({ recordingPhase: "error", captureSaveError: recorderError }); return; }
+        s.set({ recordingPhase: "saving" });
+        const blob = new Blob(chunks, { type: mime });
+        void saveRecordedClip({
+          id: `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`,
+          createdAt: startedAt, camera, mode, profile,
+          playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
+        }).then(() => {
+          s.set({ recordingPhase: "saved", captureSaveError: "" });
+          window.dispatchEvent(new Event("multicam-clips-changed"));
+        }).catch((error: unknown) => {
+          s.set({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+        });
+      };
+      recorder.start(1000);
+    } catch (error) {
+      if (createdRecorder && createdRecorder.state !== "inactive") try { createdRecorder.stop(); } catch { /* ignored */ }
+      if (recorderRef.current === createdRecorder) recorderRef.current = null;
+      pipeRef.current?.stop(); pipeRef.current = null;
+      recordingAudio.current = null;
+      void gainCtx?.close();
+      s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+    }
   }, [s.recording, stream]);
   useEffect(() => () => {
     const recorder = recorderRef.current;
@@ -214,10 +279,11 @@ export function CameraTab() {
       {countdown > 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center text-7xl font-bold text-foreground drop-shadow-lg">{countdown}</div>}
     </section>
 
+    {!clean && s.captureSaveError && <div role="alert" className="absolute inset-x-3 bottom-28 z-30 rounded-md border border-warning bg-card px-3 py-2 text-xs text-foreground">{s.captureSaveError}</div>}
     {/* HUD status bar */}
     <div className="absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
       {!clean && <div className="scrollbar-none flex min-w-0 flex-1 gap-1 overflow-x-auto">
-        <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : t("sim")}</span>
+        <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : cameraState === "loading" ? "…" : "НЕТ КАМЕРЫ"}</span>
         <button className={`hud-chip ${hud === "shutter" ? "active" : ""}`} onClick={() => toggleHud("shutter")}>{s.shutter}s</button>
         <button className={`hud-chip ${hud === "iso" ? "active" : ""} ${camCaps && !camCaps.iso ? "opacity-40" : ""}`} onClick={() => toggleHud("iso")}>ISO {s.capture.iso ?? "A"}</button>
         <button className={`hud-chip ${hud === "wb" ? "active" : ""}`} onClick={() => toggleHud("wb")}>WB {s.wbKelvin ? `${s.wbKelvin}K` : "A"}</button>

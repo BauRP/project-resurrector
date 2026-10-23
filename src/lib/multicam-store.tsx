@@ -18,7 +18,7 @@ export type ToneProfile = "standard" | "log" | "flat" | "directlog";
 export interface CaptureConfig { resolution: string; fps: number; codec: string; mode: CaptureMode; profile: ToneProfile; micId: string; iso: number | null; focus: number | null; exposure: number | null }
 export type AppTheme = "light" | "dark";
 interface StateData {
-  tab: AppTab; role: Role; sessionCode: string; recording: boolean; recordingStartedAt: number | null; theme: AppTheme;
+  tab: AppTab; role: Role; sessionCode: string; recording: boolean; recordingStartedAt: number | null; recordingPhase: "idle" | "starting" | "recording" | "stopping" | "saving" | "saved" | "error"; captureSaveError: string; theme: AppTheme;
   markers: Marker[]; cuts: Cut[]; activeCamera: number; playhead: number; duration: number; playing: boolean;
   focusPeaking: boolean; zebras: boolean; wbLock: boolean; isoLock: boolean; grid: GridMode;
   shutter: string; anamorphic: string; distortion: number; dualCamera: boolean; tracking: boolean;
@@ -43,7 +43,7 @@ export interface MulticamState extends StateData {
 const makeId = () => `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 const projectDefaults = { markers: [] as Marker[], cuts: [] as Cut[], subtitles: [] as Subtitle[], playhead: 0, duration: 62, activeCamera: 1, playing: false };
 const defaults: StateData = {
-  tab: "camera", role: "solo", sessionCode: "POV-842", recording: false, recordingStartedAt: null, theme: "light", ...projectDefaults,
+  tab: "camera", role: "solo", sessionCode: "POV-842", recording: false, recordingStartedAt: null, recordingPhase: "idle", captureSaveError: "", theme: "light", ...projectDefaults,
   focusPeaking: false, zebras: false, wbLock: false, isoLock: false, grid: "thirds", shutter: "1/48", anamorphic: "off", distortion: 0, dualCamera: false, tracking: true,
   teleprompter: false, teleprompterText: "Welcome to MULTI-CAM POV. Keep your eyes on the lens and tell the story.", teleprompterSpeed: 35, teleprompterSize: 24, touchLocked: false,
   selectedLut: "Neutral", customLutName: "", transition: "Dissolve", chromaEnabled: false, chromaColor: "#36d462", chromaTolerance: 35, chromaSmoothness: 20,
@@ -70,7 +70,7 @@ export function createMulticamStore(): StoreApi {
     set: (patch) => setData((current) => patchState(current, patch)),
     setTab: (tab) => setData((current) => patchState(current, { tab })),
     startSession: (role) => setData((current) => ({ ...current, role, sessionCode: `POV-${Math.floor(100 + Math.random() * 900)}` })),
-    toggleRecording: () => setData((current) => current.role === "slave" ? current : ({ ...current, recording: !current.recording, paused: false, recordingStartedAt: current.recording ? null : Date.now(), duration: current.recording ? Math.max(current.duration, 68) : current.duration })),
+    toggleRecording: () => setData((current) => current.role === "slave" ? current : ({ ...current, recording: !current.recording, paused: false, recordingPhase: current.recording ? "stopping" : "starting", captureSaveError: "", recordingStartedAt: current.recording ? null : null, duration: current.recording ? Math.max(current.duration, 68) : current.duration })),
     addMarker: () => setData((current) => ({ ...current, markers: [...current.markers, { id: makeId(), time: current.recordingStartedAt ? (Date.now() - current.recordingStartedAt) / 1000 : current.playhead, label: `Marker ${current.markers.length + 1}` }] })),
     switchCamera: (camera) => setData((current) => ({ ...current, activeCamera: camera, cuts: [...current.cuts, { id: makeId(), time: current.playhead, camera }] })),
     setEqBand: (index, bandValue) => setData((current) => ({ ...current, eq: current.eq.map((item, itemIndex) => itemIndex === index ? bandValue : item) })),
