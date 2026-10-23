@@ -286,7 +286,7 @@ export function CameraTab() {
 
     {!clean && s.captureSaveError && <div role="alert" className="absolute inset-x-3 bottom-28 z-30 rounded-md border border-warning bg-card px-3 py-2 text-xs text-foreground">{s.captureSaveError}</div>}
     {/* HUD status bar */}
-    <div className="absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
+    <div className="camera-hud absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
       {!clean && <div className="scrollbar-none flex min-w-0 flex-1 gap-1 overflow-x-auto">
         <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : cameraState === "loading" ? "…" : "НЕТ КАМЕРЫ"}</span>
         <button className={`hud-chip ${hud === "shutter" ? "active" : ""}`} onClick={() => toggleHud("shutter")}>{s.shutter}s</button>
@@ -320,7 +320,7 @@ export function CameraTab() {
     {!clean && <div className="absolute inset-x-3 bottom-[12.25rem] z-10"><FocusRail stream={stream} />{focusWarning && <p role="alert" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">Ручной фокус: камера не сообщает диапазон фокусировки</p>}{focusError && <p role="status" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">{focusError}</p>}</div>}
 
     {/* Settings sheet with accordions */}
-    <AnimatePresence>{sheet && !clean && <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 380, damping: 34 }} className="glass-panel absolute inset-x-2 bottom-2 top-2 z-30 overflow-y-auto overscroll-contain rounded-2xl p-2 text-xs">
+    <AnimatePresence>{sheet && !clean && <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 380, damping: 34 }} className="camera-settings-sheet glass-panel absolute inset-x-2 bottom-2 top-2 z-30 overflow-y-auto overscroll-contain rounded-2xl p-2 text-xs">
       <div className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 flex items-center justify-between bg-card px-3 py-2"><b className="text-xs">Параметры</b><button aria-label="Закрыть параметры" onClick={() => setSheet(false)} className="rounded-full p-1 text-muted-foreground hover:text-foreground"><X className="size-4" /></button></div>
       <Accordion title="Инструменты кадра" defaultOpen>
         <div className="flex flex-wrap gap-1.5">

@@ -502,3 +502,23 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .camera-record-dock .record-shutter { width: 3rem; height: 3rem; }
   .camera-record-dock .record-shutter span { width: 2.3rem; height: 2.3rem; }
 }
+
+
+/* Fold geometry is relative to the live camera region, not the entire Activity.
+   Keep all interactive controls within one physically usable pane. */
+[data-camera-split="side"] .camera-hud {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: 0 !important;
+  padding-inline: .5rem;
+}
+[data-camera-split="side"] .camera-settings-sheet {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: .5rem !important;
+}
+[data-camera-split="side"] .bottom-nav {
+  left: var(--camera-right-pane-left) !important;
+  width: var(--camera-right-pane-width) !important;
+}
+[data-camera-tabletop="true"] .camera-settings-sheet {
+  top: var(--camera-lower-top) !important;
+}

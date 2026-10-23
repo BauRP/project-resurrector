@@ -64,6 +64,8 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
 export function startDisplayAdaptation(): () => void {
   let disposed = false, lastRevision = -1;
   let listener: PluginListenerHandle | undefined;
+  let lastNative: DisplayTopology | null = null;
+  let refreshFrame = 0;
   const root = document.documentElement;
   const width = () => window.innerWidth;
   const height = () => window.innerHeight;
@@ -72,10 +74,12 @@ export function startDisplayAdaptation(): () => void {
     root.dataset.windowClass = windowClass(width());
     root.dataset.windowHeight = height() < 480 ? "short" : "regular";
     root.style.setProperty("--app-viewport-height", height() + "px");
+    // Native folding bounds are stable in their own coordinate system, but
+    // the CSS viewport and camera region can change independently.
+    if (lastNative) layout(lastNative);
   };
-  const apply = (state: DisplayTopology) => {
-    if (disposed || state.revision < lastRevision) return;
-    lastRevision = state.revision;
+  const layout = (state: DisplayTopology) => {
+    if (disposed) return;
     const geometry = calculateDisplayRegions(state, width(), height());
     root.dataset.foldInfo = state.posture;
     root.dataset.foldCount = String(state.foldingFeatures.length);
@@ -90,20 +94,36 @@ export function startDisplayAdaptation(): () => void {
       panes[0]!.height >= 260 && geometry.split === "vertical";
     root.dataset.cameraSplit = eligible ? "side" : "none";
     const leftPane = panes[0], rightPane = panes[1];
-    root.style.setProperty("--camera-left-pane-width", (leftPane?.width ?? width()) + "px");
-    root.style.setProperty("--camera-right-pane-left", (rightPane?.left ?? width()) + "px");
+    const cameraRect = document.querySelector(".camera-screen")?.getBoundingClientRect();
+    const cameraLeft = cameraRect?.left ?? 0;
+    const cameraTop = cameraRect?.top ?? 0;
+    root.style.setProperty("--camera-left-pane-width", Math.max(0, (leftPane?.left ?? 0) + (leftPane?.width ?? width()) - cameraLeft) + "px");
+    root.style.setProperty("--camera-right-pane-left", Math.max(0, (rightPane?.left ?? width()) - cameraLeft) + "px");
+    root.style.setProperty("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
     const horizontal = geometry.split === "horizontal" && panes.length >= 2 &&
       panes[0]!.height >= 170 && panes[1]!.height >= 170;
     root.dataset.cameraTabletop = horizontal ? "true" : "false";
     if (horizontal) {
-      root.style.setProperty("--camera-upper-height", panes[0]!.height + "px");
-      root.style.setProperty("--camera-lower-top", panes[1]!.top + "px");
+      root.style.setProperty("--camera-upper-height", Math.max(0, panes[0]!.top + panes[0]!.height - cameraTop) + "px");
+      root.style.setProperty("--camera-lower-top", Math.max(0, panes[1]!.top - cameraTop) + "px");
     }
+  };
+  const apply = (state: DisplayTopology) => {
+    if (disposed || state.revision < lastRevision) return;
+    lastRevision = state.revision;
+    lastNative = state;
+    layout(state);
     measure();
   };
   window.addEventListener("resize", measure);
   window.addEventListener("orientationchange", measure);
   window.visualViewport?.addEventListener("resize", measure);
+  const content = document.querySelector(".app-scroll");
+  const mutations = content && typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
+    if (refreshFrame) cancelAnimationFrame(refreshFrame);
+    refreshFrame = requestAnimationFrame(measure);
+  }) : null;
+  if (content) mutations?.observe(content, { childList: true });
   measure();
   if (Capacitor.isNativePlatform()) {
     void NativeDisplay.addListener("topologyChanged", apply).then(handle => {
@@ -117,9 +137,11 @@ export function startDisplayAdaptation(): () => void {
     window.removeEventListener("resize", measure);
     window.removeEventListener("orientationchange", measure);
     window.visualViewport?.removeEventListener("resize", measure);
+    mutations?.disconnect();
+    cancelAnimationFrame(refreshFrame);
     void listener?.remove();
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving().catch(() => {});
     ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-    ["--app-viewport-height","--camera-left-pane-width","--camera-right-pane-left","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
+    ["--app-viewport-height","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
   };
 }
