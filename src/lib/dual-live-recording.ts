@@ -1,4 +1,4 @@
-import { saveRecordedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
+import { saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
 import { verifyDecodedVideoBlob } from "./clip-playback";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "./fold-recording-evidence";
 
@@ -62,6 +62,12 @@ export function startDualRecording(
   };
   window.addEventListener(FOLD_EVENT, onFold);
   const finishers: ((value: Blob | null) => void)[] = [];
+  const finished = [false, false];
+  const settle = (index: number, value: Blob | null) => {
+    if (finished[index]) return;
+    finished[index] = true;
+    finishers[index]?.(value);
+  };
   const collected = recorders.map((_recorder, i) => new Promise<Blob | null>(resolve => {
     finishers[i] = resolve;
   }));
@@ -72,10 +78,10 @@ export function startDualRecording(
     window.clearTimeout(startupTimer);
     stopTimer = window.setTimeout(() => {
       for (let i = 0; i < recorders.length; i++) {
-        if (recorders[i]!.state !== "inactive") {
+        if (!finished[i]) {
           failures.push("Кодировщик " + (i+1) + " не завершился за отведённое время");
           // A stalled encoder cannot be trusted as having saved a clip.
-          finishers[i]?.(null);
+          settle(i, null);
         }
       }
     }, 12000);
@@ -104,7 +110,7 @@ export function startDualRecording(
     };
     recorder.onstop = () => {
       const blob = new Blob(buffers[i], { type: mime });
-      finishers[i]?.(starts[i] !== null && blob.size >= 1024 ? blob : null);
+      settle(i, starts[i] !== null && blob.size >= 1024 ? blob : null);
       if (!stopRequested) stop("Один из видеопотоков завершился раньше второго");
     };
   }
@@ -178,7 +184,7 @@ export function startDualRecording(
     stop("Второй кодировщик не удалось запустить");
     // A start() that throws without firing onstop must not block forever.
     for (let i=0;i<recorders.length;i++) if (recorders[i]!.state === "inactive" && starts[i] === null)
-      finishers[i]?.(null);
+      settle(i, null);
   }
   return { stop: (reason?: string) => { if (!completed) stop(reason); }, done };
 }
