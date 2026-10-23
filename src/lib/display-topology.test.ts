@@ -36,6 +36,16 @@ describe("multi-hinge topology", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);
     expect(result.regions).toHaveLength(3);
   });
+  it("ignores hinge segments that do not traverse the usable window", () => {
+    const short = { ...hinge(590, 610), topPx: 120, bottomPx: 160 };
+    expect(calculateDisplayRegions(topology([short]), 600, 450).regions).toHaveLength(1);
+  });
+  it("handles three pane regions even when Android reports hinges in reverse order", () => {
+    const state = topology([hinge(790,810), hinge(390,410)]);
+    const regions = calculateDisplayRegions(state, 600, 450).regions.sort((a,b)=>a.left-b.left);
+    expect(regions).toHaveLength(3);
+    expect(regions.map(r=>Math.round(r.width))).toEqual([195,190,195]);
+  });
   it("never fabricates extra hinges from a physical three-panel screen resolution", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410)]),600,450);
     expect(result.regions).toHaveLength(2);

@@ -44,12 +44,19 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
     const gap = full ? Math.max(0, vertical ? right - left : bottom - top) : 0;
     let next: Region[] = [];
     for (const region of regions) {
-      if (vertical && left > region.left + 40 && right < region.left + region.width - 40) {
+      // A hinge segment only divides a pane if it traverses substantially
+      // the *entire* pane on the perpendicular axis. Short decorations,
+      // camera cutouts and out-of-window feature bounds never create panes.
+      const coversHeight = Math.max(0, Math.min(bottom, region.top + region.height) -
+        Math.max(top, region.top)) >= region.height * 0.85;
+      const coversWidth = Math.max(0, Math.min(right, region.left + region.width) -
+        Math.max(left, region.left)) >= region.width * 0.85;
+      if (vertical && coversHeight && left > region.left + 40 && right < region.left + region.width - 40) {
         const a: Region = { ...region, width: left - region.left };
         const b: Region = { left: left + gap, top: region.top, width: region.left + region.width - (left + gap), height: region.height };
         if (a.width > 0 && b.width > 0) { next.push(a, b); split = "vertical"; occluded ||= full; }
         else next.push(region);
-      } else if (!vertical && top > region.top + 40 && bottom < region.top + region.height - 40) {
+      } else if (!vertical && coversWidth && top > region.top + 40 && bottom < region.top + region.height - 40) {
         const a: Region = { ...region, height: top - region.top };
         const b: Region = { left: region.left, top: top + gap, width: region.width, height: region.top + region.height - (top + gap) };
         if (a.height > 0 && b.height > 0) { next.push(a, b); split = "horizontal"; occluded ||= full; }
@@ -92,14 +99,22 @@ export function startDisplayAdaptation(): () => void {
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     const eligible = panes.length >= 2 && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
       panes[0]!.height >= 260 && geometry.split === "vertical";
-    root.dataset.cameraSplit = eligible ? "side" : "none";
+    const thirdPane = panes[2];
+    const eligibleThree = eligible && !!thirdPane && thirdPane.width >= 230 &&
+      thirdPane.height >= 260 && panes[1]!.height >= 260;
+    // In a verified three-region window: primary viewfinder | HUD/tools |
+    // record controls. Never synthesize a third region from device branding.
+    root.dataset.cameraSplit = eligibleThree ? "tri" : eligible ? "side" : "none";
     const leftPane = panes[0], rightPane = panes[1];
+    const controlPane = eligibleThree ? thirdPane : rightPane;
     const cameraRect = document.querySelector(".camera-screen")?.getBoundingClientRect();
     const cameraLeft = cameraRect?.left ?? 0;
     const cameraTop = cameraRect?.top ?? 0;
     root.style.setProperty("--camera-left-pane-width", Math.max(0, (leftPane?.left ?? 0) + (leftPane?.width ?? width()) - cameraLeft) + "px");
     root.style.setProperty("--camera-right-pane-left", Math.max(0, (rightPane?.left ?? width()) - cameraLeft) + "px");
     root.style.setProperty("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
+    root.style.setProperty("--camera-control-pane-left", Math.max(0, (controlPane?.left ?? width()) - cameraLeft) + "px");
+    root.style.setProperty("--camera-control-pane-width", Math.max(0, controlPane?.width ?? 0) + "px");
     const horizontal = geometry.split === "horizontal" && panes.length >= 2 &&
       panes[0]!.height >= 170 && panes[1]!.height >= 170;
     root.dataset.cameraTabletop = horizontal ? "true" : "false";
@@ -142,6 +157,6 @@ export function startDisplayAdaptation(): () => void {
     void listener?.remove();
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving().catch(() => {});
     ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-    ["--app-viewport-height","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
+    ["--app-viewport-height","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
   };
 }

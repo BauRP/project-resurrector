@@ -522,3 +522,35 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 [data-camera-tabletop="true"] .camera-settings-sheet {
   top: var(--camera-lower-top) !important;
 }
+
+
+/* An actual triple-pane topology from Android WindowManager. Controls occupy
+   the third usable region; all values are recalculated from live window bounds.
+   This is not based on any manufacturer/device name or physical resolution. */
+[data-camera-split="tri"] .camera-live-view {
+  inset-inline-end: auto !important;
+  width: var(--camera-left-pane-width) !important;
+  max-width: 100%;
+  border-inline-end: 1px solid var(--border);
+}
+[data-camera-split="tri"] .camera-hud,
+[data-camera-split="tri"] .camera-settings-sheet {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: calc(100% - var(--camera-control-pane-left)) !important;
+  min-width: 0;
+}
+[data-camera-split="tri"] .camera-record-dock {
+  inset-inline-start: var(--camera-control-pane-left) !important;
+  inset-inline-end: 0 !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  bottom: clamp(12px, 13vh, 90px);
+}
+[data-camera-split="tri"] .camera-record-dock > div {
+  max-width: min(100%, var(--camera-control-pane-width));
+}
+[data-camera-split="tri"] .app-shell:has(.camera-screen) > .bottom-nav {
+  left: var(--camera-control-pane-left) !important;
+  width: var(--camera-control-pane-width) !important;
+}
