@@ -118,6 +118,10 @@ export function startDualRecording(
       blob ? [{
         id: "dual-live-" + token + "-" + (index+1), createdAt: startTime,
         camera: index+1, mode: "dual-live", profile: "standard", playbackRate: 1, blob,
+        captureGroupId: "dual-live-" + token,
+        cameraDeviceId: captures[index]!.getVideoTracks()[0]!.getSettings().deviceId,
+        monotonicStartMs: starts[index] ?? undefined,
+        synchronizationVerified: false,
       }] : []);
     if (!clips.length) throw new Error("Оба кодировщика не выдали пригодных файлов. " + [stopReason, ...failures].filter(Boolean).join("; "));
     // A successful encoder output is checked for an actual decoded first frame

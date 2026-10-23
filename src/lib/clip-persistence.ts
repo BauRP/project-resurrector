@@ -5,6 +5,10 @@
 export interface RecordedClip {
   id: string; createdAt: number; camera: number; mode: string;
   profile: string; playbackRate: number; blob: Blob;
+  captureGroupId?: string;
+  cameraDeviceId?: string;
+  monotonicStartMs?: number;
+  synchronizationVerified?: false;
 }
 export async function saveRecordedClip(clip: RecordedClip): Promise<void> {
   return saveRecordedClipsAtomically([clip]);
