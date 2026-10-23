@@ -45,6 +45,11 @@ export function startDisplayAdaptation(): () => void {
     root.dataset.foldInfo = state.posture;
     root.dataset.foldCount = String(state.foldingFeatures.length);
     root.dataset.separatingFold = String(state.foldingFeatures.some((f) => f.separating));
+    const occluding = state.foldingFeatures.filter((feature) => feature.separating && feature.occlusion.toUpperCase().includes("FULL"));
+    // Fold bounds are Android-window coordinates; convert through device density to CSS pixels.
+    // A harmless visual crease is not treated as a physical missing-pixel gap.
+    const gap = occluding.reduce((max, feature) => Math.max(max, feature.orientation.toUpperCase().includes("VERTICAL") ? (feature.rightPx - feature.leftPx) / (state.density || 1) : 0), 0);
+    root.style.setProperty("--fold-occlusion-width", `${Math.min(Math.max(gap, 0), 160)}px`);
     // The system may expose zero or one fold even on an opened tri-fold device.
     // Do not manufacture missing hinges or classify a cover screen by its resolution.
     measure();
@@ -79,5 +84,6 @@ export function startDisplayAdaptation(): () => void {
     delete root.dataset.windowClass;
     delete root.dataset.windowHeight;
     root.style.removeProperty("--app-viewport-height");
+    root.style.removeProperty("--fold-occlusion-width");
   };
 }

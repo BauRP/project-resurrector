@@ -458,3 +458,11 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .app-header .connect-pill { max-width: none; }
   .camera-screen { max-height: 100%; }
 }
+
+/* Safety: keep control hit targets clear of an actually occluding vertical hinge.
+   A software fold crease with NONE occlusion gets no artificial black gap. */
+[data-separating-fold="true"] .app-header,
+[data-separating-fold="true"] .bottom-nav { padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right)); }
+@media (min-width: 600px) {
+  [data-separating-fold="true"] .app-header { column-gap: max(1rem, var(--fold-occlusion-width, 0px)); }
+}

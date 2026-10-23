@@ -4,6 +4,7 @@ import { Slider } from "@/components/ui/slider";
 import { useMulticamStore, type CaptureMode, type ToneProfile } from "@/lib/multicam-store";
 import { HelpDot } from "./Help";
 import { MultiCamNative, isNative, thermalLabel, type NativeCapabilities } from "@/lib/native";
+import { recordModeEvidence } from "@/lib/camera-passport";
 
 const RES: Record<string, [number, number]> = { "720p": [1280, 720], "1080p": [1920, 1080], "2K": [2560, 1440], "4K": [3840, 2160] };
 const FPS = [24, 30, 60];
@@ -85,11 +86,14 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     if (next.focus !== null) advanced.push({ focusMode: "manual", focusDistance: next.focus });
     void track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).then(() => {
       const applied = track.getSettings();
+      const captureKey = applied.deviceId || track.id || "webview-unknown";
       const requestedGeometry = "resolution" in patch || "fps" in patch;
       const actualW = Math.max(applied.width ?? 0, applied.height ?? 0);
       const actualH = Math.min(applied.width ?? 0, applied.height ?? 0);
       const actualFps = applied.frameRate;
-      if (requestedGeometry && (actualW !== Math.max(w, h) || actualH !== Math.min(w, h) || (actualFps !== undefined && Math.abs(actualFps - next.fps) > 1))) {
+      const mismatch = requestedGeometry && (actualW !== Math.max(w, h) || actualH !== Math.min(w, h) || (actualFps !== undefined && Math.abs(actualFps - next.fps) > 1));
+      if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { width: applied.width, height: applied.height, fps: actualFps }, state: mismatch ? "rejected" : "applied", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : "WebView track setting applied; recorded output not verified" });
+      if (mismatch) {
         warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
         return;
       }
