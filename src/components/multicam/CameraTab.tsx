@@ -175,6 +175,10 @@ export function CameraTab() {
     const onPageHidden = () => {
       if (!document.hidden) return;
       const active = recorderRef.current;
+      if (dualSession.current) {
+        dualSession.current.stop("Приложение ушло в фон; обе записи завершаются");
+        s.set({ recording: false, recordingPhase: "stopping" });
+      }
       if (active && active.state !== "inactive") {
         stopReasonRef.current = "Приложение ушло в фон; непрерывность WebView-записи не гарантирована. Завершаю текущий сегмент.";
         s.set({ recording: false, recordingPhase: "stopping" });
@@ -555,7 +559,7 @@ export function CameraTab() {
         </div>
         <div className="mb-4 flex justify-end gap-1.5">{!clean && <>
           {s.captureKind === "photo" ? (lastPhoto ? <a href={lastPhoto} download={`multicam-photo-${Date.now()}.jpg`} aria-label="Скачать последнее фото" className="size-9 overflow-hidden rounded-md border border-border"><img src={lastPhoto} alt="Последнее фото" className="h-full w-full object-cover" /></a> : <Button size="icon" variant="secondary" disabled aria-label="Нет фото"><Download /></Button>) :
-          <Button size="icon" variant="secondary" disabled={!s.recording} aria-label={s.paused ? "Продолжить" : "Пауза"} onClick={() => s.set({ paused: !s.paused })}>{s.paused ? <Play /> : <Pause />}</Button>}
+          <Button size="icon" variant="secondary" disabled={!s.recording || s.dualCamera} title={s.dualCamera ? "Пауза двух видеодорожек пока не поддерживается" : undefined} aria-label={s.paused ? "Продолжить" : "Пауза"} onClick={() => s.set({ paused: !s.paused })}>{s.paused ? <Play /> : <Pause />}</Button>}
           <Button size="icon" variant="secondary" aria-label={t("addMarker")} onClick={s.addMarker}><CircleDot /></Button>
         </>}</div>
       </div>
