@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
 import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-camera-verification";
+import { checkDiagnosticSafety } from "@/lib/diagnostic-safety";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -17,6 +18,7 @@ export function CameraDiagnostics() {
   const [testQueue, setTestQueue] = useState<CameraTestTask[]>(() => loadCameraTestQueue());
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
+  const [safetyNotice, setSafetyNotice] = useState("");
   const [error, setError] = useState("");
   const [dualBusy, setDualBusy] = useState(false);
   const [dualMessage, setDualMessage] = useState("");
@@ -83,7 +85,7 @@ export function CameraDiagnostics() {
     if (full && !window.confirm("Продолжить незавершённые испытания всех камер? Возможны нагрев и расход заряда.")) return;
     const current = new AbortController();
     job.current = current;
-    setRunning(true); setError("");
+    setRunning(true); setError(""); setSafetyNotice("");
     let queue = prepareCameraTestQueue(queueIds, full ? TEST_MODES : TEST_MODES.slice(0, 2), loadCameraTestQueue(), loadModeEvidence());
     const persist = (next: CameraTestTask[]) => {
       queue = next; persistCameraTestQueue(queue);
@@ -97,6 +99,19 @@ export function CameraDiagnostics() {
       let count = 0;
       for (const task of eligible) {
         if (current.signal.aborted) return;
+        if (document.hidden || recording) {
+          persist(updateCameraTestTask(queue, task.key, "deferred", "Проверка отложена: запись или приложение в фоне"));
+          setProgress("Диагностика приостановлена: приложение неактивно или началась запись");
+          return;
+        }
+        const safe = await checkDiagnosticSafety(full);
+        if (current.signal.aborted) return;
+        if (!safe.proceed) {
+          persist(updateCameraTestTask(queue, task.key, "deferred", safe.reason));
+          setSafetyNotice("Диагностика отложена: " + safe.reason);
+          return;
+        }
+        if (safe.thermal === "unknown" || safe.battery === "unknown" || safe.storage === "unknown") setSafetyNotice(safe.reason);
         if (!full && count >= 2) break;
         const name = devices.find(d => d.deviceId === task.cameraId)?.label || "Камера";
         setProgress("Испытание " + (++count) + "/" + eligible.length + " · " + name + " · " +
@@ -221,6 +236,7 @@ export function CameraDiagnostics() {
       camerasDeclaredByCamera2: nativeCameras,
       cameraModeEvidence: tests,
       cameraTestQueue: planned,
+      diagnosticSafetyNotice: safetyNotice,
       encoderEvidence: encoder,
       stabilizationCaptureResults: stabilizationResults,
       dualCameraRecordedEvidence: dualEvidence,
@@ -271,6 +287,7 @@ export function CameraDiagnostics() {
       {dualMessage && <p role="status" className="mt-2 break-words">{dualMessage}</p>}
     </div>
     {recording && <p className="mt-2 text-xs text-warning">Во время записи диагностика недоступна</p>}
+    {!!safetyNotice && <p className="mt-2 text-xs text-warning" role="status">{safetyNotice}</p>}
     {!!progress && <p className="mt-2 text-xs" role="status">{progress}</p>}
     {!!error && <p className="mt-2 text-xs text-warning" role="alert">{error}</p>}
     <div className="mt-3 space-y-2">
