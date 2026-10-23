@@ -16,6 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
+import { verifyStoredClipPlayback } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
@@ -277,13 +278,24 @@ export function CameraTab() {
         s.set({ recordingPhase: "saving" });
         const stopReason = stopReasonRef.current;
         const blob = new Blob(chunks, { type: mime });
+        const clipId = `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
         void saveRecordedClip({
-          id: `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`,
-          createdAt: startedAt, camera, mode, profile,
+          id: clipId, createdAt: startedAt, camera, mode, profile,
           playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
         }).then(() => {
-          s.set({ recordingPhase: "saved", captureSaveError: stopReason });
+          // Save is durable and independently read back. Decoding is checked
+          // separately: failure must not destroy or hide an already saved clip.
+          s.set({ recordingPhase: "saved", captureSaveError: stopReason || "Видео сохранено. Проверяю воспроизведение…" });
           window.dispatchEvent(new Event("multicam-clips-changed"));
+          void verifyStoredClipPlayback(clipId).then(evidence => {
+            s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
+              "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
+              ". FPS, HDR и остальные кадры не проверены." });
+          }).catch(error => {
+            s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
+              "Видео сохранено, но декодирование не подтверждено: " +
+              (error instanceof Error ? error.message : String(error)) });
+          });
         }).catch((error: unknown) => {
           s.set({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
         });
