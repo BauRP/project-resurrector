@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
-import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
+import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
 import { Button } from "@/components/ui/button";
@@ -13,6 +13,8 @@ export function CameraDiagnostics() {
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
+  const [encoder, setEncoder] = useState<NativeEncoderSupport | null>(null);
+  const [encoderBusy, setEncoderBusy] = useState(false);
   const job = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -54,12 +56,23 @@ export function CameraDiagnostics() {
       if (job.current === current) job.current = null;
     }
   };
+  const checkEncoder = async () => {
+    if (!isNative() || encoderBusy) return;
+    setEncoderBusy(true); setError("");
+    try {
+      const result = await MultiCamNative.getEncoderSupport({ width: 1920, height: 1080, fps: 30 });
+      if (mounted.current) setEncoder(result);
+    } catch (e) {
+      if (mounted.current) setError("Не удалось запросить кодировщики: " + String(e));
+    } finally { if (mounted.current) setEncoderBusy(false); }
+  };
   const download = () => {
     const report = {
       checkedAt: new Date().toISOString(),
       warning: "Camera2 physical IDs and WebView device IDs must not be equated. EIS/OIS declarations are unverified for particular modes.",
       camerasDeclaredByCamera2: nativeCameras,
       cameraModeEvidence: tests,
+      encoderEvidence: encoder,
     };
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
     const a = document.createElement("a");
@@ -73,7 +86,8 @@ export function CameraDiagnostics() {
       <Button size="sm" disabled={running || recording || !devices.length} onClick={() => void run(false)}>Быстрая проверка</Button>
       <Button size="sm" variant="secondary" disabled={running || recording || !devices.length} onClick={() => void run(true)}>Расширенная проверка</Button>
       <Button size="sm" variant="outline" disabled={!running} onClick={() => job.current?.abort()}>Остановить</Button>
-      <Button size="sm" variant="outline" disabled={!nativeCameras.length && !tests.length} onClick={download}>Скачать паспорт</Button>
+      <Button size="sm" variant="outline" disabled={!nativeCameras.length && !tests.length && !encoder} onClick={download}>Скачать паспорт</Button>
+      {isNative() && <Button size="sm" variant="secondary" disabled={encoderBusy || running || recording} onClick={() => void checkEncoder()}>{encoderBusy ? "Проверяю…" : "Кодировщики 1080p30"}</Button>}
     </div>
     {recording && <p className="mt-2 text-xs text-warning">Во время записи диагностика недоступна</p>}
     {!!progress && <p className="mt-2 text-xs" role="status">{progress}</p>}
@@ -91,6 +105,12 @@ export function CameraDiagnostics() {
         <p className="text-muted-foreground">EIS: {c.eisDeclared ? "заявлена" : "состояние неизвестно"} · OIS: {c.oisDeclared ? "заявлена" : "состояние неизвестно"}</p>
         <p className="text-muted-foreground">Разрешения: {c.sizes.length}; заявленные высокоскоростные режимы: {c.highSpeed.length}</p>
       </div>)}
+      {encoder && <div className="rounded-md border border-border p-2 text-xs">
+        <p className="font-semibold">MediaCodec 1920×1080/30 FPS (заявленные ограничения)</p>
+        {encoder.encoders.map((item, i) => <p key={i} className="mt-1 text-muted-foreground">
+          {item.encoderName} · {item.mime} · {item.declaredSizeRate ? "размер и частота заявлены" : "не заявлены"} · аппаратный: {item.hardwareAccelerated}
+        </p>)}
+      </div>}
       {!!tests.length && <div className="max-h-56 overflow-y-auto rounded-md border border-border p-2">
         {tests.slice(-25).reverse().map((t,i) => <p key={i} className="border-b border-border py-1 text-[11px]">
           {t.requested.width}×{t.requested.height} · {t.requested.fps} FPS · <strong>{t.state === "verified" ? "видеофайл читается" : t.state === "recorded" ? "видео записано" : t.state === "rejected" ? "не удалось" : t.state}</strong>
