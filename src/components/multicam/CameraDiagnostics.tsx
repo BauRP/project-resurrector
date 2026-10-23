@@ -3,6 +3,7 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
+import { prepareCameraTestQueue, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, type CameraTestTask } from "@/lib/camera-test-queue";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
@@ -13,6 +14,7 @@ export function CameraDiagnostics() {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [nativeCameras, setNativeCameras] = useState<NativeCameraProfile[]>([]);
   const [tests, setTests] = useState<ModeEvidence[]>(() => loadModeEvidence());
+  const [testQueue, setTestQueue] = useState<CameraTestTask[]>(() => loadCameraTestQueue());
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
@@ -73,25 +75,46 @@ export function CameraDiagnostics() {
       navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
     };
   }, []);
+  const queueIds = devices.map(d => d.deviceId);
+  const planned = prepareCameraTestQueue(queueIds, TEST_MODES, testQueue, tests);
+  const summary = queueSummary(planned, queueIds);
   const run = async (full: boolean) => {
-    if (running || recording || !devices.length) return;
-    if (full && !window.confirm("Будут последовательно созданы короткие пробные видео на всех доступных камерах. Возможны нагрев и расход заряда. Продолжить?")) return;
+    if (running || recording || dualBusy || rawBusy || stabilizationBusy || highSpeedState !== "idle" || !devices.length) return;
+    if (full && !window.confirm("Продолжить незавершённые испытания всех камер? Возможны нагрев и расход заряда.")) return;
     const current = new AbortController();
     job.current = current;
     setRunning(true); setError("");
-    const modes = full ? TEST_MODES : TEST_MODES.slice(0, 2);
-    const total = devices.length * modes.length;
+    let queue = prepareCameraTestQueue(queueIds, full ? TEST_MODES : TEST_MODES.slice(0, 2), loadCameraTestQueue(), loadModeEvidence());
+    const persist = (next: CameraTestTask[]) => {
+      queue = next; persistCameraTestQueue(queue);
+      if (mounted.current) setTestQueue(queue);
+    };
+    persist(queue);
+    const eligible = queue.filter(task => queueIds.includes(task.cameraId) &&
+      (full || TEST_MODES.slice(0, 2).some(mode => mode.width === task.mode.width && mode.height === task.mode.height && mode.fps === task.mode.fps)) &&
+      ["pending","retry","deferred"].includes(task.status));
     try {
       let count = 0;
-      for (const device of devices) for (const mode of modes) {
+      for (const task of eligible) {
         if (current.signal.aborted) return;
-        setProgress("Проверка " + (++count) + "/" + total + " · " +
-          (device.label || "Камера") + " · " + mode.width + "×" + mode.height + " " + mode.fps + " FPS");
-        await verifyMode(device.deviceId, mode, current.signal);
+        if (!full && count >= 2) break;
+        const name = devices.find(d => d.deviceId === task.cameraId)?.label || "Камера";
+        setProgress("Испытание " + (++count) + "/" + eligible.length + " · " + name + " · " +
+          task.mode.width + "×" + task.mode.height + " " + task.mode.fps + " FPS");
+        persist(updateCameraTestTask(queue, task.key, "running", "Идёт реальная видеопроба"));
+        const evidence = await verifyMode(task.cameraId, task.mode, current.signal);
+        if (current.signal.aborted) {
+          persist(updateCameraTestTask(queue, task.key, "deferred", "Прервано пользователем"));
+          return;
+        }
+        const status = evidence.state === "verified" ? "verified" : "error";
+        persist(updateCameraTestTask(queue, task.key, status, evidence.message || "Проверка завершена"));
         if (mounted.current) setTests(loadModeEvidence());
       }
+    } catch (error) {
+      if (mounted.current) setError("Ошибка очереди диагностики: " + String(error));
     } finally {
-      if (mounted.current) { setRunning(false); setProgress(current.signal.aborted ? "Отменено" : "Проверка завершена"); }
+      if (mounted.current) { setRunning(false); setProgress(current.signal.aborted ? "Проверка приостановлена" : "Очередь обработана"); }
       if (job.current === current) job.current = null;
     }
   };
@@ -197,6 +220,7 @@ export function CameraDiagnostics() {
       warning: "Camera2 physical IDs and WebView device IDs must not be equated. EIS/OIS declarations are unverified for particular modes.",
       camerasDeclaredByCamera2: nativeCameras,
       cameraModeEvidence: tests,
+      cameraTestQueue: planned,
       encoderEvidence: encoder,
       stabilizationCaptureResults: stabilizationResults,
       dualCameraRecordedEvidence: dualEvidence,
@@ -209,6 +233,7 @@ export function CameraDiagnostics() {
   return <section className="rounded-lg border border-border bg-card p-4">
     <h2 className="mb-2 text-sm font-semibold">Диагностика всех доступных камер</h2>
     <p className="mb-3 text-xs text-muted-foreground">Камеры испытываются по очереди. «Записано» означает настоящий непустой видеообразец, но не проверенный FPS готового файла. EIS/OIS показываются как заявленные или неизвестные.</p>
+    <p className="mb-2 text-xs text-muted-foreground">Очередь режимов: подтверждено {summary.verified}/{summary.total}, ожидают {summary.pending}, ошибки {summary.failed}, отложено {summary.deferred}. Успешный запуск интерфейса не равен полной диагностике.</p>
     <div className="flex flex-wrap gap-2">
       <Button size="sm" disabled={running || recording || !devices.length} onClick={() => void run(false)}>Быстрая проверка</Button>
       <Button size="sm" variant="secondary" disabled={running || recording || !devices.length} onClick={() => void run(true)}>Расширенная проверка</Button>
