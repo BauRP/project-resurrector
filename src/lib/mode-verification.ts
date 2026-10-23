@@ -12,11 +12,11 @@ export const TEST_MODES: readonly TestMode[] = [
 const MIMES = ["video/webm;codecs=vp8,opus","video/webm;codecs=vp9,opus","video/webm","video/mp4;codecs=avc1"];
 
 /** One bounded, actual encoded sample; no fabricated tests or fake FPS claims. */
-async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<number> {
+async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<Blob> {
   if (typeof MediaRecorder === "undefined") throw new Error("MediaRecorder недоступен");
   const mime = MIMES.find(m => MediaRecorder.isTypeSupported(m));
   if (!mime) throw new Error("Подходящий видеокодировщик отсутствует");
-  return new Promise<number>((resolve, reject) => {
+  return new Promise<Blob>((resolve, reject) => {
     let recorder: MediaRecorder;
     try { recorder = new MediaRecorder(stream, { mimeType: mime }); } catch (e) { reject(e); return; }
     const chunks: Blob[] = [];
@@ -28,7 +28,7 @@ async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<n
       signal.removeEventListener("abort", abort);
       recorder.ondataavailable = null; recorder.onstop = null; recorder.onerror = null;
       if (failure) reject(failure);
-      else resolve(new Blob(chunks, { type: mime }).size);
+      else resolve(new Blob(chunks, { type: mime }));
     };
     const abort = () => {
       if (recorder.state !== "inactive") { try { recorder.stop(); } catch { /* already stopped */ } }
@@ -49,6 +49,36 @@ async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<n
         finish(new Error("Тайм-аут записи"));
       }, 6500);
     } catch (e) { finish(e instanceof Error ? e : new Error(String(e))); }
+  });
+}
+
+
+/** Load metadata of the actual encoded clip. This checks readable container/media
+ * but does not claim accurate output FPS, bitrate, HDR or full-frame integrity.
+ */
+async function testClipPlayback(blob: Blob, signal: AbortSignal): Promise<boolean> {
+  if (signal.aborted) return false;
+  return await new Promise<boolean>(resolve => {
+    const video = document.createElement("video");
+    video.preload = "metadata"; video.muted = true;
+    const url = URL.createObjectURL(blob);
+    let finished = false;
+    const finish = (ok: boolean) => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", abort);
+      video.onloadedmetadata = null; video.onerror = null;
+      video.removeAttribute("src"); video.load();
+      URL.revokeObjectURL(url);
+      resolve(ok);
+    };
+    const abort = () => finish(false);
+    const timeout = window.setTimeout(() => finish(false), 4500);
+    signal.addEventListener("abort", abort, { once: true });
+    video.onloadedmetadata = () => finish(video.videoWidth > 0 && video.videoHeight > 0);
+    video.onerror = () => finish(false);
+    video.src = url;
   });
 }
 
@@ -76,10 +106,13 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       result.message = "Фактическое разрешение или FPS отличаются от запрошенных";
     } else {
       result.state = "applied";
-      const bytes = await recordSample(stream, signal);
-      if (bytes < 1024) throw new Error("Видео пустое");
+      const blob = await recordSample(stream, signal);
+      if (blob.size < 1024) throw new Error("Видео пустое");
       result.state = "recorded";
-      result.message = "Реальный видеофайл " + bytes + " байт. FPS внутри файла не измерен";
+      const playable = await testClipPlayback(blob, signal);
+      if (!playable) throw new Error("Кодировщик создал файл, но его не удалось прочитать");
+      result.state = "verified";
+      result.message = "Пробная запись читается (" + blob.size + " байт). Частота кадров файла ещё требует анализа";
     }
   } catch (e) {
     result.state = signal.aborted ? "unknown" : "rejected";
