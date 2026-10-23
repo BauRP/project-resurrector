@@ -75,9 +75,12 @@ export function CameraTab() {
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
     if (s.touchLocked) return;
     const caps = trackCaps(stream); const support = focusSupport(caps);
-    setFocusWarning(support === "unsupported"); setFocusError("");
-    if (support === "unsupported") return;
-    if (!("pointsOfInterest" in caps)) { setFocusError("Камера не сообщает поддержку фокуса по точке"); return; }
+    const pointCapable = "pointsOfInterest" in caps;
+    setFocusWarning(support === "unsupported" && !pointCapable); setFocusError("");
+    if (!pointCapable) {
+      if (support !== "unsupported") setFocusError("Камера не сообщает поддержку фокуса по точке");
+      return;
+    }
     const video = event.currentTarget;
     if (!video.videoWidth || !video.videoHeight) return;
     const point = focusPoint(video.getBoundingClientRect(), video.videoWidth, video.videoHeight, event.clientX, event.clientY);
