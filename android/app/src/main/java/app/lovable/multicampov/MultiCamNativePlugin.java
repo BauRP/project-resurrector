@@ -65,6 +65,18 @@ public class MultiCamNativePlugin extends Plugin {
                 JSObject cam = new JSObject();
                 Integer facing = ch.get(CameraCharacteristics.LENS_FACING);
                 cam.put("cameraId", id);
+                // Multi-camera membership is not equivalent to independently openable lenses.
+                JSArray physical = new JSArray();
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                    for (String physicalId : ch.getPhysicalCameraIds()) physical.put(physicalId);
+                }
+                cam.put("physicalCameraIds", physical);
+                Integer level = ch.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL);
+                cam.put("hardwareLevel", level != null ? level : JSObject.NULL);
+                Float minFocus = ch.get(CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+                JSArray focusDistance = new JSArray();
+                if (minFocus != null) { focusDistance.put(0); focusDistance.put(minFocus); cam.put("focusDistanceRange", focusDistance); }
+                else cam.put("focusDistanceRange", JSObject.NULL);
                 cam.put("facing", facing != null && facing == CameraMetadata.LENS_FACING_FRONT ? "front" : facing != null && facing == CameraMetadata.LENS_FACING_BACK ? "back" : "external");
                 JSArray sizes = new JSArray();
                 if (map != null) for (Size s : map.getOutputSizes(MediaRecorder.class)) sizes.put(s.getWidth() + "x" + s.getHeight());

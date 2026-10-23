@@ -41,7 +41,7 @@ export function CameraTab() {
   const recorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [cameraState, setCameraState] = useState<"loading" | "live" | "simulated">("loading");
+  const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("loading");
   const [elapsed, setElapsed] = useState(0);
   const facingMode = s.facing === "front" ? "user" : "environment";
   const camCaps = s.capMatrix ? s.capMatrix[s.facing] : null;
@@ -62,7 +62,7 @@ export function CameraTab() {
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
     void cameraController.acquire(token, { video: s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode }, audio: s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true }).then((next) => {
       if (alive) { setStream(next); setCameraState("live"); }
-    }).catch(() => { if (alive) setCameraState("simulated"); });
+    }).catch(() => { if (alive) setCameraState("unavailable"); });
     return () => { alive = false; cameraController.release(token); };
   }, [facingMode, s.capture.micId, s.lensDeviceId]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
@@ -200,9 +200,9 @@ export function CameraTab() {
 
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
     <section className={`absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
-      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="simulated-feed absolute inset-0"><div className="horizon" /></div>}
+      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
       {!clean && <>
-        {s.dualCamera && <div className="absolute end-3 top-28 aspect-[3/4] w-[22%] min-w-20 overflow-hidden rounded-md border border-glass bg-viewfinder shadow-2xl"><div className="simulated-feed h-full" /></div>}
+        {s.dualCamera && <div className="absolute end-3 top-28 flex aspect-[3/4] w-[22%] min-w-20 items-center justify-center rounded-md border border-glass bg-viewfinder p-2 text-center text-[10px] text-muted-foreground">Вторая камера не подключена</div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
         {s.zebras && <div className="zebra-overlay pointer-events-none absolute inset-0 opacity-30" />}
         {s.grid !== "off" && <div className={`pointer-events-none absolute inset-0 grid-overlay grid-${s.grid}`} />}

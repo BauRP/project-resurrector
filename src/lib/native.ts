@@ -1,6 +1,6 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
-export interface NativeCameraProfile { cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
+export interface NativeCameraProfile { physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
 export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[] }
 export interface NativeThermal { status: number; label: string; temperatureC: number | null }
 export interface NativeAudioInput { id: string; name: string; type: string }

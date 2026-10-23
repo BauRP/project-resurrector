@@ -69,20 +69,32 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   }, [videoRef]);
 
   const resOk = (r: string) => (!m || m.resolutions.includes(r)) && (!caps || !caps.maxW || (RES[r]![0] <= Math.max(caps.maxW, caps.maxH) && RES[r]![1] <= Math.min(caps.maxW, caps.maxH) + 1));
-  const fpsOk = (f: number) => (!m || m.fps.includes(f)) && (!caps || !caps.maxFps || f <= caps.maxFps);
+  const fpsOk = (f: number) => !m || m.fps.includes(f) || (caps?.highSpeed ?? []).includes(f);
+  // Available FPS is a candidate only: verify the selected camera/size/FPS together at runtime.
   const codecOk = (k: string) => (!s.capMatrix || s.capMatrix.codecs.includes(k)) && typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(CODECS[k]!);
   const modeOk = (md: CaptureMode) => { const hs = [...(caps?.highSpeed ?? []), ...(m?.highSpeed ?? [])]; const mx = Math.max(caps?.maxFps ?? 0, m?.maxFps ?? 0); return md === "slowmo120" ? hs.includes(120) || mx >= 120 : md === "slowmo240" ? hs.includes(240) || mx >= 240 : true; };
   const blocked = (what: string) => warn(`${what}: не поддерживается ${s.facing === "front" ? "фронтальной" : "основной"} камерой — выбор заблокирован для защиты от перегрева и сбоев.`);
 
   const applyTrack = (patch: Partial<typeof c>) => {
-    const next = { ...c, ...patch }; update(patch);
-    const track = stream?.getVideoTracks()[0]; if (!track) return;
+    const next = { ...c, ...patch };
+    const track = stream?.getVideoTracks()[0]; if (!track) { blocked("Камера"); return; }
     const [w, h] = RES[next.resolution]!;
     const advanced: Record<string, unknown>[] = [];
     if (next.iso !== null) advanced.push({ exposureMode: "manual", iso: next.iso });
     if (next.exposure !== null) advanced.push({ exposureMode: "manual", exposureTime: next.exposure });
     if (next.focus !== null) advanced.push({ focusMode: "manual", focusDistance: next.focus });
-    track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).catch(() => blocked("Этот режим"));
+    void track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).then(() => {
+      const applied = track.getSettings();
+      const requestedGeometry = "resolution" in patch || "fps" in patch;
+      const actualW = Math.max(applied.width ?? 0, applied.height ?? 0);
+      const actualH = Math.min(applied.width ?? 0, applied.height ?? 0);
+      const actualFps = applied.frameRate;
+      if (requestedGeometry && (actualW !== Math.max(w, h) || actualH !== Math.min(w, h) || (actualFps !== undefined && Math.abs(actualFps - next.fps) > 1))) {
+        warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
+        return;
+      }
+      update(patch);
+    }).catch(() => blocked("Этот режим"));
   };
 
   const Chip = ({ ok, active, onPick, label, name }: { ok: boolean; active: boolean; onPick: () => void; label: string; name: string }) =>

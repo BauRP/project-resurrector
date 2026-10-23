@@ -1,4 +1,4 @@
-import { MultiCamNative, isNative } from "./native";
+import { MultiCamNative, isNative, type NativeCameraProfile } from "./native";
 
 export interface CameraCaps {
   available: boolean; deviceId: string | null; label: string;
@@ -10,6 +10,8 @@ export interface CameraCaps {
 export interface CapabilityMatrix {
   probedAt: number; permissions: { camera: string; microphone: string; storage: string };
   rear: CameraCaps; front: CameraCaps; codecs: string[]; microphones: number; native: boolean;
+  /** Per-camera hardware declarations are not proof that a mode records correctly. */
+  hardwareCameras?: NativeCameraProfile[];
 }
 export type Facing = "rear" | "front";
 const KEY = "multicam-capability-matrix";
@@ -64,13 +66,13 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
   stream.getTracks().forEach((t) => t.stop());
   const range = (k: string): [number, number] | null => { const r = tc[k] as { min?: number; max?: number } | undefined; return r && typeof r.max === "number" && r.max > (r.min ?? 0) ? [r.min ?? 0, r.max] : null; };
   const w = (tc["width"] as { max?: number })?.max ?? 0; const h = (tc["height"] as { max?: number })?.max ?? 0; const f = (tc["frameRate"] as { max?: number })?.max ?? 0;
-  const long = Math.max(w, h); const short = Math.min(w, h);
   const wbModes = (tc["whiteBalanceMode"] as string[] | undefined) ?? [];
   return {
     available: true, deviceId: (tc["deviceId"] as string) ?? track?.getSettings().deviceId ?? null, label: track?.label ?? "",
     maxWidth: w, maxHeight: h, maxFps: f,
-    resolutions: Object.entries(RES).filter(([, [rw, rh]]) => !long || (rw <= long && rh <= short + 1)).map(([k]) => k),
-    fps: [24, 30, 60].filter((x) => !f || x <= f), highSpeed: [],
+    // A maximum width/FPS does NOT establish that individual width+height+FPS modes work.
+    resolutions: [],
+    fps: [], highSpeed: [],
     iso: range("iso"), exposure: range("exposureTime"), focus: range("focusDistance"),
     whiteBalance: wbModes.includes("manual"), colorTemperature: range("colorTemperature"), torch: tc["torch"] === true, zoom: range("zoom"),
   };
@@ -94,17 +96,20 @@ export async function probeDevice(onStage: (stage: number, progress: number) => 
   onStage(3, 80);
   const devices = await withTimeout(navigator.mediaDevices?.enumerateDevices?.() ?? Promise.resolve([] as MediaDeviceInfo[]), 2000, "enumerateDevices").catch(() => [] as MediaDeviceInfo[]);
   const codecs = typeof MediaRecorder === "undefined" ? [] : Object.entries(CODEC_MIMES).filter(([, m]) => MediaRecorder.isTypeSupported(m)).map(([k]) => k);
+  let hardwareCameras: NativeCameraProfile[] = [];
   if (isNative()) {
     try {
       const n = await withTimeout(MultiCamNative.getCapabilities(), 3000, "native capabilities");
+      hardwareCameras = n.cameras;
       for (const cam of n.cameras) {
         const target = cam.facing === "front" ? front : rear;
-        target.highSpeed = [...new Set([...target.highSpeed, ...cam.highSpeed.flatMap((h) => h.fps)])];
+        // High-speed capabilities belong to their actual native camera ID.
+        // Do not pool modes from incompatible lenses into front/rear UI controls.
         if (cam.isoRange && !target.iso) target.iso = cam.isoRange;
       }
     } catch { /* native plugin unavailable */ }
   }
-  const matrix: CapabilityMatrix = { probedAt: Date.now(), permissions, rear, front, codecs, microphones: devices.filter((d) => d.kind === "audioinput").length, native: isNative() };
+  const matrix: CapabilityMatrix = { probedAt: Date.now(), permissions, rear, front, codecs, microphones: devices.filter((d) => d.kind === "audioinput").length, native: isNative(), hardwareCameras };
   try { window.localStorage.setItem(KEY, JSON.stringify(matrix)); } catch { /* memory only */ }
   onStage(3, 100);
   return matrix;
