@@ -4,6 +4,7 @@ import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderS
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
 import { Button } from "@/components/ui/button";
+import { captureRealDng } from "@/lib/raw-dng";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -21,6 +22,8 @@ export function CameraDiagnostics() {
   const [highSpeedCamera, setHighSpeedCamera] = useState("");
   const [highSpeedMode, setHighSpeedMode] = useState("");
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
+  const [rawBusy, setRawBusy] = useState(false);
+  const [rawMessage, setRawMessage] = useState("");
   const job = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   useEffect(() => {
@@ -126,6 +129,19 @@ export function CameraDiagnostics() {
       if (mounted.current) setError("Не удалось запросить кодировщики: " + String(e));
     } finally { if (mounted.current) setEncoderBusy(false); }
   };
+  const testRaw = async (cameraId: string) => {
+    if (rawBusy || recording || running || highSpeedState !== "idle") return;
+    if (!window.confirm("Сделать настоящий RAW/DNG кадр через Camera2? Камера должна быть свободна; пробный файл сохранится во внутренней папке Android.")) return;
+    setRawBusy(true); setRawMessage("Открывается Camera2 RAW_SENSOR…");
+    try {
+      const result = await captureRealDng(cameraId);
+      if (mounted.current) setRawMessage("Настоящий DNG сохранён: " + result.width + "×" + result.height + ", " + result.bytes + " байт. Путь: " + result.path);
+    } catch (e) {
+      if (mounted.current) setRawMessage("RAW не подтверждён: " + String(e));
+    } finally {
+      if (mounted.current) setRawBusy(false);
+    }
+  };
   const download = () => {
     const report = {
       checkedAt: new Date().toISOString(),
@@ -178,7 +194,9 @@ export function CameraDiagnostics() {
         <p className="text-muted-foreground">Физические ID: {c.physicalCameraIds?.join(", ") || "не раскрыты"}</p>
         <p className="text-muted-foreground">EIS: {c.eisDeclared ? "заявлена" : "состояние неизвестно"} · OIS: {c.oisDeclared ? "заявлена" : "состояние неизвестно"}</p>
         <p className="text-muted-foreground">Разрешения: {c.sizes.length}; заявленные высокоскоростные режимы: {c.highSpeed.length}</p>
+        {c.raw && <Button size="sm" variant="outline" className="mt-2" disabled={rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void testRaw(c.cameraId)}>Снять настоящий DNG · CAM {c.cameraId}</Button>}
       </div>)}
+      {rawMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{rawMessage}</p>}
       {encoder && <div className="rounded-md border border-border p-2 text-xs">
         <p className="font-semibold">MediaCodec 1920×1080/30 FPS (заявленные ограничения)</p>
         {encoder.encoders.map((item, i) => <p key={i} className="mt-1 text-muted-foreground">
