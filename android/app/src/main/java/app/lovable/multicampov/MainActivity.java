@@ -11,6 +11,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(MultiCamNativePlugin.class);
         registerPlugin(DisplayTopologyPlugin.class);
+        registerPlugin(RawDngPlugin.class);
         super.onCreate(savedInstanceState);
         configureWebView();
     }
