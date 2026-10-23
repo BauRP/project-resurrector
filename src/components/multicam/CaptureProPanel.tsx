@@ -21,6 +21,7 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   const s = useMulticamStore(); const c = s.capture;
   const [caps, setCaps] = useState<Caps | null>(null);
   const [notice, setNotice] = useState("");
+  const [stabilization, setStabilization] = useState<{ state: string; reason: string }>({ state: "unknown", reason: "Системная стабилизация: состояние неизвестно" });
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [level, setLevel] = useState({ rms: -90, peak: -90 });
   const [dropped, setDropped] = useState(0);
@@ -70,6 +71,21 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     return () => window.clearInterval(id);
   }, [videoRef]);
 
+  useEffect(() => {
+    const track = stream?.getVideoTracks()[0];
+    if (!track || track.readyState !== "live") {
+      setStabilization({ state: "unknown", reason: "Системная стабилизация: нет активной камеры" });
+      return;
+    }
+    // WebView usually does not expose Camera2 CaptureResult. Never infer that
+    // EIS or OIS is enabled based on a Camera2 declaration for a different ID.
+    const reported = track.getSettings() as MediaTrackSettings & { videoStabilizationMode?: string };
+    const value = reported.videoStabilizationMode;
+    setStabilization(value
+      ? { state: "reported", reason: "Стабилизация потока: " + value + " (сообщает WebView, видео ещё не проверено)" }
+      : { state: "unknown", reason: "Системная стабилизация: состояние неизвестно" });
+  }, [stream, c.resolution, c.fps, c.profile]);
+
   const resOk = (r: string) => (!m || m.resolutions.includes(r) || (m.candidateResolutions ?? []).includes(r)) && (!caps || !caps.maxW || (RES[r]![0] <= Math.max(caps.maxW, caps.maxH) && RES[r]![1] <= Math.min(caps.maxW, caps.maxH) + 1));
   const fpsOk = (f: number) => !m || m.fps.includes(f) || (m.candidateFps ?? []).includes(f) || (caps?.highSpeed ?? []).includes(f);
   // Available FPS is a candidate only: verify the selected camera/size/FPS together at runtime.
@@ -113,6 +129,7 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     <Row title="Кадры/с" help="fps">{FPS.map((f) => <Chip key={f} name={`${f} fps`} label={`${f}`} ok={fpsOk(f)} active={c.fps === f} onPick={() => applyTrack({ fps: f })} />)}</Row>
     <Row title="Кодек" help="codec">{Object.keys(CODECS).map((k) => <Chip key={k} name={`Кодек ${k}`} label={k} ok={codecOk(k)} active={c.codec === k} onPick={() => update({ codec: k })} />)}</Row>
     <Row title="Режим" help="mode">{MODES.map((m) => <Chip key={m.id} name={m.label} label={m.label} ok={modeOk(m.id) && (!s.recording)} active={c.mode === m.id} onPick={() => update({ mode: m.id })} />)}</Row>
+    <div className="rounded-md border border-border bg-secondary p-2 text-[11px]" role="status"><b>Стабилизация</b><p className="mt-1 text-muted-foreground">{stabilization.reason}</p><p className="mt-1 text-muted-foreground">Программная стабилизация не включается поверх неподтверждённой системной. Наличие OIS/EIS в Camera2 не означает её работу в текущем WebView-режиме.</p></div>
     <Row title="Профиль" help="profile">{PROFILES.map((p) => <Chip key={p.id} name={p.label} label={p.label} ok active={c.profile === p.id} onPick={() => update({ profile: p.id })} />)}</Row>
     <Manual label="ISO" help="manualIso" range={m ? m.iso : caps?.iso ?? null} value={c.iso} onChange={(iso) => applyTrack({ iso })} />
     <Manual label="Выдержка (экспозиция)" help="exposure" range={m ? m.exposure : caps?.exposure ?? null} value={c.exposure} onChange={(exposure) => applyTrack({ exposure })} />
