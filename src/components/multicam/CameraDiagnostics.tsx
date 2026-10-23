@@ -29,6 +29,7 @@ export function CameraDiagnostics() {
   const [encoderBusy, setEncoderBusy] = useState(false);
   const [highSpeedState, setHighSpeedState] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
   const [highSpeedMessage, setHighSpeedMessage] = useState("");
+  const [lastMp4Inspection, setLastMp4Inspection] = useState<import("@/lib/native").NativeMp4Inspection | null>(null);
   const highSpeedSession = useRef(false);
   const [highSpeedCamera, setHighSpeedCamera] = useState("");
   const [highSpeedMode, setHighSpeedMode] = useState("");
@@ -161,7 +162,16 @@ export function CameraDiagnostics() {
     highSpeedSession.current = false;
     try {
       const file = await MultiCamNative.stopHighSpeedRecording();
-      if (mounted.current) setHighSpeedMessage("Сохранён файл Camera2: " + file.bytes + " байт за " + file.durationMs + " мс. FPS в MP4 не измерен. Путь: " + file.path);
+      if (mounted.current) setLastMp4Inspection(file.inspection ?? null);
+      if (mounted.current) {
+        const parsed = file.inspection;
+        setHighSpeedMessage("Сохранён Camera2 MP4: " + file.bytes + " байт. " +
+          (parsed ? "Видеодорожка: " + (parsed.width ?? "?") + "×" + (parsed.height ?? "?") +
+            ", " + parsed.samplesRead + " сэмплов, " +
+            (parsed.estimatedSampleFps ?? "не удалось оценить") + " FPS по меткам MP4. " :
+            "Анализ видеодорожки не прошёл: " + (file.inspectionError ?? "неизвестно") + ". ") +
+          "Это не подтверждает FPS сенсора, HDR, стабилизацию или все кадры. Путь: " + file.path);
+      }
     } catch (e) {
       if (mounted.current) setHighSpeedMessage("Ошибка сохранения: " + String(e));
     } finally {
@@ -238,6 +248,7 @@ export function CameraDiagnostics() {
       cameraTestQueue: planned,
       diagnosticSafetyNotice: safetyNotice,
       encoderEvidence: encoder,
+      highSpeedMp4Inspection: lastMp4Inspection,
       stabilizationCaptureResults: stabilizationResults,
       dualCameraRecordedEvidence: dualEvidence,
     };

@@ -4,6 +4,22 @@ export interface NativeCameraProfile { dynamicRangeApiAvailable?: boolean; tenBi
 export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[]; concurrentCameraGroups?: string[][] }
 export interface NativeThermal { status: number; available?: boolean; label: string; temperatureC: number | null }
 export interface NativeAudioInput { id: string; name: string; type: string }
+export interface NativeMp4Inspection {
+  path: string;
+  bytes: number;
+  mime: string;
+  width: number | null; height: number | null;
+  declaredFrameRate: number | null; durationUs: number | null;
+  colorStandard: number | null; colorTransfer: number | null; colorRange: number | null;
+  hdrStaticInfoPresent: boolean;
+  hdrRecordingVerified: false;
+  source: string;
+  samplesRead: number; timestampSpanUs: number;
+  outOfOrderPresentationTimes: number;
+  estimatedSampleFps: number | null;
+  sampleLimitReached: boolean;
+  fpsMethod: string;
+}
 export interface NativeEncoderSupport {
   width: number; height: number; fps: number; source: string;
   encoders: {
@@ -20,6 +36,7 @@ export interface NativeEncoderSupport {
 
 interface MultiCamNativePlugin {
   getCapabilities(): Promise<NativeCapabilities>;
+  inspectVideoFile(options: { path: string }): Promise<NativeMp4Inspection>;
   getEncoderSupport(options: { width: number; height: number; fps: number }): Promise<NativeEncoderSupport>;
   startCameraAvailability(): Promise<void>;
   stopCameraAvailability(): Promise<void>;
@@ -28,7 +45,7 @@ interface MultiCamNativePlugin {
   listAudioInputs(): Promise<{ inputs: NativeAudioInput[] }>;
   setPreferredAudioInput(options: { id: string }): Promise<{ ok: boolean }>;
   startHighSpeedRecording(options: { cameraId: string; width: number; height: number; fps: number }): Promise<{ path: string }>;
-  stopHighSpeedRecording(): Promise<{ path: string; durationMs: number; bytes: number }>;
+  stopHighSpeedRecording(): Promise<{ path: string; durationMs: number; bytes: number; inspection?: NativeMp4Inspection; inspectionError?: string }>;
   addListener(eventName: "highSpeedStateChanged", listener: (event: {state: string; message: string}) => void): Promise<PluginListenerHandle>;
   /** Hybrid AI (ML Kit semantics + YUV physics). Optional on the native side — callers must handle rejection. */
   toggleHybridAI(options: { enabled: boolean }): Promise<{ enabled: boolean; engines: string[] }>;

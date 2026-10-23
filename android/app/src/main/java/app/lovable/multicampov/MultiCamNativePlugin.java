@@ -18,6 +18,8 @@ import android.media.CamcorderProfile;
 import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaRecorder;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -440,6 +442,103 @@ public class MultiCamNativePlugin extends Plugin {
         } catch (Exception e) { cleanup(); reportHighSpeedState("error", e.getMessage()); call.reject("Не удалось начать запись: " + e.getMessage()); }
     }
 
+
+    /**
+     * Analyze actual persisted app-owned MP4 rather than reported sensor/encoder
+     * capabilities. The sampled presentation timestamps are from the video
+     * track; variable frame rate and sparse/truncated samples are disclosed.
+     */
+    @PluginMethod
+    public void inspectVideoFile(PluginCall call) {
+        final String requested = call.getString("path", "");
+        if (requested == null || requested.isEmpty()) { call.reject("Путь MP4 не указан"); return; }
+        try {
+            final File root = getContext().getExternalFilesDir(null);
+            if (root == null) throw new IllegalStateException("Внутренняя папка видео недоступна");
+            final File allowed = root.getCanonicalFile();
+            final File file = new File(requested).getCanonicalFile();
+            if (!file.getPath().startsWith(allowed.getPath() + File.separator)) {
+                call.reject("Доступ разрешён только к видеозаписям приложения");
+                return;
+            }
+            if (!file.isFile() || file.length() < 1024) { call.reject("Файл MP4 отсутствует или пуст"); return; }
+            call.resolve(inspectRecordedFile(file));
+        } catch (Exception error) {
+            call.reject("Анализ сохранённого MP4 невозможен: " + error.getMessage());
+        }
+    }
+
+    private static JSObject inspectRecordedFile(File file) throws Exception {
+        MediaExtractor extractor = new MediaExtractor();
+        try {
+            extractor.setDataSource(file.getAbsolutePath());
+            MediaFormat video = null;
+            int videoTrack = -1;
+            for (int index = 0; index < extractor.getTrackCount(); index++) {
+                MediaFormat candidate = extractor.getTrackFormat(index);
+                final String mime = candidate.getString(MediaFormat.KEY_MIME);
+                if (mime != null && mime.startsWith("video/")) {
+                    video = candidate; videoTrack = index; break;
+                }
+            }
+            if (videoTrack < 0 || video == null)
+                throw new IllegalStateException("В MP4 нет видеодорожки");
+            JSObject result = new JSObject();
+            result.put("path", file.getAbsolutePath());
+            result.put("bytes", file.length());
+            result.put("mime", video.getString(MediaFormat.KEY_MIME));
+            result.put("width", valueOrUnknown(video, MediaFormat.KEY_WIDTH));
+            result.put("height", valueOrUnknown(video, MediaFormat.KEY_HEIGHT));
+            result.put("declaredFrameRate", valueOrUnknown(video, MediaFormat.KEY_FRAME_RATE));
+            result.put("durationUs", valueOrUnknownLong(video, MediaFormat.KEY_DURATION));
+            result.put("colorStandard", valueOrUnknown(video, MediaFormat.KEY_COLOR_STANDARD));
+            result.put("colorTransfer", valueOrUnknown(video, MediaFormat.KEY_COLOR_TRANSFER));
+            result.put("colorRange", valueOrUnknown(video, MediaFormat.KEY_COLOR_RANGE));
+            result.put("hdrStaticInfoPresent", video.containsKey(MediaFormat.KEY_HDR_STATIC_INFO));
+            result.put("source", "MediaExtractor: saved encoded video track");
+            result.put("hdrRecordingVerified", false); // Metadata alone never verifies true HDR.
+            extractor.selectTrack(videoTrack);
+            long earliest = Long.MAX_VALUE, latest = Long.MIN_VALUE;
+            long previous = -1, positiveDelta = 0;
+            int samples = 0, reordered = 0;
+            // Limit CPU work on long recordings; a bounded sample is NOT the
+            // complete video's FPS and does not prove all frames exist.
+            while (samples < 600) {
+                long time = extractor.getSampleTime();
+                if (time < 0) break;
+                earliest = Math.min(earliest, time);
+                latest = Math.max(latest, time);
+                if (previous >= 0) {
+                    if (time > previous) positiveDelta++;
+                    else if (time < previous) reordered++;
+                }
+                previous = time;
+                samples++;
+                if (!extractor.advance()) break;
+            }
+            long span = latest > earliest ? latest - earliest : 0;
+            double estimated = span > 200000 && samples > 7 ? ((samples - 1) * 1000000.0 / span) : 0;
+            result.put("samplesRead", samples);
+            result.put("timestampSpanUs", span);
+            result.put("outOfOrderPresentationTimes", reordered);
+            result.put("estimatedSampleFps", estimated >= 1 && estimated <= 960
+                ? Math.round(estimated * 10.0) / 10.0 : JSObject.NULL);
+            result.put("sampleLimitReached", samples == 600);
+            result.put("fpsMethod", "Bounded MP4 video sample presentation timestamps; not guaranteed camera sensor FPS or full-file integrity");
+            return result;
+        } finally {
+            extractor.release();
+        }
+    }
+    private static Object valueOrUnknown(MediaFormat format, String key) {
+        if (!format.containsKey(key)) return JSObject.NULL;
+        try { return format.getInteger(key); } catch (Exception ex) { return JSObject.NULL; }
+    }
+    private static Object valueOrUnknownLong(MediaFormat format, String key) {
+        if (!format.containsKey(key)) return JSObject.NULL;
+        try { return format.getLong(key); } catch (Exception ex) { return JSObject.NULL; }
+    }
+
     @PluginMethod
     public void stopHighSpeedRecording(PluginCall call) {
         if (recorder == null || !highSpeedStarted) { call.reject("Подтверждённой записи нет"); return; }
@@ -459,7 +558,14 @@ public class MultiCamNativePlugin extends Plugin {
             res.put("path", saved.getAbsolutePath());
             res.put("durationMs", durationMs);
             res.put("bytes", saved.length());
-            reportHighSpeedState("saved", "Файл записан; частота кадров в готовом MP4 ещё не проверена");
+            try {
+                JSObject inspected = inspectRecordedFile(saved);
+                res.put("inspection", inspected);
+                reportHighSpeedState("saved", "MP4 создан и видеодорожка прочитана");
+            } catch (Exception inspectError) {
+                res.put("inspectionError", inspectError.getMessage());
+                reportHighSpeedState("saved", "MP4 сохранён, но его видеодорожка не проверена");
+            }
             call.resolve(res);
         } catch (Exception error) {
             cleanup();
