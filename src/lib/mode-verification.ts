@@ -1,5 +1,6 @@
 import { cameraController } from "./camera-controller";
 import { recordModeEvidence, type ModeEvidence } from "./camera-passport";
+import { verifyDecodedVideoBlob } from "./clip-playback";
 export interface TestMode { width: number; height: number; fps: number }
 export const TEST_MODES: readonly TestMode[] = [
   { width: 1280, height: 720, fps: 30 },
@@ -53,35 +54,6 @@ async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<B
 }
 
 
-/** Load metadata of the actual encoded clip. This checks readable container/media
- * but does not claim accurate output FPS, bitrate, HDR or full-frame integrity.
- */
-async function testClipPlayback(blob: Blob, signal: AbortSignal): Promise<boolean> {
-  if (signal.aborted) return false;
-  return await new Promise<boolean>(resolve => {
-    const video = document.createElement("video");
-    video.preload = "metadata"; video.muted = true;
-    const url = URL.createObjectURL(blob);
-    let finished = false;
-    const finish = (ok: boolean) => {
-      if (finished) return;
-      finished = true;
-      clearTimeout(timeout);
-      signal.removeEventListener("abort", abort);
-      video.onloadedmetadata = null; video.onerror = null;
-      video.removeAttribute("src"); video.load();
-      URL.revokeObjectURL(url);
-      resolve(ok);
-    };
-    const abort = () => finish(false);
-    const timeout = window.setTimeout(() => finish(false), 4500);
-    signal.addEventListener("abort", abort, { once: true });
-    video.onloadedmetadata = () => finish(video.videoWidth > 0 && video.videoHeight > 0);
-    video.onerror = () => finish(false);
-    video.src = url;
-  });
-}
-
 export async function verifyMode(deviceId: string, mode: TestMode, signal: AbortSignal): Promise<ModeEvidence> {
   const owner = Symbol("mode-test");
   const result: ModeEvidence = {
@@ -98,8 +70,8 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
     if (!track || track.readyState !== "live") throw new Error("Камера не открылась");
     const actual = track.getSettings();
     result.applied = { width: actual.width, height: actual.height, fps: actual.frameRate };
-    const dimensionsMatch = [actual.width, actual.height].includes(mode.width) &&
-      [actual.width, actual.height].includes(mode.height);
+    const dimensionsMatch = (actual.width === mode.width && actual.height === mode.height) ||
+      (actual.width === mode.height && actual.height === mode.width);
     const fpsMatch = typeof actual.frameRate === "number" && Math.abs(actual.frameRate - mode.fps) < 1.1;
     if (!dimensionsMatch || !fpsMatch) {
       result.state = "rejected";
@@ -109,10 +81,10 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       const blob = await recordSample(stream, signal);
       if (blob.size < 1024) throw new Error("Видео пустое");
       result.state = "recorded";
-      const playable = await testClipPlayback(blob, signal);
-      if (!playable) throw new Error("Кодировщик создал файл, но его не удалось прочитать");
+      const frame = await verifyDecodedVideoBlob(blob, signal, 5000);
+      if (!frame.verifiedFirstFrame) throw new Error("Первый кадр не декодирован");
       result.state = "verified";
-      result.message = "Пробная запись читается (" + blob.size + " байт). Частота кадров файла ещё требует анализа";
+      result.message = "Первый кадр пробного файла декодирован (" + blob.size + " байт, " + frame.width + "×" + frame.height + "). FPS кодека, HDR и стабилизация не проверены";
     }
   } catch (e) {
     result.state = signal.aborted ? "unknown" : "rejected";
