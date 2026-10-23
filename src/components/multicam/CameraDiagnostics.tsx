@@ -82,7 +82,7 @@ export function CameraDiagnostics() {
       <p className="text-xs font-semibold">WebView: {devices.length} камер</p>
       {devices.map((d, i) => <div key={d.deviceId} className="rounded-md border border-border p-2 text-xs">
         <span>{d.label || "Камера " + (i + 1)}</span>
-        <span className="ms-2 text-muted-foreground">{tests.filter(t => t.cameraId === d.deviceId && t.state === "recorded").length} записанных тестов</span>
+        <span className="ms-2 text-muted-foreground">{tests.filter(t => t.cameraId === d.deviceId && (t.state === "recorded" || t.state === "verified")).length} проверенных файлов</span>
       </div>)}
       <p className="pt-2 text-xs font-semibold">Camera2: {nativeCameras.length} логических камер</p>
       {nativeCameras.map(c => <div key={c.cameraId} className="rounded-md border border-border p-2 text-xs">
@@ -93,7 +93,7 @@ export function CameraDiagnostics() {
       </div>)}
       {!!tests.length && <div className="max-h-56 overflow-y-auto rounded-md border border-border p-2">
         {tests.slice(-25).reverse().map((t,i) => <p key={i} className="border-b border-border py-1 text-[11px]">
-          {t.requested.width}×{t.requested.height} · {t.requested.fps} FPS · <strong>{t.state === "recorded" ? "видео записано" : t.state === "rejected" ? "не удалось" : t.state}</strong>
+          {t.requested.width}×{t.requested.height} · {t.requested.fps} FPS · <strong>{t.state === "verified" ? "видеофайл читается" : t.state === "recorded" ? "видео записано" : t.state === "rejected" ? "не удалось" : t.state}</strong>
           {t.message ? " · " + t.message : ""}
         </p>)}
       </div>}
