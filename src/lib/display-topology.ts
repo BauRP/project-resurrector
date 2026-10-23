@@ -98,11 +98,18 @@ export function startDisplayAdaptation(): () => void {
     // Keep non-camera working surfaces fully inside an available pane if a real
     // hinge cuts across the app window. Unlike camera this region is chosen
     // by usable size rather than a hard-coded left/right position.
-    const workspace = [...geometry.regions].sort((a,b)=> b.width*b.height-a.width*a.height)[0];
+    const shell = document.querySelector(".app-shell")?.getBoundingClientRect();
+    const shellLeft = shell?.left ?? 0;
+    const shellWidth = shell?.width ?? width();
+    const workspace = [...geometry.regions].map(region => {
+      const left = Math.max(0, region.left - shellLeft);
+      const right = Math.min(shellWidth, region.left + region.width - shellLeft);
+      return { ...region, left, width: Math.max(0, right - left) };
+    }).sort((a,b)=> b.width*b.height-a.width*a.height)[0];
     const safeWorkspace = geometry.regions.length > 1 && !!workspace && workspace.width >= 300 && workspace.height >= 220;
     root.dataset.foldWorkspace = safeWorkspace ? "pane" : "normal";
     root.style.setProperty("--fold-work-left", (workspace?.left ?? 0) + "px");
-    root.style.setProperty("--fold-work-width", (workspace?.width ?? width()) + "px");
+    root.style.setProperty("--fold-work-width", (workspace?.width ?? shellWidth) + "px");
     const panes = geometry.regions.sort((a,b) => a.left - b.left || a.top - b.top);
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     const eligible = panes.length >= 2 && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
