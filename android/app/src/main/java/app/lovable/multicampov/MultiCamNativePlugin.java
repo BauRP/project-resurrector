@@ -20,6 +20,7 @@ import android.media.MediaRecorder;
 import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.os.Looper;
 import android.os.PowerManager;
 import android.util.Range;
 import android.util.Size;
@@ -53,6 +54,83 @@ public class MultiCamNativePlugin extends Plugin {
     private long startedAt;
     private HandlerThread thread;
     private Handler handler;
+    private CameraManager.AvailabilityCallback availabilityWatcher;
+    private final Handler availabilityMainHandler = new Handler(Looper.getMainLooper());
+
+    @PluginMethod
+    public void startCameraAvailability(PluginCall call) {
+        try {
+            if (availabilityWatcher == null) {
+                availabilityWatcher = new CameraManager.AvailabilityCallback() {
+                    @Override public void onCameraAvailable(String cameraId) {
+                        JSObject ev = new JSObject(); ev.put("cameraId", cameraId);
+                        ev.put("available", true);
+                        notifyListeners("cameraAvailabilityChanged", ev);
+                    }
+                    @Override public void onCameraUnavailable(String cameraId) {
+                        JSObject ev = new JSObject(); ev.put("cameraId", cameraId);
+                        ev.put("available", false);
+                        notifyListeners("cameraAvailabilityChanged", ev);
+                    }
+                };
+                cameras().registerAvailabilityCallback(availabilityWatcher, availabilityMainHandler);
+            }
+            call.resolve();
+        } catch (Exception e) { call.reject("Camera availability unavailable: " + e.getMessage()); }
+    }
+    @PluginMethod
+    public void stopCameraAvailability(PluginCall call) { stopAvailability(); call.resolve(); }
+    private void stopAvailability() {
+        if (availabilityWatcher == null) return;
+        cameras().unregisterAvailabilityCallback(availabilityWatcher);
+        availabilityWatcher = null;
+    }
+    @Override protected void handleOnDestroy() {
+        stopAvailability(); cleanup(); super.handleOnDestroy();
+    }
+
+    /** Encoder declarations are predictions, not proof that recording will succeed. */
+    @PluginMethod
+    public void getEncoderSupport(PluginCall call) {
+        int width = call.getInt("width", 1920);
+        int height = call.getInt("height", 1080);
+        int fps = call.getInt("fps", 30);
+        if (width <= 0 || width > 8192 || height <= 0 || height > 8192 || fps < 1 || fps > 960) {
+            call.reject("Invalid width/height/fps"); return;
+        }
+        JSArray results = new JSArray();
+        for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
+            if (!info.isEncoder()) continue;
+            for (String mime : info.getSupportedTypes()) {
+                if (!mime.startsWith("video/")) continue;
+                try {
+                    MediaCodecInfo.CodecCapabilities codec = info.getCapabilitiesForType(mime);
+                    MediaCodecInfo.VideoCapabilities video = codec.getVideoCapabilities();
+                    if (video == null) continue;
+                    JSObject item = new JSObject();
+                    item.put("mime", mime); item.put("encoderName", info.getName());
+                    item.put("declaredSizeRate", video.areSizeAndRateSupported(width, height, fps));
+                    item.put("widthMin", video.getSupportedWidths().getLower());
+                    item.put("widthMax", video.getSupportedWidths().getUpper());
+                    item.put("heightMin", video.getSupportedHeights().getLower());
+                    item.put("heightMax", video.getSupportedHeights().getUpper());
+                    item.put("bitrateMin", video.getBitrateRange().getLower());
+                    item.put("bitrateMax", video.getBitrateRange().getUpper());
+                    item.put("hardwareAccelerated", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+                        ? (info.isHardwareAccelerated() ? "yes" : "no") : "unknown");
+                    results.put(item);
+                } catch (RuntimeException ignored) {
+                    // Unreliable vendor codec metadata must not invalidate other encoders.
+                }
+            }
+        }
+        JSObject result = new JSObject(); result.put("width", width);
+        result.put("height", height); result.put("fps", fps);
+        result.put("source", "MediaCodecInfo.VideoCapabilities");
+        result.put("encoders", results);
+        call.resolve(result);
+    }
+
 
     private static boolean hasMode(int[] values, int mode) { if (values == null) return false; for (int v : values) if (v == mode) return true; return false; }
     private CameraManager cameras() { return (CameraManager) getContext().getSystemService(Context.CAMERA_SERVICE); }
