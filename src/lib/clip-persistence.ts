@@ -104,3 +104,46 @@ export async function assertSavedClipsReadable(clips: readonly RecordedClip[]): 
     };
   });
 }
+
+/** Reopen the durable store and return the ORIGINAL persisted media bytes.
+ * Never substitute the in-memory MediaRecorder blob for the file under test.
+ */
+export async function readPersistedClip(clipId: string): Promise<RecordedClip> {
+  if (!clipId) throw new Error("Не указан идентификатор сохранённого видео");
+  if (typeof indexedDB === "undefined") throw new Error("IndexedDB недоступна");
+  return new Promise<RecordedClip>((resolve, reject) => {
+    const request = indexedDB.open("multicam-pov-media", 1);
+    request.onblocked = () => reject(new Error("Медиатека заблокирована"));
+    request.onerror = () => reject(new Error("Не удалось открыть хранилище для проверки клипа"));
+    request.onsuccess = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("clips")) {
+        db.close(); reject(new Error("Сохранённые видео не найдены")); return;
+      }
+      try {
+        const tx = db.transaction("clips", "readonly");
+        const result = tx.objectStore("clips").get(clipId);
+        let clip: RecordedClip | null = null;
+        let failed = "";
+        result.onsuccess = () => {
+          const stored: unknown = result.result;
+          if (!stored || typeof stored !== "object" ||
+              (stored as RecordedClip).id !== clipId ||
+              !((stored as RecordedClip).blob instanceof Blob) ||
+              (stored as RecordedClip).blob.size < 1024) {
+            failed = "Сохранённый видеоклип отсутствует или повреждён"; return;
+          }
+          clip = stored as RecordedClip;
+        };
+        result.onerror = () => { failed = "Ошибка чтения видеоклипа"; };
+        tx.oncomplete = () => {
+          db.close();
+          if (failed || !clip) reject(new Error(failed || "Файл не прочитан"));
+          else resolve(clip);
+        };
+        tx.onabort = () => { db.close(); reject(new Error("Чтение видеоклипа прервано")); };
+        tx.onerror = () => { db.close(); reject(new Error("Ошибка транзакции чтения клипа")); };
+      } catch (error) { db.close(); reject(error); }
+    };
+  });
+}
