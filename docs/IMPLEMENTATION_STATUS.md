@@ -10,6 +10,7 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Camera diagnostics run short sample recordings per WebView device and requested resolution/FPS. Per-device/mode queue survives interruption and keeps separate waiting, running, verified, retry, deferred and error statuses.
 - Camera2 test sessions expose stabilization CaptureResult; DNG RAW is captured through a separate native Camera2 pipeline; high-speed Camera2 capture has bounded state reporting.
 - Dual WebView camera preview and short simultaneous two-encoder diagnostic are available where independent streams work; paired clips use one IndexedDB transaction.
+- The main video shutter now connects to two independent real WebView MediaRecorders when Dual Camera is enabled and two distinct live camera streams are confirmed. Clips carry a paired capture-group ID, individual device IDs, monotonic start evidence and an explicit non-synchronization flag. Failure attempts to salvage readable clips. This is a functional implementation path, not physical-device-certified professional synchronization.
 - Ordinary camera recording saves encoded blobs to IndexedDB and reads persisted copies back before confirming storage success; separate WebView playback verifies that the **first frame decodes**. A bounded requestVideoFrameCallback sample can report **approximate displayed FPS**, never encoded FPS.
 - Clip loss/error statuses do not claim recording succeeded; leaving camera while saving is postponed; fold resize alone does not restart recording.
 - GitHub Actions runs unit tests and builds APK/AAB for the backup branch.
@@ -17,10 +18,10 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
-- Production-grade synchronized simultaneous multi-camera recording, common timeline/audio clock, physical-lens choice and sustained heat/battery handling.
+- Production-grade synchronized simultaneous multi-camera recording, common timeline/audio clock, verified multi-track audio, exact physical-lens choice and sustained heat/battery handling. WebView dual video has no claim of a shared hardware timestamp or guaranteed concurrent-device availability.
 - Guaranteed uninterrupted user video during Android Activity recreation, backgrounding, or camera/device transitions. WebView records cannot claim background continuation.
 - Complete diagnostic Cartesian compatibility planning with thermal/battery/load gating for every lens+mode+codec and repeat policy.
-- Exhaustive per-pane application-wide controls avoidance in editor/settings/connection views, cover display third-party access, and vendor-specific multi-window behavior.
+- Exhaustive per-pane application-wide controls avoidance in connection overlays, cover display third-party access, and vendor-specific multi-window behavior. Editor/settings headers and navigation have pane-relative layout, but physical validation is outstanding.
 - Physical device validation on actual book folds, vertical flips, tri-folds and different Android vendors/OS releases.
 
 ## Acceptance
