@@ -28,10 +28,46 @@ function useMeshBridge() {
 function MulticamAppContent() {
   const tab = useMulticamStore((x) => x.tab); const setTab = useMulticamStore((x) => x.setTab); const language = useMulticamStore((x) => x.language); const role = useMulticamStore((x) => x.role); const clean = useMulticamStore((x) => x.cleanFrame && x.tab === "camera");
   const { t } = useT(); const peers = useMeshPeers(); const [connectOpen, setConnectOpen] = useState(false);
+  const recording = useMulticamStore((x) => x.recording);
+  const recordingPhase = useMulticamStore((x) => x.recordingPhase);
+  const [pendingTab, setPendingTab] = useState<AppTab | null>(null);
+  const [navigationNotice, setNavigationNotice] = useState("");
   useMeshBridge();
   // Window changes only rearrange UI; they never restart the camera pipeline.
   useEffect(() => startDisplayAdaptation(), []);
-  const setStore = useMulticamStore((x) => x.set); const ready = useMulticamStore((x) => x.capMatrix !== null); const mediaOpen = useMulticamStore((x) => x.mediaOpen);
+  const setStore = useMulticamStore((x) => x.set);
+  // Leaving the camera tears down its WebView MediaStream and recorder.
+  // Never unmount CameraTab before MediaRecorder.onstop and the IndexedDB
+  // transaction confirm that the user's video was actually saved.
+  const requestTab = useCallback((next: AppTab) => {
+    if (next === tab) return;
+    if (recordingPhase === "starting") {
+      setNavigationNotice("Запись запускается. Дождитесь подтверждения перед переходом.");
+      return;
+    }
+    if (recording || ["recording", "stopping", "saving"].includes(recordingPhase)) {
+      setPendingTab(next);
+      setNavigationNotice("Останавливаю запись и сохраняю видео перед переходом…");
+      if (recording && recordingPhase === "recording")
+        setStore({ recording: false, recordingPhase: "stopping" });
+      return;
+    }
+    setPendingTab(null);
+    setNavigationNotice("");
+    setTab(next);
+  }, [tab, recording, recordingPhase, setStore, setTab]);
+  useEffect(() => {
+    if (!pendingTab) return;
+    if (recordingPhase === "saved" && !recording) {
+      setNavigationNotice("");
+      setTab(pendingTab);
+      setPendingTab(null);
+    } else if (recordingPhase === "error") {
+      setNavigationNotice("Видео не сохранено. Исправьте ошибку перед переходом.");
+      setPendingTab(null);
+    }
+  }, [pendingTab, recordingPhase, recording, setTab]);
+  const ready = useMulticamStore((x) => x.capMatrix !== null); const mediaOpen = useMulticamStore((x) => x.mediaOpen);
   const onProbed = useCallback((capMatrix: import("@/lib/capabilities").CapabilityMatrix) => setStore({ capMatrix }), [setStore]);
   useEffect(() => { document.documentElement.dir = language === "ar" ? "rtl" : "ltr"; document.documentElement.lang = language; }, [language]);
   const theme = useMulticamStore((x) => x.theme);
@@ -48,7 +84,8 @@ function MulticamAppContent() {
       </motion.button></div>
     </header>}
     <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}>{tab === "camera" ? <CameraTab /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</motion.div></AnimatePresence>
-    </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => setTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
+    </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
+    {navigationNotice && tab === "camera" && <div role="status" className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}</div>}
     <AnimatePresence>{connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}</AnimatePresence>
   </div></div>;
 }
