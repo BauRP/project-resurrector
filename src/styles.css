@@ -515,7 +515,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   inset-inline-start: var(--camera-right-pane-left) !important;
   inset-inline-end: .5rem !important;
 }
-[data-camera-split="side"] .bottom-nav {
+[data-camera-split="side"] .app-shell:has(.camera-screen) > .bottom-nav {
   left: var(--camera-right-pane-left) !important;
   width: var(--camera-right-pane-width) !important;
 }
