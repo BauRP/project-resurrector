@@ -17,6 +17,7 @@ export function CameraDiagnostics() {
   const [encoderBusy, setEncoderBusy] = useState(false);
   const [highSpeedState, setHighSpeedState] = useState<"idle" | "starting" | "recording" | "stopping">("idle");
   const [highSpeedMessage, setHighSpeedMessage] = useState("");
+  const highSpeedSession = useRef(false);
   const [highSpeedCamera, setHighSpeedCamera] = useState("");
   const [highSpeedMode, setHighSpeedMode] = useState("");
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
@@ -49,6 +50,10 @@ export function CameraDiagnostics() {
       .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
       mounted.current = false; job.current?.abort();
+      if (highSpeedSession.current) {
+        highSpeedSession.current = false;
+        void MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
+      }
       removeAvailability?.();
       if (isNative()) void MultiCamNative.stopCameraAvailability().catch(() => undefined);
       navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
@@ -91,7 +96,9 @@ export function CameraDiagnostics() {
     setHighSpeedState("starting"); setHighSpeedMessage("Запуск Camera2 high-speed…");
     try {
       await MultiCamNative.startHighSpeedRecording({ cameraId: option.cameraId, width, height, fps: option.fps });
+      highSpeedSession.current = true;
       if (mounted.current) { setHighSpeedCamera(option.cameraId); setHighSpeedState("recording"); setHighSpeedMessage("Запись началась, остановите её вручную"); }
+      else { highSpeedSession.current = false; void MultiCamNative.stopHighSpeedRecording().catch(() => undefined); }
     } catch (e) {
       if (mounted.current) { setHighSpeedState("idle"); setHighSpeedMessage("Ошибка запуска: " + String(e)); }
     }
@@ -99,6 +106,7 @@ export function CameraDiagnostics() {
   const finishHighSpeed = async () => {
     if (highSpeedState !== "recording") return;
     setHighSpeedState("stopping");
+    highSpeedSession.current = false;
     try {
       const file = await MultiCamNative.stopHighSpeedRecording();
       if (mounted.current) setHighSpeedMessage("Сохранён файл Camera2: " + file.bytes + " байт за " + file.durationMs + " мс. FPS в MP4 не измерен. Путь: " + file.path);
