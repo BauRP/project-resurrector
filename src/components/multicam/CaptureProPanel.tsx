@@ -27,6 +27,7 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   const [dropped, setDropped] = useState(0);
   const [thermal, setThermal] = useState<string>("Недоступно в браузере");
   const peakRef = useRef(-90);
+  const configRevision = useRef(0);
   const m = s.capMatrix?.[s.facing] ?? null; const NS = "Не поддерживается";
   const update = (patch: Partial<typeof c>) => s.set({ capture: { ...c, ...patch } });
   const warn = (msg: string) => { setNotice(msg); window.setTimeout(() => setNotice(""), 3500); };
@@ -96,13 +97,16 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
 
   const applyTrack = (patch: Partial<typeof c>) => {
     const next = { ...c, ...patch };
+    const revision = ++configRevision.current;
     const track = stream?.getVideoTracks()[0]; if (!track) { blocked("Камера"); return; }
+    const previous = track.getConstraints();
     const [w, h] = RES[next.resolution]!;
     const advanced: Record<string, unknown>[] = [];
     if (next.iso !== null) advanced.push({ exposureMode: "manual", iso: next.iso });
     if (next.exposure !== null) advanced.push({ exposureMode: "manual", exposureTime: next.exposure });
     if (next.focus !== null) advanced.push({ focusMode: "manual", focusDistance: next.focus });
     void track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).then(() => {
+      if (revision !== configRevision.current) return;
       const applied = track.getSettings();
       const captureKey = applied.deviceId || track.id || "webview-unknown";
       const requestedGeometry = "resolution" in patch || "fps" in patch;
@@ -113,10 +117,15 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
       if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { width: applied.width, height: applied.height, fps: actualFps }, state: mismatch ? "rejected" : "applied", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : "WebView track setting applied; recorded output not verified" });
       if (mismatch) {
         warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
+        void track.applyConstraints(previous).catch(() => warn("Не удалось восстановить предыдущие настройки камеры"));
         return;
       }
       update(patch);
-    }).catch(() => blocked("Этот режим"));
+    }).catch(() => {
+      if (revision !== configRevision.current) return;
+      blocked("Этот режим");
+      void track.applyConstraints(previous).catch(() => warn("Откат режима не удался. Проверьте активную камеру."));
+    });
   };
 
   const Chip = ({ ok, active, onPick, label, name }: { ok: boolean; active: boolean; onPick: () => void; label: string; name: string }) =>
