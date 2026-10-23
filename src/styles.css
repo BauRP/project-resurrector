@@ -569,3 +569,32 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 [data-fold-workspace="pane"] .editor-fold-workspace * ,
 [data-fold-workspace="pane"] .settings-fold-workspace * { min-width: 0; }
+
+
+/* Keep the persistent header and navigation on a real, usable pane in
+   editor/settings. The camera gets its own per-pane preview/shutter layout.
+   Non-folding windows remain fully unchanged. */
+[data-fold-workspace="pane"] .app-shell:has(.editor-fold-workspace) .app-header,
+[data-fold-workspace="pane"] .app-shell:has(.settings-fold-workspace) .app-header {
+  position: relative;
+  margin-inline-start: var(--fold-work-left);
+  width: min(100%, var(--fold-work-width));
+  max-width: min(100%, var(--fold-work-width));
+  min-width: 0;
+  flex-wrap: wrap;
+}
+[data-fold-workspace="pane"] .app-shell:has(.editor-fold-workspace) > .bottom-nav,
+[data-fold-workspace="pane"] .app-shell:has(.settings-fold-workspace) > .bottom-nav {
+  left: var(--fold-work-left) !important;
+  width: min(100%, var(--fold-work-width)) !important;
+  max-width: 100%;
+}
+/* Horizontal separating hinge: controls and dialogs stay on the lower pane.
+   Avoid introducing a synthetic black bar on zero-occlusion creases. */
+[data-camera-tabletop="true"] .camera-hud {
+  max-height: var(--camera-upper-height);
+  overflow-y: auto;
+}
+[data-camera-tabletop="true"] .camera-settings-sheet {
+  max-height: calc(100% - var(--camera-lower-top));
+}
