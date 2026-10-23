@@ -139,7 +139,7 @@ export async function verifyDualCameraRecording(firstId: string, secondId: strin
       throw new Error("Один из двух записанных файлов не читается");
     const time = Date.now();
     const token = Math.random().toString(36).slice(2, 10);
-    const ids: [string, string] = [\`dual-\${time}-\${token}-1\`, \`dual-\${time}-\${token}-2\`];
+    const ids: [string, string] = [`dual-${time}-${token}-1`, `dual-${time}-${token}-2`];
     const clips: RecordedClip[] = finished.map((capture, index) => ({
       id: ids[index]!, createdAt: time, camera: index + 1, mode: "dual-camera-diagnostic",
       profile: "standard", playbackRate: 1, blob: capture.blob,
