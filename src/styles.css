@@ -554,3 +554,18 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   left: var(--camera-control-pane-left) !important;
   width: var(--camera-control-pane-width) !important;
 }
+
+
+/* The editor and settings use actual reported WindowManager usable regions.
+   Do not let project controls cross an occluding hinge. Normal phones,
+   non-separating creases and unsupported screen geometries stay unchanged. */
+[data-fold-workspace="pane"] .editor-fold-workspace,
+[data-fold-workspace="pane"] .settings-fold-workspace {
+  position: relative;
+  margin-inline-start: var(--fold-work-left);
+  width: min(var(--fold-work-width), 100%);
+  max-width: 100%;
+  min-width: 0;
+}
+[data-fold-workspace="pane"] .editor-fold-workspace * ,
+[data-fold-workspace="pane"] .settings-fold-workspace * { min-width: 0; }

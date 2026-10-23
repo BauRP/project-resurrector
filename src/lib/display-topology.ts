@@ -95,6 +95,14 @@ export function startDisplayAdaptation(): () => void {
     root.dataset.occludingFold = String(geometry.occluded);
     // Keep all reported hinge bounds: two separate hinges stay two separate features.
     root.dataset.foldRegions = String(geometry.regions.length);
+    // Keep non-camera working surfaces fully inside an available pane if a real
+    // hinge cuts across the app window. Unlike camera this region is chosen
+    // by usable size rather than a hard-coded left/right position.
+    const workspace = [...geometry.regions].sort((a,b)=> b.width*b.height-a.width*a.height)[0];
+    const safeWorkspace = geometry.regions.length > 1 && !!workspace && workspace.width >= 300 && workspace.height >= 220;
+    root.dataset.foldWorkspace = safeWorkspace ? "pane" : "normal";
+    root.style.setProperty("--fold-work-left", (workspace?.left ?? 0) + "px");
+    root.style.setProperty("--fold-work-width", (workspace?.width ?? width()) + "px");
     const panes = geometry.regions.sort((a,b) => a.left - b.left || a.top - b.top);
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     const eligible = panes.length >= 2 && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
@@ -156,7 +164,7 @@ export function startDisplayAdaptation(): () => void {
     cancelAnimationFrame(refreshFrame);
     void listener?.remove();
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving().catch(() => {});
-    ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-    ["--app-viewport-height","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
+    ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
+    ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
   };
 }
