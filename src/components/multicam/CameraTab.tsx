@@ -273,7 +273,6 @@ export function CameraTab() {
         const evidence = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
       };
-      window.addEventListener(FOLD_EVENT, onFold);
       let recorderError = "";
       const cleanUp = () => {
         window.removeEventListener(FOLD_EVENT, onFold);
@@ -329,6 +328,7 @@ export function CameraTab() {
         });
       };
       recorder.start(1000);
+      window.addEventListener(FOLD_EVENT, onFold);
     } catch (error) {
       if (createdRecorder && createdRecorder.state !== "inactive") try { createdRecorder.stop(); } catch { /* ignored */ }
       if (recorderRef.current === createdRecorder) recorderRef.current = null;
