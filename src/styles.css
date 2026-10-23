@@ -466,3 +466,39 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (min-width: 600px) {
   [data-separating-fold="true"] .app-header { column-gap: max(1rem, var(--fold-occlusion-width, 0px)); }
 }
+
+
+/* Native WindowManager region geometry is applied ONLY for actually reported separating folds.
+   No simulated hinges. A side pane remains useful for controls without changing the camera session. */
+[data-camera-split="side"] .camera-live-view {
+  inset-inline-end: auto !important;
+  width: var(--camera-left-pane-width) !important;
+  max-width: 100%;
+  border-inline-end: 1px solid var(--border);
+}
+[data-camera-split="side"] .camera-record-dock {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  bottom: clamp(12px, 13vh, 90px);
+}
+[data-camera-split="side"] .camera-record-dock > div { width: 100%; max-width: 450px; }
+[data-camera-tabletop="true"] .camera-live-view {
+  inset-block-end: auto !important;
+  height: min(var(--camera-upper-height), 70%);
+}
+[data-camera-tabletop="true"] .camera-record-dock {
+  inset-block-start: var(--camera-lower-top);
+  inset-block-end: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-camera-tabletop="true"] .camera-record-dock > div { width: min(100%, 480px); }
+@media (max-height: 480px) {
+  .camera-record-dock { bottom: 4px; }
+  .camera-record-dock .record-shutter { width: 3rem; height: 3rem; }
+  .camera-record-dock .record-shutter span { width: 2.3rem; height: 2.3rem; }
+}

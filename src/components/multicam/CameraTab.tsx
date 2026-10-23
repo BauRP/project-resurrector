@@ -269,7 +269,7 @@ export function CameraTab() {
   const gridName = GRIDS.find((g) => g.id === s.grid)?.label ?? "Выкл";
 
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
-    <section className={`absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
+    <section className={`camera-live-view absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
       {!clean && <>
         {s.dualCamera && <div className="absolute end-3 top-28 flex aspect-[3/4] w-[22%] min-w-20 items-center justify-center rounded-md border border-glass bg-viewfinder p-2 text-center text-[10px] text-muted-foreground">Вторая камера не подключена</div>}
@@ -360,7 +360,7 @@ export function CameraTab() {
     </motion.div>}</AnimatePresence>
 
     {/* Bottom control dock */}
-    <div className="absolute inset-x-0 bottom-6 z-20 px-4">
+    <div className="camera-record-dock absolute inset-x-0 bottom-6 z-20 px-4">
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
         <div className="mb-4 flex items-center justify-start gap-1.5">{!clean && <>
           <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={cameraState === "loading" || s.recording || (s.capMatrix ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false)} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>

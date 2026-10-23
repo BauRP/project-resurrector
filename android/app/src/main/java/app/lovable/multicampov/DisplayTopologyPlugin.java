@@ -6,6 +6,9 @@ import android.view.View;
 
 import androidx.core.util.Consumer;
 import androidx.window.java.layout.WindowInfoTrackerCallbackAdapter;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowInsetsCompat;
+import androidx.core.graphics.Insets;
 import androidx.window.layout.DisplayFeature;
 import androidx.window.layout.FoldingFeature;
 import androidx.window.layout.WindowInfoTracker;
@@ -42,6 +45,16 @@ public class DisplayTopologyPlugin extends Plugin {
         result.put("widthDp", width / density);
         result.put("heightDp", height / density);
         result.put("density", density);
+        // Expose inset diagnostics; the WebView independently applies CSS env(safe-area-*)
+        // so these values must not be blindly added as a second padding.
+        WindowInsetsCompat windowInsets = ViewCompat.getRootWindowInsets(root);
+        if (windowInsets != null) {
+            Insets insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout());
+            JSObject safe = new JSObject();
+            safe.put("left", insets.left); safe.put("top", insets.top);
+            safe.put("right", insets.right); safe.put("bottom", insets.bottom);
+            result.put("systemInsetsPx", safe);
+        }
         result.put("revision", revision);
         result.put("posture", "unknown");
         result.put("source", "android-windowmanager");
