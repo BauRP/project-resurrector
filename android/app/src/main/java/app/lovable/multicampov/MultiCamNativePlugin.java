@@ -84,11 +84,11 @@ public class MultiCamNativePlugin extends Plugin {
                 cam.put("sensorOrientation", orientation != null ? orientation : JSObject.NULL);
                 SizeF sensor = ch.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
                 if (sensor != null) {
-                    JSArray physicalSize = new JSArray(); physicalSize.put(sensor.getWidth()); physicalSize.put(sensor.getHeight());
+                    JSArray physicalSize = new JSArray(); physicalSize.put(Float.valueOf(sensor.getWidth())); physicalSize.put(Float.valueOf(sensor.getHeight()));
                     cam.put("sensorSizeMm", physicalSize);
                 } else cam.put("sensorSizeMm", JSObject.NULL);
                 float[] focal = ch.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
-                JSArray focalArray = new JSArray(); if (focal != null) for (float length : focal) focalArray.put(length);
+                JSArray focalArray = new JSArray(); if (focal != null) for (float length : focal) focalArray.put(Float.valueOf(length));
                 cam.put("focalLengthsMm", focalArray);
                 int[] eis = ch.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES);
                 int[] ois = ch.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION);
