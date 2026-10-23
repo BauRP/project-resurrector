@@ -1,8 +1,8 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 
-export interface NativeCameraProfile { videoOutputSizes?: { width: number; height: number; minFrameDurationNs?: number; theoreticalMaxFps?: number }[]; sensorOrientation?: number; sensorSizeMm?: [number, number]; focalLengthsMm?: number[]; eisModes?: number[]; oisModes?: number[]; eisDeclared?: boolean; oisDeclared?: boolean; exposureTimeNs?: [number, number];  physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
+export interface NativeCameraProfile { dynamicRangeApiAvailable?: boolean; tenBitOutputDeclared?: boolean; hdrRecordedAndVerified?: false; dynamicRangeProfiles?: { id: number; name: string; extraLatencyDeclared: boolean; compatibleProfiles: string[] }[];  videoOutputSizes?: { width: number; height: number; minFrameDurationNs?: number; theoreticalMaxFps?: number }[]; sensorOrientation?: number; sensorSizeMm?: [number, number]; focalLengthsMm?: number[]; eisModes?: number[]; oisModes?: number[]; eisDeclared?: boolean; oisDeclared?: boolean; exposureTimeNs?: [number, number];  physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
 export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[]; concurrentCameraGroups?: string[][] }
-export interface NativeThermal { status: number; label: string; temperatureC: number | null }
+export interface NativeThermal { status: number; available?: boolean; label: string; temperatureC: number | null }
 export interface NativeAudioInput { id: string; name: string; type: string }
 export interface NativeEncoderSupport {
   width: number; height: number; fps: number; source: string;
@@ -11,6 +11,10 @@ export interface NativeEncoderSupport {
     hardwareAccelerated: "yes" | "no" | "unknown";
     widthMin: number; widthMax: number; heightMin: number; heightMax: number;
     bitrateMin: number; bitrateMax: number;
+    codecProfiles?: { profileId: number; levelId: number }[];
+    hevcTenBitCandidate?: boolean;
+    hdr10ProfileDeclared?: boolean;
+    hdrEditingFeatureDeclared?: boolean;
   }[];
 }
 

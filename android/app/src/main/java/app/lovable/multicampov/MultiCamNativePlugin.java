@@ -11,6 +11,7 @@ import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CameraMetadata;
 import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.hardware.camera2.params.DynamicRangeProfiles;
 import android.media.AudioDeviceInfo;
 import android.media.AudioManager;
 import android.media.CamcorderProfile;
@@ -128,6 +129,28 @@ public class MultiCamNativePlugin extends Plugin {
                     item.put("bitrateMax", video.getBitrateRange().getUpper());
                     item.put("hardwareAccelerated", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
                         ? (info.isHardwareAccelerated() ? "yes" : "no") : "unknown");
+                    JSArray codecProfiles = new JSArray();
+                    boolean hevcTenBit = false;
+                    boolean hdr10Profile = false;
+                    if (codec.profileLevels != null) {
+                        for (MediaCodecInfo.CodecProfileLevel level : codec.profileLevels) {
+                            JSObject p = new JSObject();
+                            p.put("profileId", level.profile); p.put("levelId", level.level);
+                            codecProfiles.put(p);
+                            if ("video/hevc".equalsIgnoreCase(mime)) {
+                                hevcTenBit |= level.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10
+                                    || level.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10
+                                    || level.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus;
+                                hdr10Profile |= level.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10
+                                    || level.profile == MediaCodecInfo.CodecProfileLevel.HEVCProfileMain10HDR10Plus;
+                            }
+                        }
+                    }
+                    item.put("codecProfiles", codecProfiles);
+                    item.put("hevcTenBitCandidate", hevcTenBit);
+                    item.put("hdr10ProfileDeclared", hdr10Profile);
+                    item.put("hdrEditingFeatureDeclared", Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
+                        ? codec.isFeatureSupported(MediaCodecInfo.CodecCapabilities.FEATURE_HdrEditing) : false);
                     results.put(item);
                 } catch (RuntimeException ignored) {
                     // Unreliable vendor codec metadata must not invalidate other encoders.
@@ -141,6 +164,14 @@ public class MultiCamNativePlugin extends Plugin {
         call.resolve(result);
     }
 
+
+    private static String dynamicRangeName(long profile) {
+        if (profile == DynamicRangeProfiles.STANDARD) return "SDR";
+        if (profile == DynamicRangeProfiles.HLG10) return "HLG10";
+        if (profile == DynamicRangeProfiles.HDR10) return "HDR10";
+        if (profile == DynamicRangeProfiles.HDR10_PLUS) return "HDR10+";
+        return "other:" + profile; // Never misclassify vendor/Dolby modes.
+    }
 
     private static boolean hasMode(int[] values, int mode) { if (values == null) return false; for (int v : values) if (v == mode) return true; return false; }
     private CameraManager cameras() { return (CameraManager) getContext().getSystemService(Context.CAMERA_SERVICE); }
@@ -244,6 +275,33 @@ public class MultiCamNativePlugin extends Plugin {
                 int[] tone = ch.get(CameraCharacteristics.TONEMAP_AVAILABLE_TONE_MAP_MODES);
                 boolean curve = false; if (tone != null) for (int t : tone) if (t == CameraMetadata.TONEMAP_MODE_CONTRAST_CURVE) curve = true;
                 cam.put("toneCurve", curve);
+                // Android 13+ advertises real Camera2 per-camera dynamic-range profiles.
+                // These are declarations, not proof of an HDR recording/encoding/export path.
+                JSArray ranges = new JSArray();
+                boolean tenBitCapability = false;
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    tenBitCapability = hasMode(caps, CameraMetadata.REQUEST_AVAILABLE_CAPABILITIES_DYNAMIC_RANGE_TEN_BIT);
+                    DynamicRangeProfiles supportedRanges =
+                        ch.get(CameraCharacteristics.REQUEST_AVAILABLE_DYNAMIC_RANGE_PROFILES);
+                    if (supportedRanges != null) {
+                        for (Long value : supportedRanges.getSupportedProfiles()) {
+                            JSObject item = new JSObject();
+                            item.put("id", value);
+                            item.put("name", dynamicRangeName(value));
+                            item.put("extraLatencyDeclared", supportedRanges.isExtraLatencyPresent(value));
+                            JSArray compatible = new JSArray();
+                            for (Long possible : supportedRanges.getProfileCaptureRequestConstraints(value)) {
+                                compatible.put(dynamicRangeName(possible));
+                            }
+                            item.put("compatibleProfiles", compatible);
+                            ranges.put(item);
+                        }
+                    }
+                }
+                cam.put("dynamicRangeApiAvailable", Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU);
+                cam.put("tenBitOutputDeclared", tenBitCapability);
+                cam.put("dynamicRangeProfiles", ranges);
+                cam.put("hdrRecordedAndVerified", false);
                 list.put(cam);
             }
             JSArray codecs = new JSArray();
@@ -269,7 +327,9 @@ public class MultiCamNativePlugin extends Plugin {
     public void getThermalStatus(PluginCall call) {
         JSObject res = new JSObject();
         PowerManager pm = (PowerManager) getContext().getSystemService(Context.POWER_SERVICE);
-        res.put("status", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && pm != null ? pm.getCurrentThermalStatus() : 0);
+        // API below 29 has no framework thermal status. Do not report "normal" by default.
+        res.put("status", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && pm != null ? pm.getCurrentThermalStatus() : -1);
+        res.put("available", Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && pm != null);
         float headroom = Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && pm != null ? pm.getThermalHeadroom(10) : Float.NaN;
         res.put("headroom", Float.isNaN(headroom) ? JSObject.NULL : headroom);
         res.put("temperatureC", JSObject.NULL);
