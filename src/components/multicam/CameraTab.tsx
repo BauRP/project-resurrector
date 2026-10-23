@@ -40,6 +40,7 @@ export function CameraTab() {
   const peers = useMeshPeers();
   const videoRef = useRef<HTMLVideoElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const stopReasonRef = useRef<string>("");
   const chunksRef = useRef<Blob[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("loading");
@@ -108,6 +109,40 @@ export function CameraTab() {
   const [lastPhoto, setLastPhoto] = useState<string | null>(null); const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
   useEffect(() => () => { if (intervalRef.current) window.clearInterval(intervalRef.current); }, []);
   useEffect(() => { const video = videoRef.current; if (!video) return; video.srcObject = stream; return () => { if (video.srcObject === stream) video.srcObject = null; }; }, [stream, cameraState]);
+  // The WebView has no guaranteed background camera entitlement. Only react
+  // to loss of actual video input; do not interpret CSS resize/folding as a camera error.
+  useEffect(() => {
+    const videoTrack = stream?.getVideoTracks()[0];
+    if (!videoTrack) return;
+    const onEnded = () => {
+      setCameraState("unavailable");
+      const active = recorderRef.current;
+      if (active && active.state !== "inactive") {
+        stopReasonRef.current = "Поток камеры прервался; запись завершается. Проверьте сохранённый файл.";
+        s.set({ recording: false, recordingPhase: "stopping" });
+        try { active.stop(); } catch (error) {
+          s.set({ recording: false, recordingPhase: "error", captureSaveError: "Поток потерян, остановить кодировщик не удалось: " + String(error) });
+        }
+      }
+    };
+    videoTrack.addEventListener("ended", onEnded);
+    return () => videoTrack.removeEventListener("ended", onEnded);
+  }, [stream, s.set]);
+  useEffect(() => {
+    const onPageHidden = () => {
+      if (!document.hidden) return;
+      const active = recorderRef.current;
+      if (active && active.state !== "inactive") {
+        stopReasonRef.current = "Приложение ушло в фон; непрерывность WebView-записи не гарантирована. Завершаю текущий сегмент.";
+        s.set({ recording: false, recordingPhase: "stopping" });
+        try { active.stop(); } catch (error) {
+          s.set({ recording: false, recordingPhase: "error", captureSaveError: "Ошибка остановки при сворачивании: " + String(error) });
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onPageHidden);
+    return () => document.removeEventListener("visibilitychange", onPageHidden);
+  }, [s.set]);
 
   useEffect(() => {
     if (!s.recording || !s.recordingStartedAt) { setElapsed(0); return; }
@@ -144,6 +179,7 @@ export function CameraTab() {
     let createdRecorder: MediaRecorder | null = null;
     try {
       chunksRef.current = [];
+      stopReasonRef.current = "";
       s.set({ recordingPhase: "starting", captureSaveError: "" });
       const { mode, profile, codec, fps } = s.capture;
       const lapse = mode === "timelapse" ? 1000 : mode === "hyperlapse" ? 200 : 0;
@@ -202,13 +238,14 @@ export function CameraTab() {
         s.set({ recording: false, recordingStartedAt: null, paused: false });
         if (recorderError) { s.set({ recordingPhase: "error", captureSaveError: recorderError }); return; }
         s.set({ recordingPhase: "saving" });
+        const stopReason = stopReasonRef.current;
         const blob = new Blob(chunks, { type: mime });
         void saveRecordedClip({
           id: `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`,
           createdAt: startedAt, camera, mode, profile,
           playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
         }).then(() => {
-          s.set({ recordingPhase: "saved", captureSaveError: "" });
+          s.set({ recordingPhase: "saved", captureSaveError: stopReason });
           window.dispatchEvent(new Event("multicam-clips-changed"));
         }).catch((error: unknown) => {
           s.set({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
