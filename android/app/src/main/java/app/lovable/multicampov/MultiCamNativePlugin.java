@@ -23,6 +23,7 @@ import android.os.HandlerThread;
 import android.os.PowerManager;
 import android.util.Range;
 import android.util.Size;
+import android.util.SizeF;
 import android.view.Surface;
 
 import com.getcapacitor.JSArray;
@@ -53,6 +54,7 @@ public class MultiCamNativePlugin extends Plugin {
     private HandlerThread thread;
     private Handler handler;
 
+    private static boolean hasMode(int[] values, int mode) { if (values == null) return false; for (int v : values) if (v == mode) return true; return false; }
     private CameraManager cameras() { return (CameraManager) getContext().getSystemService(Context.CAMERA_SERVICE); }
 
     @PluginMethod
@@ -77,10 +79,49 @@ public class MultiCamNativePlugin extends Plugin {
                 JSArray focusDistance = new JSArray();
                 if (minFocus != null) { focusDistance.put(0); focusDistance.put(minFocus); cam.put("focusDistanceRange", focusDistance); }
                 else cam.put("focusDistanceRange", JSObject.NULL);
+                // Static hardware declarations are not verified recording capabilities.
+                Integer orientation = ch.get(CameraCharacteristics.SENSOR_ORIENTATION);
+                cam.put("sensorOrientation", orientation != null ? orientation : JSObject.NULL);
+                SizeF sensor = ch.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+                if (sensor != null) {
+                    JSArray physicalSize = new JSArray(); physicalSize.put(sensor.getWidth()); physicalSize.put(sensor.getHeight());
+                    cam.put("sensorSizeMm", physicalSize);
+                } else cam.put("sensorSizeMm", JSObject.NULL);
+                float[] focal = ch.get(CameraCharacteristics.LENS_INFO_AVAILABLE_FOCAL_LENGTHS);
+                JSArray focalArray = new JSArray(); if (focal != null) for (float length : focal) focalArray.put(length);
+                cam.put("focalLengthsMm", focalArray);
+                int[] eis = ch.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES);
+                int[] ois = ch.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION);
+                JSArray eisArray = new JSArray(); JSArray oisArray = new JSArray();
+                if (eis != null) for (int mode : eis) eisArray.put(mode);
+                if (ois != null) for (int mode : ois) oisArray.put(mode);
+                cam.put("eisModes", eisArray); cam.put("oisModes", oisArray);
+                cam.put("eisDeclared", hasMode(eis, CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_ON));
+                cam.put("oisDeclared", hasMode(ois, CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON));
+                Range<Long> exposure = ch.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
+                if (exposure != null) {
+                    JSArray ns = new JSArray(); ns.put(exposure.getLower()); ns.put(exposure.getUpper());
+                    cam.put("exposureTimeNs", ns);
+                } else cam.put("exposureTimeNs", JSObject.NULL);
                 cam.put("facing", facing != null && facing == CameraMetadata.LENS_FACING_FRONT ? "front" : facing != null && facing == CameraMetadata.LENS_FACING_BACK ? "back" : "external");
                 JSArray sizes = new JSArray();
                 if (map != null) for (Size s : map.getOutputSizes(MediaRecorder.class)) sizes.put(s.getWidth() + "x" + s.getHeight());
                 cam.put("sizes", sizes);
+                JSArray timedOutputs = new JSArray();
+                if (map != null) {
+                    Size[] recordingSizes = map.getOutputSizes(MediaRecorder.class);
+                    if (recordingSizes != null) for (Size size : recordingSizes) {
+                        JSObject mode = new JSObject();
+                        mode.put("width", size.getWidth()); mode.put("height", size.getHeight());
+                        try {
+                            long minNs = map.getOutputMinFrameDuration(MediaRecorder.class, size);
+                            mode.put("minFrameDurationNs", minNs);
+                            if (minNs > 0) mode.put("theoreticalMaxFps", Math.floor(1_000_000_000.0 / minNs));
+                        } catch (IllegalArgumentException ex) { mode.put("minFrameDurationNs", JSObject.NULL); }
+                        timedOutputs.put(mode);
+                    }
+                }
+                cam.put("videoOutputSizes", timedOutputs);
                 JSArray fps = new JSArray();
                 Range<Integer>[] ranges = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
                 if (ranges != null) for (Range<Integer> r : ranges) fps.put(r.getLower() + "-" + r.getUpper());
@@ -122,7 +163,13 @@ public class MultiCamNativePlugin extends Plugin {
                 if (!info.isEncoder()) continue;
                 for (String type : info.getSupportedTypes()) if (type.startsWith("video/") && seen.add(type)) codecs.put(type);
             }
-            JSObject res = new JSObject(); res.put("cameras", list); res.put("codecs", codecs);
+            JSArray concurrent = new JSArray();
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R)
+                for (Set<String> group : cameras().getConcurrentCameraIds()) {
+                    JSArray ids = new JSArray(); for (String id : group) ids.put(id);
+                    concurrent.put(ids);
+                }
+            JSObject res = new JSObject(); res.put("cameras", list); res.put("codecs", codecs); res.put("concurrentCameraGroups", concurrent);
             call.resolve(res);
         } catch (CameraAccessException | SecurityException e) {
             call.reject("Не удалось опросить камеру: " + e.getMessage());

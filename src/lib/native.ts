@@ -1,7 +1,7 @@
 import { Capacitor, registerPlugin } from "@capacitor/core";
 
-export interface NativeCameraProfile { physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
-export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[] }
+export interface NativeCameraProfile { videoOutputSizes?: { width: number; height: number; minFrameDurationNs?: number; theoreticalMaxFps?: number }[]; sensorOrientation?: number; sensorSizeMm?: [number, number]; focalLengthsMm?: number[]; eisModes?: number[]; oisModes?: number[]; eisDeclared?: boolean; oisDeclared?: boolean; exposureTimeNs?: [number, number];  physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
+export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[]; concurrentCameraGroups?: string[][] }
 export interface NativeThermal { status: number; label: string; temperatureC: number | null }
 export interface NativeAudioInput { id: string; name: string; type: string }
 

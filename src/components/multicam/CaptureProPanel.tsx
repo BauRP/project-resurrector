@@ -37,8 +37,9 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     const base: Caps = { maxW: tc['width']?.max ?? 0, maxH: tc['height']?.max ?? 0, maxFps: tc['frameRate']?.max ?? 0, iso: range("iso"), focus: range("focusDistance"), exposure: range("exposureTime"), highSpeed: [] };
     if (isNative()) {
       MultiCamNative.getCapabilities().then((n: NativeCapabilities) => {
-        const hs = n.cameras.flatMap((cam) => cam.highSpeed.flatMap((h) => h.fps));
-        setCaps({ ...base, highSpeed: [...new Set(hs)], maxFps: Math.max(base.maxFps, ...hs.filter((f) => f <= 60), 0) });
+        // Native Camera2 ID cannot safely be equated with WebView deviceId.
+        // Never mix high-speed modes of multiple physical cameras.
+        setCaps(base);
       }).catch(() => setCaps(base));
     } else setCaps(base);
   }, [stream]);
@@ -73,7 +74,8 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   const fpsOk = (f: number) => !m || m.fps.includes(f) || (m.candidateFps ?? []).includes(f) || (caps?.highSpeed ?? []).includes(f);
   // Available FPS is a candidate only: verify the selected camera/size/FPS together at runtime.
   const codecOk = (k: string) => (!s.capMatrix || s.capMatrix.codecs.includes(k)) && typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(CODECS[k]!);
-  const modeOk = (md: CaptureMode) => { const hs = [...(caps?.highSpeed ?? []), ...(m?.highSpeed ?? [])]; const mx = Math.max(caps?.maxFps ?? 0, m?.maxFps ?? 0); return md === "slowmo120" ? hs.includes(120) || mx >= 120 : md === "slowmo240" ? hs.includes(240) || mx >= 240 : true; };
+  // High-speed Camera2 recorder is not mapped to the active WebView lens.
+  const modeOk = (md: CaptureMode) => !["slowmo120", "slowmo240"].includes(md);
   const blocked = (what: string) => warn(`${what}: не поддерживается ${s.facing === "front" ? "фронтальной" : "основной"} камерой — выбор заблокирован для защиты от перегрева и сбоев.`);
 
   const applyTrack = (patch: Partial<typeof c>) => {
