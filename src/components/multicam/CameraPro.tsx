@@ -245,8 +245,9 @@ export function shootAvailability(stream: MediaStream | null, rawNative: boolean
   return {
     timer: true, burst: true, interval: true, night: true, longExp: true,
     bracket: !!capRange(caps, "exposureCompensation"),
-    // DNG capture needs a native Camera2 RAW pipeline that is not wired yet; availability stays false until it exists.
-    raw: false && rawNative,
+    // RAW capture is native Camera2-only; the actual physical/logical camera
+    // must be explicitly selected, never guessed from a WebView device ID.
+    raw: isNative() && rawNative,
   } as Record<keyof ShootSettings, boolean>;
 }
 const MODE_LIST: { key: keyof ShootSettings; label: string; hint: string }[] = [
@@ -258,9 +259,9 @@ const MODE_LIST: { key: keyof ShootSettings; label: string; hint: string }[] = [
   { key: "night", label: "Ночь", hint: "Стек 8 кадров" },
   { key: "longExp", label: "Выдержка", hint: "Накопление 2 с" },
 ];
-export function ShootingModes({ stream, rawNative }: { stream: MediaStream | null; rawNative: boolean }) {
+export function ShootingModes({ stream, rawNative, rawCameras }: { stream: MediaStream | null; rawNative: boolean; rawCameras: { cameraId: string; facing: string }[] }) {
   const s = useMulticamStore(); const sh = s.shoot; const avail = shootAvailability(stream, rawNative);
-  const reason = (k: keyof ShootSettings) => k === "bracket" ? "камера не даёт экспокоррекцию" : k === "raw" ? (!isNative() ? "только в Android‑приложении" : rawNative ? "сенсор умеет RAW, запись DNG не подключена" : "сенсор не отдаёт RAW") : "";
+  const reason = (k: keyof ShootSettings) => k === "bracket" ? "камера не даёт экспокоррекцию" : k === "raw" ? (!isNative() ? "только в Android‑приложении" : rawNative ? "выберите Camera2 ID" : "сенсор не отдаёт RAW") : "";
   const toggle = (k: keyof ShootSettings) => {
     if (!avail[k]) return;
     if (k === "timer") s.set({ shoot: { ...sh, timer: sh.timer === 0 ? 3 : sh.timer === 3 ? 10 : 0 } });
@@ -270,6 +271,11 @@ export function ShootingModes({ stream, rawNative }: { stream: MediaStream | nul
       const exclusive: (keyof ShootSettings)[] = ["burst", "bracket", "night", "longExp"];
       const next = { ...sh, [k]: !sh[k] } as ShootSettings;
       if (exclusive.includes(k) && next[k]) for (const e of exclusive) if (e !== k) (next as unknown as Record<string, unknown>)[e] = false;
+      if (k === "raw" && next.raw) {
+        for (const e of exclusive) (next as unknown as Record<string, unknown>)[e] = false;
+        next.interval = 0;
+      }
+      if (exclusive.includes(k) && next[k]) next.raw = false;
       s.set({ shoot: next });
     }
   };
@@ -281,6 +287,14 @@ export function ShootingModes({ stream, rawNative }: { stream: MediaStream | nul
       return <button key={key} aria-pressed={on} aria-disabled={!avail[key]} title={avail[key] ? hint : reason(key)} onClick={() => toggle(key)} className={`flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-lg border px-1 text-center text-[10px] font-semibold ${on ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary"} ${avail[key] ? "" : "opacity-35"}`}>
         <span>{label}{value && ` · ${value}`}</span><span className="text-[8px] font-normal opacity-75">{avail[key] ? hint : reason(key)}</span></button>;
     })}</div>
+    {sh.raw && <div className="rounded-lg border border-border p-2 text-[11px]">
+      <label className="mb-1 block font-semibold" htmlFor="raw-camera-choice">Камера Android Camera2 для DNG</label>
+      <select id="raw-camera-choice" className="w-full rounded-md border border-border bg-secondary p-2 text-foreground" value={s.rawCameraId} onChange={e => s.set({ rawCameraId: e.target.value })}>
+        <option value="">Выберите аппаратную камеру</option>
+        {rawCameras.map(c => <option key={c.cameraId} value={c.cameraId}>CAM {c.cameraId} · {c.facing}</option>)}
+      </select>
+      <p className="mt-1 text-muted-foreground">RAW — настоящий DNG с выбранной Camera2-камеры. WebView временно освободит камеру, предпросмотр восстановится после кадра. Camera2 ID не приравнивается к названию WebView-объектива.</p>
+    </div>}
     <label className="flex items-center justify-between text-[11px]"><span>ML‑ночной режим (стек кадров + шумодав)</span><Switch checked={sh.night && s.aiEnabled} disabled={!sh.night} onCheckedChange={(v) => s.set({ aiEnabled: v })} /></label>
   </div>;
 }

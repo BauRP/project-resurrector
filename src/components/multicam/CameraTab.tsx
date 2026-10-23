@@ -17,6 +17,8 @@ import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
+import { captureRealDng } from "@/lib/raw-dng";
+import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
@@ -114,7 +116,20 @@ export function CameraTab() {
   const [aiEngine, setAiEngine] = useState<"native" | "web" | null>(null);
   useEffect(() => { if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [s.aiEnabled, s.focusModeAI]);
   const [rawNative, setRawNative] = useState(false);
-  useEffect(() => { if (isNative()) void MultiCamNative.getCapabilities().then((n) => setRawNative(n.cameras.some((c) => c.raw))).catch(() => setRawNative(false)); }, []);
+  const [rawCameras, setRawCameras] = useState<NativeCameraProfile[]>([]);
+  const cameraMounted = useRef(true);
+  const photoBusy = useRef(false);
+  const [photoProcessing, setPhotoProcessing] = useState(false);
+  useEffect(() => {
+    cameraMounted.current = true;
+    if (isNative()) void MultiCamNative.getCapabilities().then(n => {
+      if (!cameraMounted.current) return;
+      const candidates = n.cameras.filter(c => c.raw);
+      setRawCameras(candidates);
+      setRawNative(candidates.length > 0);
+    }).catch(() => { if (cameraMounted.current) setRawNative(false); });
+    return () => { cameraMounted.current = false; };
+  }, []);
   const [meterOk, setMeterOk] = useState(true);
   useEffect(() => {
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
@@ -300,6 +315,46 @@ export function CameraTab() {
   const previewFilter = [s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ");
   const notify = (m: string) => { setPhotoMsg(m); window.setTimeout(() => setPhotoMsg(""), 2500); };
   const shootOnce = async () => {
+    if (photoBusy.current) return;
+    photoBusy.current = true; setPhotoProcessing(true);
+    try {
+    if (s.shoot.raw) {
+      const target = rawCameras.find(c => c.cameraId === s.rawCameraId);
+      if (!target) { notify("RAW: выберите камеру Android Camera2 в параметрах съёмки"); return; }
+      if (s.recording || cameraSwitchBlocked) { notify("RAW во время видеозаписи недоступен"); return; }
+      // WebView currently owns the camera. Camera2 cannot open the same sensor
+      // until the active MediaStream is actually released.
+      cameraController.release(owner.current);
+      setStream(null); setCameraState("loading");
+      try {
+        const output = await captureRealDng(target.cameraId);
+        if (cameraMounted.current) notify("Настоящий DNG сохранён: " + output.bytes + " байт. CAM " + output.cameraId);
+      } catch (error) {
+        if (cameraMounted.current) notify("RAW не сохранён: " + (error instanceof Error ? error.message : String(error)));
+      } finally {
+        if (cameraMounted.current) {
+          // Restore the previous user-selected WebView lens; never silently
+          // claim that Camera2 ID equals the WebView device ID.
+          const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
+          const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
+          try {
+            const restored = await cameraController.acquire(owner.current, { video, audio })
+              .catch(e => {
+                if (!cameraMounted.current) throw e;
+                return cameraController.acquire(owner.current, { video, audio: false });
+              });
+            if (cameraMounted.current) { setStream(restored); setCameraState("live"); }
+            else restored.getTracks().forEach(track => track.stop());
+          } catch (error) {
+            if (cameraMounted.current) {
+              setCameraState("unavailable");
+              notify("RAW завершён, но не удалось восстановить предпросмотр: " + String(error));
+            }
+          }
+        }
+      }
+      return;
+    }
     const v = videoRef.current; if (!v || cameraState !== "live" || !v.videoWidth) { notify("Камера недоступна — снимок невозможен"); return; }
     const sh = s.shoot; const shots: Blob[] = []; let mode = "single";
     if (sh.bracket) {
@@ -313,7 +368,13 @@ export function CameraTab() {
     if (!shots.length) { notify("Не удалось получить кадр"); return; }
     for (const b of shots) await savePhoto(b, { mode, camera: s.activeCamera, facing: s.facing });
     setFlash((f) => f + 1); setLastPhoto((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(shots[shots.length - 1]!); });
-    notify(shots.length > 1 ? `Сохранено ${shots.length} фото` : "Фото сохранено");
+    notify(shots.length > 1 ? `Сохранено ${shots.length} кадров из видеопотока` : "Кадр видеопотока сохранён");
+    } catch (error) {
+      notify("Кадр не сохранён: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      photoBusy.current = false;
+      if (cameraMounted.current) setPhotoProcessing(false);
+    }
   };
   const capturePhoto = async () => {
     if (intervalRef.current) { window.clearInterval(intervalRef.current); intervalRef.current = null; setIntervalOn(false); notify("Интервальная съёмка остановлена"); return; }
@@ -406,7 +467,7 @@ export function CameraTab() {
         <ColorTuning />
       </Accordion>
       <Accordion title="Режимы съёмки">
-        <ShootingModes stream={stream} rawNative={rawNative} />
+        <ShootingModes stream={stream} rawNative={rawNative} rawCameras={rawCameras} />
       </Accordion>
       {s.aiEnabled && <Accordion title="ИИ‑фокус">
         <div className="flex flex-wrap gap-1.5">{([["continuous", "AF‑C"], ["face", "Лицо"], ["hybrid_nearest_priority", "Ближайший объект"]] as const).map(([m, l]) => <Button key={m} size="sm" variant={s.focusModeAI === m ? "default" : "outline"} onClick={() => s.set({ focusModeAI: m })}>{l}</Button>)}</div>
@@ -431,7 +492,7 @@ export function CameraTab() {
           <div className="flex flex-col items-center pt-1"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span></div>
           <div className="segmented-mini" role="radiogroup" aria-label="Фото или видео">{(["photo", "video"] as const).map((k) => <button key={k} role="radio" aria-checked={s.captureKind === k} disabled={s.recording || intervalOn} onClick={() => s.set({ captureKind: k })} className={s.captureKind === k ? "active" : ""}>{k === "photo" ? "ФОТО" : "ВИДЕО"}</button>)}</div>
         </>}
-          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || ["starting", "stopping", "saving"].includes(s.recordingPhase)} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
+          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || photoProcessing || ["starting", "stopping", "saving"].includes(s.recordingPhase)} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
         </div>
         <div className="mb-4 flex justify-end gap-1.5">{!clean && <>
           {s.captureKind === "photo" ? (lastPhoto ? <a href={lastPhoto} download={`multicam-photo-${Date.now()}.jpg`} aria-label="Скачать последнее фото" className="size-9 overflow-hidden rounded-md border border-border"><img src={lastPhoto} alt="Последнее фото" className="h-full w-full object-cover" /></a> : <Button size="icon" variant="secondary" disabled aria-label="Нет фото"><Download /></Button>) :

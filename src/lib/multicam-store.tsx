@@ -31,7 +31,7 @@ interface StateData {
   capture: CaptureConfig; paused: boolean; wbKelvin: number | null; cleanFrame: boolean;
   capMatrix: CapabilityMatrix | null; facing: Facing;
   exportMix: { excludedAudio: string[]; hiddenVideo: string[] };
-  captureKind: "photo" | "video"; aiEnabled: boolean; eyeAF: boolean; focusModeAI: FocusModeAI; meterMode: MeterMode; falseColor: boolean; audioUi: boolean; audioGain: number; audioCeiling: number;
+  captureKind: "photo" | "video"; rawCameraId: string; aiEnabled: boolean; eyeAF: boolean; focusModeAI: FocusModeAI; meterMode: MeterMode; falseColor: boolean; audioUi: boolean; audioGain: number; audioCeiling: number;
   tint: number; tuneContrast: number; tuneShadows: number; tuneSaturation: number; shoot: ShootSettings; zoom: number; lensDeviceId: string;
 }
 export interface MulticamState extends StateData {
@@ -50,7 +50,7 @@ const defaults: StateData = {
   eq: Array(10).fill(0) as number[], deEsser: false, noiseReduction: 20, autoGain: true, aspect: "16:9", editMode: "Cut", speed: 1, scale: 100, posX: 0, posY: 0, opacity: 100,
   language: "ru", hardwareAcceleration: true, cacheMB: 0, diagnostics: { latency: 0, bandwidth: 0, online: true }, exportOpen: false, mediaOpen: false, exportProgress: 0,
   capture: { resolution: "1080p", fps: 30, codec: "VP9", mode: "normal", profile: "standard", micId: "", iso: null, focus: null, exposure: null }, paused: false, wbKelvin: null, cleanFrame: false, capMatrix: null, facing: "rear", exportMix: { excludedAudio: [], hiddenVideo: [] },
-  captureKind: "video", aiEnabled: false, eyeAF: false, focusModeAI: "continuous", meterMode: "matrix", falseColor: false, audioUi: false, audioGain: 1, audioCeiling: -15,
+  captureKind: "video", rawCameraId: "", aiEnabled: false, eyeAF: false, focusModeAI: "continuous", meterMode: "matrix", falseColor: false, audioUi: false, audioGain: 1, audioCeiling: -15,
   tint: 0, tuneContrast: 0, tuneShadows: 0, tuneSaturation: 0, shoot: { timer: 0, burst: false, bracket: false, interval: 0, raw: false, night: false, longExp: false }, zoom: 1, lensDeviceId: "",
   exportConfig: { aspect: "16:9", resolution: "4K", fps: "24", videoCodec: "H.264", bitrate: 48, audioCodec: "AAC", sampleRate: "48kHz", audioBitrate: 256 },
 };

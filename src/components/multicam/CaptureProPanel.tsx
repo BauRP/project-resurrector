@@ -10,7 +10,7 @@ const RES: Record<string, [number, number]> = { "720p": [1280, 720], "1080p": [1
 const FPS = [24, 30, 60];
 const CODECS: Record<string, string> = { VP8: "video/webm;codecs=vp8,opus", VP9: "video/webm;codecs=vp9,opus", AV1: "video/webm;codecs=av01,opus", "H.264": "video/mp4;codecs=avc1,mp4a.40.2" };
 const MODES: { id: CaptureMode; label: string }[] = [{ id: "normal", label: "Обычный" }, { id: "slowmo120", label: "Slow‑mo 120" }, { id: "slowmo240", label: "Slow‑mo 240" }, { id: "timelapse", label: "Time‑lapse" }, { id: "hyperlapse", label: "Hyperlapse" }];
-const PROFILES: { id: ToneProfile; label: string }[] = [{ id: "standard", label: "Стандарт" }, { id: "log", label: "LOG" }, { id: "flat", label: "FLAT" }, { id: "directlog", label: "Direct Log" }];
+const PROFILES: { id: ToneProfile; label: string }[] = [{ id: "standard", label: "Стандарт" }, { id: "log", label: "LOG-стиль" }, { id: "flat", label: "FLAT-стиль" }, { id: "directlog", label: "Direct Log-стиль" }];
 
 export const codecMime = (codec: string) => CODECS[codec] ?? "video/webm";
 export const toneFilter = (p: ToneProfile) => p === "log" ? "contrast(0.72) saturate(0.7) brightness(1.12)" : p === "flat" ? "contrast(0.85) saturate(0.85) brightness(1.05)" : p === "directlog" ? "contrast(0.62) saturate(0.6) brightness(1.18)" : "none";
