@@ -150,7 +150,12 @@ export function startDisplayAdaptation(): () => void {
     root.style.setProperty("--fold-work-width", (workspace?.width ?? shellWidth) + "px");
     const panes = [...geometry.regions].sort((a,b) => a.left - b.left || a.top - b.top);
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
-    const eligible = panes.length >= 2 && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
+    // Mixed-orientation multi-hinge layouts need their own pane model; a
+    // side-by-side camera cannot be inferred from the last processed hinge.
+    const sideBySide = panes.length >= 2 && panes.every((pane, index) =>
+      index === 0 || (Math.abs(pane.top - panes[0]!.top) < 4 &&
+        Math.abs(pane.height - panes[0]!.height) < 4));
+    const eligible = sideBySide && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
       panes[0]!.height >= 260 && geometry.split === "vertical";
     const thirdPane = panes[2];
     const eligibleThree = eligible && !!thirdPane && thirdPane.width >= 230 &&
