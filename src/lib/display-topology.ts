@@ -263,7 +263,7 @@ export function startDisplayAdaptation(): () => void {
         }
         apply(state);
       }).catch(() => { if (!disposed) root.dataset.foldInfo = "unknown"; });
-    }).catch(() => { root.dataset.foldInfo = "unknown"; });
+    }).catch(() => { if (!disposed) root.dataset.foldInfo = "unknown"; });
   }
   return () => {
     disposed = true;
