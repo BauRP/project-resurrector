@@ -39,6 +39,10 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   }
   const sx = cssWidth / topology.widthPx;
   const sy = cssHeight / Math.max(1, topology.heightPx);
+  // Refuse malformed native values that would produce infinite CSS positions.
+  // Unsupported geometry falls back to an ordinary viewport, not fake hinges.
+  if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0)
+    return { regions: [{left:0,top:0,width:cssWidth,height:cssHeight}], split:"none", occluded:false, hinges:[] };
   let regions: Region[] = [{ left: 0, top: 0, width: cssWidth, height: cssHeight }];
   let split: Split = "none";
   let occluded = false;
