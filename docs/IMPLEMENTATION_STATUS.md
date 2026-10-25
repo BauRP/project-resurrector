@@ -48,6 +48,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Fold event capture rejects malformed timestamps and excessively long posture strings; this is metadata validation, not a claim of guaranteed continuity during physical folds.
 - Regression tests cover requested-versus-file dimensions, corrupt fold event telemetry, and disconnected device task eviction.
 
+## Dual-recorder failure-path regression tests — 25 October 2026
+- Added simulated WebView MediaRecorder lifecycle tests for both real, distinct device streams: encoder start events, stop/finalization, decoder check after durable write, real fold metadata, stream-ended interruption, media encoder error and storage failure.
+- Simulated tests confirm a failure or background-style interruption is not presented as a synchronized, uninterrupted pair. User video bytes remain available for salvage where the encoder emitted them.
+- Tests use mock encoders/storage and **do not** establish physical multi-camera compatibility, actual frame synchronization, uninterrupted recording on a foldable, or long-running thermal stability.
+- All modifications remain isolated to `chatgpt/independent-preview-20261023`, never merge into `main` without user approval.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
