@@ -19,6 +19,25 @@ export function decodedOutputMatchesRequested(
   return (output.width === mode.width && output.height === mode.height) ||
     (output.width === mode.height && output.height === mode.width);
 }
+/** A decoded first frame verifies a file's frame dimensions, not the
+ * frame rate of the encoded track. Until an independent coded-frame-rate
+ * check exists, the mode stays RECORDED instead of fully VERIFIED.
+ */
+export function decodedVideoModeEvidence(
+  mode: TestMode, frame: { width: number; height: number }, bytes: number,
+): { state: "recorded"; message: string } {
+  const exact = decodedOutputMatchesRequested(mode, frame);
+  return {
+    state: "recorded",
+    message: exact
+      ? "Видеофайл и размер первого кадра подтверждены (" + bytes + " байт, " +
+        frame.width + "×" + frame.height +
+        "). Частота кадров кодированного файла и все кадры ещё не проверены"
+      : "Видеофайл декодирован, но размер кадра " + frame.width + "×" + frame.height +
+        " отличается от выбранного " + mode.width + "×" + mode.height +
+        "; этот режим записи не подтверждён",
+  };
+}
 /** A stream of the requested resolution is not proof of which lens opened.
  * Some OEM WebViews omit deviceId; in that case preserve "unknown" rather than
  * assigning a video recording to a possibly different physical camera.
@@ -139,19 +158,26 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       const frame = await verifyDecodedVideoBlob(blob, signal, 5000);
       if (!frame.verifiedFirstFrame) throw new Error("Первый кадр не декодирован");
       result.file = { width: frame.width, height: frame.height, bytes: blob.size, mimeType: blob.type };
-      // Stream settings and decoded file resolution are separate evidence.
-      // A resized encoded file must never verify the originally requested mode.
-      const exactFile = decodedOutputMatchesRequested(mode, frame);
-      result.state = exactFile ? "verified" : "recorded";
-      result.message = exactFile
-        ? "Первый кадр файла декодирован (" + blob.size + " байт, " + frame.width + "×" + frame.height + "). FPS файла, HDR и стабилизация не проверены"
-        : "Видеофайл декодирован, но размер кадра " + frame.width + "×" + frame.height +
-          " отличается от выбранного " + mode.width + "×" + mode.height +
-          "; режим записи с этим размером не подтверждён";
+      // Real recorded codec FPS is not known from track.getSettings() or
+      // a single decoded frame: never mark such an entire mode verified.
+      const evidence = decodedVideoModeEvidence(mode, frame, blob.size);
+      result.state = evidence.state;
+      result.message = evidence.message;
     }
   } catch (e) {
-    result.state = classifyModeFailure(e, signal.aborted);
-    result.message = signal.aborted ? "Проверка отменена" : e instanceof Error ? e.message : String(e);
+    const reason = signal.aborted ? "Проверка отменена" :
+      e instanceof Error ? e.message : String(e);
+    // Preserve independently observed evidence even if a later encoder or
+    // decoder step failed. An incomplete recording is not a verified FPS.
+    const reached = result.state;
+    result.state = signal.aborted ? "unknown" :
+      reached === "recorded" || reached === "applied" ? reached :
+      classifyModeFailure(e, false);
+    result.message = reached === "recorded" && !signal.aborted
+      ? "Видеофайл получен, но не прошёл проверку декодирования: " + reason
+      : reached === "applied" && !signal.aborted
+        ? "Видеопоток настроен, но пробная запись не подтверждена: " + reason
+        : reason;
   } finally { cameraController.release(owner); }
   // Transient contention must not overwrite earlier confirmed hardware evidence.
   if (!signal.aborted && result.state !== "unknown") recordModeEvidence(result);

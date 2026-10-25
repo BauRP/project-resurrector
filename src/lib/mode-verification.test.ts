@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { classifyModeFailure, decodedOutputMatchesRequested, isVerifiedCameraIdentity, recordSample } from "./mode-verification";
+import { classifyModeFailure, decodedOutputMatchesRequested, decodedVideoModeEvidence, isVerifiedCameraIdentity, recordSample } from "./mode-verification";
 import { CameraBusyError, CameraSupersededError } from "./camera-controller";
 describe("truthful mode diagnostics",()=>{
   it("marks explicit constraint incompatibility as rejected",()=>{
@@ -80,5 +80,20 @@ describe("per-lens identity proof for WebView video modes", () => {
     expect(isVerifiedCameraIdentity("rear-wide",undefined)).toBe(false);
     expect(isVerifiedCameraIdentity("rear-wide","")).toBe(false);
     expect(isVerifiedCameraIdentity("", "rear-wide")).toBe(false);
+  });
+});
+
+describe("separate actual coded FPS from stream and first-frame proof", () => {
+  it("does not certify a 4K60 encoded mode from one decoded 4K frame", () => {
+    const evidence=decodedVideoModeEvidence({width:3840,height:2160,fps:60},
+      {width:3840,height:2160},200000);
+    expect(evidence.state).toBe("recorded");
+    expect(evidence.message).toContain("Частота кадров");
+  });
+  it("keeps actual decoded downscaling visible without claiming a verified mode", () => {
+    const evidence=decodedVideoModeEvidence({width:3840,height:2160,fps:30},
+      {width:1920,height:1080},200000);
+    expect(evidence.state).toBe("recorded");
+    expect(evidence.message).toContain("отличается");
   });
 });
