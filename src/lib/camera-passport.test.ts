@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { isModeEvidence, loadModeEvidence, recordModeEvidence, type ModeEvidence } from "./camera-passport";
+import { cameraPassportContext, isModeEvidence, loadModeEvidence, recordModeEvidence, type ModeEvidence } from "./camera-passport";
 const KEY = "multicam-mode-evidence-v1";
 const evidence: ModeEvidence = {api:"webview",cameraId:"rear",requested:{width:1920,height:1080,fps:30},state:"verified",checkedAt:12};
 beforeEach(()=>localStorage.clear());
@@ -38,5 +38,29 @@ describe("separate actual encoded media metadata", () => {
   });
   it("drops impossible decoded file dimensions", () => {
     expect(isModeEvidence({...evidence,file:{width:0,height:1080,bytes:2048,mimeType:"video/webm"}})).toBe(false);
+  });
+});
+
+describe("WebView diagnostic engine freshness", () => {
+  it("does not reuse verified tests from a changed browser or diagnostic mechanism", () => {
+    recordModeEvidence(evidence);
+    expect(loadModeEvidence()[0]?.state).toBe("verified");
+    localStorage.setItem("multicam-mode-evidence-context-v1", "different-browser-or-version");
+    const stale = loadModeEvidence();
+    expect(stale[0]?.state).toBe("unknown");
+    expect(stale[0]?.requested).toEqual(evidence.requested);
+    expect(stale[0]?.message).toContain("повторная проверка");
+  });
+  it("stores a current runtime marker when fresh results are recorded", () => {
+    recordModeEvidence(evidence);
+    expect(localStorage.getItem("multicam-mode-evidence-context-v1")).toBe(cameraPassportContext());
+  });
+  it("preserves an old camera's historical result while saving new camera evidence", () => {
+    recordModeEvidence(evidence);
+    localStorage.setItem("multicam-mode-evidence-context-v1", "previous-version");
+    recordModeEvidence({...evidence, cameraId:"front", checkedAt:999});
+    const history = loadModeEvidence();
+    expect(history.find(x=>x.cameraId==="rear")?.state).toBe("unknown");
+    expect(history.find(x=>x.cameraId==="front")?.state).toBe("verified");
   });
 });

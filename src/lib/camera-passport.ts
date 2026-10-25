@@ -11,6 +11,13 @@ export interface ModeEvidence {
   checkedAt: number;
 }
 const KEY = "multicam-mode-evidence-v1";
+// A verified old session is not proof after a WebView or diagnostic engine change.
+// Existing results remain readable as historical evidence, but must be retried.
+const CONTEXT_KEY = "multicam-mode-evidence-context-v1";
+const ENGINE_REVISION = "webview-recorded-frame-v2";
+export function cameraPassportContext(): string {
+  return ENGINE_REVISION + "|" + (typeof navigator === "undefined" ? "unknown" : navigator.userAgent || "unknown");
+}
 const STATES = ["declared","accessible","implemented","compatible","applied","recorded","verified","rejected","unknown"];
 export function isModeEvidence(value: unknown): value is ModeEvidence {
   if (!value || typeof value !== "object") return false;
@@ -41,7 +48,15 @@ export function loadModeEvidence(): ModeEvidence[] {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
     const value: unknown = JSON.parse(raw);
-    return Array.isArray(value) ? value.filter(isModeEvidence).slice(-200) : [];
+    const rows: ModeEvidence[] = Array.isArray(value) ? value.filter(isModeEvidence).slice(-200) : [];
+    const previousContext = localStorage.getItem(CONTEXT_KEY);
+    if (!previousContext || previousContext === cameraPassportContext()) return rows;
+    // Keep the old requested/applied/file evidence for the user, but do not
+    // reuse its "verified" flag to skip tests on a changed runtime.
+    return rows.map(row => ({
+      ...row, state: "unknown" as const,
+      message: "Требуется повторная проверка после изменения WebView/механизма. " + (row.message ?? ""),
+    }));
   } catch { return []; }
 }
 export function recordModeEvidence(evidence: ModeEvidence): void {
@@ -55,5 +70,6 @@ export function recordModeEvidence(evidence: ModeEvidence): void {
     if (current && current.checkedAt > evidence.checkedAt) return;
     if (current?.state === "verified" && evidence.state === "unknown") return;
     localStorage.setItem(KEY, JSON.stringify([...previous.slice(-199), evidence]));
+    localStorage.setItem(CONTEXT_KEY, cameraPassportContext());
   } catch { /* Local storage unavailable: never claim a durable passport. */ }
 }
