@@ -40,10 +40,20 @@ export async function saveRecordedClipsAtomically(clips: readonly RecordedClip[]
       try {
         const tx = db.transaction("clips", "readwrite");
         tx.oncomplete = () => { close(); resolve(); };
-        tx.onabort = () => { close(); reject(new Error("Сохранение прервано: проверьте место на устройстве")); };
-        tx.onerror = () => { close(); reject(new Error("Ошибка записи видео в хранилище")); };
+        tx.onabort = () => {
+          const conflict = tx.error?.name === "ConstraintError";
+          close();
+          reject(new Error(conflict
+            ? "Клип с таким идентификатором уже существует: исходная запись не изменена"
+            : "Сохранение прервано: проверьте место на устройстве"));
+        };
+        tx.onerror = () => {
+          // Wait for onabort: IDB abort is atomic even if an individual
+          // request failed. In particular, a duplicate ID must NEVER
+          // replace an existing user's video.
+        };
         const objectStore = tx.objectStore("clips");
-        for (const clip of clips) objectStore.put(clip);
+        for (const clip of clips) objectStore.add(clip);
       } catch (error) { close(); reject(error); }
     };
   });
