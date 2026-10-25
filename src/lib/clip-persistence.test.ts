@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { persistedClipMatches, sampledClipBytesMatch } from "./clip-persistence";
+import { describe, expect, it, vi } from "vitest";
+import { persistedClipMatches, sampledClipBytesMatch, saveRecordedClipsAtomically } from "./clip-persistence";
 
 describe("video persistence evidence", () => {
   const blob = new Blob([new Uint8Array(2048)], { type: "video/webm" });
@@ -29,5 +29,50 @@ describe("bounded persisted-byte sampling (not full-file integrity)", () => {
   });
   it("does not accept matching bytes with a different media MIME", async () => {
     expect(await sampledClipBytesMatch(media(payload),new Blob([payload.slice().buffer],{type:"video/mp4"}))).toBe(false);
+  });
+});
+
+describe("non-destructive video persistence policy", () => {
+  it("rejects duplicate IDs within an atomic group before any storage access", async () => {
+    const saved=Object.getOwnPropertyDescriptor(globalThis,"indexedDB");
+    const open=vi.fn();
+    Object.defineProperty(globalThis,"indexedDB",{configurable:true,value:{open}});
+    try {
+      const clip={id:"same-id",createdAt:1,camera:1,mode:"video",
+        profile:"standard",playbackRate:1,blob:new Blob([new Uint8Array(2048)])};
+      await expect(saveRecordedClipsAtomically([clip,clip])).rejects.toThrow("Повторяющиеся");
+      expect(open).not.toHaveBeenCalled();
+    } finally {
+      if(saved) Object.defineProperty(globalThis,"indexedDB",saved);
+      else Reflect.deleteProperty(globalThis,"indexedDB");
+    }
+  });
+  it("uses add-only operations rather than replacing a previously saved video", async () => {
+    const saved=Object.getOwnPropertyDescriptor(globalThis,"indexedDB");
+    const add=vi.fn();
+    const put=vi.fn();
+    const db={close:vi.fn(),objectStoreNames:{contains:()=>true},
+      transaction:vi.fn(()=>transaction)};
+    const transaction: {oncomplete?:()=>void; onabort?:()=>void; onerror?:()=>void;
+      error?: {name:string}; objectStore:()=>{add:typeof add;put:typeof put}} = {
+      objectStore:()=>({add,put}),
+    };
+    const request: {result:typeof db;onsuccess?:()=>void;onerror?:()=>void;
+      onupgradeneeded?:()=>void;onblocked?:()=>void}={result:db};
+    Object.defineProperty(globalThis,"indexedDB",{configurable:true,value:{open:()=>request}});
+    try {
+      const clip={id:"already-present",createdAt:1,camera:1,mode:"video",
+        profile:"standard",playbackRate:1,blob:new Blob([new Uint8Array(2048)])};
+      const pending=saveRecordedClipsAtomically([clip]);
+      request.onsuccess?.();
+      expect(add).toHaveBeenCalledWith(clip);
+      expect(put).not.toHaveBeenCalled();
+      transaction.error={name:"ConstraintError"};
+      transaction.onabort?.();
+      await expect(pending).rejects.toThrow("уже существует");
+    } finally {
+      if(saved) Object.defineProperty(globalThis,"indexedDB",saved);
+      else Reflect.deleteProperty(globalThis,"indexedDB");
+    }
   });
 });
