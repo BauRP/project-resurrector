@@ -161,6 +161,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Dual-camera stop requests now preserve the first recorded failure cause. A later user stop or UI unmount cannot overwrite an earlier camera-stream-loss reason in the final saved-clips status. A dedicated regression test covers this.
 - Neither mocked layout tests nor passing APK compilation prove uninterrupted recording across physical Android Activity recreation; physical-fold and multi-encoder device acceptance remain outstanding.
 
+## Order-independent mixed-orientation folding geometry — 26 October 2026
+- Corrected the actual pane partitioning algorithm to process detected native separating hinges in a canonical order. Before this change, a four-region cross-hinge layout could differ if Android delivered the same perpendicular hinge features in reverse order.
+- Added a test comparing physical pane rectangles, layout direction and recorded fold evidence for both event orderings.
+- This improves reliable Camera/Editor/Settings pane placement and fold-transition evidence, without asserting full compatibility on any specific untested tri-fold hardware.
+- Hardware acceptance for folding while MediaRecorder is active, Activity recreation and native camera stabilization remains outstanding.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
