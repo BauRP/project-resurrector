@@ -174,6 +174,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Diagnostic engine context was incremented so older first-frame-only results are not reused as current `verified` evidence without retesting. Regression tests cover 4K60 and downscaled decoded frames.
 - Physical measurements of encoded timestamps/FPS, codec frame drops, stabilization, long-running recording and fold continuity still require dedicated verification.
 
+## Mode probe queue resource safety — 26 October 2026
+- A video test returning real encoded bytes but no confirmed coded FPS has a dedicated `recorded` queue state rather than `verified` or indefinitely `deferred`. It remains visible in the technical passport without repeatedly opening the camera each time the quick diagnostics panel runs.
+- Only explicit full diagnosis can retry already-recorded modes. The user sees separate counts for confirmed modes versus recorded files still missing FPS verification.
+- Safe quick probe order prioritizes 1080p30 and 720p30 fallback. These are requests, never invented device support claims. Each result remains tied to its own camera, WebView context, dimensions and requested FPS.
+- Added queue tests covering restart persistence, recorded-only status and no false verified count.
+- Native, physical camera support, actual codec sample FPS and stabilized output still require corresponding device-side evidence.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
