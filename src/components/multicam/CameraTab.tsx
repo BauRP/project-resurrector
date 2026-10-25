@@ -214,6 +214,7 @@ export function CameraTab() {
   const recordingAudio = useRef<ReturnType<typeof createLimiter> | null>(null);
   const recordingStopWatch = useRef<(() => void) | null>(null);
   const recordingStartCancel = useRef<(() => void) | null>(null);
+  const recordingSessionGeneration = useRef(0);
   useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
     mesh.selfRecording = s.recording;
@@ -279,6 +280,10 @@ export function CameraTab() {
       createdRecorder = recorder;
       recorderRef.current = recorder;
       const camera = s.activeCamera; const startedAt = Date.now();
+      const sessionGeneration = ++recordingSessionGeneration.current;
+      const updateCurrentSession = (value: Parameters<typeof s.set>[0]) => {
+        if (recordingSessionGeneration.current === sessionGeneration) s.set(value);
+      };
       const chunks: Blob[] = [];
       let foldTransitions: FoldTransitionEvidence[] = [];
       const onFold = (event: Event) => {
@@ -311,15 +316,15 @@ export function CameraTab() {
       };
       const finalizeRecording = () => {
         cleanUp();
-        s.set({ recording: false, recordingStartedAt: null, paused: false });
+        updateCurrentSession({ recording: false, recordingStartedAt: null, paused: false });
         const stopReason = stopReasonRef.current;
         const blob = new Blob(chunks, { type: mime });
         const plan = planRecordingFinalization(blob.size, recorderError, stopReason);
         if (!plan.attemptSave) {
-          s.set({ recordingPhase: "error", captureSaveError: plan.message });
+          updateCurrentSession({ recordingPhase: "error", captureSaveError: plan.message });
           return;
         }
-        s.set({ recordingPhase: "saving", captureSaveError: plan.incomplete ? plan.message : "Проверяю сохранение записи…" });
+        updateCurrentSession({ recordingPhase: "saving", captureSaveError: plan.incomplete ? plan.message : "Проверяю сохранение записи…" });
         const clipId = `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
         void saveRecordedClip({
           id: clipId, createdAt: startedAt, camera, mode, profile,
@@ -328,30 +333,30 @@ export function CameraTab() {
         }).then(() => {
           // Save is durable and independently read back. Decoding is checked
           // separately: failure must not destroy or hide an already saved clip.
-          s.set({ recordingPhase: plan.incomplete ? "error" : "saved",
+          updateCurrentSession({ recordingPhase: plan.incomplete ? "error" : "saved",
             captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено. Проверяю воспроизведение…" });
           window.dispatchEvent(new Event("multicam-clips-changed"));
           void verifyStoredClipPlayback(clipId).then(evidence => {
-            s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+            updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
               ". Измеряю отображаемые кадры…" });
             void sampleStoredClipDisplayedFps(clipId).then(sample => {
-              s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+              updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
                 "Клип сохранён; первый кадр декодирован. " +
                 (sample.approximateFps !== null ? "Оценка показанных кадров: " + sample.approximateFps + " FPS. " : "Оценка FPS недоступна. ") +
                 "FPS кодека, HDR, EIS/OIS и все кадры не подтверждены." });
             }).catch(() => {
-              s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+              updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
                 "Клип сохранён и первый кадр декодирован; оценка FPS недоступна." });
             });
           }).catch(error => {
-            s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+            updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено, но декодирование не подтверждено: " +
               (error instanceof Error ? error.message : String(error)) });
           });
         }).catch((error: unknown) => {
-          s.set({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+          updateCurrentSession({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
         });
       };
       const guard = createRecordingStopGuard(finalizeRecording, () => {
