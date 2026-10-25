@@ -3,8 +3,10 @@ import { recordModeEvidence, type ModeEvidence } from "./camera-passport";
 import { verifyDecodedVideoBlob } from "./clip-playback";
 export interface TestMode { width: number; height: number; fps: number }
 export const TEST_MODES: readonly TestMode[] = [
-  { width: 1280, height: 720, fps: 30 },
+  // Start with the common 1080p30 path, then a safer 720p30 fallback.
+  // Neither is declared supported until actually tested on that lens.
   { width: 1920, height: 1080, fps: 30 },
+  { width: 1280, height: 720, fps: 30 },
   { width: 1920, height: 1080, fps: 60 },
   { width: 2560, height: 1440, fps: 30 },
   { width: 3840, height: 2160, fps: 30 },

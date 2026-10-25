@@ -1,7 +1,7 @@
 import { isModeEvidence, type ModeEvidence } from "./camera-passport";
 import type { TestMode } from "./mode-verification";
 
-export type CameraQueueStatus = "pending" | "running" | "verified" | "retry" | "deferred" | "error";
+export type CameraQueueStatus = "pending" | "running" | "verified" | "recorded" | "retry" | "deferred" | "error";
 export interface CameraTestTask {
   key: string;
   cameraId: string;
@@ -27,7 +27,7 @@ const isTask = (value: unknown): value is CameraTestTask => {
     Number.isSafeInteger(t.attempts) && Number(t.attempts) >= 0 &&
     (t.checkedAt === null || (typeof t.checkedAt === "number" && Number.isFinite(t.checkedAt))) &&
     typeof t.message === "string" &&
-    ["pending", "running", "verified", "retry", "deferred", "error"].includes(t.status ?? "");
+    ["pending", "running", "verified", "recorded", "retry", "deferred", "error"].includes(t.status ?? "");
 };
 export function loadCameraTestQueue(): CameraTestTask[] {
   try {
@@ -62,17 +62,26 @@ export function prepareCameraTestQueue(
   const verifiedKeys = new Set(evidence.filter(isModeEvidence)
     .filter(row => row.api === "webview" && row.state === "verified")
     .map(row => cameraTaskKey(row.cameraId, row.requested)));
+  // A real file or decoder attempt is meaningful evidence, but its encoded
+  // FPS is not yet verified. Do not silently re-run a heavy test every time
+  // the quick diagnostic panel opens.
+  const recordedKeys = new Set(evidence.filter(isModeEvidence)
+    .filter(row => row.api === "webview" && row.state === "recorded")
+    .map(row => cameraTaskKey(row.cameraId, row.requested)));
   for (const cameraId of activeIds) {
     for (const mode of modes) {
       const key = cameraTaskKey(cameraId, mode);
       const prior = tasks.get(key);
       const confirmed = verifiedKeys.has(key);
       const status: CameraQueueStatus = confirmed ? "verified" :
+        recordedKeys.has(key) ? "recorded" :
         prior?.status === "running" || prior?.status === "verified" ? "retry" :
         prior?.status ?? "pending";
       tasks.set(key, { key, cameraId, mode, status, attempts: prior?.attempts ?? 0,
         checkedAt: prior?.checkedAt ?? null,
-        message: confirmed ? "Записанный тестовый файл подтверждён" : prior?.message ?? "Ожидает" });
+        message: confirmed ? "Режим проверен" :
+          recordedKeys.has(key) ? "Файл получен; кодированный FPS не подтверждён" :
+          prior?.message ?? "Ожидает" });
     }
   }
   return [...tasks.values()].slice(-500);
@@ -87,13 +96,14 @@ export function updateCameraTestTask(
   });
 }
 export function queueSummary(queue: readonly CameraTestTask[], deviceIds: readonly string[]): {
-  total: number; verified: number; pending: number; failed: number; deferred: number;
+  total: number; verified: number; recorded: number; pending: number; failed: number; deferred: number;
 } {
   const ids = new Set(deviceIds);
   const relevant = queue.filter(t => ids.has(t.cameraId));
   return {
     total: relevant.length,
     verified: relevant.filter(t => t.status === "verified").length,
+    recorded: relevant.filter(t => t.status === "recorded").length,
     pending: relevant.filter(t => ["pending","running","retry"].includes(t.status)).length,
     failed: relevant.filter(t => t.status === "error").length,
     deferred: relevant.filter(t => t.status === "deferred").length,

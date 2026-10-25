@@ -96,7 +96,7 @@ export function CameraDiagnostics() {
     persist(queue);
     const eligible = queue.filter(task => queueIds.includes(task.cameraId) &&
       (full || TEST_MODES.slice(0, 2).some(mode => mode.width === task.mode.width && mode.height === task.mode.height && mode.fps === task.mode.fps)) &&
-      (["pending","retry","deferred"].includes(task.status) || (full && task.status === "error")));
+      (["pending","retry","deferred"].includes(task.status) || (full && ["error","recorded"].includes(task.status))));
     try {
       let count = 0;
       for (const task of eligible) {
@@ -125,8 +125,8 @@ export function CameraDiagnostics() {
           return;
         }
         const status = evidence.state === "verified" ? "verified" :
-          evidence.state === "unknown" || evidence.state === "recorded" ||
-          evidence.state === "applied" ? "deferred" : "error";
+          evidence.state === "recorded" ? "recorded" :
+          evidence.state === "unknown" || evidence.state === "applied" ? "deferred" : "error";
         persist(updateCameraTestTask(queue, task.key, status, evidence.message || "Проверка завершена"));
         if (mounted.current) setTests(loadModeEvidence());
       }
@@ -263,7 +263,7 @@ export function CameraDiagnostics() {
   return <section className="rounded-lg border border-border bg-card p-4">
     <h2 className="mb-2 text-sm font-semibold">Диагностика всех доступных камер</h2>
     <p className="mb-3 text-xs text-muted-foreground">Камеры испытываются по очереди. «Записано» означает настоящий непустой видеообразец, но не проверенный FPS готового файла. EIS/OIS показываются как заявленные или неизвестные.</p>
-    <p className="mb-2 text-xs text-muted-foreground">Очередь режимов: подтверждено {summary.verified}/{summary.total}, ожидают {summary.pending}, ошибки {summary.failed}, отложено {summary.deferred}. Успешный запуск интерфейса не равен полной диагностике.</p>
+    <p className="mb-2 text-xs text-muted-foreground">Очередь режимов: полностью подтверждено {summary.verified}/{summary.total}, файлы без проверки FPS {summary.recorded}, ожидают {summary.pending}, ошибки {summary.failed}, отложено {summary.deferred}. Успешный запуск интерфейса не равен полной диагностике.</p>
     <div className="flex flex-wrap gap-2">
       <Button size="sm" disabled={running || recording || !devices.length} onClick={() => void run(false)}>Быстрая проверка</Button>
       <Button size="sm" variant="secondary" disabled={running || recording || !devices.length} onClick={() => void run(true)}>Расширенная проверка</Button>

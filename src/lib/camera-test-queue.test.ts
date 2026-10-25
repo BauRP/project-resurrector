@@ -9,7 +9,7 @@ describe("per-lens resumable diagnostic queue", () => {
     const tasks = prepareCameraTestQueue(["rear","front"],[base,{ ...base, fps:60 }],[],[proof]);
     expect(tasks).toHaveLength(4);
     expect(tasks.filter(t=>t.status==="verified").map(t=>t.key)).toEqual([cameraTaskKey("rear",base)]);
-    expect(queueSummary(tasks,["rear","front"])).toEqual({total:4,verified:1,pending:3,failed:0,deferred:0});
+    expect(queueSummary(tasks,["rear","front"])).toEqual({total:4,verified:1,recorded:0,pending:3,failed:0,deferred:0});
   });
   it("rejects corrupted legacy evidence instead of inventing a successful test", () => {
     const corrupted = [{api:"webview", cameraId:"rear",state:"verified",checkedAt:12}] as unknown as ModeEvidence[];
@@ -32,8 +32,18 @@ describe("per-lens resumable diagnostic queue", () => {
   it("keeps separately stored but unverified files out of the confirmed camera count", () => {
     const unverified: ModeEvidence={...proof,state:"recorded"};
     const planned=prepareCameraTestQueue(["rear"],[base],[],[unverified]);
-    expect(planned[0]?.status).toBe("pending");
+    expect(planned[0]?.status).toBe("recorded");
     expect(queueSummary(planned,["rear"]).verified).toBe(0);
+    expect(queueSummary(planned,["rear"]).recorded).toBe(1);
+  });
+  it("keeps a recorded-only result across restarts without repeating in quick tests", () => {
+    const proofFile: ModeEvidence = {...proof, state:"recorded"};
+    const started = prepareCameraTestQueue(["rear"],[base],[],[proofFile]);
+    expect(started[0]?.status).toBe("recorded");
+    const reopened=prepareCameraTestQueue(["rear"],[base],started,[proofFile]);
+    expect(reopened[0]?.status).toBe("recorded");
+    expect(reopened[0]?.attempts).toBe(0);
+    expect(queueSummary(reopened,["rear"])).toMatchObject({recorded:1,verified:0,pending:0});
   });
   it("keeps a verified result even if another mode fails", () => {
     const start = prepareCameraTestQueue(["rear"],[base,{...base,fps:60}],[],[proof]);
