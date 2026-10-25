@@ -40,7 +40,13 @@ export function loadModeEvidence(): ModeEvidence[] {
 export function recordModeEvidence(evidence: ModeEvidence): void {
   if (!isModeEvidence(evidence)) return;
   try {
-    const previous = loadModeEvidence().filter(row => identity(row) !== identity(evidence));
+    const stored = loadModeEvidence();
+    const previous = stored.filter(row => identity(row) !== identity(evidence));
+    // An interrupted probe or older timestamp must never overwrite a recent
+    // decoded sample, especially if an old async callback arrives late.
+    const current = stored.find(row => identity(row) === identity(evidence));
+    if (current && current.checkedAt > evidence.checkedAt) return;
+    if (current?.state === "verified" && evidence.state === "unknown") return;
     localStorage.setItem(KEY, JSON.stringify([...previous.slice(-199), evidence]));
   } catch { /* Local storage unavailable: never claim a durable passport. */ }
 }
