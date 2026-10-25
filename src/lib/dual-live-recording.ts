@@ -52,6 +52,7 @@ export function startDualRecording(
   let stopRequested = false;
   let completed = false;
   let startedConfirmed = false;
+  let endedUnexpectedly = false;
   let stopReason = "";
   let startupTimer = 0, stopTimer = 0;
   const startTime = Date.now();
@@ -111,7 +112,10 @@ export function startDualRecording(
     recorder.onstop = () => {
       const blob = new Blob(buffers[i], { type: mime });
       settle(i, starts[i] !== null && blob.size >= 1024 ? blob : null);
-      if (!stopRequested) stop("Один из видеопотоков завершился раньше второго");
+      if (!stopRequested) {
+        endedUnexpectedly = true;
+        stop("Один из видеопотоков завершился раньше второго");
+      }
     };
   }
   // Preview tracks outlive recording sessions; retain handlers for cleanup.
@@ -163,7 +167,10 @@ export function startDualRecording(
       bytes: clips.map(c => c.blob.size),
       message: "Файлы сохранены, но их воспроизведение из медиатеки не подтверждено. " + failures.join("; "),
     };
-    const both = playable.length === 2 && startedConfirmed && failures.length === 0;
+    // A disappearing stream or forced recording stop is not equivalent
+    // to a complete, uninterrupted pair even when both blobs decode.
+    const both = playable.length === 2 && startedConfirmed &&
+      failures.length === 0 && !endedUnexpectedly && !stopReason;
     return {
       savedIds: clips.map(c => c.id),
       paired: both,
