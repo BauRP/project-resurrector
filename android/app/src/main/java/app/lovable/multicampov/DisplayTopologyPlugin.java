@@ -22,6 +22,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.concurrent.Executor;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Reports actual window/folding features exposed by Android Jetpack WindowManager.
@@ -33,6 +35,10 @@ public class DisplayTopologyPlugin extends Plugin {
     private Consumer<WindowLayoutInfo> listener;
     private WindowLayoutInfo latest;
     private long revision = 0L;
+    /** Leases are specific to a WebView adaptation instance. A late stop
+     * from an old screen must never close a listener held by its successor.
+     */
+    private final Set<String> activeOwners = new HashSet<>();
 
     private synchronized JSObject snapshot() {
         JSObject result = new JSObject();
@@ -86,7 +92,16 @@ public class DisplayTopologyPlugin extends Plugin {
 
     @PluginMethod
     public synchronized void startObserving(PluginCall call) {
-        if (listener != null) { call.resolve(snapshot()); return; }
+        String ownerId = call.getString("ownerId");
+        if (ownerId == null || ownerId.isEmpty()) {
+            call.reject("Fold observer ownerId is required");
+            return;
+        }
+        if (listener != null) {
+            activeOwners.add(ownerId);
+            call.resolve(snapshot());
+            return;
+        }
         try {
             adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(getActivity()));
             Executor main = getActivity().getMainExecutor();
@@ -98,22 +113,31 @@ public class DisplayTopologyPlugin extends Plugin {
                 notifyListeners("topologyChanged", snapshot());
             };
             adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
+            activeOwners.add(ownerId);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
-            listener = null;
-            adapter = null;
+            stopListener();
             call.reject("Window topology observer unavailable: " + error.getMessage());
         }
     }
 
     @PluginMethod
     public synchronized void stopObserving(PluginCall call) {
-        stopListener();
+        String ownerId = call.getString("ownerId");
+        if (ownerId == null || ownerId.isEmpty()) {
+            call.reject("Fold observer ownerId is required");
+            return;
+        }
+        activeOwners.remove(ownerId);
+        if (activeOwners.isEmpty()) stopListener();
         call.resolve();
     }
 
     private synchronized void stopListener() {
-        if (listener != null && adapter != null) adapter.removeWindowLayoutInfoListener(listener);
+        if (listener != null && adapter != null) {
+            try { adapter.removeWindowLayoutInfoListener(listener); }
+            catch (RuntimeException ignored) { /* Activity may be destroyed. */ }
+        }
         listener = null;
         adapter = null;
         latest = null;
@@ -121,6 +145,7 @@ public class DisplayTopologyPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        activeOwners.clear();
         stopListener();
         super.handleOnDestroy();
     }

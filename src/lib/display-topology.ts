@@ -12,8 +12,8 @@ export interface DisplayTopology {
 }
 interface NativeBridge {
   getState(): Promise<DisplayTopology>;
-  startObserving(): Promise<DisplayTopology>;
-  stopObserving(): Promise<void>;
+  startObserving(options: { ownerId: string }): Promise<DisplayTopology>;
+  stopObserving(options: { ownerId: string }): Promise<void>;
   addListener(eventName: "topologyChanged", listener: (info: DisplayTopology) => void): Promise<PluginListenerHandle>;
 }
 const NativeDisplay = registerPlugin<NativeBridge>("DisplayTopology");
@@ -112,6 +112,9 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
 
 export function startDisplayAdaptation(): () => void {
   let disposed = false, lastRevision = -1;
+  // Independent native leases prevent a slow old tab cleanup from stopping
+  // the new tab's WindowManager observer.
+  const ownerId = "fold-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
   let lastFoldSignature = "";
   let listener: PluginListenerHandle | undefined;
   let lastNative: DisplayTopology | null = null;
@@ -254,11 +257,11 @@ export function startDisplayAdaptation(): () => void {
     void NativeDisplay.addListener("topologyChanged", apply).then(handle => {
       if (disposed) { void handle.remove(); return; }
       listener = handle;
-      void NativeDisplay.startObserving().then(state => {
+      void NativeDisplay.startObserving({ ownerId }).then(state => {
         if (disposed) {
           // A slow native start may finish AFTER the React screen unmounted.
           // Stop it again so it cannot leak a WindowManager observer.
-          void NativeDisplay.stopObserving().catch(() => undefined);
+          void NativeDisplay.stopObserving({ ownerId }).catch(() => undefined);
           return;
         }
         apply(state);
@@ -276,7 +279,7 @@ export function startDisplayAdaptation(): () => void {
     geometryObserver?.disconnect();
     cancelAnimationFrame(refreshFrame);
     void listener?.remove();
-    if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving().catch(() => {});
+    if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving({ ownerId }).catch(() => {});
     ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
     ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
   };
