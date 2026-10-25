@@ -13,6 +13,14 @@ export interface DualRecordingSession {
   stop: (reason?: string) => void;
   done: Promise<DualRecordingResult>;
 }
+/** A saved pair may be complete as files but still interrupted as a session. */
+export function isCleanDualRecording(input: {
+  playable: number; startedConfirmed: boolean; failures: number;
+  endedUnexpectedly: boolean; stopReason: string;
+}): boolean {
+  return input.playable === 2 && input.startedConfirmed && input.failures === 0 &&
+    !input.endedUnexpectedly && !input.stopReason;
+}
 export function independentStreamsReady(first: MediaStream | null, second: MediaStream | null): boolean {
   if (!first || !second || first === second) return false;
   const a = first.getVideoTracks()[0], b = second.getVideoTracks()[0];
@@ -169,8 +177,10 @@ export function startDualRecording(
     };
     // A disappearing stream or forced recording stop is not equivalent
     // to a complete, uninterrupted pair even when both blobs decode.
-    const both = playable.length === 2 && startedConfirmed &&
-      failures.length === 0 && !endedUnexpectedly && !stopReason;
+    const both = isCleanDualRecording({
+      playable: playable.length, startedConfirmed, failures: failures.length,
+      endedUnexpectedly, stopReason,
+    });
     return {
       savedIds: clips.map(c => c.id),
       paired: both,
