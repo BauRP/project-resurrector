@@ -97,8 +97,11 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
     usableRegions: geometry.regions.length,
     layout: geometry.split,
     // Native revisions may not change when only the WebView viewport changes.
-    regionGeometry: geometry.regions.map(r => [r.left,r.top,r.width,r.height]
-      .map(n => Math.round(n)).join(",")).join(";").slice(0,512),
+    // WindowManager may reorder two physical hinges between callbacks.
+    // Sort measured pane coordinates to avoid fictitious fold events.
+    regionGeometry: [...geometry.regions].sort((a,b)=>a.left-b.left || a.top-b.top)
+      .map(r => [r.left,r.top,r.width,r.height]
+        .map(n => Math.round(n)).join(",")).join(";").slice(0,512),
   };
 }
 
@@ -134,7 +137,8 @@ export function startDisplayAdaptation(): () => void {
       window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));
     }
     root.dataset.foldInfo = state.posture;
-    root.dataset.foldCount = String(state.foldingFeatures.length);
+    // Never present off-window or malformed reported features as active folds.
+    root.dataset.foldCount = String(geometry.hinges.length);
     root.dataset.foldSplit = geometry.split;
     root.dataset.separatingFold = String(geometry.hinges.length > 0);
     root.dataset.occludingFold = String(geometry.occluded);
