@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cameraController, CameraBusyError, focusPoint } from "./camera-controller";
+import { cameraController, CameraBusyError, checkAppliedCameraSetting, focusPoint } from "./camera-controller";
 
 function camera() {
   const track = {
@@ -18,6 +18,18 @@ afterEach(() => {
 });
 
 describe("camera ownership and serialized settings", () => {
+  it("distinguishes a requested setting from a device-confirmed one", () => {
+    const c=camera();
+    const track=c.track as unknown as MediaStreamTrack;
+    c.track.readyState="live";
+    Object.assign(c.track, {getSettings: () => ({zoom: 2, focusMode:"continuous"})});
+    expect(checkAppliedCameraSetting(track,"zoom",2)).toBe("confirmed");
+    expect(checkAppliedCameraSetting(track,"zoom",3)).toBe("rejected");
+    expect(checkAppliedCameraSetting(track,"focusMode","continuous")).toBe("confirmed");
+    expect(checkAppliedCameraSetting(track,"focusDistance",0.5)).toBe("unknown");
+    c.track.readyState="ended";
+    expect(checkAppliedCameraSetting(track,"zoom",2)).toBe("unknown");
+  });
   it("never generates invalid focus points for a transient zero-size fold viewport", () => {
     const point = focusPoint({left:10,top:20,width:0,height:0},0,0,55,85);
     expect(point).toEqual({x:0.5,y:0.5});

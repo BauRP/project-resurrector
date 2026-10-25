@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { useMulticamStore, type ShootSettings } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { HelpDot } from "./Help";
-import { cameraController } from "@/lib/camera-controller";
+import { cameraController, checkAppliedCameraSetting } from "@/lib/camera-controller";
 import { clipCurve } from "@/lib/audio-limiter";
 
 /* ---------- Track helpers (all features are capability-checked at runtime) ---------- */
@@ -193,12 +193,30 @@ export function FocusRail({ stream }: { stream: MediaStream | null }) {
   const capture = useMulticamStore((s) => s.capture); const set = useMulticamStore((s) => s.set); const caps = trackCaps(stream); const range = capRange(caps, "focusDistance");
   if (!range) return null;
   const [min, max, step] = range; const v = capture.focus;
-  return <div className="glass-panel flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px]">
-    <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`} onClick={() => { void applyAdvanced(stream, { focusMode: "continuous" }).then((ok) => { if (ok) set({ capture: { ...capture, focus: null } }); }); }}>AF</button>
+  const commandGeneration = useRef(0);
+  const [requestStatus, setRequestStatus] = useState("");
+  const request = (fields: Record<string, unknown>, key: string, expected: string | number, done: () => void) => {
+    const current = ++commandGeneration.current;
+    setRequestStatus("Применяется…");
+    void applyAdvanced(stream, fields).then(ok => {
+      if (current !== commandGeneration.current) return;
+      const status = ok ? checkAppliedCameraSetting(stream?.getVideoTracks()[0], key, expected,
+        typeof expected === "number" ? Math.max(0.02, step / 2) : 0) : "rejected";
+      if (status === "confirmed") { done(); setRequestStatus(""); }
+      else setRequestStatus(status === "unknown" ? "Фокус: применение не подтверждено" : "Фокус: настройка отклонена");
+    });
+  };
+  return <div className="glass-panel flex flex-wrap items-center gap-2 rounded-full px-3 py-1.5 text-[10px]">
+    <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`}
+      onClick={() => request({ focusMode: "continuous" }, "focusMode", "continuous",
+        () => set({ capture: { ...useMulticamStore.getState().capture, focus: null } }))}>AF</button>
     <span className="shrink-0 text-muted-foreground">Близко</span>
-    <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step} onValueChange={([x = min]) => { void applyAdvanced(stream, { focusMode: "manual", focusDistance: x }).then((ok) => { if (ok) set({ capture: { ...capture, focus: x } }); }); }} />
+    <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step}
+      onValueChange={([x = min]) => request({ focusMode: "manual", focusDistance: x }, "focusDistance", x,
+        () => set({ capture: { ...useMulticamStore.getState().capture, focus: x } }))} />
     <span className="shrink-0 text-muted-foreground">Далеко</span>
     <span className="w-10 shrink-0 text-end font-mono">{v === null ? "Авто" : v.toFixed(2)}</span>
+    {requestStatus && <span role="status" className="basis-full text-warning">{requestStatus}</span>}
   </div>;
 }
 
@@ -213,12 +231,34 @@ export function LensZoomBlock({ stream }: { stream: MediaStream | null }) {
   if (zr && zr[0] <= 0.5) lenses.push({ label: "0.5x", zoom: 0.5 }); else if (ultra) lenses.push({ label: "0.5x", deviceId: ultra.deviceId });
   if (zr || devices.length) lenses.push({ label: "1x", zoom: 1 });
   for (const z of [2, 3, 5]) if (zr && zr[1] >= z) lenses.push({ label: `${z}x`, zoom: z }); else if (z === 2 && tele) lenses.push({ label: "2x", deviceId: tele.deviceId });
-  const setZoom = (z: number) => { s.set({ zoom: z, lensDeviceId: "" }); void applyAdvanced(stream, { zoom: z }); };
+  const [requestedZoom, setRequestedZoom] = useState<number | null>(null);
+  const [zoomStatus, setZoomStatus] = useState("");
+  const zoomRequestGeneration = useRef(0);
+  useEffect(() => {
+    zoomRequestGeneration.current++;
+    setRequestedZoom(null); setZoomStatus("");
+  }, [stream]);
+  const setZoom = (z: number) => {
+    const id = ++zoomRequestGeneration.current;
+    setRequestedZoom(z);
+    setZoomStatus("Применяется…");
+    void applyAdvanced(stream, { zoom: z }).then(ok => {
+      if (id !== zoomRequestGeneration.current) return;
+      const confirmed = ok ? checkAppliedCameraSetting(stream?.getVideoTracks()[0], "zoom", z) : "rejected";
+      setRequestedZoom(null);
+      if (confirmed === "confirmed") {
+        s.set({ zoom: z, lensDeviceId: "" });
+        setZoomStatus("");
+      } else setZoomStatus(confirmed === "unknown"
+        ? "Зум: драйвер не подтвердил значение" : "Зум: выбранное значение не применено");
+    });
+  };
   if (!lenses.length) return <p className="text-[10px] text-muted-foreground">Камера не сообщает объективы и зум</p>;
   return <div className="space-y-2">
     <div className="flex justify-center gap-1.5">{lenses.map((l) => { const active = l.deviceId ? s.lensDeviceId === l.deviceId : !s.lensDeviceId && Math.abs((s.zoom ?? 1) - (l.zoom ?? 1)) < 0.05; return <button key={l.label} onClick={() => l.deviceId ? s.set({ lensDeviceId: l.deviceId }) : setZoom(Math.min(zr?.[1] ?? 1, Math.max(zr?.[0] ?? 1, l.zoom ?? 1)))} className={`size-10 rounded-full text-[11px] font-semibold ${active ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{l.label}</button>; })}</div>
-    {zr ? <div><div className="mb-1 flex justify-between text-[10px] text-muted-foreground"><span>Плавный зум</span><span className="font-mono">{(s.zoom ?? 1).toFixed(2)}x</span></div><Slider aria-label="Зум" value={[s.zoom ?? 1]} min={zr[0]} max={zr[1]} step={Math.max(0.01, zr[2])} onValueChange={([z = 1]) => setZoom(z)} /></div>
+    {zr ? <div><div className="mb-1 flex justify-between text-[10px] text-muted-foreground"><span>Плавный зум</span><span className="font-mono">{(s.zoom ?? 1).toFixed(2)}x</span></div><Slider aria-label="Зум" value={[requestedZoom ?? s.zoom ?? 1]} min={zr[0]} max={zr[1]} step={Math.max(0.01, zr[2])} onValueChange={([z = 1]) => setZoom(z)} /></div>
       : <p className="text-[10px] text-muted-foreground">Плавный зум недоступен у этой камеры — переключение объективами</p>}
+    {zoomStatus && <p role="status" className="text-[10px] text-warning">{zoomStatus}</p>}
   </div>;
 }
 

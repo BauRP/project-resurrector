@@ -15,6 +15,28 @@ type ConstraintQueue = {
   cancelled: boolean;
 };
 
+/** Only reported current device settings can confirm a command.
+ * applyConstraints resolving means merely that the API accepted a request;
+ * WebView drivers may ignore a setting or omit it from getSettings().
+ */
+export type AppliedSettingStatus = "confirmed" | "rejected" | "unknown";
+export function checkAppliedCameraSetting(
+  track: MediaStreamTrack | undefined, key: string, requested: string | number,
+  tolerance = 0.03,
+): AppliedSettingStatus {
+  if (!track || track.readyState !== "live" || typeof track.getSettings !== "function") return "unknown";
+  let reported: unknown;
+  try {
+    reported = (track.getSettings() as unknown as Record<string, unknown>)[key];
+  } catch { return "unknown"; }
+  if (typeof requested === "number" && typeof reported === "number" &&
+      Number.isFinite(requested) && Number.isFinite(reported))
+    return Math.abs(reported - requested) <= Math.max(tolerance, Math.abs(requested) * 0.002) ? "confirmed" : "rejected";
+  if (typeof requested === "string" && typeof reported === "string")
+    return reported === requested ? "confirmed" : "rejected";
+  return "unknown";
+}
+
 export type FocusSupport = "supported" | "unsupported" | "unknown";
 export function focusSupport(caps: Record<string, unknown>): FocusSupport {
   const range = caps['focusDistance'] as { min?: number; max?: number } | undefined;
