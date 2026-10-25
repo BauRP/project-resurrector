@@ -116,6 +116,10 @@ export function startDualRecording(
       starts[i] = performance.now();
       if (starts.every(x => x !== null) && !startedConfirmed && !stopRequested) {
         startedConfirmed = true;
+        // Startup is complete. This timeout must never terminate an otherwise
+        // healthy long-running two-camera recording after eight seconds.
+        window.clearTimeout(startupTimer);
+        startupTimer = 0;
         onBothStarted(Math.round(Math.abs(starts[0]! - starts[1]!)));
       }
       if (stopRequested && recorder.state !== "inactive") {
@@ -143,7 +147,10 @@ export function startDualRecording(
     track.addEventListener("ended", handler, { once: true });
     trackEndHandlers.push({ track, handler });
   }
-  startupTimer = window.setTimeout(() => stop("Не обе камеры подтвердили запуск за 8 секунд"), 8000);
+  // Both recorders may fire onstart synchronously in some WebViews. Do not
+  // arm an obsolete watchdog after they already confirmed starting.
+  if (!startedConfirmed) startupTimer = window.setTimeout(
+    () => stop("Не обе камеры подтвердили запуск за 8 секунд"), 8000);
   const done = Promise.all(collected).then(async blobs => {
     completed = true;
     window.clearTimeout(startupTimer);

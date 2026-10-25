@@ -20,6 +20,7 @@ class MockRecorder {
   static instances: MockRecorder[] = [];
   static isTypeSupported = (_mime: string) => true;
   static stallIndex: number | null = null;
+  static skipStartIndex: number | null = null;
   state: RecordingState = "inactive";
   mimeType: string;
   onstart: (() => void) | null = null;
@@ -32,7 +33,7 @@ class MockRecorder {
   }
   start() {
     this.state = "recording";
-    this.onstart?.();
+    if (MockRecorder.instances.indexOf(this) !== MockRecorder.skipStartIndex) this.onstart?.();
   }
   stop() {
     if (this.state === "inactive") return;
@@ -55,6 +56,7 @@ function camera(id: string) {
 beforeEach(() => {
   MockRecorder.instances = [];
   MockRecorder.stallIndex = null;
+  MockRecorder.skipStartIndex = null;
   vi.clearAllMocks();
   vi.stubGlobal("MediaRecorder", MockRecorder);
 });
@@ -139,5 +141,35 @@ describe("stalled encoder salvage policy", () => {
     expect(result.paired).toBe(false);
     expect(result.message).toContain("не завершился");
     expect(saveRecordedClipsAtomically).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("independent camera startup watchdog", () => {
+  it("does not force-stop healthy two-camera capture after eight seconds", async () => {
+    vi.useFakeTimers();
+    const a=camera("rear"), b=camera("front");
+    const started=vi.fn();
+    const session=startDualRecording(a.stream,b.stream,started);
+    expect(started).toHaveBeenCalledOnce();
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(MockRecorder.instances.every(r=>r.state==="recording")).toBe(true);
+    expect(saveRecordedClipsAtomically).not.toHaveBeenCalled();
+    session.stop();
+    const result=await session.done;
+    expect(result.paired).toBe(true);
+    expect(result.savedIds).toHaveLength(2);
+  });
+  it("ends and truthfully reports incomplete startup when a second onstart never arrives", async () => {
+    vi.useFakeTimers();
+    MockRecorder.skipStartIndex=1;
+    const a=camera("rear"), b=camera("front");
+    const started=vi.fn();
+    const session=startDualRecording(a.stream,b.stream,started);
+    expect(started).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(8001);
+    const result=await session.done;
+    expect(result.paired).toBe(false);
+    expect(result.message).toContain("8 секунд");
+    expect(MockRecorder.instances.every(r=>r.state==="inactive")).toBe(true);
   });
 });
