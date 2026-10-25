@@ -55,4 +55,14 @@ describe("multi-hinge topology", () => {
     expect(result.occluded).toBe(false);
     expect(result.regions).toHaveLength(2);
   });
+  it("rejects out-of-window or nonsensical Android hinge bounds", () => {
+    const invalid = [
+      { ...hinge(590, 610), leftPx: Number.NaN },
+      { ...hinge(590, 610), leftPx: 700, rightPx: 600 },
+      { ...hinge(590, 610), leftPx: 1500, rightPx: 1520 },
+      { ...hinge(590, 610), topPx: 1200, bottomPx: 1300 },
+    ];
+    expect(calculateDisplayRegions(topology(invalid), 600, 450).regions).toHaveLength(1);
+  });
+
 });
