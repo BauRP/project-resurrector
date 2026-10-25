@@ -175,6 +175,18 @@ describe("independent camera startup watchdog", () => {
     expect(result.paired).toBe(true);
     expect(result.savedIds).toHaveLength(2);
   });
+  it("salvages second-camera encoded bytes even without its onstart callback", async () => {
+    vi.useFakeTimers();
+    MockRecorder.skipStartIndex=1;
+    const a=camera("rear"), b=camera("front");
+    const session=startDualRecording(a.stream,b.stream,vi.fn());
+    await vi.advanceTimersByTimeAsync(8001);
+    const result=await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(false);
+    const clips=vi.mocked(saveRecordedClipsAtomically).mock.calls[0]![0];
+    expect(clips.map(clip=>clip.cameraDeviceId)).toEqual(["rear","front"]);
+  });
   it("ends and truthfully reports incomplete startup when a second onstart never arrives", async () => {
     vi.useFakeTimers();
     MockRecorder.skipStartIndex=1;

@@ -29,16 +29,22 @@ export function salvageBufferedEncoderChunks(chunks: readonly Blob[], mime: stri
   const bytes = chunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0);
   return bytes >= 1024 ? new Blob(chunks, { type: mime }) : null;
 }
-export function independentStreamsReady(first: MediaStream | null, second: MediaStream | null): boolean {
-  if (!first || !second || first === second) return false;
+/** Validate and capture identities in one step. Re-reading after the device
+ * disappears can fail, even though partial encoded clips must still be saved.
+ */
+export function verifiedDualDeviceIds(
+  first: MediaStream | null, second: MediaStream | null,
+): [string, string] | null {
+  if (!first || !second || first === second) return null;
   const a = first.getVideoTracks()[0], b = second.getVideoTracks()[0];
-  if (!a || !b || a === b || a.readyState !== "live" || b.readyState !== "live") return false;
-  // Some OEM camera drivers throw after a stream becomes unavailable. Do not
-  // claim concurrent camera identity when the device IDs cannot be read.
+  if (!a || !b || a === b || a.readyState !== "live" || b.readyState !== "live") return null;
   try {
     const idA = a.getSettings().deviceId, idB = b.getSettings().deviceId;
-    return !!idA && !!idB && idA !== idB;
-  } catch { return false; }
+    return idA && idB && idA !== idB ? [idA, idB] : null;
+  } catch { return null; }
+}
+export function independentStreamsReady(first: MediaStream | null, second: MediaStream | null): boolean {
+  return verifiedDualDeviceIds(first, second) !== null;
 }
 function selectMime(): string {
   if (typeof MediaRecorder === "undefined") throw new Error("MediaRecorder недоступен");
@@ -62,10 +68,8 @@ export function startDualRecording(
   second: MediaStream,
   onBothStarted: (skewMs: number) => void,
 ): DualRecordingSession {
-  if (!independentStreamsReady(first, second)) throw new Error("Две разные одновременно активные камеры не подтверждены");
-  // Capture stable IDs while both tracks are live. getSettings() may throw
-  // after camera loss, even though encoder chunks must still be salvaged.
-  const deviceIds = [first, second].map(stream => stream.getVideoTracks()[0]!.getSettings().deviceId!);
+  const deviceIds = verifiedDualDeviceIds(first, second);
+  if (!deviceIds) throw new Error("Две разные одновременно активные камеры не подтверждены");
   const mime = selectMime();
   const captures = [first, second];
   const recorders = captures.map(stream => new MediaRecorder(stream, { mimeType: mime }));
@@ -140,7 +144,9 @@ export function startDualRecording(
     };
     recorder.onstop = () => {
       const blob = new Blob(buffers[i], { type: mime });
-      settle(i, starts[i] !== null && blob.size >= 1024 ? blob : null);
+      // A driver can emit data but omit onstart. Preserve real bytes even when
+      // startup was never confirmed; paired success still requires both starts.
+      settle(i, blob.size >= 1024 ? blob : null);
       if (!stopRequested) {
         endedUnexpectedly = true;
         stop("Один из видеопотоков завершился раньше второго");
