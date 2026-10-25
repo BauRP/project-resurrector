@@ -15,6 +15,13 @@ describe("per-lens resumable diagnostic queue", () => {
     const corrupted = [{api:"webview", cameraId:"rear",state:"verified",checkedAt:12}] as unknown as ModeEvidence[];
     expect(prepareCameraTestQueue(["rear"],[base],[],corrupted)[0]?.status).toBe("pending");
   });
+  it("does not let unplugged old cameras displace active test tasks", () => {
+    const oldIds = Array.from({length:90},(_,i)=>"disconnected-"+i);
+    const old = prepareCameraTestQueue(oldIds,[base,{...base,fps:60}],[],[]);
+    const active = prepareCameraTestQueue(["front"],[base],old,[]);
+    expect(active).toHaveLength(1);
+    expect(active[0]?.cameraId).toBe("front");
+  });
   it("resumes an interrupted in-progress task without inventing a success", () => {
     const prior = prepareCameraTestQueue(["rear"],[base],[],[]);
     const inProgress = updateCameraTestTask(prior,prior[0]!.key,"running","Открывается камера",1);
