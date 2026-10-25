@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { planRecordingFinalization, createRecordingStopGuard } from "./recording-finalization";
+import { planRecordingFinalization, createRecorderStartGuard, createRecordingStopGuard } from "./recording-finalization";
 describe("recording recovery and truthful completion", () => {
   it("does not claim an empty or tiny blob can be saved", () => {
     expect(planRecordingFinalization(0, "", "").attemptSave).toBe(false);
@@ -40,6 +40,37 @@ describe("MediaRecorder missing-onstop timeout", () => {
     guard.finish();
     expect(timeout).toHaveBeenCalledTimes(1);
     expect(finalize).toHaveBeenCalledTimes(1);
+    vi.useRealTimers();
+  });
+});
+
+describe("unconfirmed single-recorder startup", () => {
+  it("does not timeout a recording that actually dispatched onstart", async () => {
+    vi.useFakeTimers();
+    const timeout=vi.fn();
+    const watchdog=createRecorderStartGuard(timeout,8000);
+    expect(watchdog.started()).toBe(true);
+    await vi.advanceTimersByTimeAsync(20000);
+    expect(timeout).not.toHaveBeenCalled();
+    vi.useRealTimers();
+  });
+  it("requires a real onstart event and times out once", async () => {
+    vi.useFakeTimers();
+    const timeout=vi.fn();
+    const watchdog=createRecorderStartGuard(timeout,8000);
+    await vi.advanceTimersByTimeAsync(8001);
+    expect(timeout).toHaveBeenCalledOnce();
+    expect(watchdog.started()).toBe(false);
+    watchdog.cancel();
+    vi.useRealTimers();
+  });
+  it("cancels a pending watchdog on an early recorder error", async () => {
+    vi.useFakeTimers();
+    const timeout=vi.fn();
+    const watchdog=createRecorderStartGuard(timeout,8000);
+    watchdog.cancel();
+    await vi.advanceTimersByTimeAsync(12000);
+    expect(timeout).not.toHaveBeenCalled();
     vi.useRealTimers();
   });
 });

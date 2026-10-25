@@ -54,3 +54,19 @@ export function createRecordingStopGuard(
     finish,
   };
 }
+
+/** Startup must be acknowledged by a real encoder onstart event; otherwise
+ * WebView may leave the capture button in 'starting' forever.
+ */
+export function createRecorderStartGuard(onTimeout: () => void, timeoutMs = 8000) {
+  let completed = false;
+  const timer = setTimeout(() => {
+    if (completed) return;
+    completed = true;
+    onTimeout();
+  }, timeoutMs);
+  return {
+    started() { if (completed) return false; completed = true; clearTimeout(timer); return true; },
+    cancel() { completed = true; clearTimeout(timer); },
+  };
+}

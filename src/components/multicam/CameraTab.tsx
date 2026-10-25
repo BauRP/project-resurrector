@@ -16,7 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
-import { createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
+import { createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
@@ -282,7 +282,9 @@ export function CameraTab() {
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
       };
       let recorderError = "";
+      let startGuard: ReturnType<typeof createRecorderStartGuard> | null = null;
       const cleanUp = () => {
+        startGuard?.cancel();
         window.removeEventListener(FOLD_EVENT, onFold);
         pipeRef.current?.stop(); pipeRef.current = null;
         recordingAudio.current = null; void gainCtx?.close();
@@ -290,10 +292,12 @@ export function CameraTab() {
         if (recordingStopWatch.current === guard.waitForStop) recordingStopWatch.current = null;
       };
       recorder.onstart = () => {
+        if (startGuard && !startGuard.started()) return;
         s.set({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
       };
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recorder.onerror = (event) => {
+        startGuard?.cancel();
         recorderError = (event as Event & { error?: Error }).error?.message || "Ошибка кодировщика";
         s.set({ recordingPhase: "error", captureSaveError: recorderError });
         recordingStopWatch.current?.();
@@ -349,6 +353,15 @@ export function CameraTab() {
       });
       recordingStopWatch.current = guard.waitForStop;
       recorder.onstop = guard.finish;
+      startGuard = createRecorderStartGuard(() => {
+        recorderError ||= "Видеокодировщик не подтвердил запуск за 8 секунд";
+        stopReasonRef.current = recorderError;
+        s.set({ recording: false, recordingPhase: "stopping", captureSaveError: recorderError });
+        guard.waitForStop();
+        if (recorder.state !== "inactive") {
+          try { recorder.stop(); } catch { /* onstop guard salvages existing chunks */ }
+        } else guard.finish();
+      });
       recorder.start(1000);
       window.addEventListener(FOLD_EVENT, onFold);
     } catch (error) {
