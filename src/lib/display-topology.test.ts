@@ -55,6 +55,13 @@ describe("multi-hinge topology", () => {
     expect(result.occluded).toBe(false);
     expect(result.regions).toHaveLength(2);
   });
+  it("rejects unknown hinge directions instead of silently treating them as horizontal", () => {
+    const wrong = { ...hinge(590,610), orientation: "UNKNOWN" };
+    expect(calculateDisplayRegions(topology([wrong]),600,450).regions).toHaveLength(1);
+  });
+  it("does not divide a zero-sized WebView viewport", () => {
+    expect(calculateDisplayRegions(topology([hinge(590,610)]),0,450).regions).toHaveLength(0);
+  });
   it("rejects out-of-window or nonsensical Android hinge bounds", () => {
     const invalid = [
       { ...hinge(590, 610), leftPx: Number.NaN },
