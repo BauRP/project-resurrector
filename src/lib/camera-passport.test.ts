@@ -15,6 +15,13 @@ describe("persisted camera passport validation",()=>{
     localStorage.setItem(KEY,JSON.stringify([{...evidence,requested:null},evidence,{...evidence,cameraId:"front"}]));
     expect(loadModeEvidence().map(e=>e.cameraId)).toEqual(["rear","front"]);
   });
+
+  it("ignores late diagnostic writes older than already stored evidence",()=>{
+    recordModeEvidence({...evidence,checkedAt:200,state:"verified"});
+    recordModeEvidence({...evidence,checkedAt:100,state:"rejected"});
+    expect(loadModeEvidence()[0]?.state).toBe("verified");
+    expect(loadModeEvidence()[0]?.checkedAt).toBe(200);
+  });
   it("separates each camera and FPS result",()=>{
     recordModeEvidence(evidence);
     recordModeEvidence({...evidence,cameraId:"front",state:"rejected"});
