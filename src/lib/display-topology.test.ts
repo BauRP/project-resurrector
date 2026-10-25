@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, foldEventDetails, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -54,6 +54,15 @@ describe("multi-hinge topology", () => {
     const result = calculateDisplayRegions(topology([hinge(600,600, "NONE")]),600,450);
     expect(result.occluded).toBe(false);
     expect(result.regions).toHaveLength(2);
+  });
+  it("reports only real usable hinge regions, not physical panel model names", () => {
+    const s = topology([hinge(390,410),hinge(790,810)]);
+    expect(foldEventDetails(s,600,450)).toMatchObject({
+      revision: 1, hingeCount: 2, usableRegions: 3, layout: "vertical",
+    });
+    expect(foldEventDetails(topology([]),360,760)).toMatchObject({
+      hingeCount: 0, usableRegions: 1, layout: "none",
+    });
   });
   it("rejects unknown hinge directions instead of silently treating them as horizontal", () => {
     const wrong = { ...hinge(590,610), orientation: "UNKNOWN" };
