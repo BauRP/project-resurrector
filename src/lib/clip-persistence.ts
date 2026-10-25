@@ -64,6 +64,26 @@ export function persistedClipMatches(expected: Pick<RecordedClip, "id" | "blob">
     record.blob.type === expected.blob.type;
 }
 
+/** Bounded low-memory comparison of beginning, middle and end of persisted blobs.
+ * Checks sampled bytes, NOT every frame, codec integrity or a full-file hash.
+ */
+export async function sampledClipBytesMatch(original: Blob, stored: Blob): Promise<boolean> {
+  if (original.size !== stored.size || original.type !== stored.type) return false;
+  const span = 1024;
+  const positions = [...new Set([0, Math.max(0, Math.floor(original.size / 2) - Math.floor(span / 2)),
+    Math.max(0, original.size - span)])];
+  for (const at of positions) {
+    const [left, right] = await Promise.all([
+      original.slice(at, at + span).arrayBuffer(),
+      stored.slice(at, at + span).arrayBuffer(),
+    ]);
+    const a = new Uint8Array(left), b = new Uint8Array(right);
+    if (a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  }
+  return true;
+}
+
 export async function assertSavedClipsReadable(clips: readonly RecordedClip[]): Promise<void> {
   if (!clips.length) throw new Error("Не указан сохранённый клип");
   if (typeof indexedDB === "undefined") throw new Error("Локальное хранилище недоступно");
@@ -88,11 +108,13 @@ export async function assertSavedClipsReadable(clips: readonly RecordedClip[]): 
         const tx = db.transaction("clips", "readonly");
         const store = tx.objectStore("clips");
         let failure = "";
+        const checkBytes: { expected: Blob; stored: Blob; id: string }[] = [];
         for (const clip of clips) {
           const read = store.get(clip.id);
           read.onsuccess = () => {
             if (!persistedClipMatches(clip, read.result))
               failure = "Файл " + clip.id + " отсутствует или повреждён в хранилище";
+            else checkBytes.push({ expected: clip.blob, stored: (read.result as RecordedClip).blob, id: clip.id });
           };
           read.onerror = () => { failure = "Не удалось прочитать файл " + clip.id; };
         }
@@ -100,7 +122,13 @@ export async function assertSavedClipsReadable(clips: readonly RecordedClip[]): 
           if (finished) return;
           finished = true;
           db.close();
-          if (failure) reject(new Error(failure)); else resolve();
+          if (failure) { reject(new Error(failure)); return; }
+          // Do not await Blob IO inside an open IndexedDB transaction:
+          // it may auto-close. Only examine bytes after oncomplete.
+          void Promise.all(checkBytes.map(async sample => {
+            if (!await sampledClipBytesMatch(sample.expected, sample.stored))
+              throw new Error("Сохранённый видеоклип " + sample.id + " отличается от исходных данных");
+          })).then(() => resolve(), error => reject(error));
         };
         tx.onabort = () => fail("Проверка записанного видео прервана");
         tx.onerror = () => fail("Ошибка чтения сохранённого видео");
