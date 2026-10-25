@@ -1,4 +1,4 @@
-import type { ModeEvidence } from "./camera-passport";
+import { isModeEvidence, type ModeEvidence } from "./camera-passport";
 import type { TestMode } from "./mode-verification";
 
 export type CameraQueueStatus = "pending" | "running" | "verified" | "retry" | "deferred" | "error";
@@ -18,9 +18,15 @@ export function cameraTaskKey(cameraId: string, mode: TestMode): string {
 const isTask = (value: unknown): value is CameraTestTask => {
   if (!value || typeof value !== "object") return false;
   const t = value as Partial<CameraTestTask>;
-  return typeof t.cameraId === "string" && !!t.cameraId && !!t.mode &&
-    t.key === cameraTaskKey(t.cameraId, t.mode) && Number.isFinite(t.mode.width) && Number.isFinite(t.mode.height) &&
-    Number.isFinite(t.mode.fps) && typeof t.attempts === "number" &&
+  if (typeof t.cameraId !== "string" || !t.cameraId || !t.mode || typeof t.mode !== "object") return false;
+  const m = t.mode as Partial<TestMode>;
+  return Number.isSafeInteger(m.width) && Number(m.width) > 0 &&
+    Number.isSafeInteger(m.height) && Number(m.height) > 0 &&
+    typeof m.fps === "number" && Number.isFinite(m.fps) && m.fps > 0 &&
+    t.key === cameraTaskKey(t.cameraId, m as TestMode) &&
+    Number.isSafeInteger(t.attempts) && Number(t.attempts) >= 0 &&
+    (t.checkedAt === null || (typeof t.checkedAt === "number" && Number.isFinite(t.checkedAt))) &&
+    typeof t.message === "string" &&
     ["pending", "running", "verified", "retry", "deferred", "error"].includes(t.status ?? "");
 };
 export function loadCameraTestQueue(): CameraTestTask[] {
@@ -49,13 +55,14 @@ export function prepareCameraTestQueue(
   evidence: readonly ModeEvidence[],
 ): CameraTestTask[] {
   const tasks = new Map(previous.filter(isTask).map(task => [task.key, task]));
+  const verifiedKeys = new Set(evidence.filter(isModeEvidence)
+    .filter(row => row.api === "webview" && row.state === "verified")
+    .map(row => cameraTaskKey(row.cameraId, row.requested)));
   for (const cameraId of new Set(deviceIds.filter(Boolean))) {
     for (const mode of modes) {
       const key = cameraTaskKey(cameraId, mode);
       const prior = tasks.get(key);
-      const confirmed = evidence.some(row => row.api === "webview" && row.cameraId === cameraId &&
-        row.state === "verified" && row.requested.width === mode.width &&
-        row.requested.height === mode.height && row.requested.fps === mode.fps);
+      const confirmed = verifiedKeys.has(key);
       const status: CameraQueueStatus = confirmed ? "verified" :
         prior?.status === "running" || prior?.status === "verified" ? "retry" :
         prior?.status ?? "pending";
