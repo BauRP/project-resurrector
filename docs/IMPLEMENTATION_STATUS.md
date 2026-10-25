@@ -15,6 +15,18 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Clip loss/error statuses do not claim recording succeeded; leaving camera while saving is postponed; fold resize alone does not restart recording.
 - GitHub Actions runs unit tests and builds APK/AAB for the backup branch.
 
+
+## Safety and compatibility hardening — 25 October 2026
+- Optional WebView mode diagnostics use a non-preemptive camera lease: they defer rather than stopping the active user preview.
+- Failed or denied `getUserMedia` attempts relinquish their lease so later capture retries are possible; superseded attempts cannot clear a newer owner. Added regression tests for denied and synchronous failures.
+- Camera settings calls are serialized/coalesced with settled waiters on release; independently held video streams can still receive their own commands.
+- Transient diagnostic contention and timeouts are reported as unknown/deferred rather than permanently unsupported. Expanded diagnostics can retry failed tasks.
+- Invalid/non-finite and out-of-window Android folding bounds are rejected; regression tests cover false hinge splits.
+- In dual WebView capture, salvageable encoded clips are committed to IndexedDB before any playback analysis. The first frame is then checked using the reloaded persisted clip, rather than just an in-memory encoder Blob.
+- Dual recording now removes ended-track event listeners from long-lived live-preview tracks when the recording finishes, preventing callbacks from accumulating over repeated sessions.
+
+**Remaining limitations:** These are code and CI-level improvements, not measured physical-device compatibility. Persisted video first-frame decoding does not establish complete file integrity or synchronized camera timestamps. Folding and camera behavior during device/Activity transitions must still be tested on actual foldables. Neither specification is at 100%.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
