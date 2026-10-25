@@ -98,6 +98,16 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     Object.defineProperty(one.track,"getSettings",{value:()=>{throw new Error("camera busy");}});
     expect(() => startDualRecording(one.stream,two.stream,vi.fn())).toThrow("Две разные одновременно активные камеры");
   });
+  it("keeps the first interruption cause when later stop events arrive", async () => {
+    const one=camera("rear"), two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    one.track.dispatchEvent(new Event("ended"));
+    session.stop("Экран закрыт");
+    const result=await session.done;
+    expect(result.paired).toBe(false);
+    expect(result.message).toContain("Видеопоток потерян");
+    expect(result.message).not.toContain("Экран закрыт");
+  });
   it("preserves clips but reports interruption after actual camera track loss", async () => {
     const one=camera("rear"), two=camera("front");
     const session=startDualRecording(one.stream,two.stream,vi.fn());
