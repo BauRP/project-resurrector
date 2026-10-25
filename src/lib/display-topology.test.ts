@@ -92,6 +92,17 @@ describe("multi-hinge topology", () => {
       hingeCount: 0, usableRegions: 1, layout: "none",
     });
   });
+  it("keeps mixed four-pane fold geometry and layout identical when OEM reverses feature order", () => {
+    const vertical=hinge(590,610);
+    const horizontal={leftPx:0,rightPx:1200,topPx:440,bottomPx:460,
+      orientation:"HORIZONTAL",state:"HALF_OPENED",occlusion:"FULL",separating:true};
+    const first=calculateDisplayRegions(topology([vertical,horizontal]),600,450);
+    const swapped=calculateDisplayRegions(topology([horizontal,vertical]),600,450);
+    expect(first.regions).toEqual(swapped.regions);
+    expect(first.split).toBe(swapped.split);
+    expect(foldEventDetails(topology([vertical,horizontal]),600,450))
+      .toEqual(foldEventDetails(topology([horizontal,vertical]),600,450));
+  });
   it("splits multiple real hinge directions without inventing extra full-width panes", () => {
     const vertical = hinge(590, 610);
     const horizontal = {

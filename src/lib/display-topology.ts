@@ -51,6 +51,14 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
     f.rightPx >= f.leftPx && f.bottomPx >= f.topPx &&
     f.leftPx <= topology.widthPx && f.topPx <= topology.heightPx &&
     f.rightPx >= 0 && f.bottomPx >= 0);
+  // Processing order is NOT a physical posture: OEMs may enumerate the
+  // exact same perpendicular folds in either order on consecutive callbacks.
+  // Canonical geometry prevents fake transitions and unstable pane indices.
+  hinges.sort((a, b) =>
+    Number(!a.orientation.toUpperCase().includes("VERTICAL")) -
+      Number(!b.orientation.toUpperCase().includes("VERTICAL")) ||
+    a.leftPx - b.leftPx || a.topPx - b.topPx ||
+    a.rightPx - b.rightPx || a.bottomPx - b.bottomPx);
   for (const f of hinges) {
     const left = clamp(f.leftPx * sx, 0, cssWidth);
     const right = clamp(f.rightPx * sx, 0, cssWidth);
