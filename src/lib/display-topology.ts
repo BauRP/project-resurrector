@@ -39,6 +39,7 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   let regions: Region[] = [{ left: 0, top: 0, width: cssWidth, height: cssHeight }];
   let split: Split = "none";
   let occluded = false;
+  const usedHinges: FoldFeature[] = [];
   const hinges = topology.foldingFeatures.filter(f => f && typeof f === "object" && f.separating &&
     typeof f.orientation === "string" &&
     (f.orientation.toUpperCase().includes("VERTICAL") || f.orientation.toUpperCase().includes("HORIZONTAL")) &&
@@ -77,9 +78,12 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
         else next.push(region);
       } else next.push(region);
     }
+    if (next.length > regions.length) usedHinges.push(f);
     regions = next;
   }
-  return { regions, split, occluded, hinges };
+  // Report only features that actually split usable regions.
+  // A short/non-crossing hinge cannot be claimed as an active camera pane gap.
+  return { regions, split, occluded, hinges: usedHinges };
 }
 
 
