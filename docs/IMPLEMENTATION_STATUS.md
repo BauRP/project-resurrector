@@ -127,6 +127,11 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Added regression tests for changed WebView runtime, legacy rows lacking their own context, and re-verification of only one lens while another retains stale evidence.
 - This is trustworthy bookkeeping, **not** real hardware mode validation. Native Camera2 and physical-device acceptance still require their own verification.
 
+## Multi-hinge posture ordering — 25 October 2026
+- The diagnostic fold transition posture now derives from **usable, validated separating hinges** sorted by their actual native coordinates. An OEM callback that reverses the order of the same two hinges cannot fabricate a second fold event when their distinct posture states differ.
+- Regression tests cover two hinges in different states with reversed reported order, while preserving their physical geometry and original posture association.
+- The observer records geometry/posture only; uninterrupted capture through Android window or Activity recreation still requires physical-device validation.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
