@@ -173,7 +173,14 @@ export function startDisplayAdaptation(): () => void {
     root.style.setProperty("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
     root.style.setProperty("--camera-control-pane-left", Math.max(0, (controlPane?.left ?? width()) - cameraLeft) + "px");
     root.style.setProperty("--camera-control-pane-width", Math.max(0, controlPane?.width ?? 0) + "px");
-    const horizontal = geometry.split === "horizontal" && panes.length >= 2 &&
+    // A tablet-like tabletop layout requires two full-width, vertically
+    // stacked usable regions. Mixed perpendicular hinges create four panes
+    // and must never trigger this two-zone mode.
+    const stacked = panes.length === 2 &&
+      Math.abs(panes[0]!.left - panes[1]!.left) < 4 &&
+      Math.abs(panes[0]!.width - panes[1]!.width) < 4 &&
+      panes[0]!.top + panes[0]!.height <= panes[1]!.top + 4;
+    const horizontal = stacked && geometry.split === "horizontal" &&
       panes[0]!.height >= 170 && panes[1]!.height >= 170;
     root.dataset.cameraTabletop = horizontal ? "true" : "false";
     if (horizontal) {
