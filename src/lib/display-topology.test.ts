@@ -46,6 +46,15 @@ describe("multi-hinge topology", () => {
     const short = { ...hinge(590, 610), topPx: 120, bottomPx: 160 };
     expect(calculateDisplayRegions(topology([short]), 600, 450).regions).toHaveLength(1);
   });
+  it("normalizes multi-hinge posture order without inventing a new fold", () => {
+    const closed = {...hinge(390,410),state:"HALF_OPENED"};
+    const open = {...hinge(790,810),state:"FLAT"};
+    const before=foldEventDetails(topology([closed,open]),600,450);
+    const after=foldEventDetails(topology([open,closed]),600,450);
+    expect(before.posture).toBe("HALF_OPENED,FLAT");
+    expect(before.posture).toBe(after.posture);
+    expect(before.regionGeometry).toBe(after.regionGeometry);
+  });
   it("does not invent fold changes when the same two hinges arrive reordered", () => {
     const first=foldEventDetails(topology([hinge(390,410),hinge(790,810)]),600,450);
     const second=foldEventDetails(topology([hinge(790,810),hinge(390,410)]),600,450);
