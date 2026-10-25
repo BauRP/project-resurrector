@@ -94,7 +94,7 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     const result=await session.done;
     expect(result.savedIds).toHaveLength(2);
     expect(result.paired).toBe(false);
-    expect(result.message).toContain("кодировщика");
+    expect(result.message).toContain("видеокодировщик отказал");
   });
   it("retains bounded true fold events in saved clips without declaring continuity", async () => {
     const one=camera("rear"), two=camera("front");
