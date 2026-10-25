@@ -82,8 +82,22 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   return { regions, split, occluded, hinges };
 }
 
+
+/** Passive geometry evidence; a resize never proves uninterrupted recording. */
+export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHeight: number) {
+  const geometry = calculateDisplayRegions(state, cssWidth, cssHeight);
+  return {
+    revision: state.revision,
+    posture: state.foldingFeatures.map(f => f?.state).filter(x => typeof x === "string").join(",") || state.posture,
+    hingeCount: geometry.hinges.length,
+    usableRegions: geometry.regions.length,
+    layout: geometry.split,
+  };
+}
+
 export function startDisplayAdaptation(): () => void {
   let disposed = false, lastRevision = -1;
+  let lastFoldSignature = "";
   let listener: PluginListenerHandle | undefined;
   let lastNative: DisplayTopology | null = null;
   let refreshFrame = 0;
@@ -103,6 +117,15 @@ export function startDisplayAdaptation(): () => void {
     if (disposed) return;
     const geometry = calculateDisplayRegions(state, width(), height());
     if (!geometry.regions.length) return;
+    // A viewport resize can change the usable panes without a fresh native
+    // WindowManager revision. Persist real observed transitions during capture.
+    const details = foldEventDetails(state, width(), height());
+    const signature = [details.posture, details.hingeCount, details.usableRegions,
+      details.layout, state.revision].join("|");
+    if (signature !== lastFoldSignature) {
+      lastFoldSignature = signature;
+      window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));
+    }
     root.dataset.foldInfo = state.posture;
     root.dataset.foldCount = String(state.foldingFeatures.length);
     root.dataset.foldSplit = geometry.split;
@@ -159,14 +182,6 @@ export function startDisplayAdaptation(): () => void {
       state.widthPx <= 0 || state.heightPx <= 0 || !Array.isArray(state.foldingFeatures)) return;
     lastRevision = state.revision;
     lastNative = state;
-    window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: {
-      revision: state.revision,
-      posture: state.foldingFeatures.map(f => f.state).join(",") || state.posture,
-      hingeCount: state.foldingFeatures.length,
-      usableRegions: calculateDisplayRegions(state, width(), height()).regions.length,
-      layout: calculateDisplayRegions(state, width(), height()).split,
-    } }));
-    layout(state);
     measure();
   };
   window.addEventListener("resize", measure);
