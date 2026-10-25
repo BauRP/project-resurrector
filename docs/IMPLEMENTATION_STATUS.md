@@ -181,6 +181,11 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Added queue tests covering restart persistence, recorded-only status and no false verified count.
 - Native, physical camera support, actual codec sample FPS and stabilized output still require corresponding device-side evidence.
 
+## Fold geometry numeric safety — 26 October 2026
+- WebView now guards against non-finite native-to-CSS scale factors before using WindowManager hinge coordinates. Invalid/overflowed native dimensions produce a safe standard single-pane viewport with no fabricated active hinge rather than injecting invalid CSS transforms.
+- Added a regression test for an extreme malformed native width and an otherwise valid reported fold.
+- This is protective fallback, not evidence that particular untested foldable hardware supports all requested layouts.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
