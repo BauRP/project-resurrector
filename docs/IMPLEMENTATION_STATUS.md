@@ -41,6 +41,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Fold layouts with mixed vertical/horizontal dividing features avoid selecting unsupported side-by-side camera pane layouts. Geometry tests cover a four-region case with two genuine perpendicular hinges.
 - Fold resize tracking and dual-camera result truthfulness remain as documented previously. The new code is CI-validated, **not physically verified** for camera/folding transitions.
 
+## Verification and folding telemetry hardening — 25 October 2026
+- WebView mode diagnostics compare the **decoded recorded file dimensions** with the requested camera mode separately from MediaStreamTrack.getSettings(). A 4K stream which yields a 1080p decoded video is recorded as an incomplete mode proof, not verified 4K. The first decoded frame and encoded byte length are stored in per-camera evidence; this does not prove codec frame rate.
+- Diagnostic MIME selection does not require an audio codec on video-only test streams.
+- Disconnected WebView camera queue entries no longer displace active cameras when the bounded persistent queue is rebuilt.
+- Fold event capture rejects malformed timestamps and excessively long posture strings; this is metadata validation, not a claim of guaranteed continuity during physical folds.
+- Regression tests cover requested-versus-file dimensions, corrupt fold event telemetry, and disconnected device task eviction.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
