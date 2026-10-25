@@ -221,9 +221,14 @@ export function startDisplayAdaptation(): () => void {
   window.addEventListener("orientationchange", measure);
   window.visualViewport?.addEventListener("resize", measure);
   const content = document.querySelector(".app-scroll");
+  // Coalesce resize/mutation bursts without postponing measurements forever:
+  // continuous DOM mutations must not starve fold layout updates.
   const scheduleMeasure = () => {
-    if (refreshFrame) cancelAnimationFrame(refreshFrame);
-    refreshFrame = requestAnimationFrame(measure);
+    if (disposed || refreshFrame) return;
+    refreshFrame = requestAnimationFrame(() => {
+      refreshFrame = 0;
+      measure();
+    });
   };
   const geometryObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(scheduleMeasure) : null;
