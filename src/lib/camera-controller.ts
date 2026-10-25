@@ -60,7 +60,7 @@ class CameraController {
   /** Merge rapid slider commands, serialize device calls, never build a backlog. */
   apply(stream: MediaStream | null, constraints: Record<string, unknown>): Promise<boolean> {
     const track = stream?.getVideoTracks()[0];
-    if (stream !== this.stream || !track?.applyConstraints || track.readyState !== "live") return Promise.resolve(false);
+    if (!track?.applyConstraints || track.readyState !== "live") return Promise.resolve(false);
     const queue = this.queues.get(track) ?? {
       command: null, waiters: [], inFlightWaiters: [], draining: false, cancelled: false,
     };
