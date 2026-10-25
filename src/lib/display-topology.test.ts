@@ -114,6 +114,14 @@ describe("multi-hinge topology", () => {
     expect(result.regions.every(r => r.width > 0 && r.height > 0)).toBe(true);
     expect(result.occluded).toBe(true);
   });
+  it("falls back to a real single viewport for invalid extreme native pixel ratios", () => {
+    const state=topology([hinge(390,410)]);
+    state.widthPx=Number.MIN_VALUE;
+    const result=calculateDisplayRegions(state,600,450);
+    expect(result.regions).toEqual([{left:0,top:0,width:600,height:450}]);
+    expect(result.hinges).toHaveLength(0);
+    expect(result.split).toBe("none");
+  });
   it("rejects unknown hinge directions instead of silently treating them as horizontal", () => {
     const wrong = { ...hinge(590,610), orientation: "UNKNOWN" };
     expect(calculateDisplayRegions(topology([wrong]),600,450).regions).toHaveLength(1);
