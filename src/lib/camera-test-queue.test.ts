@@ -29,6 +29,12 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(resumed[0]?.status).toBe("retry");
     expect(resumed[0]?.attempts).toBe(1);
   });
+  it("keeps separately stored but unverified files out of the confirmed camera count", () => {
+    const unverified: ModeEvidence={...proof,state:"recorded"};
+    const planned=prepareCameraTestQueue(["rear"],[base],[],[unverified]);
+    expect(planned[0]?.status).toBe("pending");
+    expect(queueSummary(planned,["rear"]).verified).toBe(0);
+  });
   it("keeps a verified result even if another mode fails", () => {
     const start = prepareCameraTestQueue(["rear"],[base,{...base,fps:60}],[],[proof]);
     const next = updateCameraTestTask(start,cameraTaskKey("rear",{...base,fps:60}),"error","кодировщик отказал");
