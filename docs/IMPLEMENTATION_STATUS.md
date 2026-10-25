@@ -72,6 +72,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Fold evidence counts only hinges that actually divide a usable WebView window region. A manufacturer-reported short hinge segment that does not split the app window no longer claims an extra active pane. Existing two-hinge and mixed-orientation tests still run.
 - Physical phone testing remains outstanding for recording integrity after prolonged capture and folding/unfolding during active recording.
 
+## Single recorder stop timeout, fold-time touch focus, and bounded telemetry — 25 October 2026
+- Added a single-recorder finalization guard: when a stop callback does not arrive within 12 seconds, the recording is finalized once with a clear timeout error and an attempt to preserve emitted video chunks. A late callback cannot finalize the same video twice. This is best-effort salvage, not a guarantee that incomplete WebView container bytes decode.
+- Stop guard is invoked on user stop, actual video-track loss, WebView background transition and camera screen unmount. Encoder error also activates the guard. The existing persistent storage and decoded-frame verification remain separate stages.
+- Touch focus falls back to the centre instead of producing NaN or infinite coordinates when fold transitions temporarily leave a zero-sized or invalid preview viewport.
+- Android fold event metadata now rejects impossible high hinge/region counts. Camera settings reject expired stream references for the controller's current primary track.
+- Tests cover timeouts, duplicate finalization, invalid preview coordinates and invalid fold event metadata. These are code-level tests, not physical device guarantees.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
