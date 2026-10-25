@@ -222,11 +222,16 @@ export function startDisplayAdaptation(): () => void {
   if (shell) geometryObserver?.observe(shell);
   const camera = document.querySelector(".camera-screen");
   if (camera) geometryObserver?.observe(camera);
+  let observedCamera: Element | null = camera;
   const mutations = content && typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
-    // React replaces the camera/editor/settings inside an animated child.
-    // Track nested mounts and recalculate pane offsets without touching streams.
+    // Tabs remount their camera subtree. Stop observing the detached node:
+    // otherwise ResizeObserver can hold old React components indefinitely.
     const nextCamera = document.querySelector(".camera-screen");
-    if (nextCamera) geometryObserver?.observe(nextCamera);
+    if (nextCamera !== observedCamera) {
+      if (observedCamera) geometryObserver?.unobserve(observedCamera);
+      if (nextCamera) geometryObserver?.observe(nextCamera);
+      observedCamera = nextCamera;
+    }
     scheduleMeasure();
   }) : null;
   if (content) mutations?.observe(content, { childList: true, subtree: true });
@@ -244,6 +249,8 @@ export function startDisplayAdaptation(): () => void {
     window.removeEventListener("orientationchange", measure);
     window.visualViewport?.removeEventListener("resize", measure);
     mutations?.disconnect();
+    if (observedCamera) geometryObserver?.unobserve(observedCamera);
+    observedCamera = null;
     geometryObserver?.disconnect();
     cancelAnimationFrame(refreshFrame);
     void listener?.remove();
