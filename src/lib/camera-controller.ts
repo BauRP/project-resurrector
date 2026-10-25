@@ -61,6 +61,9 @@ class CameraController {
   private owner: symbol | null = null;
   private generation = 0;
   private queues = new Map<MediaStreamTrack, ConstraintQueue>();
+  // Tracks once owned by this controller are never eligible for commands
+  // after release/supersession. Independent dual-camera tracks are separate.
+  private controlledTracks = new WeakSet<MediaStreamTrack>();
   async acquire(owner: symbol, constraints: MediaStreamConstraints, options: { preempt?: boolean } = {}): Promise<MediaStream> {
     // User acquisition may supersede a diagnostic, but never the reverse.
     if (options.preempt === false && this.owner !== null && this.owner !== owner) throw new CameraBusyError();
@@ -74,6 +77,7 @@ class CameraController {
         throw new CameraSupersededError();
       }
       this.stream = stream;
+      stream.getVideoTracks().forEach(track => this.controlledTracks.add(track));
       return stream;
     } catch (error) {
       // Failed opens must not retain a stale lease or evict newer requests.
@@ -96,9 +100,9 @@ class CameraController {
   apply(stream: MediaStream | null, constraints: Record<string, unknown>): Promise<boolean> {
     const track = stream?.getVideoTracks()[0];
     if (!track?.applyConstraints || track.readyState !== "live") return Promise.resolve(false);
-    // A stale stream must not be reconfigured after a newer primary capture
-    // acquired the controller. Secondary dual-camera tracks remain independent.
-    if (this.owner !== null && stream !== this.stream && this.stream?.getVideoTracks()[0] === track)
+    // Old controller-owned tracks cannot be reconfigured once another
+    // capture supersedes them, even if an OEM still reports "live".
+    if (this.controlledTracks.has(track) && stream !== this.stream)
       return Promise.resolve(false);
     const queue = this.queues.get(track) ?? {
       command: null, waiters: [], inFlightWaiters: [], draining: false, cancelled: false,

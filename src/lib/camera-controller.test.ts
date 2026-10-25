@@ -72,6 +72,19 @@ describe("camera ownership and serialized settings", () => {
       .resolves.toBe(next.stream);
   });
 
+  it("rejects settings sent to an old controller-owned stream after capture handoff", async () => {
+    const old=camera(), next=camera();
+    const request=vi.fn().mockResolvedValueOnce(old.stream).mockResolvedValueOnce(next.stream);
+    vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:request}});
+    const a=Symbol("A"),b=Symbol("B");
+    await cameraController.acquire(a,{video:true});
+    await cameraController.acquire(b,{video:true});
+    // Even if an OEM reports an already superseded track as live, this track
+    // cannot receive old zoom/focus commands.
+    old.track.readyState="live";
+    await expect(cameraController.apply(old.stream,{zoom:4})).resolves.toBe(false);
+    expect(old.track.applyConstraints).not.toHaveBeenCalled();
+  });
   it("coalesces rapid settings without concurrent hardware commands", async () => {
     vi.useFakeTimers();
     const cam = camera();
