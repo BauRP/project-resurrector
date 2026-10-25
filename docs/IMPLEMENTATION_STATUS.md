@@ -108,6 +108,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Multi-hinge layout evidence is normalized by sorted measured pane positions. Reordering identical native hinge features no longer creates fictitious topology changes. UI fold counts now reflect features actually dividing usable regions, not invalid/out-of-window raw events.
 - These are unit/build-verified mechanisms, not physical proof of uninterrupted camera recording during Activity recreation, device folding, thermal load or extended dual-camera sessions.
 
+## Capture integrity, asynchronous UI status and multi-hinge layout — 25 October 2026
+- A dual WebView recording captures the two distinct device IDs in one initial validation; an OEM driver that later refuses `getSettings()` cannot interrupt the metadata save path.
+- MediaRecorder chunks that were emitted despite a missing `onstart` event are preserved as potentially incomplete video data. They never establish a confirmed paired recording; full decoding of persisted media is still checked separately.
+- Single-camera stored-file verification and subsequent approximate displayed-FPS reporting are scoped by a recording-session generation. Results from a previous recording cannot overwrite messages from a newer recording.
+- Unsupported four-region crossing-hinge topologies no longer accidentally select the two- or three-pane camera layout. Existing layout keeps a safe fallback instead of inventing a four-zone user interface.
+- Mock-driven tests check salvage when `onstart` is missing. Physical long-duration recording, full-file frame integrity and transitions through Android Activity recreation remain unverified.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
