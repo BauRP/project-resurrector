@@ -36,6 +36,12 @@ describe("multi-hinge topology", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);
     expect(result.regions).toHaveLength(3);
   });
+  it("does not count non-separating short hinge segments as usable pane dividers", () => {
+    const short={...hinge(590,610),topPx:100,bottomPx:180};
+    const result=calculateDisplayRegions(topology([short]),600,450);
+    expect(result.hinges).toHaveLength(0);
+    expect(foldEventDetails(topology([short]),600,450).hingeCount).toBe(0);
+  });
   it("ignores hinge segments that do not traverse the usable window", () => {
     const short = { ...hinge(590, 610), topPx: 120, bottomPx: 160 };
     expect(calculateDisplayRegions(topology([short]), 600, 450).regions).toHaveLength(1);
