@@ -34,6 +34,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Added tests for dual recording result semantics, real two-hinge geometry reporting, and standard one-pane geometry.
 - Physical fold/unfold while recording, Activity recreation, exact camera clock alignment and complete frame integrity remain unverified and require on-device checks.
 
+
+## Camera and folding reliability — 25 October 2026 (next batch)
+- Real single-camera MediaRecorder error handling now attempts to salvage nontrivial encoded chunks into IndexedDB instead of dropping the file on any encoder error. An interrupted/error session retains an error state and explanatory message even if its clip is saved; empty and tiny files are rejected.
+- Camera passport writes ignore older asynchronous observations for the exact same camera/API/resolution/FPS; this prevents delayed tests overriding newer results. Regression tests cover this.
+- Fold layouts with mixed vertical/horizontal dividing features avoid selecting unsupported side-by-side camera pane layouts. Geometry tests cover a four-region case with two genuine perpendicular hinges.
+- Fold resize tracking and dual-camera result truthfulness remain as documented previously. The new code is CI-validated, **not physically verified** for camera/folding transitions.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
