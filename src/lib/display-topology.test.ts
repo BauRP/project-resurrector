@@ -64,6 +64,17 @@ describe("multi-hinge topology", () => {
       hingeCount: 0, usableRegions: 1, layout: "none",
     });
   });
+  it("splits multiple real hinge directions without inventing extra full-width panes", () => {
+    const vertical = hinge(590, 610);
+    const horizontal = {
+      leftPx: 0, rightPx: 1200, topPx: 440, bottomPx: 460,
+      orientation: "HORIZONTAL", state: "HALF_OPENED", occlusion: "FULL", separating: true,
+    };
+    const result = calculateDisplayRegions(topology([vertical, horizontal]), 600, 450);
+    expect(result.regions).toHaveLength(4);
+    expect(result.regions.every(r => r.width > 0 && r.height > 0)).toBe(true);
+    expect(result.occluded).toBe(true);
+  });
   it("rejects unknown hinge directions instead of silently treating them as horizontal", () => {
     const wrong = { ...hinge(590,610), orientation: "UNKNOWN" };
     expect(calculateDisplayRegions(topology([wrong]),600,450).regions).toHaveLength(1);
