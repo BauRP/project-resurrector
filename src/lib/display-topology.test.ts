@@ -46,6 +46,12 @@ describe("multi-hinge topology", () => {
     const short = { ...hinge(590, 610), topPx: 120, bottomPx: 160 };
     expect(calculateDisplayRegions(topology([short]), 600, 450).regions).toHaveLength(1);
   });
+  it("does not invent fold changes when the same two hinges arrive reordered", () => {
+    const first=foldEventDetails(topology([hinge(390,410),hinge(790,810)]),600,450);
+    const second=foldEventDetails(topology([hinge(790,810),hinge(390,410)]),600,450);
+    expect(first.regionGeometry).toBe(second.regionGeometry);
+    expect(first.hingeCount).toBe(second.hingeCount);
+  });
   it("handles three pane regions even when Android reports hinges in reverse order", () => {
     const state = topology([hinge(790,810), hinge(390,410)]);
     const regions = calculateDisplayRegions(state, 600, 450).regions.sort((a,b)=>a.left-b.left);
