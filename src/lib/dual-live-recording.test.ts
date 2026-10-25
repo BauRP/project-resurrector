@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { independentStreamsReady } from "./dual-live-recording";
+import { independentStreamsReady, isCleanDualRecording } from "./dual-live-recording";
 const track = (id: string, state: "live"|"ended"="live") =>
   ({readyState:state, getSettings:()=>({deviceId:id})}) as unknown as MediaStreamTrack;
 const stream = (t: MediaStreamTrack) =>
@@ -14,5 +14,19 @@ describe("dual live capture readiness", () => {
   it("requires two different live WebView device IDs", () => {
     expect(independentStreamsReady(stream(track("main")),stream(track("front")))).toBe(true);
     expect(independentStreamsReady(stream(track("")),stream(track("front")))).toBe(false);
+  });
+});
+
+describe("honest two-encoder result status", () => {
+  const good = { playable: 2, startedConfirmed: true, failures: 0, endedUnexpectedly: false, stopReason: "" };
+  it("only accepts two decoded clips and two actual encoder start events", () => {
+    expect(isCleanDualRecording(good)).toBe(true);
+    expect(isCleanDualRecording({ ...good, playable: 1 })).toBe(false);
+    expect(isCleanDualRecording({ ...good, startedConfirmed: false })).toBe(false);
+  });
+  it("flags background interruption, encoder failures and unexpected stream ends", () => {
+    expect(isCleanDualRecording({ ...good, stopReason: "background" })).toBe(false);
+    expect(isCleanDualRecording({ ...good, failures: 1 })).toBe(false);
+    expect(isCleanDualRecording({ ...good, endedUnexpectedly: true })).toBe(false);
   });
 });
