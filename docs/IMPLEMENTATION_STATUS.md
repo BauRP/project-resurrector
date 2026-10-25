@@ -144,6 +144,11 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Independently created second-camera tracks are not blocked merely because the primary controller has an owner.
 - Added a simulated user capture handoff test for a stale camera setting request; this does not prove correct behavior on a particular OEM driver.
 
+## Selected camera identity verification — 26 October 2026
+- Per-lens WebView mode tests require the applied `MediaStreamTrack.getSettings().deviceId` to match the exact requested device ID. Previously an absent ID could be mistaken for a successfully tested selected lens merely because its dimensions and frame rate matched.
+- If an OEM browser hides the active device ID, mode verification now remains unknown for that lens, not falsely verified; a mismatched ID is also unknown rather than evidence that the requested lens is unsupported.
+- Regression tests cover matching, mismatched and missing identifiers. This is WebView API-level confirmation; physical camera lens identity and real sensor routing still need device-specific verification.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
