@@ -33,7 +33,11 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   let regions: Region[] = [{ left: 0, top: 0, width: cssWidth, height: cssHeight }];
   let split: Split = "none";
   let occluded = false;
-  const hinges = topology.foldingFeatures.filter(f => f.separating);
+  const hinges = topology.foldingFeatures.filter(f => f.separating &&
+    [f.leftPx, f.rightPx, f.topPx, f.bottomPx].every(Number.isFinite) &&
+    f.rightPx >= f.leftPx && f.bottomPx >= f.topPx &&
+    f.leftPx <= topology.widthPx && f.topPx <= topology.heightPx &&
+    f.rightPx >= 0 && f.bottomPx >= 0);
   for (const f of hinges) {
     const left = clamp(f.leftPx * sx, 0, cssWidth);
     const right = clamp(f.rightPx * sx, 0, cssWidth);
@@ -111,7 +115,7 @@ export function startDisplayAdaptation(): () => void {
     root.dataset.foldWorkspace = safeWorkspace ? "pane" : "normal";
     root.style.setProperty("--fold-work-left", (workspace?.left ?? 0) + "px");
     root.style.setProperty("--fold-work-width", (workspace?.width ?? shellWidth) + "px");
-    const panes = geometry.regions.sort((a,b) => a.left - b.left || a.top - b.top);
+    const panes = [...geometry.regions].sort((a,b) => a.left - b.left || a.top - b.top);
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     const eligible = panes.length >= 2 && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
       panes[0]!.height >= 260 && geometry.split === "vertical";
@@ -140,7 +144,9 @@ export function startDisplayAdaptation(): () => void {
     }
   };
   const apply = (state: DisplayTopology) => {
-    if (disposed || state.revision < lastRevision) return;
+    if (disposed || state.revision < lastRevision ||
+      !Number.isFinite(state.widthPx) || !Number.isFinite(state.heightPx) ||
+      state.widthPx <= 0 || state.heightPx <= 0 || !Array.isArray(state.foldingFeatures)) return;
     lastRevision = state.revision;
     lastNative = state;
     window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: {
