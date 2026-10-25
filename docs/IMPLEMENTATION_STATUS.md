@@ -27,6 +27,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 
 **Remaining limitations:** These are code and CI-level improvements, not measured physical-device compatibility. Persisted video first-frame decoding does not establish complete file integrity or synchronized camera timestamps. Folding and camera behavior during device/Activity transitions must still be tested on actual foldables. Neither specification is at 100%.
 
+
+## Safety hardening — 25 October 2026, additional batch
+- Adaptation now tracks actually measured usable pane regions when the WebView viewport resizes even without a new Android WindowManager revision. The emitted fold event reports validated separating hinges and is deduplicated; it does not restart the encoder or prove uninterrupted capture.
+- Dual camera capture does not label interrupted, early-stopped, or failed sessions as successfully paired even when some saved clips decode. A paired success is a recording-availability statement, **not** an exact hardware synchronization guarantee.
+- Added tests for dual recording result semantics, real two-hinge geometry reporting, and standard one-pane geometry.
+- Physical fold/unfold while recording, Activity recreation, exact camera clock alignment and complete frame integrity remain unverified and require on-device checks.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
