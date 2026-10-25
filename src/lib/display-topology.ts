@@ -28,12 +28,21 @@ const clamp = (value: number, low: number, high: number) => Math.min(high, Math.
  * Ignore unsupported/outside-window hinge geometries instead of inventing a posture.
  */
 export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: number, cssHeight: number): { regions: Region[]; split: Split; occluded: boolean; hinges: FoldFeature[] } {
-  const sx = cssWidth / Math.max(1, topology.widthPx);
+  if (!Number.isFinite(cssWidth) || !Number.isFinite(cssHeight) ||
+      cssWidth <= 0 || cssHeight <= 0 || !Number.isFinite(topology.widthPx) ||
+      !Number.isFinite(topology.heightPx) || topology.widthPx <= 0 ||
+      topology.heightPx <= 0 || !Array.isArray(topology.foldingFeatures)) {
+    return { regions: [], split: "none", occluded: false, hinges: [] };
+  }
+  const sx = cssWidth / topology.widthPx;
   const sy = cssHeight / Math.max(1, topology.heightPx);
   let regions: Region[] = [{ left: 0, top: 0, width: cssWidth, height: cssHeight }];
   let split: Split = "none";
   let occluded = false;
-  const hinges = topology.foldingFeatures.filter(f => f.separating &&
+  const hinges = topology.foldingFeatures.filter(f => f && typeof f === "object" && f.separating &&
+    typeof f.orientation === "string" &&
+    (f.orientation.toUpperCase().includes("VERTICAL") || f.orientation.toUpperCase().includes("HORIZONTAL")) &&
+    typeof f.occlusion === "string" &&
     [f.leftPx, f.rightPx, f.topPx, f.bottomPx].every(Number.isFinite) &&
     f.rightPx >= f.leftPx && f.bottomPx >= f.topPx &&
     f.leftPx <= topology.widthPx && f.topPx <= topology.heightPx &&
@@ -93,6 +102,7 @@ export function startDisplayAdaptation(): () => void {
   const layout = (state: DisplayTopology) => {
     if (disposed) return;
     const geometry = calculateDisplayRegions(state, width(), height());
+    if (!geometry.regions.length) return;
     root.dataset.foldInfo = state.posture;
     root.dataset.foldCount = String(state.foldingFeatures.length);
     root.dataset.foldSplit = geometry.split;
