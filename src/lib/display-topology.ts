@@ -92,7 +92,12 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
   const geometry = calculateDisplayRegions(state, cssWidth, cssHeight);
   return {
     revision: state.revision,
-    posture: state.foldingFeatures.map(f => f?.state).filter(x => typeof x === "string").join(",") || state.posture,
+    // WindowManager may report identical physical hinges in a different
+    // array order. A reordered callback is not a new physical posture.
+    posture: [...geometry.hinges]
+      .sort((a,b) => a.leftPx - b.leftPx || a.topPx - b.topPx ||
+        a.rightPx - b.rightPx || a.bottomPx - b.bottomPx)
+      .map(f => f.state).filter(x => typeof x === "string").join(",") || state.posture,
     hingeCount: geometry.hinges.length,
     usableRegions: geometry.regions.length,
     layout: geometry.split,
