@@ -67,6 +67,19 @@ export function persistedClipMatches(expected: Pick<RecordedClip, "id" | "blob">
 /** Bounded low-memory comparison of beginning, middle and end of persisted blobs.
  * Checks sampled bytes, NOT every frame, codec integrity or a full-file hash.
  */
+/** Read only small slices; old WebViews and jsdom may omit Blob.arrayBuffer. */
+function readBlobSample(blob: Blob): Promise<ArrayBuffer> {
+  if (typeof blob.arrayBuffer === "function") return blob.arrayBuffer();
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (reader.result instanceof ArrayBuffer) resolve(reader.result);
+      else reject(new Error("Невозможно прочитать образец видео"));
+    };
+    reader.onerror = () => reject(reader.error ?? new Error("Ошибка чтения образца видео"));
+    reader.readAsArrayBuffer(blob);
+  });
+}
 export async function sampledClipBytesMatch(original: Blob, stored: Blob): Promise<boolean> {
   if (original.size !== stored.size || original.type !== stored.type) return false;
   const span = 1024;
@@ -74,8 +87,8 @@ export async function sampledClipBytesMatch(original: Blob, stored: Blob): Promi
     Math.max(0, original.size - span)])];
   for (const at of positions) {
     const [left, right] = await Promise.all([
-      original.slice(at, at + span).arrayBuffer(),
-      stored.slice(at, at + span).arrayBuffer(),
+      readBlobSample(original.slice(at, at + span)),
+      readBlobSample(stored.slice(at, at + span)),
     ]);
     const a = new Uint8Array(left), b = new Uint8Array(right);
     if (a.length !== b.length) return false;
