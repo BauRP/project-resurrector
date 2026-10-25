@@ -69,3 +69,30 @@ describe("WebView diagnostic engine freshness", () => {
     expect(history.find(x=>x.cameraId==="front")?.state).toBe("verified");
   });
 });
+
+describe("per-camera WebView evidence context isolation", () => {
+  it("never re-verifies historic lenses just because another lens was freshly tested", () => {
+    recordModeEvidence({ ...evidence, cameraId: "rear", checkedAt: 500 });
+    const key = "multicam-mode-evidence-context-v1";
+    localStorage.setItem(key, "older-browser");
+    recordModeEvidence({ ...evidence, cameraId: "front", checkedAt: 600 });
+    const records = loadModeEvidence();
+    expect(records.find(x => x.cameraId === "rear")?.state).toBe("unknown");
+    expect(records.find(x => x.cameraId === "front")?.state).toBe("verified");
+  });
+  it("re-verifies a single old lens without promoting other old lenses", () => {
+    recordModeEvidence({ ...evidence, cameraId: "rear" });
+    recordModeEvidence({ ...evidence, cameraId: "telephoto" });
+    localStorage.setItem("multicam-mode-evidence-context-v1", "previous-engine");
+    recordModeEvidence({ ...evidence, cameraId: "rear", checkedAt: 999 });
+    expect(loadModeEvidence().find(x => x.cameraId === "rear")?.state).toBe("verified");
+    expect(loadModeEvidence().find(x => x.cameraId === "telephoto")?.state).toBe("unknown");
+  });
+  it("does not mistake legacy rows without individual context for verified checks", () => {
+    localStorage.setItem(KEY, JSON.stringify([evidence]));
+    localStorage.setItem("multicam-mode-evidence-context-v1", cameraPassportContext());
+    expect(loadModeEvidence()[0]?.state).toBe("unknown");
+    recordModeEvidence({ ...evidence, cameraId: "front" });
+    expect(loadModeEvidence().find(x => x.cameraId === "rear")?.state).toBe("unknown");
+  });
+});

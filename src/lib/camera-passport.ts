@@ -9,6 +9,8 @@ export interface ModeEvidence {
   state: VerificationState;
   message?: string;
   checkedAt: number;
+  /** Diagnostic engine and WebView identity for THIS individual sample. */
+  context?: string;
 }
 const KEY = "multicam-mode-evidence-v1";
 // A verified old session is not proof after a WebView or diagnostic engine change.
@@ -34,6 +36,7 @@ export function isModeEvidence(value: unknown): value is ModeEvidence {
     (e.applied === undefined || (e.applied !== null && typeof e.applied === "object" &&
       Object.values(e.applied).every(x => x === undefined || (typeof x === "number" && Number.isFinite(x) && x > 0)))) &&
     (e.message === undefined || typeof e.message === "string") &&
+    (e.context === undefined || (typeof e.context === "string" && e.context.length > 0 && e.context.length < 2048)) &&
     (e.file === undefined || (!!e.file &&
       Number.isSafeInteger(e.file.width) && e.file.width > 0 &&
       Number.isSafeInteger(e.file.height) && e.file.height > 0 &&
@@ -43,33 +46,55 @@ export function isModeEvidence(value: unknown): value is ModeEvidence {
 const identity = (row: ModeEvidence) =>
   [row.api, row.cameraId, row.requested.width, row.requested.height, row.requested.fps].join("|");
 /** Previously stored data may be malformed after a partial write or app upgrade. */
-export function loadModeEvidence(): ModeEvidence[] {
+/** Keep the original measured evidence. An old browser result remains visible,
+ * but cannot authorize the current version to skip a camera verification.
+ */
+function readStoredModeEvidence(): ModeEvidence[] {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return [];
     const value: unknown = JSON.parse(raw);
-    const rows: ModeEvidence[] = Array.isArray(value) ? value.filter(isModeEvidence).slice(-200) : [];
-    const previousContext = localStorage.getItem(CONTEXT_KEY);
-    if (previousContext === cameraPassportContext()) return rows;
-    // Keep the old requested/applied/file evidence for the user, but do not
-    // reuse its "verified" flag to skip tests on a changed runtime.
-    return rows.map(row => ({
-      ...row, state: "unknown" as const,
-      message: "Требуется повторная проверка после изменения WebView/механизма. " + (row.message ?? ""),
-    }));
+    return Array.isArray(value) ? value.filter(isModeEvidence).slice(-200) : [];
+  } catch { return []; }
+}
+export function loadModeEvidence(): ModeEvidence[] {
+  try {
+    const context = cameraPassportContext();
+    const marker = localStorage.getItem(CONTEXT_KEY);
+    return readStoredModeEvidence().map(row => {
+      if (marker === context && row.context === context) return row;
+      return {
+        ...row,
+        state: "unknown" as const,
+        message: "Требуется повторная проверка после изменения WebView/механизма. " + (row.message ?? ""),
+      };
+    });
   } catch { return []; }
 }
 export function recordModeEvidence(evidence: ModeEvidence): void {
   if (!isModeEvidence(evidence)) return;
   try {
-    const stored = loadModeEvidence();
-    const previous = stored.filter(row => identity(row) !== identity(evidence));
-    // An interrupted probe or older timestamp must never overwrite a recent
-    // decoded sample, especially if an old async callback arrives late.
-    const current = stored.find(row => identity(row) === identity(evidence));
-    if (current && current.checkedAt > evidence.checkedAt) return;
-    if (current?.state === "verified" && evidence.state === "unknown") return;
-    localStorage.setItem(KEY, JSON.stringify([...previous.slice(-199), evidence]));
-    localStorage.setItem(CONTEXT_KEY, cameraPassportContext());
-  } catch { /* Local storage unavailable: never claim a durable passport. */ }
+    const context = cameraPassportContext();
+    const marker = localStorage.getItem(CONTEXT_KEY);
+    // Do not materialize loadModeEvidence() here: its 'unknown' status is a
+    // temporary view. Preserve historic results and their original context.
+    // When an old global marker changes, all older rows belong to that
+    // previous environment, including rows previously stamped with current.
+    const stored = readStoredModeEvidence().map(row => {
+      if (marker !== context && row.context === context) {
+        return { ...row, context: marker || "legacy" };
+      }
+      return row;
+    });
+    const key = identity(evidence);
+    const current = stored.find(row => identity(row) === key);
+    // A fresh verification in the new environment always supersedes stale
+    // older-context evidence, regardless of unrelated wall-clock timestamps.
+    if (current?.context === context && current.checkedAt > evidence.checkedAt) return;
+    if (current?.context === context && current.state === "verified" && evidence.state === "unknown") return;
+    const prior = stored.filter(row => identity(row) !== key);
+    const next: ModeEvidence = { ...evidence, context };
+    localStorage.setItem(KEY, JSON.stringify([...prior.slice(-199), next]));
+    localStorage.setItem(CONTEXT_KEY, context);
+  } catch { /* A failed localStorage write never fabricates a valid passport. */ }
 }
