@@ -191,10 +191,14 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
 /* ---------- Manual focus rail ---------- */
 export function FocusRail({ stream }: { stream: MediaStream | null }) {
   const capture = useMulticamStore((s) => s.capture); const set = useMulticamStore((s) => s.set); const caps = trackCaps(stream); const range = capRange(caps, "focusDistance");
-  if (!range) return null;
-  const [min, max, step] = range; const v = capture.focus;
   const commandGeneration = useRef(0);
   const [requestStatus, setRequestStatus] = useState("");
+  useEffect(() => {
+    commandGeneration.current++;
+    setRequestStatus("");
+  }, [stream]);
+  if (!range) return null;
+  const [min, max, step] = range; const v = capture.focus;
   const request = (fields: Record<string, unknown>, key: string, expected: string | number, done: () => void) => {
     const current = ++commandGeneration.current;
     setRequestStatus("Применяется…");
@@ -209,11 +213,11 @@ export function FocusRail({ stream }: { stream: MediaStream | null }) {
   return <div className="glass-panel flex flex-wrap items-center gap-2 rounded-full px-3 py-1.5 text-[10px]">
     <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`}
       onClick={() => request({ focusMode: "continuous" }, "focusMode", "continuous",
-        () => set({ capture: { ...useMulticamStore.getState().capture, focus: null } }))}>AF</button>
+        () => set({ capture: { ...capture, focus: null } }))}>AF</button>
     <span className="shrink-0 text-muted-foreground">Близко</span>
     <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step}
       onValueChange={([x = min]) => request({ focusMode: "manual", focusDistance: x }, "focusDistance", x,
-        () => set({ capture: { ...useMulticamStore.getState().capture, focus: x } }))} />
+        () => set({ capture: { ...capture, focus: x } }))} />
     <span className="shrink-0 text-muted-foreground">Далеко</span>
     <span className="w-10 shrink-0 text-end font-mono">{v === null ? "Авто" : v.toFixed(2)}</span>
     {requestStatus && <span role="status" className="basis-full text-warning">{requestStatus}</span>}
