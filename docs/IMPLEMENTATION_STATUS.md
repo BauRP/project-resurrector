@@ -94,6 +94,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Added regression tests for mode classification, camera-setting readback, and same-revision fold geometry changes.
 - Limitations: driver-exposed settings are not independent optical verification; video codec FPS, frame-perfect multi-camera sync, physical folding continuity and all-device compatibility still require native/device-level testing.
 
+## Capture-start timeout reliability — 25 October 2026
+- Fixed a critical defect in independent two-camera recording: the 8-second *startup* timeout remained armed even after both MediaRecorders confirmed onstart, stopping healthy recordings after eight seconds. It is now cleared when both truly start and never armed if synchronous starts already completed.
+- Added simulated >20-second dual recording regression and a missing-second-onstart failure case. The latter stops and reports partial startup instead of claiming synchronized recording.
+- Added an independent 8-second single-camera onstart watchdog. If MediaRecorder never confirms startup, it reports an error and safely requests stop/finalization with existing 12-second fallback. Late onstart callbacks after explicit stop, backgrounding, lost camera or unmount cannot revive a stopped recording.
+- Regression tests verify no premature timeout, honest failure classification, one-time watchdog timeout and cancellation after a confirmed start. They use simulated WebView encoders; uninterrupted real-device camera capture still requires field validation.
+- Folding/resizing tests remain in place and no MediaRecorder is recreated merely because the CSS panes change.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
