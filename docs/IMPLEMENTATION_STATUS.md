@@ -115,6 +115,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Unsupported four-region crossing-hinge topologies no longer accidentally select the two- or three-pane camera layout. Existing layout keeps a safe fallback instead of inventing a four-zone user interface.
 - Mock-driven tests check salvage when `onstart` is missing. Physical long-duration recording, full-file frame integrity and transitions through Android Activity recreation remain unverified.
 
+## Add-only durable recording and fold observer shutdown — 25 October 2026
+- IndexedDB clip groups now use atomic add-only writes instead of upsert/put. Duplicate clip IDs must abort the group and must not replace an existing user video. A specific duplicate-ID failure message is returned rather than silently overwriting a clip.
+- Added regression tests for collisions within a new group (rejected before opening storage) and collisions with a previously stored clip (verifies add-only writes and abort handling).
+- An Android WindowManager fold observer can finish starting after its React owner unmounts. The async bridge now checks disposal after startObserving() resolves and requests stopObserving() again, preventing an orphaned native subscription.
+- Limitations: add-only persistence prevents accidental overwrites, but hardware failures or IndexedDB corruption may still lose storage; compatibility during actual fold/unfold Activity recreation remains unverified. Unit tests/CI do not substitute physical-device testing.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
