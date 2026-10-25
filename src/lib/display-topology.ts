@@ -17,6 +17,9 @@ interface NativeBridge {
   addListener(eventName: "topologyChanged", listener: (info: DisplayTopology) => void): Promise<PluginListenerHandle>;
 }
 const NativeDisplay = registerPlugin<NativeBridge>("DisplayTopology");
+// DOM fold layout properties belong to the newest mounted adaptation only.
+// Old React teardown must not clear a newer screen's measured pane styles.
+let activeAdaptation: symbol | null = null;
 type Split = "vertical" | "horizontal" | "none";
 type Region = { left: number; top: number; width: number; height: number };
 export function windowClass(width: number) {
@@ -111,6 +114,8 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
 }
 
 export function startDisplayAdaptation(): () => void {
+  const token = Symbol("display-adaptation");
+  activeAdaptation = token;
   let disposed = false, lastRevision = -1;
   // Independent native leases prevent a slow old tab cleanup from stopping
   // the new tab's WindowManager observer.
@@ -123,7 +128,7 @@ export function startDisplayAdaptation(): () => void {
   const width = () => window.innerWidth;
   const height = () => window.innerHeight;
   const measure = () => {
-    if (disposed) return;
+    if (disposed || activeAdaptation !== token) return;
     root.dataset.windowClass = windowClass(width());
     root.dataset.windowHeight = height() < 480 ? "short" : "regular";
     root.style.setProperty("--app-viewport-height", height() + "px");
@@ -132,7 +137,7 @@ export function startDisplayAdaptation(): () => void {
     if (lastNative) layout(lastNative);
   };
   const layout = (state: DisplayTopology) => {
-    if (disposed) return;
+    if (disposed || activeAdaptation !== token) return;
     const geometry = calculateDisplayRegions(state, width(), height());
     if (!geometry.regions.length) return;
     // A viewport resize can change the usable panes without a fresh native
@@ -212,7 +217,7 @@ export function startDisplayAdaptation(): () => void {
     }
   };
   const apply = (state: DisplayTopology) => {
-    if (disposed || !Number.isSafeInteger(state.revision) || state.revision < 0 ||
+    if (disposed || activeAdaptation !== token || !Number.isSafeInteger(state.revision) || state.revision < 0 ||
       state.revision < lastRevision ||
       !Number.isFinite(state.widthPx) || !Number.isFinite(state.heightPx) ||
       state.widthPx <= 0 || state.heightPx <= 0 || !Array.isArray(state.foldingFeatures)) return;
@@ -227,7 +232,7 @@ export function startDisplayAdaptation(): () => void {
   // Coalesce resize/mutation bursts without postponing measurements forever:
   // continuous DOM mutations must not starve fold layout updates.
   const scheduleMeasure = () => {
-    if (disposed || refreshFrame) return;
+    if (disposed || activeAdaptation !== token || refreshFrame) return;
     refreshFrame = requestAnimationFrame(() => {
       refreshFrame = 0;
       measure();
@@ -280,7 +285,10 @@ export function startDisplayAdaptation(): () => void {
     cancelAnimationFrame(refreshFrame);
     void listener?.remove();
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving({ ownerId }).catch(() => {});
-    ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-    ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
+    if (activeAdaptation === token) {
+      activeAdaptation = null;
+      ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
+      ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
+    }
   };
 }

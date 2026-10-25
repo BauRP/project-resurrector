@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, foldEventDetails, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, foldEventDetails, startDisplayAdaptation, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -120,4 +120,22 @@ describe("multi-hinge topology", () => {
     expect(calculateDisplayRegions(topology(invalid), 600, 450).regions).toHaveLength(1);
   });
 
+});
+
+describe("layout owner handoff during rapid tab remount", () => {
+  it("does not let a former screen remove the active screen's viewport styles", () => {
+    const first = startDisplayAdaptation();
+    const second = startDisplayAdaptation();
+    try {
+      expect(document.documentElement.dataset.windowClass).toBeDefined();
+      expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).not.toBe("");
+      first();
+      expect(document.documentElement.dataset.windowClass).toBeDefined();
+      expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).not.toBe("");
+    } finally {
+      second();
+    }
+    expect(document.documentElement.dataset.windowClass).toBeUndefined();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("");
+  });
 });
