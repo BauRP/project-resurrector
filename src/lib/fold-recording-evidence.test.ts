@@ -24,3 +24,14 @@ describe("fold events attached to capture", () => {
     expect(foldContinuitySummary([])).toContain("не подтверждена");
   });
 });
+
+describe("geometry changes during actual fold recording", () => {
+  it("retains a resize with an unchanged native revision but changed region dimensions", () => {
+    const a=normalizeFoldTransition({revision:2,posture:"FLAT",hingeCount:1,
+      usableRegions:2,layout:"vertical",regionGeometry:"0,0,250,400;255,0,250,400"},100)!;
+    const b=normalizeFoldTransition({...a,regionGeometry:"0,0,280,400;285,0,280,400"},101)!;
+    expect(appendFoldTransition([a],b)).toHaveLength(2);
+    expect(appendFoldTransition([a],a)).toHaveLength(1);
+    expect(normalizeFoldTransition({...a,regionGeometry:"x".repeat(600)},100)).toBe(null);
+  });
+});

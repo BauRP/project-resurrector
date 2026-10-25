@@ -96,6 +96,9 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
     hingeCount: geometry.hinges.length,
     usableRegions: geometry.regions.length,
     layout: geometry.split,
+    // Native revisions may not change when only the WebView viewport changes.
+    regionGeometry: geometry.regions.map(r => [r.left,r.top,r.width,r.height]
+      .map(n => Math.round(n)).join(",")).join(";").slice(0,512),
   };
 }
 
@@ -125,7 +128,7 @@ export function startDisplayAdaptation(): () => void {
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());
     const signature = [details.posture, details.hingeCount, details.usableRegions,
-      details.layout, state.revision].join("|");
+      details.layout, details.regionGeometry, state.revision].join("|");
     if (signature !== lastFoldSignature) {
       lastFoldSignature = signature;
       window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));

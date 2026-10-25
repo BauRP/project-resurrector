@@ -61,6 +61,13 @@ describe("multi-hinge topology", () => {
     expect(result.occluded).toBe(false);
     expect(result.regions).toHaveLength(2);
   });
+  it("distinguishes the same fold with resized usable panes", () => {
+    const fold=topology([hinge(590,610)]);
+    const before=foldEventDetails(fold,600,450);
+    const after=foldEventDetails(fold,800,450);
+    expect(before.hingeCount).toBe(after.hingeCount);
+    expect(before.regionGeometry).not.toBe(after.regionGeometry);
+  });
   it("reports only real usable hinge regions, not physical panel model names", () => {
     const s = topology([hinge(390,410),hinge(790,810)]);
     expect(foldEventDetails(s,600,450)).toMatchObject({

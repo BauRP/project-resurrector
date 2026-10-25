@@ -10,6 +10,7 @@ export interface FoldTransitionEvidence {
   hingeCount: number;
   usableRegions: number;
   layout: "none" | "vertical" | "horizontal";
+  regionGeometry?: string;
 }
 export const FOLD_EVENT = "multicam-fold-topology";
 export function normalizeFoldTransition(value: unknown, observedAtMs: number): FoldTransitionEvidence | null {
@@ -21,13 +22,16 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
       !Number.isSafeInteger(event.hingeCount) || Number(event.hingeCount) < 0 ||
       !Number.isSafeInteger(event.usableRegions) || Number(event.usableRegions) < 1 || Number(event.usableRegions) > 16 ||
       Number(event.hingeCount) > 16 ||
-      !["none", "vertical", "horizontal"].includes(String(event.layout))) return null;
+      !["none", "vertical", "horizontal"].includes(String(event.layout)) ||
+      (event.regionGeometry !== undefined &&
+        (typeof event.regionGeometry !== "string" || event.regionGeometry.length > 512))) return null;
   return {
     revision: event.revision as number,
     observedAtMs, posture: event.posture,
     hingeCount: event.hingeCount as number,
     usableRegions: event.usableRegions as number,
     layout: event.layout as FoldTransitionEvidence["layout"],
+    regionGeometry: typeof event.regionGeometry === "string" ? event.regionGeometry : undefined,
   };
 }
 /** Avoid duplicate initial native topology callbacks or unbounded metadata. */
@@ -39,7 +43,8 @@ export function appendFoldTransition(
       last.posture === value.posture &&
       last.hingeCount === value.hingeCount &&
       last.usableRegions === value.usableRegions &&
-      last.layout === value.layout) return [...events];
+      last.layout === value.layout &&
+      last.regionGeometry === value.regionGeometry) return [...events];
   if (last && value.observedAtMs < last.observedAtMs) return [...events];
   return [...events, value].slice(-120);
 }
