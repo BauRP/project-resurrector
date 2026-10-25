@@ -27,8 +27,10 @@ export function classifyModeFailure(error: unknown, aborted: boolean): "unknown"
   return name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError" ? "rejected" : "unknown";
 }
 
-/** One bounded, actual encoded sample; no fabricated tests or fake FPS claims. */
-async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<Blob> {
+/** One bounded, actual encoded sample; no fabricated tests or fake FPS claims.
+ * The encoder must emit onstart before its output can prove a capture mode.
+ */
+export async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<Blob> {
   if (typeof MediaRecorder === "undefined") throw new Error("MediaRecorder недоступен");
   const mime = MIMES.find(m => MediaRecorder.isTypeSupported(m));
   if (!mime) throw new Error("Подходящий видеокодировщик отсутствует");
@@ -36,35 +38,57 @@ async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<B
     let recorder: MediaRecorder;
     try { recorder = new MediaRecorder(stream, { mimeType: mime }); } catch (e) { reject(e); return; }
     const chunks: Blob[] = [];
-    let done = false, endTimer = 0, guard = 0;
+    let done = false, started = false;
+    let startTimer = 0, endTimer = 0, guard = 0;
     const finish = (failure?: Error) => {
       if (done) return;
       done = true;
-      clearTimeout(endTimer); clearTimeout(guard);
+      window.clearTimeout(startTimer);
+      window.clearTimeout(endTimer);
+      window.clearTimeout(guard);
       signal.removeEventListener("abort", abort);
+      recorder.onstart = null;
       recorder.ondataavailable = null; recorder.onstop = null; recorder.onerror = null;
       if (failure) reject(failure);
       else resolve(new Blob(chunks, { type: mime }));
     };
-    const abort = () => {
-      if (recorder.state !== "inactive") { try { recorder.stop(); } catch { /* already stopped */ } }
-      finish(new Error("Остановлено"));
+    const stopEncoder = () => {
+      if (recorder.state !== "inactive") {
+        try { recorder.stop(); } catch { /* A failed encoder may not stop normally. */ }
+      }
     };
-    recorder.ondataavailable = e => { if (e.data.size) chunks.push(e.data); };
-    recorder.onstop = () => finish();
-    recorder.onerror = () => finish(new Error("Сбой видеокодировщика"));
+    const abort = () => {
+      finish(new Error("Остановлено"));
+      stopEncoder();
+    };
+    recorder.onstart = () => {
+      if (done || started) return;
+      started = true;
+      window.clearTimeout(startTimer);
+      // A late WebView onstart is not evidence of a timely recording.
+      endTimer = window.setTimeout(stopEncoder, 1500);
+    };
+    recorder.ondataavailable = e => { if (!done && e.data.size) chunks.push(e.data); };
+    recorder.onstop = () => finish(started ? undefined : new Error("Кодировщик не подтвердил запуск"));
+    recorder.onerror = () => {
+      finish(new Error("Сбой видеокодировщика"));
+      stopEncoder();
+    };
     signal.addEventListener("abort", abort, { once: true });
     try {
       if (signal.aborted) { abort(); return; }
-      recorder.start(250);
-      endTimer = window.setTimeout(() => {
-        if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* error callback */ }
-      }, 1500);
+      startTimer = window.setTimeout(() => {
+        if (!started) {
+          finish(new Error("Тайм-аут подтверждения запуска видеокодировщика"));
+          stopEncoder();
+        }
+      }, 4000);
       guard = window.setTimeout(() => {
-        if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* error callback */ }
         finish(new Error("Тайм-аут записи"));
-      }, 6500);
-    } catch (e) { finish(e instanceof Error ? e : new Error(String(e))); }
+        stopEncoder();
+      }, 8000);
+      recorder.start(250);
+    } catch (e) { finish(e instanceof Error ? e : new Error(String(e))); stopEncoder(); }
   });
 }
 
