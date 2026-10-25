@@ -163,7 +163,7 @@ export function startDisplayAdaptation(): () => void {
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     // Mixed-orientation multi-hinge layouts need their own pane model; a
     // side-by-side camera cannot be inferred from the last processed hinge.
-    const sideBySide = panes.length >= 2 && panes.every((pane, index) =>
+    const sideBySide = (panes.length === 2 || panes.length === 3) && panes.every((pane, index) =>
       index === 0 || (Math.abs(pane.top - panes[0]!.top) < 4 &&
         Math.abs(pane.height - panes[0]!.height) < 4));
     const eligible = sideBySide && panes[0]!.width >= 260 && panes[1]!.width >= 230 &&
