@@ -11,6 +11,13 @@ export const TEST_MODES: readonly TestMode[] = [
   { width: 3840, height: 2160, fps: 60 },
 ];
 const MIMES = ["video/webm;codecs=vp8,opus","video/webm;codecs=vp9,opus","video/webm","video/mp4;codecs=avc1"];
+/** Only an explicitly unsatisfied camera constraint proves API-level incompatibility. */
+export function classifyModeFailure(error: unknown, aborted: boolean): "unknown" | "rejected" {
+  if (aborted || error instanceof CameraBusyError || error instanceof CameraSupersededError) return "unknown";
+  if (!error || typeof error !== "object") return "unknown";
+  const name = (error as { name?: unknown }).name;
+  return name === "OverconstrainedError" || name === "ConstraintNotSatisfiedError" ? "rejected" : "unknown";
+}
 
 /** One bounded, actual encoded sample; no fabricated tests or fake FPS claims. */
 async function recordSample(stream: MediaStream, signal: AbortSignal): Promise<Blob> {
@@ -63,7 +70,7 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
     if (signal.aborted) throw new Error("Отменено");
     const stream = await cameraController.acquire(owner, {
       video: { deviceId: { exact: deviceId }, width: { exact: mode.width },
-        height: { exact: mode.height }, frameRate: { ideal: mode.fps } }, audio: false,
+        height: { exact: mode.height }, frameRate: { exact: mode.fps } }, audio: false,
     }, { preempt: false });
     if (signal.aborted) throw new Error("Отменено");
     const track = stream.getVideoTracks()[0];
@@ -72,10 +79,14 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
     result.applied = { width: actual.width, height: actual.height, fps: actual.frameRate };
     const dimensionsMatch = (actual.width === mode.width && actual.height === mode.height) ||
       (actual.width === mode.height && actual.height === mode.width);
-    const fpsMatch = typeof actual.frameRate === "number" && Math.abs(actual.frameRate - mode.fps) < 1.1;
-    if (!dimensionsMatch || !fpsMatch) {
+    const fpsKnown = typeof actual.frameRate === "number" && Number.isFinite(actual.frameRate);
+    const fpsMatch = fpsKnown && Math.abs(actual.frameRate! - mode.fps) < 1.1;
+    if (!dimensionsMatch || (fpsKnown && !fpsMatch)) {
       result.state = "rejected";
       result.message = "Фактическое разрешение или FPS отличаются от запрошенных";
+    } else if (!fpsKnown) {
+      result.state = "unknown";
+      result.message = "WebView не сообщил фактический FPS: режим не подтверждён";
     } else {
       result.state = "applied";
       const blob = await recordSample(stream, signal);
@@ -87,9 +98,7 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       result.message = "Первый кадр пробного файла декодирован (" + blob.size + " байт, " + frame.width + "×" + frame.height + "). FPS кодека, HDR и стабилизация не проверены";
     }
   } catch (e) {
-    const transient = signal.aborted || e instanceof CameraBusyError || e instanceof CameraSupersededError ||
-      (e instanceof Error && /timeout|тайм-аут/i.test(e.message));
-    result.state = transient ? "unknown" : "rejected";
+    result.state = classifyModeFailure(e, signal.aborted);
     result.message = signal.aborted ? "Проверка отменена" : e instanceof Error ? e.message : String(e);
   } finally { cameraController.release(owner); }
   // Transient contention must not overwrite earlier confirmed hardware evidence.
