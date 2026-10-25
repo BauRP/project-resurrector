@@ -11,6 +11,10 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(tasks.filter(t=>t.status==="verified").map(t=>t.key)).toEqual([cameraTaskKey("rear",base)]);
     expect(queueSummary(tasks,["rear","front"])).toEqual({total:4,verified:1,pending:3,failed:0,deferred:0});
   });
+  it("rejects corrupted legacy evidence instead of inventing a successful test", () => {
+    const corrupted = [{api:"webview", cameraId:"rear",state:"verified",checkedAt:12}] as unknown as ModeEvidence[];
+    expect(prepareCameraTestQueue(["rear"],[base],[],corrupted)[0]?.status).toBe("pending");
+  });
   it("resumes an interrupted in-progress task without inventing a success", () => {
     const prior = prepareCameraTestQueue(["rear"],[base],[],[]);
     const inProgress = updateCameraTestTask(prior,prior[0]!.key,"running","Открывается камера",1);
