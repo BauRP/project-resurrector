@@ -21,6 +21,14 @@ export function isCleanDualRecording(input: {
   return input.playable === 2 && input.startedConfirmed && input.failures === 0 &&
     !input.endedUnexpectedly && !input.stopReason;
 }
+/** Recover only non-empty chunks already emitted by MediaRecorder.
+ * These bytes are unverified until persisted and decoded; this is not a claim
+ * that a stalled encoder produced a finalized or playable container.
+ */
+export function salvageBufferedEncoderChunks(chunks: readonly Blob[], mime: string): Blob | null {
+  const bytes = chunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0);
+  return bytes >= 1024 ? new Blob(chunks, { type: mime }) : null;
+}
 export function independentStreamsReady(first: MediaStream | null, second: MediaStream | null): boolean {
   if (!first || !second || first === second) return false;
   const a = first.getVideoTracks()[0], b = second.getVideoTracks()[0];
@@ -89,8 +97,10 @@ export function startDualRecording(
       for (let i = 0; i < recorders.length; i++) {
         if (!finished[i]) {
           failures.push("Кодировщик " + (i+1) + " не завершился за отведённое время");
-          // A stalled encoder cannot be trusted as having saved a clip.
-          settle(i, null);
+          // Some encoders never emit onstop after an error. Preserve already
+          // delivered data for independent storage and decoder verification.
+          // This session remains failed; partial bytes may be unplayable.
+          settle(i, salvageBufferedEncoderChunks(buffers[i]!, mime));
         }
       }
     }, 12000);

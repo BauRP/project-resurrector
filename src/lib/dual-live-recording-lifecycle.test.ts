@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { startDualRecording } from "./dual-live-recording";
+import { salvageBufferedEncoderChunks, startDualRecording } from "./dual-live-recording";
 import { readPersistedClip, saveRecordedClipsAtomically } from "./clip-persistence";
 import { verifyDecodedVideoBlob } from "./clip-playback";
 import { FOLD_EVENT } from "./fold-recording-evidence";
@@ -19,6 +19,7 @@ vi.mock("./clip-playback", () => ({
 class MockRecorder {
   static instances: MockRecorder[] = [];
   static isTypeSupported = (_mime: string) => true;
+  static stallIndex: number | null = null;
   state: RecordingState = "inactive";
   mimeType: string;
   onstart: (() => void) | null = null;
@@ -37,7 +38,7 @@ class MockRecorder {
     if (this.state === "inactive") return;
     this.state = "inactive";
     this.ondataavailable?.({data: new Blob(["x".repeat(2048)], {type:this.mimeType})});
-    this.onstop?.();
+    if (MockRecorder.instances.indexOf(this) !== MockRecorder.stallIndex) this.onstop?.();
   }
   fail() {
     this.onerror?.({type:"error", error:new Error("simulated encoder failure")} as Event & {error:Error});
@@ -53,6 +54,7 @@ function camera(id: string) {
 
 beforeEach(() => {
   MockRecorder.instances = [];
+  MockRecorder.stallIndex = null;
   vi.clearAllMocks();
   vi.stubGlobal("MediaRecorder", MockRecorder);
 });
@@ -116,5 +118,26 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     await expect(session.done).rejects.toThrow("disk full");
     // After completion, a delayed track-ended event cannot issue new stop requests.
     one.track.dispatchEvent(new Event("ended"));
+  });
+});
+
+describe("stalled encoder salvage policy", () => {
+  it("keeps already emitted bytes but rejects short or empty media", () => {
+    expect(salvageBufferedEncoderChunks([], "video/webm")).toBe(null);
+    expect(salvageBufferedEncoderChunks([new Blob(["a"])], "video/webm")).toBe(null);
+    expect(salvageBufferedEncoderChunks([new Blob(["x".repeat(2048)])], "video/webm")?.size).toBe(2048);
+  });
+  it("saves available bytes after a recorder fails to issue onstop, without a clean success claim", async () => {
+    vi.useFakeTimers();
+    MockRecorder.stallIndex = 1;
+    const a = camera("rear"), b = camera("front");
+    const session = startDualRecording(a.stream, b.stream, vi.fn());
+    session.stop();
+    await vi.advanceTimersByTimeAsync(12_010);
+    const result = await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(false);
+    expect(result.message).toContain("не завершился");
+    expect(saveRecordedClipsAtomically).toHaveBeenCalledTimes(1);
   });
 });
