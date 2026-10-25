@@ -32,6 +32,28 @@ describe("camera ownership and serialized settings", () => {
     expect(userCamera.track.stop).toHaveBeenCalledOnce();
   });
 
+  it("releases the lease after denied camera access", async () => {
+    const request = vi.fn().mockRejectedValueOnce(new DOMException("Denied", "NotAllowedError"));
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: request } });
+    await expect(cameraController.acquire(Symbol("probe"), { video: true }, { preempt: false }))
+      .rejects.toMatchObject({ name: "NotAllowedError" });
+    const next = camera();
+    request.mockResolvedValueOnce(next.stream);
+    await expect(cameraController.acquire(Symbol("retry"), { video: true }, { preempt: false }))
+      .resolves.toBe(next.stream);
+  });
+
+  it("releases the lease after a synchronous camera API exception", async () => {
+    const request = vi.fn().mockImplementationOnce(() => { throw new Error("Device unavailable"); });
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: request } });
+    await expect(cameraController.acquire(Symbol("probe"), { video: true }, { preempt: false }))
+      .rejects.toThrow("Device unavailable");
+    const next = camera();
+    request.mockResolvedValueOnce(next.stream);
+    await expect(cameraController.acquire(Symbol("retry"), { video: true }, { preempt: false }))
+      .resolves.toBe(next.stream);
+  });
+
   it("coalesces rapid settings without concurrent hardware commands", async () => {
     vi.useFakeTimers();
     const cam = camera();

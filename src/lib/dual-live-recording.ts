@@ -1,4 +1,4 @@
-import { saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
+import { readPersistedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
 import { verifyDecodedVideoBlob } from "./clip-playback";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "./fold-recording-evidence";
 
@@ -114,8 +114,12 @@ export function startDualRecording(
       if (!stopRequested) stop("Один из видеопотоков завершился раньше второго");
     };
   }
+  // Preview tracks outlive recording sessions; retain handlers for cleanup.
+  const trackEndHandlers: Array<{ track: MediaStreamTrack; handler: EventListener }> = [];
   for (const stream of captures) for (const track of stream.getVideoTracks()) {
-    track.addEventListener("ended", () => stop("Видеопоток потерян во время одновременной записи"), { once: true });
+    const handler: EventListener = () => stop("Видеопоток потерян во время одновременной записи");
+    track.addEventListener("ended", handler, { once: true });
+    trackEndHandlers.push({ track, handler });
   }
   startupTimer = window.setTimeout(() => stop("Не обе камеры подтвердили запуск за 8 секунд"), 8000);
   const done = Promise.all(collected).then(async blobs => {
@@ -140,28 +144,26 @@ export function startDualRecording(
         foldContinuityVerified: false,
       }] : []);
     if (!clips.length) throw new Error("Оба кодировщика не выдали пригодных файлов. " + [stopReason, ...failures].filter(Boolean).join("; "));
-    // A successful encoder output is checked for an actual decoded first frame
-    // before it can be presented as a good recorded camera sample.
+    // Persist all salvageable blobs first: a decoder crash must not discard
+    // successfully encoded bytes. Verify persisted media, not temporary memory.
+    await saveRecordedClipsAtomically(clips);
     const playable: RecordedClip[] = [];
     for (const clip of clips) {
-      try { await verifyDecodedVideoBlob(clip.blob, undefined, 5000); playable.push(clip); }
-      catch (error) { failures.push("Камера " + clip.camera + ": кадр не декодирован (" + String(error) + ")"); }
+      try {
+        const stored = await readPersistedClip(clip.id);
+        await verifyDecodedVideoBlob(stored.blob, undefined, 5000);
+        playable.push(clip);
+      } catch (error) {
+        failures.push("Камера " + clip.camera + ": сохранённый кадр не декодирован (" + String(error) + ")");
+      }
     }
-    if (!playable.length) {
-      // Preserve both bytes even if the WebView decoder is unavailable; do not
-      // claim that these clips play correctly.
-      await saveRecordedClipsAtomically(clips);
-      return { savedIds: clips.map(c => c.id), paired: false,
-        startedSkewMs: starts.every(x=>x!==null) ? Math.round(Math.abs(starts[0]! - starts[1]!)) : null,
-        bytes: clips.map(c => c.blob.size),
-        message: "Файлы сохранены, но декодирование видео не подтверждено. " + failures.join("; ") };
-    }
+    if (!playable.length) return {
+      savedIds: clips.map(c => c.id), paired: false,
+      startedSkewMs: starts.every(x=>x!==null) ? Math.round(Math.abs(starts[0]! - starts[1]!)) : null,
+      bytes: clips.map(c => c.blob.size),
+      message: "Файлы сохранены, но их воспроизведение из медиатеки не подтверждено. " + failures.join("; "),
+    };
     const both = playable.length === 2 && startedConfirmed && failures.length === 0;
-    if (playable.length === 2) await saveRecordedClipsAtomically(playable);
-    else {
-      // Never erase a non-decodable original: keep it too if present.
-      await saveRecordedClipsAtomically(clips);
-    }
     return {
       savedIds: clips.map(c => c.id),
       paired: both,
@@ -173,6 +175,7 @@ export function startDualRecording(
           [stopReason, ...failures].filter(Boolean).join("; "),
     };
   }).finally(() => {
+    trackEndHandlers.forEach(({ track, handler }) => track.removeEventListener("ended", handler));
     window.removeEventListener(FOLD_EVENT, onFold);
     completed = true;
     window.clearTimeout(startupTimer);

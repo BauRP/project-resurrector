@@ -41,10 +41,21 @@ class CameraController {
     // User acquisition may supersede a diagnostic, but never the reverse.
     if (options.preempt === false && this.owner !== null && this.owner !== owner) throw new CameraBusyError();
     this.release(); this.owner = owner; const generation = this.generation;
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
-    const stream = await bounded(navigator.mediaDevices.getUserMedia(constraints), 6000, "Camera", (late) => late.getTracks().forEach((t) => t.stop()));
-    if (generation !== this.generation || owner !== this.owner) { stream.getTracks().forEach((t) => t.stop()); throw new CameraSupersededError(); }
-    this.stream = stream; return stream;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
+      const stream = await bounded(navigator.mediaDevices.getUserMedia(constraints), 6000, "Camera",
+        (late) => late.getTracks().forEach(t => t.stop()));
+      if (generation !== this.generation || owner !== this.owner) {
+        stream.getTracks().forEach(t => t.stop());
+        throw new CameraSupersededError();
+      }
+      this.stream = stream;
+      return stream;
+    } catch (error) {
+      // Failed opens must not retain a stale lease or evict newer requests.
+      if (generation === this.generation && owner === this.owner) this.release(owner);
+      throw error;
+    }
   }
   release(owner?: symbol) {
     if (owner && owner !== this.owner) return;
