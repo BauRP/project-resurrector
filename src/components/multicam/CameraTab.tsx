@@ -16,6 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
+import { planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
@@ -292,10 +293,14 @@ export function CameraTab() {
       recorder.onstop = () => {
         cleanUp();
         s.set({ recording: false, recordingStartedAt: null, paused: false });
-        if (recorderError) { s.set({ recordingPhase: "error", captureSaveError: recorderError }); return; }
-        s.set({ recordingPhase: "saving" });
         const stopReason = stopReasonRef.current;
         const blob = new Blob(chunks, { type: mime });
+        const plan = planRecordingFinalization(blob.size, recorderError, stopReason);
+        if (!plan.attemptSave) {
+          s.set({ recordingPhase: "error", captureSaveError: plan.message });
+          return;
+        }
+        s.set({ recordingPhase: "saving", captureSaveError: plan.incomplete ? plan.message : "Проверяю сохранение записи…" });
         const clipId = `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
         void saveRecordedClip({
           id: clipId, createdAt: startedAt, camera, mode, profile,
@@ -304,22 +309,25 @@ export function CameraTab() {
         }).then(() => {
           // Save is durable and independently read back. Decoding is checked
           // separately: failure must not destroy or hide an already saved clip.
-          s.set({ recordingPhase: "saved", captureSaveError: stopReason || "Видео сохранено. Проверяю воспроизведение…" });
+          s.set({ recordingPhase: plan.incomplete ? "error" : "saved",
+            captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+              "Видео сохранено. Проверяю воспроизведение…" });
           window.dispatchEvent(new Event("multicam-clips-changed"));
           void verifyStoredClipPlayback(clipId).then(evidence => {
-            s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
+            s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
               ". Измеряю отображаемые кадры…" });
             void sampleStoredClipDisplayedFps(clipId).then(sample => {
-              s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
+              s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
                 "Клип сохранён; первый кадр декодирован. " +
                 (sample.approximateFps !== null ? "Оценка показанных кадров: " + sample.approximateFps + " FPS. " : "Оценка FPS недоступна. ") +
                 "FPS кодека, HDR, EIS/OIS и все кадры не подтверждены." });
             }).catch(() => {
-              s.set({ captureSaveError: "Клип сохранён и первый кадр декодирован; оценка FPS недоступна." });
+              s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                "Клип сохранён и первый кадр декодирован; оценка FPS недоступна." });
             });
           }).catch(error => {
-            s.set({ captureSaveError: (stopReason ? stopReason + " " : "") +
+            s.set({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено, но декодирование не подтверждено: " +
               (error instanceof Error ? error.message : String(error)) });
           });
