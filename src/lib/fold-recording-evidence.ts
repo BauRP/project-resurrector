@@ -16,7 +16,8 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
   if (!value || typeof value !== "object") return null;
   const event = value as Record<string, unknown>;
   if (!Number.isSafeInteger(event.revision) || Number(event.revision) < 0 ||
-      typeof event.posture !== "string" ||
+      typeof event.posture !== "string" || event.posture.length > 512 ||
+      !Number.isFinite(observedAtMs) || observedAtMs <= 0 ||
       !Number.isSafeInteger(event.hingeCount) || Number(event.hingeCount) < 0 ||
       !Number.isSafeInteger(event.usableRegions) || Number(event.usableRegions) < 1 ||
       !["none", "vertical", "horizontal"].includes(String(event.layout))) return null;
