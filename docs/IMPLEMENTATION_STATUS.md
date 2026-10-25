@@ -54,6 +54,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Tests use mock encoders/storage and **do not** establish physical multi-camera compatibility, actual frame synchronization, uninterrupted recording on a foldable, or long-running thermal stability.
 - All modifications remain isolated to `chatgpt/independent-preview-20261023`, never merge into `main` without user approval.
 
+## Browser-version passport freshness and fold UI cleanup — 25 October 2026
+- Historical per-camera video checks are preserved, but no longer treated as live verified proof after a WebView user-agent or diagnostic-engine revision change. Unversioned legacy records require re-verification too; the original measurements remain visible.
+- Added regression tests for legacy passport migration, previously verified records under changed WebView context, and preservation of past camera evidence.
+- After moving from tabletop (horizontal hinge) to book/cover orientation, obsolete CSS offsets for upper/lower panes are removed instead of leaking into the new layout.
+- No claim of complete codec FPS verification, uninterrupted Activity-recreation video, or physical foldable compatibility is made without physical tests.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
