@@ -42,6 +42,7 @@ export function CameraDiagnostics() {
   const job = useRef<AbortController | null>(null);
   const dualJob = useRef<AbortController | null>(null);
   const mounted = useRef(true);
+  useEffect(() => { if (recording) job.current?.abort(); }, [recording]);
   useEffect(() => {
     mounted.current = true;
     const refresh = () => {
@@ -82,7 +83,7 @@ export function CameraDiagnostics() {
   const planned = prepareCameraTestQueue(queueIds, TEST_MODES, testQueue, tests);
   const summary = queueSummary(planned, queueIds);
   const run = async (full: boolean) => {
-    if (running || recording || dualBusy || rawBusy || stabilizationBusy || highSpeedState !== "idle" || !devices.length) return;
+    if (job.current || running || recording || dualBusy || rawBusy || stabilizationBusy || highSpeedState !== "idle" || !devices.length) return;
     if (full && !window.confirm("Продолжить незавершённые испытания всех камер? Возможны нагрев и расход заряда.")) return;
     const current = new AbortController();
     job.current = current;
@@ -95,7 +96,7 @@ export function CameraDiagnostics() {
     persist(queue);
     const eligible = queue.filter(task => queueIds.includes(task.cameraId) &&
       (full || TEST_MODES.slice(0, 2).some(mode => mode.width === task.mode.width && mode.height === task.mode.height && mode.fps === task.mode.fps)) &&
-      ["pending","retry","deferred"].includes(task.status));
+      (["pending","retry","deferred"].includes(task.status) || (full && task.status === "error")));
     try {
       let count = 0;
       for (const task of eligible) {
@@ -123,7 +124,8 @@ export function CameraDiagnostics() {
           persist(updateCameraTestTask(queue, task.key, "deferred", "Прервано пользователем"));
           return;
         }
-        const status = evidence.state === "verified" ? "verified" : "error";
+        const status = evidence.state === "verified" ? "verified" :
+          evidence.state === "unknown" ? "deferred" : "error";
         persist(updateCameraTestTask(queue, task.key, status, evidence.message || "Проверка завершена"));
         if (mounted.current) setTests(loadModeEvidence());
       }
