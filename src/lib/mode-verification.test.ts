@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { classifyModeFailure, decodedOutputMatchesRequested, recordSample } from "./mode-verification";
+import { classifyModeFailure, decodedOutputMatchesRequested, isVerifiedCameraIdentity, recordSample } from "./mode-verification";
 import { CameraBusyError, CameraSupersededError } from "./camera-controller";
 describe("truthful mode diagnostics",()=>{
   it("marks explicit constraint incompatibility as rejected",()=>{
@@ -68,5 +68,17 @@ describe("mode-probe MediaRecorder lifecycle", () => {
     const result=recordSample({} as MediaStream,new AbortController().signal);
     await vi.advanceTimersByTimeAsync(1600);
     expect((await result).size).toBe(2048);
+  });
+});
+
+describe("per-lens identity proof for WebView video modes", () => {
+  it("accepts only the actual requested WebView camera identity", () => {
+    expect(isVerifiedCameraIdentity("rear-wide","rear-wide")).toBe(true);
+    expect(isVerifiedCameraIdentity("rear-wide","front")).toBe(false);
+  });
+  it("does not fabricate proof when OEM WebView hides the camera ID", () => {
+    expect(isVerifiedCameraIdentity("rear-wide",undefined)).toBe(false);
+    expect(isVerifiedCameraIdentity("rear-wide","")).toBe(false);
+    expect(isVerifiedCameraIdentity("", "rear-wide")).toBe(false);
   });
 });
