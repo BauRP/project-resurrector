@@ -7,6 +7,8 @@ describe("fold events attached to capture", () => {
     expect(normalizeFoldTransition({}, 100)).toBe(null);
     expect(normalizeFoldTransition({...sample, usableRegions: 0},100)).toBe(null);
     expect(normalizeFoldTransition(sample,100)?.hingeCount).toBe(1);
+    expect(normalizeFoldTransition({...sample,hingeCount:999},100)).toBe(null);
+    expect(normalizeFoldTransition({...sample,usableRegions:999},100)).toBe(null);
     expect(normalizeFoldTransition(sample,Number.NaN)).toBe(null);
     expect(normalizeFoldTransition(sample,-1)).toBe(null);
     expect(normalizeFoldTransition({...sample,posture:"x".repeat(600)},100)).toBe(null);

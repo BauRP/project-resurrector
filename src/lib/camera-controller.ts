@@ -74,6 +74,10 @@ class CameraController {
   apply(stream: MediaStream | null, constraints: Record<string, unknown>): Promise<boolean> {
     const track = stream?.getVideoTracks()[0];
     if (!track?.applyConstraints || track.readyState !== "live") return Promise.resolve(false);
+    // A stale stream must not be reconfigured after a newer primary capture
+    // acquired the controller. Secondary dual-camera tracks remain independent.
+    if (this.owner !== null && stream !== this.stream && this.stream?.getVideoTracks()[0] === track)
+      return Promise.resolve(false);
     const queue = this.queues.get(track) ?? {
       command: null, waiters: [], inFlightWaiters: [], draining: false, cancelled: false,
     };

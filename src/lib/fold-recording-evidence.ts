@@ -19,7 +19,8 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
       typeof event.posture !== "string" || event.posture.length > 512 ||
       !Number.isFinite(observedAtMs) || observedAtMs <= 0 ||
       !Number.isSafeInteger(event.hingeCount) || Number(event.hingeCount) < 0 ||
-      !Number.isSafeInteger(event.usableRegions) || Number(event.usableRegions) < 1 ||
+      !Number.isSafeInteger(event.usableRegions) || Number(event.usableRegions) < 1 || Number(event.usableRegions) > 16 ||
+      Number(event.hingeCount) > 16 ||
       !["none", "vertical", "horizontal"].includes(String(event.layout))) return null;
   return {
     revision: event.revision as number,
