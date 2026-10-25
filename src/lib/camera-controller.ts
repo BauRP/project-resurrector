@@ -27,6 +27,8 @@ export function focusSupport(caps: Record<string, unknown>): FocusSupport {
   return "unknown";
 }
 export function focusPoint(rect: { left: number; top: number; width: number; height: number }, width: number, height: number, clientX: number, clientY: number) {
+  if (![rect.left, rect.top, rect.width, rect.height, width, height, clientX, clientY].every(Number.isFinite) ||
+      rect.width <= 0 || rect.height <= 0 || width <= 0 || height <= 0) return { x: 0.5, y: 0.5 };
   const scale = Math.max(rect.width / width, rect.height / height);
   const x = (clientX - rect.left + (width * scale - rect.width) / 2) / (width * scale);
   const y = (clientY - rect.top + (height * scale - rect.height) / 2) / (height * scale);

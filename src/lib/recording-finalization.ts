@@ -24,3 +24,33 @@ export function planRecordingFinalization(bytes: number, encoderError: string, s
       "Запись завершилась; требуется проверка сохранённого видео",
   };
 }
+
+/** A WebView encoder may never dispatch onstop, particularly after errors or
+ * a background interruption. A bounded fallback salvages emitted chunks while
+ * flagging the result as incomplete. Late duplicate callbacks are ignored.
+ */
+export function createRecordingStopGuard(
+  finalize: () => void, onTimeout: () => void, timeoutMs = 12000,
+) {
+  let finished = false;
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const finish = () => {
+    if (finished) return;
+    finished = true;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    finalize();
+  };
+  return {
+    waitForStop() {
+      if (finished || timer !== null) return;
+      timer = setTimeout(() => {
+        timer = null;
+        if (finished) return;
+        onTimeout();
+        finish();
+      }, timeoutMs);
+    },
+    finish,
+  };
+}

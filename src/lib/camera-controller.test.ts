@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cameraController, CameraBusyError } from "./camera-controller";
+import { cameraController, CameraBusyError, focusPoint } from "./camera-controller";
 
 function camera() {
   const track = {
@@ -18,6 +18,12 @@ afterEach(() => {
 });
 
 describe("camera ownership and serialized settings", () => {
+  it("never generates invalid focus points for a transient zero-size fold viewport", () => {
+    const point = focusPoint({left:10,top:20,width:0,height:0},0,0,55,85);
+    expect(point).toEqual({x:0.5,y:0.5});
+    const invalid=focusPoint({left:NaN,top:0,width:200,height:400},1920,1080,100,150);
+    expect(invalid).toEqual({x:0.5,y:0.5});
+  });
   it("does not allow a diagnostic test to evict the active user camera", async () => {
     const userCamera = camera();
     const getUserMedia = vi.fn().mockResolvedValue(userCamera.stream);

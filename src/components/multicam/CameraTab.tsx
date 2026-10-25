@@ -16,7 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
-import { planRecordingFinalization } from "@/lib/recording-finalization";
+import { createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
@@ -165,6 +165,7 @@ export function CameraTab() {
       if (active && active.state !== "inactive") {
         stopReasonRef.current = "Поток камеры прервался; запись завершается. Проверьте сохранённый файл.";
         s.set({ recording: false, recordingPhase: "stopping" });
+        recordingStopWatch.current?.();
         try { active.stop(); } catch (error) {
           s.set({ recording: false, recordingPhase: "error", captureSaveError: "Поток потерян, остановить кодировщик не удалось: " + String(error) });
         }
@@ -184,6 +185,7 @@ export function CameraTab() {
       if (active && active.state !== "inactive") {
         stopReasonRef.current = "Приложение ушло в фон; непрерывность WebView-записи не гарантирована. Завершаю текущий сегмент.";
         s.set({ recording: false, recordingPhase: "stopping" });
+        recordingStopWatch.current?.();
         try { active.stop(); } catch (error) {
           s.set({ recording: false, recordingPhase: "error", captureSaveError: "Ошибка остановки при сворачивании: " + String(error) });
         }
@@ -208,6 +210,7 @@ export function CameraTab() {
   // after MediaRecorder has actually started. All completion paths report errors.
   const pipeRef = useRef<{ stop: () => void } | null>(null);
   const recordingAudio = useRef<ReturnType<typeof createLimiter> | null>(null);
+  const recordingStopWatch = useRef<(() => void) | null>(null);
   useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
     mesh.selfRecording = s.recording;
@@ -217,7 +220,11 @@ export function CameraTab() {
     if (!s.recording) {
       if (active && active.state !== "inactive") {
         s.set({ recordingPhase: "stopping" });
-        try { active.stop(); } catch (error) { s.set({ recordingPhase: "error", captureSaveError: String(error) }); }
+        recordingStopWatch.current?.();
+        try { active.stop(); } catch (error) {
+          stopReasonRef.current = "Ошибка остановки видеокодировщика: " + String(error);
+          s.set({ recordingPhase: "error", captureSaveError: stopReasonRef.current });
+        }
       }
       return;
     }
@@ -280,6 +287,7 @@ export function CameraTab() {
         pipeRef.current?.stop(); pipeRef.current = null;
         recordingAudio.current = null; void gainCtx?.close();
         if (recorderRef.current === recorder) recorderRef.current = null;
+        if (recordingStopWatch.current === guard.waitForStop) recordingStopWatch.current = null;
       };
       recorder.onstart = () => {
         s.set({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
@@ -288,9 +296,10 @@ export function CameraTab() {
       recorder.onerror = (event) => {
         recorderError = (event as Event & { error?: Error }).error?.message || "Ошибка кодировщика";
         s.set({ recordingPhase: "error", captureSaveError: recorderError });
+        recordingStopWatch.current?.();
         if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* already stopped */ }
       };
-      recorder.onstop = () => {
+      const finalizeRecording = () => {
         cleanUp();
         s.set({ recording: false, recordingStartedAt: null, paused: false });
         const stopReason = stopReasonRef.current;
@@ -335,6 +344,11 @@ export function CameraTab() {
           s.set({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
         });
       };
+      const guard = createRecordingStopGuard(finalizeRecording, () => {
+        recorderError ||= "Видеокодировщик не подтвердил остановку за 12 секунд";
+      });
+      recordingStopWatch.current = guard.waitForStop;
+      recorder.onstop = guard.finish;
       recorder.start(1000);
       window.addEventListener(FOLD_EVENT, onFold);
     } catch (error) {
@@ -380,7 +394,10 @@ export function CameraTab() {
   useEffect(() => () => {
     const recorder = recorderRef.current;
     dualSession.current?.stop("Экран камеры закрыт");
-    if (recorder && recorder.state !== "inactive") recorder.stop();
+    if (recorder && recorder.state !== "inactive") {
+      recordingStopWatch.current?.();
+      try { recorder.stop(); } catch { /* fallback finalizes available chunks */ }
+    }
     // Recorder onstop owns encoder buffers until its save transaction completes.
     if (!recorder || recorder.state === "inactive") pipeRef.current?.stop();
     mesh.selfRecording = false;
