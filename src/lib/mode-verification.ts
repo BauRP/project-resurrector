@@ -1,4 +1,4 @@
-import { cameraController } from "./camera-controller";
+import { cameraController, CameraBusyError, CameraSupersededError } from "./camera-controller";
 import { recordModeEvidence, type ModeEvidence } from "./camera-passport";
 import { verifyDecodedVideoBlob } from "./clip-playback";
 export interface TestMode { width: number; height: number; fps: number }
@@ -64,7 +64,7 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
     const stream = await cameraController.acquire(owner, {
       video: { deviceId: { exact: deviceId }, width: { exact: mode.width },
         height: { exact: mode.height }, frameRate: { ideal: mode.fps } }, audio: false,
-    });
+    }, { preempt: false });
     if (signal.aborted) throw new Error("Отменено");
     const track = stream.getVideoTracks()[0];
     if (!track || track.readyState !== "live") throw new Error("Камера не открылась");
@@ -87,9 +87,12 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       result.message = "Первый кадр пробного файла декодирован (" + blob.size + " байт, " + frame.width + "×" + frame.height + "). FPS кодека, HDR и стабилизация не проверены";
     }
   } catch (e) {
-    result.state = signal.aborted ? "unknown" : "rejected";
+    const transient = signal.aborted || e instanceof CameraBusyError || e instanceof CameraSupersededError ||
+      (e instanceof Error && /timeout|тайм-аут/i.test(e.message));
+    result.state = transient ? "unknown" : "rejected";
     result.message = signal.aborted ? "Проверка отменена" : e instanceof Error ? e.message : String(e);
   } finally { cameraController.release(owner); }
-  if (!signal.aborted) recordModeEvidence(result);
+  // Transient contention must not overwrite earlier confirmed hardware evidence.
+  if (!signal.aborted && result.state !== "unknown") recordModeEvidence(result);
   return result;
 }
