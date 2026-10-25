@@ -244,7 +244,15 @@ export function startDisplayAdaptation(): () => void {
     void NativeDisplay.addListener("topologyChanged", apply).then(handle => {
       if (disposed) { void handle.remove(); return; }
       listener = handle;
-      void NativeDisplay.startObserving().then(apply).catch(() => { root.dataset.foldInfo = "unknown"; });
+      void NativeDisplay.startObserving().then(state => {
+        if (disposed) {
+          // A slow native start may finish AFTER the React screen unmounted.
+          // Stop it again so it cannot leak a WindowManager observer.
+          void NativeDisplay.stopObserving().catch(() => undefined);
+          return;
+        }
+        apply(state);
+      }).catch(() => { if (!disposed) root.dataset.foldInfo = "unknown"; });
     }).catch(() => { root.dataset.foldInfo = "unknown"; });
   }
   return () => {
