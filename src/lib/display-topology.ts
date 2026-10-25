@@ -179,10 +179,15 @@ export function startDisplayAdaptation(): () => void {
     if (horizontal) {
       root.style.setProperty("--camera-upper-height", Math.max(0, panes[0]!.top + panes[0]!.height - cameraTop) + "px");
       root.style.setProperty("--camera-lower-top", Math.max(0, panes[1]!.top - cameraTop) + "px");
+    } else {
+      // Do not carry tabletop coordinates into a later book/cover layout.
+      root.style.removeProperty("--camera-upper-height");
+      root.style.removeProperty("--camera-lower-top");
     }
   };
   const apply = (state: DisplayTopology) => {
-    if (disposed || state.revision < lastRevision ||
+    if (disposed || !Number.isSafeInteger(state.revision) || state.revision < 0 ||
+      state.revision < lastRevision ||
       !Number.isFinite(state.widthPx) || !Number.isFinite(state.heightPx) ||
       state.widthPx <= 0 || state.heightPx <= 0 || !Array.isArray(state.foldingFeatures)) return;
     lastRevision = state.revision;
