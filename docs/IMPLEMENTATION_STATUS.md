@@ -79,6 +79,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Android fold event metadata now rejects impossible high hinge/region counts. Camera settings reject expired stream references for the controller's current primary track.
 - Tests cover timeouts, duplicate finalization, invalid preview coordinates and invalid fold event metadata. These are code-level tests, not physical device guarantees.
 
+## Applied zoom/focus confirmation and truthful diagnostic UI — 25 October 2026
+- The WebView camera zoom and manual-focus UI now separates a requested slider value from a setting actually reported by MediaStreamTrack.getSettings(). Driver acknowledgments without exposed applied settings are explicitly **unconfirmed**, not shown as hardware verification. Expired rapid-slider callbacks cannot overwrite later commands.
+- Camera control read-back supports numeric tolerance and string modes; a changed/ended track returns unknown. The focus control resets its request generation after a stream change, and hook invocation remains stable when a lens cannot focus manually.
+- A preview with zero/invalid dimensions still routes touch focus to safe centre coordinates (previous improvement).
+- Mode diagnosis distinguishes a saved but mismatched video file from a verified recorded mode. Merely recorded evidence now stays deferred for re-check rather than appearing as an irrecoverable camera failure. The UI shows separately confirmed modes and recorded-only files.
+- Code-level tests cover matching/denied/unknown applied settings and the non-verification of recorded-only modes. Physical phone verification remains outstanding.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
