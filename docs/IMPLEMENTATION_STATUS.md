@@ -60,6 +60,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - After moving from tabletop (horizontal hinge) to book/cover orientation, obsolete CSS offsets for upper/lower panes are removed instead of leaking into the new layout.
 - No claim of complete codec FPS verification, uninterrupted Activity-recreation video, or physical foldable compatibility is made without physical tests.
 
+## Dual encoder timeout recovery and mixed-hinge layout — 25 October 2026
+- When the second MediaRecorder fails to deliver onstop within 12 seconds, previously emitted chunks are no longer discarded automatically. Nontrivial data is saved as a potentially incomplete clip and verified separately from local storage. A timeout is always treated as a failed dual recording, never as a successfully synchronized pair.
+- Added an end-to-end mock lifecycle regression covering a stalled second encoder, ordinary paired completion, stream loss, error and failed IndexedDB persistence. This is software-test coverage, not verified device recovery.
+- Tabletop camera UI now requires precisely two actual vertically stacked regions of similar width and position. Mixed perpendicular hinge layouts with four regions no longer trigger the inappropriate two-pane tabletop controls.
+- Real physical device continuity, 4K high-load thermal behavior and full-file integrity remain unverified.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
