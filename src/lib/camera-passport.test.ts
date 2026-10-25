@@ -42,6 +42,11 @@ describe("separate actual encoded media metadata", () => {
 });
 
 describe("WebView diagnostic engine freshness", () => {
+  it("requires re-verification of legacy results without an engine marker", () => {
+    localStorage.setItem("multicam-mode-evidence-v1", JSON.stringify([evidence]));
+    expect(loadModeEvidence()[0]?.state).toBe("unknown");
+    expect(loadModeEvidence()[0]?.requested).toEqual(evidence.requested);
+  });
   it("does not reuse verified tests from a changed browser or diagnostic mechanism", () => {
     recordModeEvidence(evidence);
     expect(loadModeEvidence()[0]?.state).toBe("verified");
