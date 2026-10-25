@@ -86,6 +86,14 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Mode diagnosis distinguishes a saved but mismatched video file from a verified recorded mode. Merely recorded evidence now stays deferred for re-check rather than appearing as an irrecoverable camera failure. The UI shows separately confirmed modes and recorded-only files.
 - Code-level tests cover matching/denied/unknown applied settings and the non-verification of recorded-only modes. Physical phone verification remains outstanding.
 
+## Camera controls and resized fold panes — 25 October 2026
+- Manual focus and zoom now distinguish requested UI values from **reported applied camera settings**. WebView `applyConstraints()` resolving without a matching `getSettings()` value is not treated as camera-hardware confirmation; unsupported reporting is shown as unknown, not fabricated success. Rapid slider callbacks are versioned and stale replies are ignored.
+- The focus rail keeps React hook ordering stable across fixed-focus and manual-focus camera switches. Changing streams invalidates the old pending request and an invalid focus viewport safely uses the centre.
+- The diagnostics UI separates truly verified per-camera video modes from files that were recorded but did not prove the mode. Those incomplete results remain eligible for further diagnosis, not a definitive unsupported verdict.
+- Folding evidence includes a bounded, rounded signature of **actual usable pane geometry**. A WebView resize that changes pane dimensions but not the Android WindowManager revision can now produce a distinct capture event, while unchanged geometry remains deduplicated.
+- Added regression tests for mode classification, camera-setting readback, and same-revision fold geometry changes.
+- Limitations: driver-exposed settings are not independent optical verification; video codec FPS, frame-perfect multi-camera sync, physical folding continuity and all-device compatibility still require native/device-level testing.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
