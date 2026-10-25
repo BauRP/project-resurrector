@@ -10,7 +10,15 @@ export const TEST_MODES: readonly TestMode[] = [
   { width: 3840, height: 2160, fps: 30 },
   { width: 3840, height: 2160, fps: 60 },
 ];
-const MIMES = ["video/webm;codecs=vp8,opus","video/webm;codecs=vp9,opus","video/webm","video/mp4;codecs=avc1"];
+// Diagnostics request video only: do not require an Opus audio encoder.
+const MIMES = ["video/webm;codecs=vp8","video/webm;codecs=vp9","video/webm","video/mp4;codecs=avc1"];
+
+export function decodedOutputMatchesRequested(
+  mode: TestMode, output: { width: number; height: number },
+): boolean {
+  return (output.width === mode.width && output.height === mode.height) ||
+    (output.width === mode.height && output.height === mode.width);
+}
 /** Only an explicitly unsatisfied camera constraint proves API-level incompatibility. */
 export function classifyModeFailure(error: unknown, aborted: boolean): "unknown" | "rejected" {
   if (aborted || error instanceof CameraBusyError || error instanceof CameraSupersededError) return "unknown";
@@ -81,7 +89,10 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       (actual.width === mode.height && actual.height === mode.width);
     const fpsKnown = typeof actual.frameRate === "number" && Number.isFinite(actual.frameRate);
     const fpsMatch = fpsKnown && Math.abs(actual.frameRate! - mode.fps) < 1.1;
-    if (!dimensionsMatch || (fpsKnown && !fpsMatch)) {
+    if (actual.deviceId && actual.deviceId !== deviceId) {
+      result.state = "unknown";
+      result.message = "WebView открыл другой идентификатор камеры; этот объектив не подтверждён";
+    } else if (!dimensionsMatch || (fpsKnown && !fpsMatch)) {
       result.state = "rejected";
       result.message = "Фактическое разрешение или FPS отличаются от запрошенных";
     } else if (!fpsKnown) {
@@ -94,8 +105,16 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       result.state = "recorded";
       const frame = await verifyDecodedVideoBlob(blob, signal, 5000);
       if (!frame.verifiedFirstFrame) throw new Error("Первый кадр не декодирован");
-      result.state = "verified";
-      result.message = "Первый кадр пробного файла декодирован (" + blob.size + " байт, " + frame.width + "×" + frame.height + "). FPS кодека, HDR и стабилизация не проверены";
+      result.file = { width: frame.width, height: frame.height, bytes: blob.size, mimeType: blob.type };
+      // Stream settings and decoded file resolution are separate evidence.
+      // A resized encoded file must never verify the originally requested mode.
+      const exactFile = decodedOutputMatchesRequested(mode, frame);
+      result.state = exactFile ? "verified" : "recorded";
+      result.message = exactFile
+        ? "Первый кадр файла декодирован (" + blob.size + " байт, " + frame.width + "×" + frame.height + "). FPS файла, HDR и стабилизация не проверены"
+        : "Видеофайл декодирован, но размер кадра " + frame.width + "×" + frame.height +
+          " отличается от выбранного " + mode.width + "×" + mode.height +
+          "; режим записи с этим размером не подтверждён";
     }
   } catch (e) {
     result.state = classifyModeFailure(e, signal.aborted);

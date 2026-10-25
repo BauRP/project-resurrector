@@ -29,3 +29,14 @@ describe("persisted camera passport validation",()=>{
     expect(loadModeEvidence()).toHaveLength(3);
   });
 });
+
+describe("separate actual encoded media metadata", () => {
+  it("retains valid first-frame evidence without claiming actual coded FPS", () => {
+    const proof = {...evidence, file:{width:1920,height:1080,bytes:2048,mimeType:"video/webm"}};
+    recordModeEvidence(proof);
+    expect(loadModeEvidence()[0]?.file).toEqual(proof.file);
+  });
+  it("drops impossible decoded file dimensions", () => {
+    expect(isModeEvidence({...evidence,file:{width:0,height:1080,bytes:2048,mimeType:"video/webm"}})).toBe(false);
+  });
+});

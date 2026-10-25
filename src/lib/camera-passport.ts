@@ -4,6 +4,8 @@ export interface ModeEvidence {
   api: "webview" | "camera2";
   requested: { width: number; height: number; fps: number };
   applied?: { width?: number; height?: number; fps?: number };
+  /** Decoded first video frame metadata, not hardware-sensor or codec-FPS proof. */
+  file?: { width: number; height: number; bytes: number; mimeType: string };
   state: VerificationState;
   message?: string;
   checkedAt: number;
@@ -24,7 +26,12 @@ export function isModeEvidence(value: unknown): value is ModeEvidence {
     typeof e.checkedAt === "number" && Number.isFinite(e.checkedAt) && e.checkedAt > 0 &&
     (e.applied === undefined || (e.applied !== null && typeof e.applied === "object" &&
       Object.values(e.applied).every(x => x === undefined || (typeof x === "number" && Number.isFinite(x) && x > 0)))) &&
-    (e.message === undefined || typeof e.message === "string");
+    (e.message === undefined || typeof e.message === "string") &&
+    (e.file === undefined || (!!e.file &&
+      Number.isSafeInteger(e.file.width) && e.file.width > 0 &&
+      Number.isSafeInteger(e.file.height) && e.file.height > 0 &&
+      Number.isSafeInteger(e.file.bytes) && e.file.bytes >= 1024 &&
+      typeof e.file.mimeType === "string" && e.file.mimeType.length < 256));
 }
 const identity = (row: ModeEvidence) =>
   [row.api, row.cameraId, row.requested.width, row.requested.height, row.requested.fps].join("|");
