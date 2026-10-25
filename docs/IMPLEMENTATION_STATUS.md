@@ -149,6 +149,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - If an OEM browser hides the active device ID, mode verification now remains unknown for that lens, not falsely verified; a mismatched ID is also unknown rather than evidence that the requested lens is unsupported.
 - Regression tests cover matching, mismatched and missing identifiers. This is WebView API-level confirmation; physical camera lens identity and real sensor routing still need device-specific verification.
 
+## Native fold observer ownership during rapid screen remounts — 26 October 2026
+- Android WindowManager observation uses a unique WebView screen-owner lease. Opening a new camera/editor screen no longer permits a late `stopObserving` from the old screen to close the new screen's active fold listener. The native bridge retains one WindowManager subscription while one or more identified clients still hold leases.
+- A disposed WebView screen releases only its own lease, including if its native `startObserving` call completes after unmount. Native Activity destruction clears all owned leases and closes the remaining listener.
+- The native stop path tolerates an Android callback-adapter teardown exception. The implementation does not claim Activity recreation continuity or physical fold behavior was tested on actual OEM devices.
+- Device-level fold/unfold/rapid-remount acceptance remains necessary. Android APK/AAB compilation is not a substitute for those tests.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
