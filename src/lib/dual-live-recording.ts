@@ -33,8 +33,12 @@ export function independentStreamsReady(first: MediaStream | null, second: Media
   if (!first || !second || first === second) return false;
   const a = first.getVideoTracks()[0], b = second.getVideoTracks()[0];
   if (!a || !b || a === b || a.readyState !== "live" || b.readyState !== "live") return false;
-  const idA = a.getSettings().deviceId, idB = b.getSettings().deviceId;
-  return !!idA && !!idB && idA !== idB;
+  // Some OEM camera drivers throw after a stream becomes unavailable. Do not
+  // claim concurrent camera identity when the device IDs cannot be read.
+  try {
+    const idA = a.getSettings().deviceId, idB = b.getSettings().deviceId;
+    return !!idA && !!idB && idA !== idB;
+  } catch { return false; }
 }
 function selectMime(): string {
   if (typeof MediaRecorder === "undefined") throw new Error("MediaRecorder недоступен");
@@ -59,6 +63,9 @@ export function startDualRecording(
   onBothStarted: (skewMs: number) => void,
 ): DualRecordingSession {
   if (!independentStreamsReady(first, second)) throw new Error("Две разные одновременно активные камеры не подтверждены");
+  // Capture stable IDs while both tracks are live. getSettings() may throw
+  // after camera loss, even though encoder chunks must still be salvaged.
+  const deviceIds = [first, second].map(stream => stream.getVideoTracks()[0]!.getSettings().deviceId!);
   const mime = selectMime();
   const captures = [first, second];
   const recorders = captures.map(stream => new MediaRecorder(stream, { mimeType: mime }));
@@ -166,7 +173,7 @@ export function startDualRecording(
         id: "dual-live-" + token + "-" + (index+1), createdAt: startTime,
         camera: index+1, mode: "dual-live", profile: "standard", playbackRate: 1, blob,
         captureGroupId: "dual-live-" + token,
-        cameraDeviceId: captures[index]!.getVideoTracks()[0]!.getSettings().deviceId,
+        cameraDeviceId: deviceIds[index],
         monotonicStartMs: starts[index] ?? undefined,
         synchronizationVerified: false,
         foldTransitions: folds,
