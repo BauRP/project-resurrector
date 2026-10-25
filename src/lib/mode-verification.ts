@@ -19,6 +19,13 @@ export function decodedOutputMatchesRequested(
   return (output.width === mode.width && output.height === mode.height) ||
     (output.width === mode.height && output.height === mode.width);
 }
+/** A stream of the requested resolution is not proof of which lens opened.
+ * Some OEM WebViews omit deviceId; in that case preserve "unknown" rather than
+ * assigning a video recording to a possibly different physical camera.
+ */
+export function isVerifiedCameraIdentity(requestedId: string, reportedId: unknown): boolean {
+  return !!requestedId && typeof reportedId === "string" && reportedId === requestedId;
+}
 /** Only an explicitly unsatisfied camera constraint proves API-level incompatibility. */
 export function classifyModeFailure(error: unknown, aborted: boolean): "unknown" | "rejected" {
   if (aborted || error instanceof CameraBusyError || error instanceof CameraSupersededError) return "unknown";
@@ -113,9 +120,11 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       (actual.width === mode.height && actual.height === mode.width);
     const fpsKnown = typeof actual.frameRate === "number" && Number.isFinite(actual.frameRate);
     const fpsMatch = fpsKnown && Math.abs(actual.frameRate! - mode.fps) < 1.1;
-    if (actual.deviceId && actual.deviceId !== deviceId) {
+    if (!isVerifiedCameraIdentity(deviceId, actual.deviceId)) {
       result.state = "unknown";
-      result.message = "WebView открыл другой идентификатор камеры; этот объектив не подтверждён";
+      result.message = actual.deviceId
+        ? "WebView открыл другой идентификатор камеры; этот объектив не подтверждён"
+        : "WebView не раскрыл идентификатор активной камеры; этот объектив не подтверждён";
     } else if (!dimensionsMatch || (fpsKnown && !fpsMatch)) {
       result.state = "rejected";
       result.message = "Фактическое разрешение или FPS отличаются от запрошенных";
