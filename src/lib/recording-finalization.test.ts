@@ -1,0 +1,19 @@
+import { describe, expect, it } from "vitest";
+import { planRecordingFinalization } from "./recording-finalization";
+describe("recording recovery and truthful completion", () => {
+  it("does not claim an empty or tiny blob can be saved", () => {
+    expect(planRecordingFinalization(0, "", "").attemptSave).toBe(false);
+    expect(planRecordingFinalization(1000, "encoder failed", "").attemptSave).toBe(false);
+    expect(planRecordingFinalization(Number.NaN, "", "").attemptSave).toBe(false);
+  });
+  it("attempts to salvage a partial encoder recording without reporting success", () => {
+    const result = planRecordingFinalization(1048576, "bitstream failure", "");
+    expect(result.attemptSave).toBe(true);
+    expect(result.incomplete).toBe(true);
+    expect(result.message).toContain("bitstream failure");
+  });
+  it("marks background/device interruption as partial, ordinary recording as clean", () => {
+    expect(planRecordingFinalization(2048, "", "Приложение в фоне").incomplete).toBe(true);
+    expect(planRecordingFinalization(2048, "", "").incomplete).toBe(false);
+  });
+});
