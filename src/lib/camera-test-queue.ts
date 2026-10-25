@@ -54,11 +54,15 @@ export function prepareCameraTestQueue(
   previous: readonly CameraTestTask[],
   evidence: readonly ModeEvidence[],
 ): CameraTestTask[] {
-  const tasks = new Map(previous.filter(isTask).map(task => [task.key, task]));
+  const activeIds = new Set(deviceIds.filter(Boolean));
+  // Keep previous tasks only for cameras currently exposed by WebView.
+  // Disconnected devices must not push active tests out of a capped queue.
+  const tasks = new Map(previous.filter(isTask).filter(task => activeIds.has(task.cameraId))
+    .map(task => [task.key, task]));
   const verifiedKeys = new Set(evidence.filter(isModeEvidence)
     .filter(row => row.api === "webview" && row.state === "verified")
     .map(row => cameraTaskKey(row.cameraId, row.requested)));
-  for (const cameraId of new Set(deviceIds.filter(Boolean))) {
+  for (const cameraId of activeIds) {
     for (const mode of modes) {
       const key = cameraTaskKey(cameraId, mode);
       const prior = tasks.get(key);
