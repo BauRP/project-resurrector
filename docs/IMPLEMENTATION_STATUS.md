@@ -132,6 +132,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Regression tests cover two hinges in different states with reversed reported order, while preserving their physical geometry and original posture association.
 - The observer records geometry/posture only; uninterrupted capture through Android window or Activity recreation still requires physical-device validation.
 
+## Recording probe lifecycle and fold layout scheduling — 25 October 2026
+- WebView diagnostic mode recordings now require a real MediaRecorder `onstart` event before a test file can serve as evidence of successful camera-mode recording. A silent encoder or onstop without onstart results in an unknown diagnostic outcome, not falsely verified video support.
+- Diagnostic recording startup waits up to four seconds, then attempts safe stop and releases the recorder. A separate bounded overall timer limits stalled stop callbacks. Cancellation removes listeners/timers and cannot mark the recording verified.
+- Regression tests simulate a WebView MediaRecorder that produces bytes without onstart, and a healthy recorder that starts and stops with a genuine encoded blob.
+- Foldable layout adaptation coalesces repeated mutation/resize events into one scheduled animation-frame measurement without repeatedly cancelling the frame. This prevents continuous DOM mutation bursts from postponing every useful layout measurement.
+- These tests are mocked browser/CI checks, not proof of codec FPS, all-frame integrity, physical folding continuity or Android Activity recreation behavior.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
