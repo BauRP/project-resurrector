@@ -167,6 +167,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - This improves reliable Camera/Editor/Settings pane placement and fold-transition evidence, without asserting full compatibility on any specific untested tri-fold hardware.
 - Hardware acceptance for folding while MediaRecorder is active, Activity recreation and native camera stabilization remains outstanding.
 
+## Camera evidence levels: encoded FPS is not inferred — 26 October 2026
+- A short WebView test clip with a decoded first frame is now classified as `recorded`, not fully `verified`. Stream `getSettings().frameRate` and one decoded frame do not independently establish coded video FPS, all-frame integrity, or frame drops. This prevents falsely advertising a 4K60 verified recording.
+- Capture proof retains separately the requested dimensions/FPS, applied MediaStreamTrack settings, first decoded file frame dimensions, output MIME and bytes. A decoded but resized clip remains visible as recorded-only, not verified.
+- If settings were applied but encoding failed, status remains `applied` with an explicit error rather than fabricating an unsupported camera. If a file was produced but decoding failed, status remains `recorded` with the failure reason.
+- Diagnostic engine context was incremented so older first-frame-only results are not reused as current `verified` evidence without retesting. Regression tests cover 4K60 and downscaled decoded frames.
+- Physical measurements of encoded timestamps/FPS, codec frame drops, stabilization, long-running recording and fold continuity still require dedicated verification.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
