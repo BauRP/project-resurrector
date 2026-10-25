@@ -66,6 +66,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Tabletop camera UI now requires precisely two actual vertically stacked regions of similar width and position. Mixed perpendicular hinge layouts with four regions no longer trigger the inappropriate two-pane tabletop controls.
 - Real physical device continuity, 4K high-load thermal behavior and full-file integrity remain unverified.
 
+## Bounded persisted-media inspection and fold region truthfulness — 25 October 2026
+- Saved recordings are now checked at three small byte ranges (start/middle/end) after IndexedDB read-back, in addition to checking identifier, blob length and MIME type. Sampling uses no full-file in-memory copy and has a FileReader fallback for older WebViews. **This does not prove full-file integrity** or successfully decoded video; decoding remains a separate check.
+- Added tests for equal media and same-size modifications at the start, middle and end, plus MIME mismatches.
+- Fold evidence counts only hinges that actually divide a usable WebView window region. A manufacturer-reported short hinge segment that does not split the app window no longer claims an extra active pane. Existing two-hinge and mixed-orientation tests still run.
+- Physical phone testing remains outstanding for recording integrity after prolonged capture and folding/unfolding during active recording.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
