@@ -100,7 +100,9 @@ export function startDualRecording(
     finishers[i] = resolve;
   }));
   const stop = (reason = "") => {
-    if (reason) stopReason = reason;
+    // Retain the ORIGINAL interruption cause. A later UI stop/unmount
+    // must never erase the reason a camera recording first failed.
+    if (reason && !stopReason) stopReason = reason;
     if (stopRequested) return;
     stopRequested = true;
     window.clearTimeout(startupTimer);
