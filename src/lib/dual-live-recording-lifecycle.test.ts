@@ -82,6 +82,22 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     expect(clips.map(c=>c.cameraDeviceId)).toEqual(["rear","front"]);
     expect(clips.every(c=>c.synchronizationVerified===false)).toBe(true);
   });
+  it("keeps the original camera ID even if driver getSettings fails during finalization", async () => {
+    const one=camera("rear"), two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    Object.defineProperty(one.track,"getSettings",{value:()=>{throw new Error("camera disconnected");}});
+    one.track.dispatchEvent(new Event("ended"));
+    const result=await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(false);
+    const clips=vi.mocked(saveRecordedClipsAtomically).mock.calls[0]![0];
+    expect(clips.map(c=>c.cameraDeviceId)).toEqual(["rear","front"]);
+  });
+  it("treats unreadable camera IDs as unverified instead of crashing", () => {
+    const one=camera("rear"), two=camera("front");
+    Object.defineProperty(one.track,"getSettings",{value:()=>{throw new Error("camera busy");}});
+    expect(() => startDualRecording(one.stream,two.stream,vi.fn())).toThrow("Две разные одновременно активные камеры");
+  });
   it("preserves clips but reports interruption after actual camera track loss", async () => {
     const one=camera("rear"), two=camera("front");
     const session=startDualRecording(one.stream,two.stream,vi.fn());
