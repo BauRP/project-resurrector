@@ -101,6 +101,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Regression tests verify no premature timeout, honest failure classification, one-time watchdog timeout and cancellation after a confirmed start. They use simulated WebView encoders; uninterrupted real-device camera capture still requires field validation.
 - Folding/resizing tests remain in place and no MediaRecorder is recreated merely because the CSS panes change.
 
+## Camera-disconnect and fold-listener lifecycle hardening — 25 October 2026
+- Dual MediaRecorder capture now snapshots verified device IDs while both video tracks are available. If an OEM driver later throws from `getSettings()` after disconnect, clip salvage can still preserve camera identity and save chunks, while honestly marking the session interrupted.
+- Concurrent-camera verification handles driver exceptions as unknown/unavailable rather than crashing or inventing support. Added regression tests for unreadable device IDs and ID preservation after track loss.
+- Fold-aware ResizeObserver now unobserves the detached camera subtree on tab transitions and observes the replacement only once; the cleanup path also releases its reference.
+- Multi-hinge layout evidence is normalized by sorted measured pane positions. Reordering identical native hinge features no longer creates fictitious topology changes. UI fold counts now reflect features actually dividing usable regions, not invalid/out-of-window raw events.
+- These are unit/build-verified mechanisms, not physical proof of uninterrupted camera recording during Activity recreation, device folding, thermal load or extended dual-camera sessions.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
