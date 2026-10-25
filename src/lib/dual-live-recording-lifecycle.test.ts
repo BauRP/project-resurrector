@@ -48,7 +48,7 @@ class MockRecorder {
 function camera(id: string) {
   const track = new EventTarget() as MediaStreamTrack;
   Object.defineProperty(track, "readyState", {value:"live"});
-  Object.defineProperty(track, "getSettings", {value:()=>({deviceId:id})});
+  Object.defineProperty(track, "getSettings", {configurable:true,value:()=>({deviceId:id})});
   const stream = {getVideoTracks:()=>[track]} as unknown as MediaStream;
   return {track, stream};
 }
