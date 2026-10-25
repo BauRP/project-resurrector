@@ -50,7 +50,7 @@ export function loadModeEvidence(): ModeEvidence[] {
     const value: unknown = JSON.parse(raw);
     const rows: ModeEvidence[] = Array.isArray(value) ? value.filter(isModeEvidence).slice(-200) : [];
     const previousContext = localStorage.getItem(CONTEXT_KEY);
-    if (!previousContext || previousContext === cameraPassportContext()) return rows;
+    if (previousContext === cameraPassportContext()) return rows;
     // Keep the old requested/applied/file evidence for the user, but do not
     // reuse its "verified" flag to skip tests on a changed runtime.
     return rows.map(row => ({
