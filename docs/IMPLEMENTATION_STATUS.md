@@ -139,6 +139,11 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Foldable layout adaptation coalesces repeated mutation/resize events into one scheduled animation-frame measurement without repeatedly cancelling the frame. This prevents continuous DOM mutation bursts from postponing every useful layout measurement.
 - These tests are mocked browser/CI checks, not proof of codec FPS, all-frame integrity, physical folding continuity or Android Activity recreation behavior.
 
+## Stale camera track handoff protection — 25 October 2026
+- Tracks acquired by the single camera controller are registered in a weak ownership set. After capture release or supersession, delayed slider/focus commands cannot be applied to a previously owned stream even if the OEM camera driver still labels its track live.
+- Independently created second-camera tracks are not blocked merely because the primary controller has an owner.
+- Added a simulated user capture handoff test for a stale camera setting request; this does not prove correct behavior on a particular OEM driver.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
