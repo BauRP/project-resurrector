@@ -121,6 +121,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - An Android WindowManager fold observer can finish starting after its React owner unmounts. The async bridge now checks disposal after startObserving() resolves and requests stopObserving() again, preventing an orphaned native subscription.
 - Limitations: add-only persistence prevents accidental overwrites, but hardware failures or IndexedDB corruption may still lose storage; compatibility during actual fold/unfold Activity recreation remains unverified. Unit tests/CI do not substitute physical-device testing.
 
+## Per-camera passport version isolation — 25 October 2026
+- Fixed an important false-verification bug: after a WebView/diagnostic engine change, testing one camera no longer inadvertently marks ALL other old camera mode samples as current. Each saved camera/mode entry carries its own diagnostic engine and WebView context; historical samples remain readable but are displayed as unknown until retested.
+- Diagnostic evidence now preserves old raw results without replacing their original status merely because an unrelated camera was tested. Fresh per-mode evidence alone can be verified in the new engine context.
+- Added regression tests for changed WebView runtime, legacy rows lacking their own context, and re-verification of only one lens while another retains stale evidence.
+- This is trustworthy bookkeeping, **not** real hardware mode validation. Native Camera2 and physical-device acceptance still require their own verification.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
