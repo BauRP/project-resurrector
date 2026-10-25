@@ -1,0 +1,120 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { startDualRecording } from "./dual-live-recording";
+import { readPersistedClip, saveRecordedClipsAtomically } from "./clip-persistence";
+import { verifyDecodedVideoBlob } from "./clip-playback";
+import { FOLD_EVENT } from "./fold-recording-evidence";
+
+vi.mock("./clip-persistence", () => ({
+  saveRecordedClipsAtomically: vi.fn(async () => undefined),
+  readPersistedClip: vi.fn(async (id: string) => ({
+    id, blob: new Blob(["x".repeat(2048)], { type: "video/webm" }),
+  })),
+}));
+vi.mock("./clip-playback", () => ({
+  verifyDecodedVideoBlob: vi.fn(async () => ({
+    verifiedFirstFrame: true, width: 1280, height: 720,
+  })),
+}));
+
+class MockRecorder {
+  static instances: MockRecorder[] = [];
+  static isTypeSupported = (_mime: string) => true;
+  state: RecordingState = "inactive";
+  mimeType: string;
+  onstart: (() => void) | null = null;
+  onstop: (() => void) | null = null;
+  ondataavailable: ((event: {data: Blob}) => void) | null = null;
+  onerror: ((event: Event & { error?: Error }) => void) | null = null;
+  constructor(_stream: MediaStream, options: MediaRecorderOptions) {
+    this.mimeType = options.mimeType ?? "video/webm";
+    MockRecorder.instances.push(this);
+  }
+  start() {
+    this.state = "recording";
+    this.onstart?.();
+  }
+  stop() {
+    if (this.state === "inactive") return;
+    this.state = "inactive";
+    this.ondataavailable?.({data: new Blob(["x".repeat(2048)], {type:this.mimeType})});
+    this.onstop?.();
+  }
+  fail() {
+    this.onerror?.({type:"error", error:new Error("simulated encoder failure")} as Event & {error:Error});
+  }
+}
+function camera(id: string) {
+  const track = new EventTarget() as MediaStreamTrack;
+  Object.defineProperty(track, "readyState", {value:"live"});
+  Object.defineProperty(track, "getSettings", {value:()=>({deviceId:id})});
+  const stream = {getVideoTracks:()=>[track]} as unknown as MediaStream;
+  return {track, stream};
+}
+
+beforeEach(() => {
+  MockRecorder.instances = [];
+  vi.clearAllMocks();
+  vi.stubGlobal("MediaRecorder", MockRecorder);
+});
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.useRealTimers();
+});
+describe("two live MediaRecorder lifecycle recovery", () => {
+  it("saves two separately decoded clips and does not claim hardware synchronization", async () => {
+    const one=camera("rear"), two=camera("front");
+    const started=vi.fn();
+    const session=startDualRecording(one.stream,two.stream,started);
+    expect(MockRecorder.instances).toHaveLength(2);
+    expect(started).toHaveBeenCalledTimes(1);
+    session.stop();
+    const result=await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(true);
+    expect(saveRecordedClipsAtomically).toHaveBeenCalledTimes(1);
+    expect(readPersistedClip).toHaveBeenCalledTimes(2);
+    expect(verifyDecodedVideoBlob).toHaveBeenCalledTimes(2);
+    const clips=vi.mocked(saveRecordedClipsAtomically).mock.calls[0]![0];
+    expect(clips.map(c=>c.cameraDeviceId)).toEqual(["rear","front"]);
+    expect(clips.every(c=>c.synchronizationVerified===false)).toBe(true);
+  });
+  it("preserves clips but reports interruption after actual camera track loss", async () => {
+    const one=camera("rear"), two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    one.track.dispatchEvent(new Event("ended"));
+    const result=await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(false);
+    expect(result.message).toContain("Видеопоток потерян");
+  });
+  it("salvages available data without claiming a clean pair when an encoder errors", async () => {
+    const one=camera("rear"), two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    MockRecorder.instances[0]!.fail();
+    const result=await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(false);
+    expect(result.message).toContain("кодировщика");
+  });
+  it("retains bounded true fold events in saved clips without declaring continuity", async () => {
+    const one=camera("rear"), two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{
+      revision:3,posture:"HALF_OPENED",hingeCount:1,usableRegions:2,layout:"vertical",
+    }}));
+    session.stop();
+    await session.done;
+    const clips=vi.mocked(saveRecordedClipsAtomically).mock.calls[0]![0];
+    expect(clips[0]?.foldTransitions).toHaveLength(1);
+    expect(clips[0]?.foldContinuityVerified).toBe(false);
+  });
+  it("rejects failed persistence and does not leave old recording event handlers active", async () => {
+    vi.mocked(saveRecordedClipsAtomically).mockRejectedValueOnce(new Error("disk full"));
+    const one=camera("rear"),two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    session.stop();
+    await expect(session.done).rejects.toThrow("disk full");
+    // After completion, a delayed track-ended event cannot issue new stop requests.
+    one.track.dispatchEvent(new Event("ended"));
+  });
+});
