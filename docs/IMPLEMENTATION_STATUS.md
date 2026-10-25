@@ -155,6 +155,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - The native stop path tolerates an Android callback-adapter teardown exception. The implementation does not claim Activity recreation continuity or physical fold behavior was tested on actual OEM devices.
 - Device-level fold/unfold/rapid-remount acceptance remains necessary. Android APK/AAB compilation is not a substitute for those tests.
 
+## Fold UI owner handoff and dual-recording interruption provenance — 26 October 2026
+- Fold screen DOM state and CSS pane measurements now belong to the most recently mounted adaptation instance. Delayed teardown or resize handlers from a previous tab cannot clear/reset the new screen's layout. A regression test mounts two screens, cleans up the old one first, and checks that current viewport properties remain intact.
+- Native fold observer owner leases from the previous batch continue to protect overlapping Android subscriptions across rapid remounts.
+- Dual-camera stop requests now preserve the first recorded failure cause. A later user stop or UI unmount cannot overwrite an earlier camera-stream-loss reason in the final saved-clips status. A dedicated regression test covers this.
+- Neither mocked layout tests nor passing APK compilation prove uninterrupted recording across physical Android Activity recreation; physical-fold and multi-encoder device acceptance remain outstanding.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
