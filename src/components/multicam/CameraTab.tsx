@@ -198,8 +198,27 @@ export function CameraTab() {
         }
       }
     };
+    // pagehide also fires for Activity/WebView teardown where visibilitychange
+    // is omitted. Never promise that a pagehide permits async save to finish.
+    const onPageExit = () => {
+      if (document.hidden) onPageHidden();
+      else {
+        const active = recorderRef.current;
+        if (dualSession.current) dualSession.current.stop("Страница WebView закрывается; сохранение записей не гарантировано");
+        if (active && active.state !== "inactive") {
+          stopReasonRef.current ||= "Страница WebView закрывается; запись могла прерваться";
+          recordingStartCancel.current?.();
+          recordingStopWatch.current?.();
+          try { active.stop(); } catch { /* interruption marker survives */ }
+        }
+      }
+    };
     document.addEventListener("visibilitychange", onPageHidden);
-    return () => document.removeEventListener("visibilitychange", onPageHidden);
+    window.addEventListener("pagehide", onPageExit);
+    return () => {
+      document.removeEventListener("visibilitychange", onPageHidden);
+      window.removeEventListener("pagehide", onPageExit);
+    };
   }, [s.set]);
 
   useEffect(() => {
