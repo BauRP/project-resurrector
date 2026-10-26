@@ -119,6 +119,48 @@ export function summarizePresentedFrames(samples: readonly PlaybackFrameSample[]
     limitation: "Оценка FPS по показанным WebView кадрам; не частота кадров кодека. Пропуски/троттлинг возможны.",
   };
 }
+/** A decoded first frame alone is insufficient to detect a prematurely
+ * truncated recording. Compare the browser-reported file duration with the
+ * MONOTONIC time between actual MediaRecorder start and stop requests.
+ *
+ * This check is deliberately conservative. WebM duration may be unavailable,
+ * short recordings have coarse timestamps, and pause/time-lapse/speed changes
+ * must not be passed as ordinary real-time sessions. A matching duration does
+ * NOT verify encoded FPS, every frame, audio, or fold-time continuity.
+ */
+export type SavedDurationStatus = "consistent" | "short" | "unknown";
+export interface SavedDurationEvidence {
+  status: SavedDurationStatus;
+  expectedMs: number | null;
+  fileMs: number | null;
+  message: string;
+}
+export function assessSavedVideoDuration(
+  expectedMs: number | null | undefined, fileSeconds: number | null | undefined,
+): SavedDurationEvidence {
+  const validExpected = typeof expectedMs === "number" && Number.isFinite(expectedMs) &&
+    expectedMs > 0 && expectedMs <= 24 * 60 * 60 * 1000;
+  const validFile = typeof fileSeconds === "number" && Number.isFinite(fileSeconds) &&
+    fileSeconds > 0 && fileSeconds <= 24 * 60 * 60;
+  const expected = validExpected ? expectedMs! : null;
+  const file = validFile ? fileSeconds! * 1000 : null;
+  if (expected === null || file === null || expected < 10000) {
+    return { status: "unknown", expectedMs: expected, fileMs: file,
+      message: "Сравнение длительности недоступно или запись слишком короткая; целостность кадров не подтверждена." };
+  }
+  const slack = Math.max(4000, Math.min(15000, expected * 0.18));
+  if (expected - file > slack) {
+    return { status: "short", expectedMs: expected, fileMs: file,
+      message: "Длительность сохранённого видео существенно короче времени записи; возможна потеря конца файла." };
+  }
+  if (file - expected > Math.max(5000, expected * 0.5)) {
+    return { status: "unknown", expectedMs: expected, fileMs: file,
+      message: "Длительность файла не соответствует обычной скорости записи; целостность не подтверждена." };
+  }
+  return { status: "consistent", expectedMs: expected, fileMs: file,
+    message: "Длительность видео примерно соответствует времени записи; проверка всех кадров и FPS кодека не выполнена." };
+}
+
 /** Conservative bounded measurement; never mark the encoded FPS as verified. */
 export async function sampleStoredClipDisplayedFps(
   clipId: string,
