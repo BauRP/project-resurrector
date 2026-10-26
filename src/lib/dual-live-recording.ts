@@ -1,6 +1,6 @@
 import { getActiveFoldBaseline } from "./fold-recording-evidence";
 import { readPersistedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
-import { verifyDecodedVideoBlob } from "./clip-playback";
+import { assessSavedVideoDuration, verifyDecodedVideoBlob } from "./clip-playback";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "./fold-recording-evidence";
 
 export interface DualRecordingResult {
@@ -21,6 +21,22 @@ export function isCleanDualRecording(input: {
 }): boolean {
   return input.playable === 2 && input.startedConfirmed && input.failures === 0 &&
     !input.endedUnexpectedly && !input.stopReason;
+}
+/** Equal-length files are not proof of synchronization, but widely different
+ * reported durations expose some prematurely terminated dual camera captures.
+ * If either metadata duration is unavailable, return unknown rather than a
+ * fabricated result.
+ */
+export function compareDualFileDurations(
+  first: number | null, second: number | null,
+): "consistent" | "mismatch" | "unknown" {
+  if (first === null || second === null ||
+      !Number.isFinite(first) || !Number.isFinite(second) ||
+      first <= 0 || second <= 0 || Math.max(first, second) < 6)
+    return "unknown";
+  const longest = Math.max(first, second);
+  return Math.abs(first - second) > Math.max(3, longest * 0.18)
+    ? "mismatch" : "consistent";
 }
 /** Recover only non-empty chunks already emitted by MediaRecorder.
  * These bytes are unverified until persisted and decoded; this is not a claim
@@ -76,6 +92,7 @@ export function startDualRecording(
   const recorders = captures.map(stream => new MediaRecorder(stream, { mimeType: mime }));
   const buffers: Blob[][] = [[], []];
   const starts: (number | null)[] = [null, null];
+  let stopAt: number | null = null;
   const failures: string[] = [];
   let stopRequested = false;
   let completed = false;
@@ -106,6 +123,7 @@ export function startDualRecording(
     if (reason && !stopReason) stopReason = reason;
     if (stopRequested) return;
     stopRequested = true;
+    stopAt = performance.now();
     window.clearTimeout(startupTimer);
     stopTimer = window.setTimeout(() => {
       for (let i = 0; i < recorders.length; i++) {
@@ -127,6 +145,7 @@ export function startDualRecording(
   for (let i = 0; i < recorders.length; i++) {
     const recorder = recorders[i]!;
     recorder.onstart = () => {
+      if (starts[i] !== null) return;
       starts[i] = performance.now();
       if (starts.every(x => x !== null) && !startedConfirmed && !stopRequested) {
         startedConfirmed = true;
@@ -193,10 +212,20 @@ export function startDualRecording(
     // successfully encoded bytes. Verify persisted media, not temporary memory.
     await saveRecordedClipsAtomically(clips);
     const playable: RecordedClip[] = [];
+    const fileDurations: (number | null)[] = [null, null];
     for (const clip of clips) {
       try {
         const stored = await readPersistedClip(clip.id);
-        await verifyDecodedVideoBlob(stored.blob, undefined, 5000);
+        const decoded = await verifyDecodedVideoBlob(stored.blob, undefined, 5000);
+        fileDurations[clip.camera - 1] = decoded.durationSeconds;
+        if (stopAt !== null && starts[clip.camera - 1] !== null) {
+          const expected = Math.max(0, stopAt - starts[clip.camera - 1]!);
+          const evidence = assessSavedVideoDuration(expected, decoded.durationSeconds);
+          if (evidence.status === "short") {
+            failures.push("Камера " + clip.camera +
+              ": сохранённый файл существенно короче подтверждённого периода записи");
+          }
+        }
         playable.push(clip);
       } catch (error) {
         failures.push("Камера " + clip.camera + ": сохранённый кадр не декодирован (" + String(error) + ")");
@@ -208,6 +237,9 @@ export function startDualRecording(
       bytes: clips.map(c => c.blob.size),
       message: "Файлы сохранены, но их воспроизведение из медиатеки не подтверждено. " + failures.join("; "),
     };
+    const durationRelation = compareDualFileDurations(fileDurations[0], fileDurations[1]);
+    if (durationRelation === "mismatch")
+      failures.push("Длительность двух видеоклипов сильно различается; совместная запись не подтверждена");
     // A disappearing stream or forced recording stop is not equivalent
     // to a complete, uninterrupted pair even when both blobs decode.
     const both = isCleanDualRecording({
