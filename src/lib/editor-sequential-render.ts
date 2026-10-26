@@ -169,6 +169,8 @@ export async function renderSequentialVideoWebm(
   };
   signal.addEventListener("abort",abort,{once:true});
   document.addEventListener("visibilitychange",hidden);
+  // Fold-driven Activity replacement may dispatch pagehide without visibilitychange.
+  window.addEventListener("pagehide",abort);
   try {
     if(!document.body)throw Error("Рабочее окно редактора недоступно.");
     document.body.appendChild(video);
@@ -220,6 +222,7 @@ export async function renderSequentialVideoWebm(
     cancelAnimationFrame(frame);
     signal.removeEventListener("abort",abort);
     document.removeEventListener("visibilitychange",hidden);
+    window.removeEventListener("pagehide",abort);
     try{video.pause();if(recorder&&recorder.state!=="inactive")recorder.stop();}catch{/*cleanup*/}
     stream?.getTracks().forEach(t=>t.stop());
     video.onended=null;video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
