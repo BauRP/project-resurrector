@@ -1,3 +1,4 @@
+import { restoreViewState, saveViewState } from "./fold-ui-recovery";
 import type React from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
 import type { CapabilityMatrix, Facing } from "./capabilities";
@@ -94,11 +95,19 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       const saved = JSON.parse(window.localStorage.getItem("multicam-pov-state-native") ?? "{}") as Partial<StateData>;
       const patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
       if (patch.theme !== "light" && patch.theme !== "dark") delete patch.theme;
-      store.getSnapshot().set(patch);
+      store.getSnapshot().set({ ...patch, ...restoreViewState() });
     } catch { /* Restricted storage: retain in-memory state. */ }
     let previous = persistedKeys.map((k) => store.getSnapshot()[k]);
+    let previousView = [store.getSnapshot().tab, store.getSnapshot().playhead,
+      store.getSnapshot().editMode, store.getSnapshot().aspect, store.getSnapshot().captureKind];
     return store.subscribe(() => {
       const state = store.getSnapshot(); const values = persistedKeys.map((k) => state[k]);
+      const view = [state.tab, state.playhead, state.editMode, state.aspect, state.captureKind];
+      if (!view.every((value, index) => Object.is(value, previousView[index]))) {
+        previousView = view;
+        saveViewState({ tab: state.tab, playhead: state.playhead, editMode: state.editMode,
+          aspect: state.aspect, captureKind: state.captureKind });
+      }
       if (values.every((v, i) => Object.is(v, previous[i]))) return;
       previous = values;
       try { window.localStorage.setItem("multicam-pov-state-native", JSON.stringify(Object.fromEntries(persistedKeys.map((k) => [k, state[k]])))); } catch { /* Memory remains available. */ }
