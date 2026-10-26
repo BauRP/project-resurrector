@@ -16,6 +16,9 @@ export interface NativeMp4Inspection {
   source: string;
   samplesRead: number; timestampSpanUs: number;
   audioTrackCount?: number; audioMime?: string | null; audioSamplesDecoded?: false;
+  audioSamplesRead?: number; audioSampleTimestampRollbacks?: number;
+  audioSampleTimestampDuplicates?: number; audioSampleInspectionFailed?: boolean;
+  audioFidelityVerified?: false;
   outOfOrderPresentationTimes: number;
   estimatedSampleFps: number | null;
   sampleLimitReached: boolean;
