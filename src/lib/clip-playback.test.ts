@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isDecodedFirstFrame, summarizePresentedFrames } from "./clip-playback";
+import { assessSavedVideoDuration, isDecodedFirstFrame, summarizePresentedFrames } from "./clip-playback";
 
 describe("decoded video proof", () => {
   it("never accepts loaded metadata alone", () => {
@@ -25,5 +25,28 @@ describe("real presentation frame sampling", () => {
     expect(output.approximateFps).toBe(32);
     expect(output.status).toBe("sampled");
     expect(output.limitation).toContain("не частота кадров кодека");
+  });
+});
+
+
+describe("conservative saved video duration evidence", () => {
+  it("rejects unknown, negative and implausible timestamps", () => {
+    expect(assessSavedVideoDuration(null, 40).status).toBe("unknown");
+    expect(assessSavedVideoDuration(30000, Number.NaN).status).toBe("unknown");
+    expect(assessSavedVideoDuration(-1, 1).status).toBe("unknown");
+    expect(assessSavedVideoDuration(2000, 2).status).toBe("unknown");
+  });
+  it("detects a substantially shortened encoded file", () => {
+    const evidence=assessSavedVideoDuration(60000, 12);
+    expect(evidence.status).toBe("short");
+    expect(evidence.message).toContain("короче");
+  });
+  it("never infers all-frame integrity from a consistent file duration", () => {
+    const evidence=assessSavedVideoDuration(60000, 59);
+    expect(evidence.status).toBe("consistent");
+    expect(evidence.message).toContain("не выполнена");
+  });
+  it("avoids a false success for abnormal time-lapse-like duration", () => {
+    expect(assessSavedVideoDuration(12000, 60).status).toBe("unknown");
   });
 });
