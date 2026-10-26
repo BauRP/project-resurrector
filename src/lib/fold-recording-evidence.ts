@@ -24,6 +24,9 @@ let activeFoldSnapshot: { owner: symbol; observed: FoldTransitionEvidence } | nu
 export function rememberActiveFoldSnapshot(owner: symbol, value: unknown, observedAtMs: number): boolean {
   const evidence = normalizeFoldTransition(value, observedAtMs);
   if (!evidence) return false;
+  if (activeFoldSnapshot?.owner === owner &&
+      (evidence.revision < activeFoldSnapshot.observed.revision ||
+       observedAtMs < activeFoldSnapshot.observed.observedAtMs)) return false;
   activeFoldSnapshot = { owner, observed: evidence };
   return true;
 }
@@ -109,6 +112,8 @@ export function appendFoldTransition(
 export function foldContinuitySummary(events: readonly FoldTransitionEvidence[]): string {
   if (!events.length) return "Во время записи данные о складках недоступны: непрерывность не подтверждена.";
   const changes = Math.max(0, events.length - 1);
-  return "Зафиксировано изменений геометрии: " + changes +
+  const uncertain = events[0]?.baseline !== true;
+  const prefix = uncertain ? "Начальная геометрия на момент старта отсутствует. " : "";
+  return prefix + "Зафиксировано изменений геометрии: " + changes +
     ". Журнал не подтверждает непрерывность кадров или сохранение записи при повороте.";
 }
