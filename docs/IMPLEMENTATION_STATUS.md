@@ -285,3 +285,10 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 - Added focused tests for checkpoint planning, unavailable duration and truthful status. Continued to preserve all original saved blobs on verification failure, without any network services or model downloads.
 - Single-camera fold capture journaling now stops collecting additional topology changes at the encoder stop request rather than allowing delayed onstop/IndexedDB operations to be counted as active capture.
 - Source changes on the independent branch require full CI suite and real hardware verification; user-facing overall readiness 85% camera / 86% folds remains a conservative historical estimate, not newly proven percentages.
+
+
+## WebView recreation UI recovery and truthful interrupted capture — 27 October 2026
+- Added bounded local persistent restoration of UI-only fields: selected tab, editor playhead, edit mode, aspect ratio and photo/video selector. Stored values are validated; no camera ownership, recording flags, permissions, encoder, or purported hardware capabilities are resumed from stale localStorage. This applies to Android Activity/WebView recreation as well as normal relaunches.
+- A lightweight marker is written only after confirmed MediaRecorder start (single or dual mode) and cleared once a saved recording passes IndexedDB durable read-back. If the WebView is destroyed unexpectedly, the marker survives and the next app load displays an explicit warning that earlier capture might have been interrupted and media should be checked. Marker is not a video file, and no continued recording or automatic recovery is claimed.
+- Added regression tests for safe UI field filtering and capture marker validation/clearing. All logic is local/offline; no additional downloads or servers.
+- Still outstanding: physical fold tests, native encoder surviving Activity recreation, robust out-of-process video recording, real encoded-frame FPS and continuous frame/audio validation. New APK/AAB CI and the full test suite have not been confirmed for this batch.
