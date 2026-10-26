@@ -23,6 +23,7 @@ import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.MediaRecorder;
+import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -358,6 +359,20 @@ public class NativeCaptureService extends Service {
         }
         if (camera != null) { try {camera.close();}catch(Exception ignored){}camera=null; }
     }
+    private boolean savedMp4HasVideo(File candidate) {
+        if (candidate == null || !candidate.isFile() || candidate.length() < 1024) return false;
+        MediaMetadataRetriever reader = new MediaMetadataRetriever();
+        try {
+            reader.setDataSource(candidate.getAbsolutePath());
+            String width = reader.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH);
+            String height = reader.extractMetadata(MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT);
+            String duration = reader.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            return width != null && height != null && duration != null &&
+                Integer.parseInt(width) > 0 && Integer.parseInt(height) > 0 &&
+                Long.parseLong(duration) > 0;
+        } catch (Exception ignored) { return false; }
+        finally { try {reader.release();}catch(Exception ignored) {} }
+    }
     private void finish() {
         if (encoder == null && camera == null) { stopSelf(); return; }
         generation++;
@@ -367,8 +382,7 @@ public class NativeCaptureService extends Service {
         boolean valid = false;
         try {
             if (encoder != null && previouslyRecording) encoder.stop();
-            valid = previouslyRecording && media != null && media.isFile() &&
-                media.length() >= 1024;
+            valid = previouslyRecording && savedMp4HasVideo(media);
         } catch (RuntimeException exception) {
             publish("error", "Не удалось завершить нативный MP4: " + exception.getMessage());
         } finally {
