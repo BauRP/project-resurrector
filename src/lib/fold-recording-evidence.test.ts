@@ -20,7 +20,8 @@ describe("fold events attached to capture", () => {
     expect(again).toHaveLength(1);
     const opened = appendFoldTransition(again,{...first,revision:2,posture:"FLAT",observedAtMs:220});
     expect(opened).toHaveLength(2);
-    expect(foldContinuitySummary(opened)).toContain("1");
+    expect(foldContinuitySummary(opened)).toContain("Зафиксировано изменений геометрии: 2");
+    expect(foldContinuitySummary(opened)).toContain("частично неизвестно");
     expect(foldContinuitySummary([])).toContain("не подтверждена");
   });
 });
