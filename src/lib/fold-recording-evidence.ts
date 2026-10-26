@@ -111,9 +111,9 @@ export function appendFoldTransition(
 }
 export function foldContinuitySummary(events: readonly FoldTransitionEvidence[]): string {
   if (!events.length) return "Во время записи данные о складках недоступны: непрерывность не подтверждена.";
-  const changes = Math.max(0, events.length - 1);
+  const changes = Math.max(0, events.length - (events[0]?.baseline === true ? 1 : 0));
   const uncertain = events[0]?.baseline !== true;
-  const prefix = uncertain ? "Начальная геометрия на момент старта отсутствует. " : "";
+  const prefix = uncertain ? "Начальная геометрия на момент старта отсутствует; число изменений частично неизвестно. " : "";
   return prefix + "Зафиксировано изменений геометрии: " + changes +
     ". Журнал не подтверждает непрерывность кадров или сохранение записи при повороте.";
 }
