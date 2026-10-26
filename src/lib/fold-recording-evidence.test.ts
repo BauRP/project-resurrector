@@ -159,7 +159,7 @@ describe("fold posture versus app-window resize reporting",()=>{
   });
   it("counts a genuinely reported hinge posture change separately",()=>{
     const first=normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
-    const changed=normalizeFoldTransition({...sample,revision:2,posture:"HALF_OPENED",regionGeometry:"0,0,280,400;285,0,280,400"},101)!;
+    const changed=normalizeFoldTransition({...sample,revision:2,posture:"FLAT",regionGeometry:"0,0,280,400;285,0,280,400"},101)!;
     expect(foldContinuitySummary([{...first,baseline:true},changed]))
       .toContain("изменений шарниров/положения: 1");
   });
