@@ -290,8 +290,10 @@ export function CameraTab() {
         if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
       };
       const chunks: Blob[] = [];
-      let foldTransitions: FoldTransitionEvidence[] = getActiveFoldBaseline() ? [getActiveFoldBaseline()!] : [];
+      let foldTransitions: FoldTransitionEvidence[] = [];
+      let foldLoggingStarted = false;
       const onFold = (event: Event) => {
+        if (!foldLoggingStarted) return;
         const evidence = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
       };
@@ -316,6 +318,9 @@ export function CameraTab() {
       recorder.onstart = () => {
         if (startGuard && !startGuard.started()) return;
         durationClock.startedAt(performance.now());
+        const initialFold = getActiveFoldBaseline();
+        if (initialFold) foldTransitions = [initialFold];
+        foldLoggingStarted = true;
         updateCurrentSession({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
       };
       recorder.onpause = () => durationClock.pausedAtTime(performance.now());
