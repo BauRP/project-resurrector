@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
 import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-camera-verification";
-import { checkDiagnosticSafety } from "@/lib/diagnostic-safety";
+import { diagnosticProbeLimit, checkDiagnosticSafety } from "@/lib/diagnostic-safety";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -119,6 +119,10 @@ export function CameraDiagnostics() {
           return;
         }
         if (safe.thermal === "unknown" || safe.battery === "unknown" || safe.storage === "unknown") setSafetyNotice(safe.reason);
+        if (count >= diagnosticProbeLimit(safe, eligible.length)) {
+          setProgress("Оставшиеся режимы отложены: состояние устройства не полностью известно");
+          return;
+        }
          const name = devices.find(d => d.deviceId === task.cameraId)?.label || "Камера";
         setProgress("Испытание " + (++count) + "/" + eligible.length + " · " + name + " · " +
           task.mode.width + "×" + task.mode.height + " " + task.mode.fps + " FPS");
