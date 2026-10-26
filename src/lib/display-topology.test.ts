@@ -14,6 +14,9 @@ const hinge = (left: number, right: number, occlusion = "FULL") => ({
 describe("adaptive window classes", () => {
   it("bases classes on usable logical CSS width rather than physical screen pixels", () => {
     expect(windowClass(360)).toBe("compact");
+    expect(windowClass(Number.NaN)).toBe("compact");
+    expect(windowClass(Number.POSITIVE_INFINITY)).toBe("compact");
+    expect(windowClass(0)).toBe("compact");
     expect(windowClass(600)).toBe("medium");
     expect(windowClass(839)).toBe("medium");
     expect(windowClass(840)).toBe("expanded");
