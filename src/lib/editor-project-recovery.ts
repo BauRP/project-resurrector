@@ -35,6 +35,29 @@ function validTransition(v:unknown):v is AnyRecord {
     finite(v.track,1,64)&&typeof v.type==="string"&&v.type.length<64&&
     finite(v.dur,.01,30);
 }
+// Explicit allowlist avoids persisting arbitrary metadata injected by
+// imported projects; nested crop/color must stay bounded numeric settings.
+const numericMap=(v:unknown):Record<string,number>|undefined=>{
+  if(!plain(v))return undefined;
+  const entries=Object.entries(v).filter(([k,x])=>/^[a-zA-Z]{1,30}$/.test(k)&&finite(x,-1000,1000)).slice(0,30);
+  return Object.fromEntries(entries) as Record<string,number>;
+};
+function cleanItem(v:AnyRecord):AnyRecord {
+  return {id:v.id,mediaId:v.mediaId,kind:v.kind,track:v.track,start:v.start,
+    in:v.in,out:v.out,speed:v.speed,reverse:v.reverse,scale:v.scale,
+    posX:v.posX,opacity:v.opacity,look:v.look,
+    ...(numericMap(v.crop)?{crop:numericMap(v.crop)}:{}),
+    ...(numericMap(v.color)?{color:numericMap(v.color)}:{})};
+}
+function cleanOverlay(v:AnyRecord):AnyRecord {
+  return {id:v.id,text:v.text,x:v.x,y:v.y,size:v.size,start:v.start,end:v.end,
+    color:typeof v.color==="string"&&v.color.length<40?v.color:"#ffffff",
+    bg:v.bg===true,font:typeof v.font==="string"&&v.font.length<140?v.font:"sans-serif",
+    subtitle:v.subtitle===true};
+}
+function cleanTransition(v:AnyRecord):AnyRecord {
+  return {id:v.id,track:v.track,aId:v.aId,bId:v.bId,type:v.type,dur:v.dur};
+}
 const booleans=(v:unknown):Record<string,boolean>=>{
   if(!plain(v))return {};
   return Object.fromEntries(Object.entries(v).filter(([key,val])=>/^[av][1-9]\d{0,2}$/.test(key)&&typeof val==="boolean").slice(0,128)) as Record<string,boolean>;
@@ -42,9 +65,9 @@ const booleans=(v:unknown):Record<string,boolean>=>{
 export function sanitizeEditorProject(value:unknown):RecoverableEditorProject {
   const v=plain(value)?value:{};
   return {
-    items:(Array.isArray(v.items)?v.items:[]).filter(validItem).slice(0,400).map(o=>({...o})),
-    overlays:(Array.isArray(v.overlays)?v.overlays:[]).filter(validOverlay).slice(0,250).map(o=>({...o})),
-    transitions:(Array.isArray(v.transitions)?v.transitions:[]).filter(validTransition).slice(0,200).map(o=>({...o})),
+    items:(Array.isArray(v.items)?v.items:[]).filter(validItem).slice(0,400).map(cleanItem),
+    overlays:(Array.isArray(v.overlays)?v.overlays:[]).filter(validOverlay).slice(0,250).map(cleanOverlay),
+    transitions:(Array.isArray(v.transitions)?v.transitions:[]).filter(validTransition).slice(0,200).map(cleanTransition),
     hidden:booleans(v.hidden), muted:booleans(v.muted),
   };
 }
