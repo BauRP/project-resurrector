@@ -1,5 +1,5 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
-import { FOLD_EVENT } from "./fold-recording-evidence";
+import { FOLD_EVENT, rememberActiveFoldSnapshot, forgetActiveFoldSnapshot } from "./fold-recording-evidence";
 export interface FoldFeature {
   leftPx: number; topPx: number; rightPx: number; bottomPx: number;
   orientation: string; state: string; occlusion: string; separating: boolean;
@@ -178,6 +178,7 @@ export function startDisplayAdaptation(): () => void {
     // A viewport resize can change the usable panes without a fresh native
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());
+    rememberActiveFoldSnapshot(token, details, Date.now());
     const signature = [details.posture, details.hingeCount, details.usableRegions,
       details.layout, details.regionGeometry].join("|");
     // Native revision alone is not a physical transition; the capture journal
@@ -315,6 +316,7 @@ export function startDisplayAdaptation(): () => void {
   }
   return () => {
     disposed = true;
+    forgetActiveFoldSnapshot(token);
     window.removeEventListener("resize", measure);
     window.removeEventListener("orientationchange", measure);
     window.visualViewport?.removeEventListener("resize", measure);
