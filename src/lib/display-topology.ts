@@ -61,8 +61,8 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
     typeof f.occlusion === "string" &&
     [f.leftPx, f.rightPx, f.topPx, f.bottomPx].every(Number.isFinite) &&
     f.rightPx >= f.leftPx && f.bottomPx >= f.topPx &&
-    f.leftPx <= topology.widthPx && f.topPx <= topology.heightPx &&
-    f.rightPx >= 0 && f.bottomPx >= 0);
+    f.leftPx >= 0 && f.topPx >= 0 &&
+    f.rightPx <= topology.widthPx && f.bottomPx <= topology.heightPx);
   // Processing order is NOT a physical posture: OEMs may enumerate the
   // exact same perpendicular folds in either order on consecutive callbacks.
   // Canonical geometry prevents fake transitions and unstable pane indices.
