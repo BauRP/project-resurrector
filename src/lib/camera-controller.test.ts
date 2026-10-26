@@ -98,6 +98,25 @@ describe("camera ownership and serialized settings", () => {
     expect(cam.track.applyConstraints).toHaveBeenCalledWith({ advanced: [{ iso: 100, exposureTime: 200 }] });
   });
 
+  it("quarantines a timed-out driver command rather than racing the next setting", async () => {
+    vi.useFakeTimers();
+    const cam = camera();
+    let complete!: () => void;
+    cam.track.applyConstraints.mockImplementationOnce(() => new Promise<void>(resolve => { complete = resolve; }));
+    vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue(cam.stream)}});
+    await cameraController.acquire(Symbol("ui"),{video:true});
+    const first = cameraController.apply(cam.stream,{zoom:2});
+    await vi.advanceTimersByTimeAsync(40);
+    expect(cam.track.applyConstraints).toHaveBeenCalledOnce();
+    const pending = cameraController.apply(cam.stream,{zoom:4});
+    await vi.advanceTimersByTimeAsync(2600);
+    expect(await Promise.all([first,pending])).toEqual([false,false]);
+    expect(cam.track.applyConstraints).toHaveBeenCalledOnce();
+    await expect(cameraController.apply(cam.stream,{zoom:8})).resolves.toBe(false);
+    complete();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(cam.track.applyConstraints).toHaveBeenCalledOnce();
+  });
   it("rejects results from a slow camera driver after release", async () => {
     vi.useFakeTimers();
     const cam = camera();

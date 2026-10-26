@@ -64,6 +64,9 @@ class CameraController {
   // Tracks once owned by this controller are never eligible for commands
   // after release/supersession. Independent dual-camera tracks are separate.
   private controlledTracks = new WeakSet<MediaStreamTrack>();
+  // A timed-out applyConstraints can still complete inside an OEM driver.
+  // Never submit a competing newer setting to that same uncertain track.
+  private timedOutTracks = new WeakSet<MediaStreamTrack>();
   async acquire(owner: symbol, constraints: MediaStreamConstraints, options: { preempt?: boolean } = {}): Promise<MediaStream> {
     // User acquisition may supersede a diagnostic, but never the reverse.
     if (options.preempt === false && this.owner !== null && this.owner !== owner) throw new CameraBusyError();
@@ -99,7 +102,8 @@ class CameraController {
   /** Merge rapid slider commands, serialize device calls, never build a backlog. */
   apply(stream: MediaStream | null, constraints: Record<string, unknown>): Promise<boolean> {
     const track = stream?.getVideoTracks()[0];
-    if (!track?.applyConstraints || track.readyState !== "live") return Promise.resolve(false);
+    if (!track?.applyConstraints || track.readyState !== "live" ||
+        this.timedOutTracks.has(track)) return Promise.resolve(false);
     // Old controller-owned tracks cannot be reconfigured once another
     // capture supersedes them, even if an OEM still reports "live".
     if (this.controlledTracks.has(track) && stream !== this.stream)
@@ -129,7 +133,16 @@ class CameraController {
             await bounded(track.applyConstraints({ advanced: [command] } as MediaTrackConstraints), 2500, "Camera setting");
             ok = !queue.cancelled && track.readyState === "live";
           }
-        } catch { /* Rejected/expired device commands cannot be confirmed. */ }
+        } catch (error) {
+          // A timed-out driver promise may resolve *after* we return to the
+          // app. Quarantine the track until it is replaced rather than issue
+          // more hardware requests concurrently or falsely confirm settings.
+          if (error instanceof Error && error.message === "Camera setting: timeout") {
+            this.timedOutTracks.add(track);
+            queue.command = null;
+            queue.cancelled = true;
+          }
+        }
         queue.inFlightWaiters = [];
         waiters.forEach(resolve => resolve(ok));
       }
