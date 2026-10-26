@@ -173,7 +173,11 @@ export function CameraDiagnostics() {
         setHighSpeedMessage("Сохранён Camera2 MP4: " + file.bytes + " байт. " +
           (parsed ? "Видеодорожка: " + (parsed.width ?? "?") + "×" + (parsed.height ?? "?") +
             ", " + parsed.samplesRead + " сэмплов, " +
-            (parsed.estimatedSampleFps ?? "не удалось оценить") + " FPS по меткам MP4. " :
+            (parsed.estimatedSampleFps ?? "не удалось оценить") + " FPS по начальным меткам MP4. " +
+            "К концу файла прочитано " + (parsed.tailSamplesRead ?? 0) + " сэмплов; FPS в конце: " +
+            (parsed.tailEstimatedSampleFps ?? "неизвестно") + ". " +
+            "Близость к заявленному концу: " + (parsed.tailSampleNearDeclaredEnd === true ? "есть выборка" : "не подтверждена") +
+            ". Поворот MP4: " + (parsed.rotationDegrees ?? "неизвестно") + "°. " :
             "Анализ видеодорожки не прошёл: " + (file.inspectionError ?? "неизвестно") + ". ") +
           "Это не подтверждает FPS сенсора, HDR, стабилизацию или все кадры. Путь: " + file.path);
       }
