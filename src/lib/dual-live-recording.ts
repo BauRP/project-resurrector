@@ -1,3 +1,4 @@
+import { getActiveFoldBaseline } from "./fold-recording-evidence";
 import { readPersistedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
 import { verifyDecodedVideoBlob } from "./clip-playback";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "./fold-recording-evidence";
@@ -83,7 +84,7 @@ export function startDualRecording(
   let stopReason = "";
   let startupTimer = 0, stopTimer = 0;
   const startTime = Date.now();
-  let folds: FoldTransitionEvidence[] = [];
+  let folds: FoldTransitionEvidence[] = getActiveFoldBaseline() ? [getActiveFoldBaseline()!] : [];
   const onFold = (event: Event) => {
     const reading = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
     if (reading) folds = appendFoldTransition(folds, reading);
