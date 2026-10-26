@@ -215,6 +215,10 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - The work is persisted through the per-camera diagnostic queue. A regression test confirms progression from main/ultrawide to tele/front lenses on a later quick pass without needlessly heating the same cameras again.
 - Physical foldable and Camera2 recording acceptance remains separate from these automated queue checks.
 
+## Capture fold metadata validation — 26 October 2026
+- Measured fold pane geometry in recording metadata is now validated for four finite safe-integer rectangle coordinates, positive width/height, nonnegative top/left, and a bounded number of panes. Corrupted, infinite and zero-area rectangles are rejected instead of being presented as real folding evidence. Tests cover correct and malformed values.
+- This validation does not prove uninterrupted physical video capture while changing device posture; frame and file verification remain separate requirements.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
