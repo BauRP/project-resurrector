@@ -10,9 +10,11 @@ vi.mock("./clip-persistence", () => ({
     id, blob: new Blob(["x".repeat(2048)], { type: "video/webm" }),
   })),
 }));
-vi.mock("./clip-playback", () => ({
+vi.mock("./clip-playback", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./clip-playback")>()),
   verifyDecodedVideoBlob: vi.fn(async () => ({
     verifiedFirstFrame: true, width: 1280, height: 720,
+    durationSeconds: null,
   })),
 }));
 
