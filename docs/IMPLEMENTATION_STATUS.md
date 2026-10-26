@@ -219,6 +219,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Measured fold pane geometry in recording metadata is now validated for four finite safe-integer rectangle coordinates, positive width/height, nonnegative top/left, and a bounded number of panes. Corrupted, infinite and zero-area rectangles are rejected instead of being presented as real folding evidence. Tests cover correct and malformed values.
 - This validation does not prove uninterrupted physical video capture while changing device posture; frame and file verification remain separate requirements.
 
+## Capture callback ownership and fold-time viewport safety — 26 October 2026
+- Single and dual MediaRecorder UI callbacks now verify their recording generation and mounted screen before changing camera state. Old save/decode callbacks may still complete durable file work and refresh the library, but cannot overwrite the current session's recording status.
+- Single capture cleanup stops the original canvas/audio processing resources by identity, not a newer session's pipeline after a quick handoff. Added unit tests for the session-generation publishing predicate.
+- Foldable WebView layout measurement rejects zero, negative and non-finite viewport dimensions before writing CSS height and window class. Added regression tests. Physical device fold/Activity recreation and native continuous recording remain unverified.
+- Android release compilation and browser unit tests demonstrate code consistency, not all-device recording continuity.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
