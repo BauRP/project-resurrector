@@ -45,6 +45,22 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(reopened[0]?.attempts).toBe(0);
     expect(queueSummary(reopened,["rear"])).toMatchObject({recorded:1,verified:0,pending:0});
   });
+  it("retries recorded-only video when current WebView passport no longer has its proof", () => {
+    const recorded: ModeEvidence = {...proof,state:"recorded"};
+    const before=prepareCameraTestQueue(["rear"],[base],[],[recorded]);
+    expect(before[0]?.status).toBe("recorded");
+    const after=prepareCameraTestQueue(["rear"],[base],before,[
+      {...recorded,state:"unknown",message:"Версия WebView изменена"},
+    ]);
+    expect(after[0]?.status).toBe("retry");
+    expect(queueSummary(after,["rear"])).toMatchObject({recorded:0,verified:0,pending:1});
+  });
+  it("does not trust an old verified queue entry after current evidence expires", () => {
+    const before=prepareCameraTestQueue(["rear"],[base],[],[proof]);
+    const after=prepareCameraTestQueue(["rear"],[base],before,[]);
+    expect(after[0]?.status).toBe("retry");
+    expect(after[0]?.message).toContain("повторная проверка");
+  });
   it("keeps a verified result even if another mode fails", () => {
     const start = prepareCameraTestQueue(["rear"],[base,{...base,fps:60}],[],[proof]);
     const next = updateCameraTestTask(start,cameraTaskKey("rear",{...base,fps:60}),"error","кодировщик отказал");

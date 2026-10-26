@@ -73,14 +73,19 @@ export function prepareCameraTestQueue(
       const key = cameraTaskKey(cameraId, mode);
       const prior = tasks.get(key);
       const confirmed = verifiedKeys.has(key);
+      // Persisted queue labels are never evidence on their own. A previously
+      // recorded/verified result must be retried when the current passport
+      // no longer provides that proof (WebView upgrade, lens change, etc.).
+      const oldProofExpired = prior?.status === "recorded" || prior?.status === "verified";
       const status: CameraQueueStatus = confirmed ? "verified" :
         recordedKeys.has(key) ? "recorded" :
-        prior?.status === "running" || prior?.status === "verified" ? "retry" :
+        oldProofExpired || prior?.status === "running" ? "retry" :
         prior?.status ?? "pending";
       tasks.set(key, { key, cameraId, mode, status, attempts: prior?.attempts ?? 0,
         checkedAt: prior?.checkedAt ?? null,
         message: confirmed ? "Режим проверен" :
           recordedKeys.has(key) ? "Файл получен; кодированный FPS не подтверждён" :
+          oldProofExpired ? "Актуальное подтверждение отсутствует; требуется повторная проверка" :
           prior?.message ?? "Ожидает" });
     }
   }
