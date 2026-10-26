@@ -356,3 +356,9 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 ## Fold window-resize versus observed hinge posture evidence — 27 October 2026
 - The video capture fold event summary now separates WindowManager-reported posture/hinge/layout changes from **geometry-only** WebView viewport or window resizing. Such a geometry-only event can no longer be presented as physical folding evidence. An original pre-capture baseline and bounded loss/omission counting still apply.
 - Added tests for a pure CSS geometry change and an actual reported posture change. These software tests do not verify a real manufacturer's fold sensor, recording continuity or touch mapping on an actual handset.
+
+
+## Mode-specific Camera2 high-speed passport and fold animation coalescing — 27 October 2026
+- Successfully saved native Camera2 high-speed MP4 now produces separate **recorded** mode evidence in the camera passport indexed by Camera2 camera ID, exact requested dimensions and FPS. Actual file dimensions and bounded head/tail sample data inform the result; unverified encoded FPS never becomes a fully verified mode. Camera2 and WebView ID namespaces remain distinct. Tests cover mismatched output, unknown tail FPS and missing file.
+- Continuous hinge/resize/orientation bursts now share one requestAnimationFrame layout recalculation rather than repetitive synchronous geometry writes on every event. Initial and native observations remain immediately applied and teardown cancels the pending frame. This is a performance change, not a guarantee of recording continuity on physical hardware.
+- Completion percentages are explicitly provisional estimates, not measured total requirement coverage. Real foldable device and video stabilization tests remain outstanding.
