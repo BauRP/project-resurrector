@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 
 /** Each video layer has its own decoder. One shared <video> can only display
  * one of the simultaneous timeline sources, so never reuse it for overlays.
@@ -13,7 +13,7 @@ export interface EditorVideoLayerProps {
   speed: number;
   reverse: boolean;
   playing: boolean;
-  style: React.CSSProperties;
+  style: CSSProperties;
   zIndex: number;
   label: string;
 }
@@ -41,7 +41,7 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
   },[source]);
   useEffect(()=>{
     const v=ref.current;
-    if(!v)return;
+    if(!v||!source)return;
     v.muted=true;
     const to=target();
     if(!Number.isFinite(to))return;
