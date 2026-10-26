@@ -1,3 +1,4 @@
+import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
 import { recordingInputLostReason } from "@/lib/recording-finalization";
 import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
@@ -97,10 +98,19 @@ export function CameraTab() {
     const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
     const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
     // Microphone permission/routing is independent of camera permission.
-    void cameraController.acquire(token, { video, audio })
-      .catch((error: unknown) => {
+    // A separate Android foreground-service session may already own Camera2
+    // after Activity recreation. Never evict it by opening WebView camera.
+    void (async()=>{
+      if(isNative()){
+        const native=await nativeCapture.status();
+        if(nativeRecorderOwnsCamera(native.state))
+          throw Error("Идёт нативная запись. Остановите её в Настройках перед обычным предпросмотром.");
+      }
+      if(!alive)throw Error("Экран камеры уже закрыт");
+      return cameraController.acquire(token, { video, audio });
+    })().catch((error: unknown) => {
         // A retired component must never reopen a camera during microphone fallback.
-        if (!alive) throw error;
+        if (!alive || (error instanceof Error && error.message.includes("нативная запись"))) throw error;
         return cameraController.acquire(token, { video, audio: false });
       })
       .then((next) => {
