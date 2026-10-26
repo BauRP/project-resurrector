@@ -225,6 +225,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Foldable WebView layout measurement rejects zero, negative and non-finite viewport dimensions before writing CSS height and window class. Added regression tests. Physical device fold/Activity recreation and native continuous recording remain unverified.
 - Android release compilation and browser unit tests demonstrate code consistency, not all-device recording continuity.
 
+## Immediate encoder startup failure and fold revision bookkeeping — 26 October 2026
+- A synchronous single MediaRecorder.start() failure now cancels its startup watchdog immediately, clears the old session's timer references and detaches inactive recorder callbacks. The old eight-second callback must not change a later camera recording's UI; live recorders still stop via normal salvage hooks.
+- Native fold updates with a newer WindowManager revision are now forwarded to the bounded capture journal even when observable geometry remains unchanged. The journal deduplicates physical transitions but advances its revision watermark, preventing later stale native events from being accepted as fresh geometry.
+- Added regression tests for revision-only, unchanged, stale and actual geometry updates. These are software-level tests, not evidence of uninterrupted camera recording on physical folding devices.
+- Outstanding physical acceptance: encoded video FPS and full-frame integrity, stabilization effectiveness, long-duration dual-camera capture and Activity recreation during fold/unfold.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
