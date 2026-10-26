@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { planVideoCheckpoints, summarizeVideoCheckpoints } from "./clip-checkpoints";
+import { planVideoCheckpoints, summarizeVideoCheckpoints, checkpointFrameMatches } from "./clip-checkpoints";
 
 describe("bounded decoded checkpoint plan", () => {
   it("does not fabricate timestamps for unknown or very short clips", () => {
@@ -15,5 +15,16 @@ describe("bounded decoded checkpoint plan", () => {
     expect(summarizeVideoCheckpoints(2,1).status).toBe("unavailable");
     expect(summarizeVideoCheckpoints(0,0).status).toBe("unavailable");
     expect(summarizeVideoCheckpoints(2,2).message).toContain("полная целостность");
+  });
+});
+
+
+describe("actual decoded checkpoint frame matching", () => {
+  it("rejects unrelated frames immediately after a seek", () => {
+    expect(checkpointFrameMatches(1,51,3,1920,1080)).toBe(false);
+    expect(checkpointFrameMatches(51.2,51,3,1920,1080)).toBe(true);
+    expect(checkpointFrameMatches(51,51,1,1920,1080)).toBe(false);
+    expect(checkpointFrameMatches(51,51,3,0,1080)).toBe(false);
+    expect(checkpointFrameMatches(Number.NaN,51,3,1920,1080)).toBe(false);
   });
 });
