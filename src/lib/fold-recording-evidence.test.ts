@@ -164,3 +164,20 @@ describe("fold posture versus app-window resize reporting",()=>{
       .toContain("изменений шарниров/положения: 1");
   });
 });
+
+describe("long recording keeps fold classification counts",()=>{
+  it("retains the number of hinge and window-only changes after journal trimming",()=>{
+    const start=normalizeFoldTransition({...sample,revision:1,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    let events=[{...start,baseline:true as const}];
+    for(let i=1;i<=140;i++){
+      const next=normalizeFoldTransition({...sample,revision:i+1,
+        posture:i%2===0?"HALF_OPENED":"FLAT",
+        regionGeometry:`0,0,${280+i},400;${285+i},0,280,400`},100+i)!;
+      events=appendFoldTransition(events,next);
+    }
+    expect(events).toHaveLength(120);
+    expect(events[0]?.baseline).toBe(true);
+    expect(events[0]?.omittedPostureChanges).toBeGreaterThan(0);
+    expect(foldContinuitySummary(events)).toContain("изменений шарниров/положения: 140");
+  });
+});
