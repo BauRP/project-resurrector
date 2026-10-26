@@ -1,3 +1,4 @@
+import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { CaptureDurationClock } from "@/lib/recording-duration";
@@ -318,6 +319,7 @@ export function CameraTab() {
       };
       recorder.onstart = () => {
         if (startGuard && !startGuard.started()) return;
+        markUnfinishedCapture("single", startedAt);
         durationClock.startedAt(performance.now());
         const initialFold = getActiveFoldBaseline();
         if (initialFold) foldTransitions = [initialFold];
@@ -355,6 +357,7 @@ export function CameraTab() {
           playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
           foldTransitions, foldContinuityVerified: false,
         }).then(() => {
+          clearUnfinishedCapture("single", startedAt);
           // Save is durable and independently read back. Decoding is checked
           // separately: failure must not destroy or hide an already saved clip.
           updateCurrentSession({ recordingPhase: plan.incomplete ? "error" : "saved",
@@ -460,12 +463,15 @@ export function CameraTab() {
         if (canPublishCaptureStatus(recordingSessionGeneration.current, dualGeneration, cameraMounted.current)) s.set(value);
       };
       s.set({ recordingPhase: "starting", captureSaveError: "" });
+      const dualStartedAt = Date.now();
       const session = startDualRecording(stream!, secondaryStream!, skew => {
+        markUnfinishedCapture("dual", dualStartedAt);
         updateCurrentDual({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording",
           captureSaveError: "Два кодировщика запущены. Разница старта " + skew + " мс; синхронизация кадров не проверена." });
       });
       dualSession.current = session;
       void session.done.then(result => {
+        clearUnfinishedCapture("dual", dualStartedAt);
         updateCurrentDual({ recording: false, recordingStartedAt: null,
           recordingPhase: result.paired ? "saved" : "error", captureSaveError: result.message });
         // The library must refresh even if a newer camera screen is active.
