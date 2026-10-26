@@ -28,6 +28,12 @@ type Region = { left: number; top: number; width: number; height: number };
 export function safeViewportDimension(value: number): number | null {
   return Number.isFinite(value) && value > 0 ? value : null;
 }
+/** Keep invalid transient CSS viewport readings from clearing a valid
+ * fold layout while Android resizes an Activity.
+ */
+export function retainedViewportDimension(incoming: number, previous: number | null): number | null {
+  return safeViewportDimension(incoming) ?? previous;
+}
 export function windowClass(width: number) {
   // Do not advertise a huge foldable layout for a temporarily invalid width.
   if (!Number.isFinite(width) || width <= 0) return "compact";
@@ -159,11 +165,14 @@ export function startDisplayAdaptation(): () => void {
   const root = document.documentElement;
   const width = () => window.innerWidth;
   const height = () => window.innerHeight;
+  let lastGoodWidth: number | null = null;
+  let lastGoodHeight: number | null = null;
   const measure = () => {
     if (disposed || activeAdaptation !== token) return;
-    const currentWidth = safeViewportDimension(width());
-    const currentHeight = safeViewportDimension(height());
+    const currentWidth = retainedViewportDimension(width(), lastGoodWidth);
+    const currentHeight = retainedViewportDimension(height(), lastGoodHeight);
     if (currentWidth === null || currentHeight === null) return;
+    lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
     root.dataset.windowClass = windowClass(currentWidth);
     root.dataset.windowHeight = currentHeight < 480 ? "short" : "regular";
     root.style.setProperty("--app-viewport-height", currentHeight + "px");
