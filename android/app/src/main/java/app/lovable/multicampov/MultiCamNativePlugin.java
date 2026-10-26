@@ -401,7 +401,12 @@ public class MultiCamNativePlugin extends Plugin {
             recorder.setVideoSize(width, height);
             recorder.setVideoFrameRate(fps);
             recorder.setCaptureRate(fps);
-            recorder.setVideoEncodingBitRate(width * height * fps / 4);
+            // Integer multiplication overflows at common 4K high-speed rates.
+            // Cap the target to a conservative Android MediaRecorder integer
+            // range; the actual encoder may still reject this configuration.
+            long requestedBitRate = ((long) width * (long) height * (long) fps) / 4L;
+            int safeBitRate = (int) Math.min(80_000_000L, Math.max(2_000_000L, requestedBitRate));
+            recorder.setVideoEncodingBitRate(safeBitRate);
             recorder.setOutputFile(output.getAbsolutePath());
             recorder.prepare();
             final Surface surface = recorder.getSurface();
@@ -500,7 +505,7 @@ public class MultiCamNativePlugin extends Plugin {
             extractor.selectTrack(videoTrack);
             long earliest = Long.MAX_VALUE, latest = Long.MIN_VALUE;
             long previous = -1, positiveDelta = 0;
-            int samples = 0, reordered = 0;
+            int samples = 0, reordered = 0, repeated = 0;
             // Limit CPU work on long recordings; a bounded sample is NOT the
             // complete video's FPS and does not prove all frames exist.
             while (samples < 600) {
@@ -511,6 +516,7 @@ public class MultiCamNativePlugin extends Plugin {
                 if (previous >= 0) {
                     if (time > previous) positiveDelta++;
                     else if (time < previous) reordered++;
+                    else repeated++;
                 }
                 previous = time;
                 samples++;
@@ -521,7 +527,11 @@ public class MultiCamNativePlugin extends Plugin {
             result.put("samplesRead", samples);
             result.put("timestampSpanUs", span);
             result.put("outOfOrderPresentationTimes", reordered);
-            result.put("estimatedSampleFps", estimated >= 1 && estimated <= 960
+            result.put("duplicatePresentationTimes", repeated);
+            // A video track with reversed or duplicate presentation timestamps
+            // must never emit an apparently precise recorded-FPS estimate.
+            result.put("estimatedSampleFps", reordered == 0 && repeated == 0 &&
+                    positiveDelta == samples - 1 && estimated >= 1 && estimated <= 960
                 ? Math.round(estimated * 10.0) / 10.0 : JSObject.NULL);
             result.put("sampleLimitReached", samples == 600);
             result.put("fpsMethod", "Bounded MP4 video sample presentation timestamps; not guaranteed camera sensor FPS or full-file integrity");
