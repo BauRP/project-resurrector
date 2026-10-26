@@ -50,9 +50,11 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
       !Number.isSafeInteger(event.hingeCount) || Number(event.hingeCount) < 0 ||
       !Number.isSafeInteger(event.usableRegions) || Number(event.usableRegions) < 1 || Number(event.usableRegions) > 16 ||
       Number(event.hingeCount) > 16 ||
+      Number(event.hingeCount) > Number(event.usableRegions) - 1 ||
       !["none", "vertical", "horizontal"].includes(String(event.layout)) ||
       (event.regionGeometry !== undefined &&
-        (typeof event.regionGeometry !== "string" || !validFoldRegionGeometry(event.regionGeometry)))) return null;
+        (typeof event.regionGeometry !== "string" || !validFoldRegionGeometry(event.regionGeometry) ||
+          event.regionGeometry.split(";").length !== Number(event.usableRegions)))) return null;
   return {
     revision: event.revision as number,
     observedAtMs, posture: event.posture,
