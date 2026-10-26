@@ -25,6 +25,16 @@ describe("fold events attached to capture", () => {
   });
 });
 
+describe("native fold event chronology", () => {
+  it("rejects late older revisions but preserves same-revision viewport changes", () => {
+    const current=normalizeFoldTransition({revision:10,posture:"FLAT",hingeCount:1,
+      usableRegions:2,layout:"vertical",regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    const outdated={...current,revision:9,observedAtMs:101,regionGeometry:"0,0,200,400"};
+    expect(appendFoldTransition([current],outdated)).toEqual([current]);
+    const resized={...current,observedAtMs:102,regionGeometry:"0,0,320,400;325,0,320,400"};
+    expect(appendFoldTransition([current],resized)).toEqual([current,resized]);
+  });
+});
 describe("geometry changes during actual fold recording", () => {
   it("retains a resize with an unchanged native revision but changed region dimensions", () => {
     const a=normalizeFoldTransition({revision:2,posture:"FLAT",hingeCount:1,
