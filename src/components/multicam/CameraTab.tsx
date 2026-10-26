@@ -1,3 +1,4 @@
+import { recordingInputLostReason } from "@/lib/recording-finalization";
 import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
@@ -300,12 +301,15 @@ export function CameraTab() {
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
       };
       let recorderError = "";
+      const sourceInputTracks = stream.getTracks();
+      const lostInputHandlers: Array<{track: MediaStreamTrack; handler: EventListener}> = [];
       const sessionPipe = pipeRef.current;
       const sessionAudio = recordingAudio.current;
       const cleanUp = () => {
         startGuard?.cancel();
         if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
         window.removeEventListener(FOLD_EVENT, onFold);
+        lostInputHandlers.forEach(({track,handler}) => track.removeEventListener("ended",handler));
         // Old encoder completion must never stop a newer recording's
         // canvas track or audio limiter after a quick tab/session handoff.
         sessionPipe?.stop();
@@ -421,6 +425,20 @@ export function CameraTab() {
         } else guard.finish();
       });
       recordingStartCancel.current = startGuard.cancel;
+      for (const track of sourceInputTracks) {
+        const handler: EventListener = () => {
+          if (recorder.state === "inactive") return;
+          const reason = recordingInputLostReason(track.kind === "audio" ? "audio" : "video");
+          recorderError ||= reason;
+          if (!stopReasonRef.current) stopReasonRef.current = reason;
+          updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+          recordingStartCancel.current?.();
+          recordingStopWatch.current?.();
+          try { recorder.stop(); } catch { /* stop guard salvages emitted data */ }
+        };
+        track.addEventListener("ended",handler,{once:true});
+        lostInputHandlers.push({track,handler});
+      }
       recorder.start(1000);
       window.addEventListener(FOLD_EVENT, onFold);
     } catch (error) {
