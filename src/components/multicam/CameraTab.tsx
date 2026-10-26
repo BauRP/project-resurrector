@@ -16,7 +16,7 @@ import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native
 import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
-import { createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
+import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
@@ -282,7 +282,7 @@ export function CameraTab() {
       const camera = s.activeCamera; const startedAt = Date.now();
       const sessionGeneration = ++recordingSessionGeneration.current;
       const updateCurrentSession = (value: Parameters<typeof s.set>[0]) => {
-        if (recordingSessionGeneration.current === sessionGeneration) s.set(value);
+        if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
       };
       const chunks: Blob[] = [];
       let foldTransitions: FoldTransitionEvidence[] = [];
@@ -303,13 +303,13 @@ export function CameraTab() {
       };
       recorder.onstart = () => {
         if (startGuard && !startGuard.started()) return;
-        s.set({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
+        updateCurrentSession({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
       };
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recorder.onerror = (event) => {
         startGuard?.cancel();
         recorderError = (event as Event & { error?: Error }).error?.message || "Ошибка кодировщика";
-        s.set({ recordingPhase: "error", captureSaveError: recorderError });
+        updateCurrentSession({ recordingPhase: "error", captureSaveError: recorderError });
         recordingStartCancel.current?.();
         recordingStopWatch.current?.();
         if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* already stopped */ }
@@ -367,7 +367,7 @@ export function CameraTab() {
       startGuard = createRecorderStartGuard(() => {
         recorderError ||= "Видеокодировщик не подтвердил запуск за 8 секунд";
         stopReasonRef.current = recorderError;
-        s.set({ recording: false, recordingPhase: "stopping", captureSaveError: recorderError });
+        updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: recorderError });
         guard.waitForStop();
         if (recorder.state !== "inactive") {
           try { recorder.stop(); } catch { /* onstop guard salvages existing chunks */ }
@@ -398,18 +398,23 @@ export function CameraTab() {
     }
     dualSessionStarting.current = true;
     try {
+      const dualGeneration = ++recordingSessionGeneration.current;
+      const updateCurrentDual = (value: Parameters<typeof s.set>[0]) => {
+        if (canPublishCaptureStatus(recordingSessionGeneration.current, dualGeneration, cameraMounted.current)) s.set(value);
+      };
       s.set({ recordingPhase: "starting", captureSaveError: "" });
       const session = startDualRecording(stream!, secondaryStream!, skew => {
-        s.set({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording",
+        updateCurrentDual({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording",
           captureSaveError: "Два кодировщика запущены. Разница старта " + skew + " мс; синхронизация кадров не проверена." });
       });
       dualSession.current = session;
       void session.done.then(result => {
-        s.set({ recording: false, recordingStartedAt: null,
+        updateCurrentDual({ recording: false, recordingStartedAt: null,
           recordingPhase: result.paired ? "saved" : "error", captureSaveError: result.message });
-        window.dispatchEvent(new Event("multicam-clips-changed"));
+        // The library must refresh even if a newer camera screen is active.
+        if (result.savedIds.length) window.dispatchEvent(new Event("multicam-clips-changed"));
       }).catch(error => {
-        s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error",
+        updateCurrentDual({ recording: false, recordingStartedAt: null, recordingPhase: "error",
           captureSaveError: "Dual Camera: " + String(error) });
       }).finally(() => { if (dualSession.current === session) dualSession.current = null; });
     } catch (error) {
@@ -417,6 +422,8 @@ export function CameraTab() {
     } finally { dualSessionStarting.current = false; }
   }, [s.recording, s.dualCamera, s.captureKind, stream, secondaryStream]);
   useEffect(() => () => {
+    // Old asynchronous recorder callbacks cannot change the new screen state.
+    recordingSessionGeneration.current++;
     const recorder = recorderRef.current;
     dualSession.current?.stop("Экран камеры закрыт");
     if (recorder && recorder.state !== "inactive") {

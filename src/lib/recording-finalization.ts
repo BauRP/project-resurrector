@@ -25,6 +25,16 @@ export function planRecordingFinalization(bytes: number, encoderError: string, s
   };
 }
 
+/** Late MediaRecorder or IndexedDB completions must not update a later capture
+ * (or a camera screen already unmounted). Storage work still finishes.
+ */
+export function canPublishCaptureStatus(
+  currentGeneration: number, eventGeneration: number, mounted: boolean,
+): boolean {
+  return mounted && Number.isSafeInteger(eventGeneration) &&
+    eventGeneration > 0 && currentGeneration === eventGeneration;
+}
+
 /** A WebView encoder may never dispatch onstop, particularly after errors or
  * a background interruption. A bounded fallback salvages emitted chunks while
  * flagging the result as incomplete. Late duplicate callbacks are ignored.

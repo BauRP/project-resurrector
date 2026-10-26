@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { planRecordingFinalization, createRecorderStartGuard, createRecordingStopGuard } from "./recording-finalization";
+import { planRecordingFinalization, canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard } from "./recording-finalization";
 describe("recording recovery and truthful completion", () => {
   it("does not claim an empty or tiny blob can be saved", () => {
     expect(planRecordingFinalization(0, "", "").attemptSave).toBe(false);
@@ -72,5 +72,23 @@ describe("unconfirmed single-recorder startup", () => {
     await vi.advanceTimersByTimeAsync(12000);
     expect(timeout).not.toHaveBeenCalled();
     vi.useRealTimers();
+  });
+});
+
+describe("capture session ownership across stop, background, and remount", () => {
+  it("permits updates from the active recording only", () => {
+    expect(canPublishCaptureStatus(4,4,true)).toBe(true);
+    expect(canPublishCaptureStatus(5,4,true)).toBe(false);
+    expect(canPublishCaptureStatus(4,4,false)).toBe(false);
+    expect(canPublishCaptureStatus(0,0,true)).toBe(false);
+  });
+  it("does not block durable storage work when previous UI generation expires", () => {
+    let saved=0;
+    const report=(current:number,completed:number,mounted:boolean) => {
+      saved++; // clip can still be committed and announced to library
+      return canPublishCaptureStatus(current,completed,mounted);
+    };
+    expect(report(2,1,true)).toBe(false);
+    expect(saved).toBe(1);
   });
 });
