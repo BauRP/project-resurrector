@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, foldEventDetails, startDisplayAdaptation, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, foldEventDetails, startDisplayAdaptation, safeViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -145,6 +145,13 @@ describe("multi-hinge topology", () => {
 });
 
 describe("layout owner handoff during rapid tab remount", () => {
+  it("rejects invalid fold-time WebView sizes rather than producing invalid CSS", () => {
+    expect(safeViewportDimension(Number.NaN)).toBe(null);
+    expect(safeViewportDimension(Number.POSITIVE_INFINITY)).toBe(null);
+    expect(safeViewportDimension(0)).toBe(null);
+    expect(safeViewportDimension(-30)).toBe(null);
+    expect(safeViewportDimension(840)).toBe(840);
+  });
   it("does not let a former screen remove the active screen's viewport styles", () => {
     const first = startDisplayAdaptation();
     const second = startDisplayAdaptation();
