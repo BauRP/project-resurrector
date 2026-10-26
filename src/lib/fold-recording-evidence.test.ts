@@ -47,14 +47,14 @@ describe("native fold event chronology", () => {
 });
 describe("unchanged physical fold with a new native revision", () => {
   it("does not count revision-only native updates as a second fold", () => {
-    const initial=normalizeFoldTransition({...sample,revision:10,regionGeometry:"0,0,280,400"},100)!;
-    const repeated=normalizeFoldTransition({...sample,revision:11,regionGeometry:"0,0,280,400"},120)!;
+    const initial=normalizeFoldTransition({...sample,revision:10,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    const repeated=normalizeFoldTransition({...sample,revision:11,regionGeometry:"0,0,280,400;285,0,280,400"},120)!;
     const journal=appendFoldTransition([initial],repeated);
     expect(journal).toHaveLength(1);
     expect(journal[0]?.revision).toBe(11);
     expect(appendFoldTransition(journal,{...repeated,revision:10,observedAtMs:130,
       regionGeometry:"0,0,260,400"})).toEqual(journal);
-    const moved={...repeated,revision:11,observedAtMs:140,regionGeometry:"0,0,300,400"};
+    const moved={...repeated,revision:11,observedAtMs:140,regionGeometry:"0,0,300,400;305,0,300,400"};
     expect(appendFoldTransition(journal,moved)).toHaveLength(2);
   });
 });
@@ -78,5 +78,13 @@ describe("fold pane region authenticity", () => {
   });
   it("does not attach impossible overlapping panes to a recording", () => {
     expect(normalizeFoldTransition({...sample,regionGeometry:"0,0,300,400;150,0,300,400"},101)).toBe(null);
+  });
+});
+
+describe("fold feature count consistency", () => {
+  it("rejects a reported pane count that disagrees with measured rectangles", () => {
+    expect(normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400"},101)).toBe(null);
+    expect(normalizeFoldTransition({...sample,hingeCount:3,regionGeometry:"0,0,280,400;285,0,280,400"},101)).toBe(null);
+    expect(normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},101)?.usableRegions).toBe(2);
   });
 });
