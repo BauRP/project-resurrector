@@ -15,6 +15,8 @@ export interface FoldTransitionEvidence {
   baseline?: true;
   /** Count of discarded old observations after the bounded journal filled. */
   omittedEarlierEvents?: number;
+  omittedPostureChanges?: number;
+  omittedGeometryOnlyChanges?: number;
 }
 export const FOLD_EVENT = "multicam-fold-topology";
 
@@ -119,9 +121,21 @@ export function appendFoldTransition(
     ? [next[0]!, ...next.slice(-119)]
     : next.slice(-120);
   const previouslyOmitted = events[0]?.omittedEarlierEvents ?? 0;
+  // Account for transitions that become invisible after truncation. With a
+  // preserved baseline the first retained tail node changes at each append.
+  const droppedBefore = baseline ? next[1] : next[0];
+  const droppedAfter = baseline ? next[2] : next[1];
+  const postureChange = !!droppedBefore && !!droppedAfter &&
+    (droppedBefore.hingeCount !== droppedAfter.hingeCount ||
+      droppedBefore.posture !== droppedAfter.posture ||
+      droppedBefore.layout !== droppedAfter.layout);
+  const previouslyPosture = events[0]?.omittedPostureChanges ?? 0;
+  const previouslyGeometry = events[0]?.omittedGeometryOnlyChanges ?? 0;
   trimmed[0] = {
     ...trimmed[0]!,
     omittedEarlierEvents: previouslyOmitted + (next.length - 120),
+    omittedPostureChanges: previouslyPosture + (postureChange ? 1 : 0),
+    omittedGeometryOnlyChanges: previouslyGeometry + (postureChange ? 0 : 1),
   };
   return trimmed;
 }
@@ -132,8 +146,8 @@ export function foldContinuitySummary(events: readonly FoldTransitionEvidence[])
   // Geometry changes can be ordinary WebView resizing or window-manager
   // adjustments. Count observed hinge/posture changes separately, never
   // infer a real physical fold just from a resized app window.
-  let postureChanges = 0;
-  let geometryOnlyChanges = 0;
+  let postureChanges = events[0]?.omittedPostureChanges ?? 0;
+  let geometryOnlyChanges = events[0]?.omittedGeometryOnlyChanges ?? 0;
   for (let i = 1; i < events.length; i++) {
     const before = events[i - 1]!, after = events[i]!;
     if (before.hingeCount !== after.hingeCount ||
