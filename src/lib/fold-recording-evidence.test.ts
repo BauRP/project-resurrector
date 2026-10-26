@@ -113,3 +113,19 @@ describe("genuine pre-capture fold baseline", () => {
     forgetActiveFoldSnapshot(owner);
   });
 });
+
+
+describe("stale fold baseline rejection", () => {
+  it("retains a newer observation when a delayed native callback arrives", () => {
+    const owner=Symbol("fresh");
+    expect(rememberActiveFoldSnapshot(owner,{...sample,revision:10,regionGeometry:"0,0,280,400;285,0,280,400"},100)).toBe(true);
+    expect(rememberActiveFoldSnapshot(owner,{...sample,revision:9,regionGeometry:"0,0,250,400;255,0,250,400"},101)).toBe(false);
+    expect(getActiveFoldBaseline()?.revision).toBe(10);
+    expect(foldContinuitySummary([getActiveFoldBaseline()!])).toContain("0");
+    forgetActiveFoldSnapshot(owner);
+  });
+  it("labels missing initial baseline without inventing start geometry", () => {
+    const event=normalizeFoldTransition({...sample,revision:2,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    expect(foldContinuitySummary([event])).toContain("Начальная геометрия");
+  });
+});
