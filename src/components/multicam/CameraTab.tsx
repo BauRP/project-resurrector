@@ -401,6 +401,7 @@ export function CameraTab() {
         recorderError ||= "Видеокодировщик не подтвердил остановку за 12 секунд";
       });
       const requestStop = () => {
+        foldLoggingStarted = false;
         durationClock.stopRequestedAt(performance.now());
         guard.waitForStop();
       };
