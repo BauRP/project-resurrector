@@ -199,8 +199,12 @@ export async function renderSequentialVideoWebm(
         result.size>=1024?resolve(result):reject(Error("Видеофайл получился пустым"));
       };
     });
-    // Initial video frame before MediaRecorder.start limits black first frames.
-    ctx.drawImage(video,0,0,output.width,output.height);
+    // Metadata is not proof of a decoded first frame. Never throw from
+    // drawImage before the decoder delivers current video data.
+    ctx.fillStyle="#000000";ctx.fillRect(0,0,output.width,output.height);
+    if(video.readyState>=2)ctx.drawImage(video,0,0,output.width,output.height);
+    video.onended=()=>{if(!switching&&!completed)
+      stop("Клип завершился раньше выбранной точки склейки");};
     recorder.start(1000);
     await bounded(video.play(),4500,"Не удалось начать первый клип");
     frame=requestAnimationFrame(draw);
@@ -218,6 +222,7 @@ export async function renderSequentialVideoWebm(
     document.removeEventListener("visibilitychange",hidden);
     try{video.pause();if(recorder&&recorder.state!=="inactive")recorder.stop();}catch{/*cleanup*/}
     stream?.getTracks().forEach(t=>t.stop());
+    video.onended=null;video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
     video.removeAttribute("src");video.load();video.remove();
     urls.forEach(url=>URL.revokeObjectURL(url));
     if(audio)void audio.close().catch(()=>undefined);
