@@ -468,8 +468,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         const plan=planSimpleVideoRender(items,overlays,transitions.length,
           !!muted[`v${entry?.track}`],!!hidden[`v${entry?.track}`]);
         if(!entry)throw Error("Исходный клип не найден");
-        if(!config.videoCodec.toLowerCase().includes("vp8"))
-          throw Error("Для монтажа одного клипа выберите кодек VP8/WebM. H.264/HEVC и точный 4K пока не поддерживаются.");
+        if(config.videoCodec!=="VP8"||config.resolution!=="720p"||
+           config.fps!=="30"||config.audioCodec!=="Opus")
+          throw Error("Этот офлайн-рендер поддерживает только VP8, Opus, 720p, 30 FPS. Выберите эти параметры в экспорте.");
         const persisted=await readPersistedClip(entry.mediaId);
         return renderSimpleVideoWebm(plan,persisted.blob,signal,progress);
       }
