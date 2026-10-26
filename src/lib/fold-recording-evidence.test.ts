@@ -147,3 +147,20 @@ describe("long fold recording evidence retention", () => {
     expect(foldContinuitySummary(events)).toContain("Ранние наблюдения сокращены");
   });
 });
+
+describe("fold posture versus app-window resize reporting",()=>{
+  it("does not call a CSS viewport resize a physical hinge transition",()=>{
+    const first=normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    const baseline={...first,baseline:true as const};
+    const resize=normalizeFoldTransition({...sample,revision:2,regionGeometry:"0,0,300,400;305,0,300,400"},101)!;
+    const summary=foldContinuitySummary([baseline,resize]);
+    expect(summary).toContain("изменений шарниров/положения: 0");
+    expect(summary).toContain("только геометрии окна: 1");
+  });
+  it("counts a genuinely reported hinge posture change separately",()=>{
+    const first=normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    const changed=normalizeFoldTransition({...sample,revision:2,posture:"HALF_OPENED",regionGeometry:"0,0,280,400;285,0,280,400"},101)!;
+    expect(foldContinuitySummary([{...first,baseline:true},changed]))
+      .toContain("изменений шарниров/положения: 1");
+  });
+});
