@@ -1,3 +1,4 @@
+import { recordingInputLostReason } from "./recording-finalization";
 import { probeVideoBlobCheckpoints } from "./clip-checkpoints";
 import { getActiveFoldBaseline } from "./fold-recording-evidence";
 import { readPersistedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
@@ -181,8 +182,8 @@ export function startDualRecording(
   }
   // Preview tracks outlive recording sessions; retain handlers for cleanup.
   const trackEndHandlers: Array<{ track: MediaStreamTrack; handler: EventListener }> = [];
-  for (const stream of captures) for (const track of stream.getVideoTracks()) {
-    const handler: EventListener = () => stop("Видеопоток потерян во время одновременной записи");
+  for (const stream of captures) for (const track of stream.getTracks()) {
+    const handler: EventListener = () => stop(recordingInputLostReason(track.kind === "audio" ? "audio" : "video", true));
     track.addEventListener("ended", handler, { once: true });
     trackEndHandlers.push({ track, handler });
   }
