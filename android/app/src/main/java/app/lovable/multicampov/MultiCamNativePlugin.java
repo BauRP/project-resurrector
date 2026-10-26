@@ -19,6 +19,7 @@ import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import android.media.MediaRecorder;
 import android.media.MediaExtractor;
+import android.media.MediaMetadataRetriever;
 import android.media.MediaFormat;
 import android.os.Build;
 import android.os.Handler;
@@ -544,7 +545,74 @@ public class MultiCamNativePlugin extends Plugin {
                     positiveDelta == samples - 1 && estimated >= 1 && estimated <= 960
                 ? Math.round(estimated * 10.0) / 10.0 : JSObject.NULL);
             result.put("sampleLimitReached", samples == 600);
-            result.put("fpsMethod", "Bounded MP4 video sample presentation timestamps; not guaranteed camera sensor FPS or full-file integrity");
+            // Independently seek near the CONTAINER-DECLARED end. Reading only
+            // the first 600 encoded samples cannot detect a clipped tail.
+            // Seek may land at an earlier sync frame (or fail altogether),
+            // so report tail evidence separately and never call it a full scan.
+            long declaredDurationUs = -1L;
+            try { if (video.containsKey(MediaFormat.KEY_DURATION))
+                declaredDurationUs = video.getLong(MediaFormat.KEY_DURATION); }
+            catch (RuntimeException ignored) { /* Some OEMs omit duration. */ }
+            int tailSamples = 0, tailBackwards = 0, tailDuplicates = 0;
+            long tailFirst = -1L, tailLast = -1L, tailPrevious = -1L;
+            if (declaredDurationUs > 5_000_000L) {
+                try {
+                    extractor.seekTo(Math.max(0L, declaredDurationUs - 4_000_000L),
+                        MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+                    while (tailSamples < 300) {
+                        long t = extractor.getSampleTime();
+                        if (t < 0) break;
+                        if (tailFirst < 0) tailFirst = t;
+                        if (tailPrevious >= 0) {
+                            if (t < tailPrevious) tailBackwards++;
+                            else if (t == tailPrevious) tailDuplicates++;
+                        }
+                        tailLast = t;
+                        tailPrevious = t;
+                        tailSamples++;
+                        if (!extractor.advance()) break;
+                    }
+                } catch (RuntimeException ignored) {
+                    // Unsupported seek is UNKNOWN, not damaged recorded data.
+                    tailSamples = 0;
+                    tailFirst = -1L;
+                    tailLast = -1L;
+                }
+            }
+            long tailSpanUs = tailLast > tailFirst ? tailLast - tailFirst : 0L;
+            double tailRate = tailSpanUs > 200_000L && tailSamples > 7
+                ? (tailSamples - 1) * 1_000_000.0 / tailSpanUs : 0.0;
+            boolean tailTimestampsValid = tailBackwards == 0 && tailDuplicates == 0;
+            boolean tailNearEnd = declaredDurationUs > 0 && tailLast >= 0 &&
+                tailLast >= declaredDurationUs - 2_000_000L &&
+                tailLast <= declaredDurationUs + 2_000_000L;
+            result.put("tailSamplesRead", tailSamples);
+            result.put("tailFirstPresentationTimeUs", tailFirst >= 0 ? tailFirst : JSObject.NULL);
+            result.put("tailLastPresentationTimeUs", tailLast >= 0 ? tailLast : JSObject.NULL);
+            result.put("tailOutOfOrderPresentationTimes", tailBackwards);
+            result.put("tailDuplicatePresentationTimes", tailDuplicates);
+            result.put("tailSampleNearDeclaredEnd", declaredDurationUs > 0 && tailSamples > 0
+                ? Boolean.valueOf(tailNearEnd) : JSObject.NULL);
+            result.put("tailEstimatedSampleFps",
+                tailTimestampsValid && tailRate >= 1 && tailRate <= 960 &&
+                tailSamples > 7 ? Math.round(tailRate * 10.0) / 10.0 : JSObject.NULL);
+            result.put("fileEndVerified", false); // A sample near the end is NOT a full decode.
+            // Video rotation is metadata only, not proof of visible orientation
+            // after front-facing mirroring, overlays or editor export.
+            MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+            try {
+                retriever.setDataSource(file.getAbsolutePath());
+                String rotation = retriever.extractMetadata(
+                    MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION);
+                int degrees = rotation != null ? Integer.parseInt(rotation) : -1;
+                result.put("rotationDegrees", degrees == 0 || degrees == 90 ||
+                    degrees == 180 || degrees == 270 ? degrees : JSObject.NULL);
+            } catch (Exception ignored) {
+                result.put("rotationDegrees", JSObject.NULL);
+            } finally {
+                retriever.release();
+            }
+            result.put("fpsMethod", "Bounded MP4 head + near-tail encoded sample timestamps; not camera sensor FPS, all-frame continuity or full video decode");
             return result;
         } finally {
             extractor.release();
