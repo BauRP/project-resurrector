@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
 import { bounded, retry } from "@/lib/async";
+import { registerEditorRender } from "@/lib/editor-render-bridge";
+import { canExportOriginalClip } from "@/lib/editor-original-export";
+import { readPersistedClip } from "@/lib/clip-persistence";
 import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
 import { timelineMinZoom, timelineTime, visibleTiles } from "@/lib/timeline";
@@ -439,6 +442,25 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const patchOverlay = (patch: Partial<Overlay>) => setOverlays((o) => o.map((x) => x.id === editing || (editOverlay?.subtitle && x.subtitle && !("text" in patch)) ? { ...x, ...patch } : x));
   const lanes = [...Array.from({ length: vTracks }, (_, k) => k + 1).map((n) => ({ key: `v${n}`, kind: "video" as const, track: n, label: "Video" })), ...Array.from({ length: aTracks }, (_, k) => k + 1).map((n) => ({ key: `a${n}`, kind: "audio" as const, track: n, label: "Audio" }))];
 
+  useEffect(() => {
+    const token=Symbol("mounted editor");
+    return registerEditorRender(token, async (config, signal, progress) => {
+      const entry=items[0];
+      const source=entry && mediaById.get(entry.mediaId);
+      const choice=canExportOriginalClip(items,overlays.length,transitions.length,
+        source?.duration ?? 0,config);
+      if (!choice.allowed) throw new Error(choice.reason);
+      if (!source || !entry || signal.aborted) throw new Error("Видео недоступно или экспорт отменён");
+      const saved=await readPersistedClip(entry.mediaId);
+      if (signal.aborted) throw new Error("Экспорт отменён");
+      const mime=saved.blob.type.toLowerCase();
+      if (!mime.startsWith("video/")) throw new Error("Источник не является видеофайлом");
+      // This is an actual original video file with its original sound, not
+      // transcoding or a video containing unapplied editing parameters.
+      progress(100);
+      return {blob:saved.blob,filename:`multicam-original-${Date.now()}.${mime.includes("mp4")?"mp4":"webm"}`};
+    });
+  },[items,overlays,transitions,mediaById]);
   const aspect = useMulticamStore((x) => x.aspect);
   const ratio = ASPECTS.find((a) => a[0] === aspect)?.[2] ?? 16 / 9;
   const canvasBox = ratio >= 16 / 9 ? { width: "100%", height: `${(16 / 9 / ratio) * 100}%` } : { height: "100%", width: `${(ratio / (16 / 9)) * 100}%` };
