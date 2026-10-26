@@ -176,3 +176,13 @@ describe("layout owner handoff during rapid tab remount", () => {
     expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("");
   });
 });
+
+describe("strict in-window fold bounds",()=>{
+  it("rejects outward-extending hinge geometry rather than fabricating panes",()=>{
+    const acrossRight={...hinge(590,610),rightPx:1400};
+    const belowBottom={...hinge(590,610),bottomPx:1200};
+    expect(calculateDisplayRegions(topology([acrossRight]),600,450).regions).toHaveLength(1);
+    expect(calculateDisplayRegions(topology([belowBottom]),600,450).regions).toHaveLength(1);
+    expect(calculateDisplayRegions(topology([hinge(590,610)]),600,450).regions).toHaveLength(2);
+  });
+});
