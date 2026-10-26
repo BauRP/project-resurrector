@@ -1,17 +1,8 @@
-import { registerPlugin } from "@capacitor/core";
+import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
 import { useEffect, useState } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
 import { Button } from "@/components/ui/button";
 
-type Status = {state:string;message:string;startedAt:number;stabilization:string;
- stabilizationCaptureResultObserved:boolean;savedBytes:number;savedUri:string;videoOnly:boolean};
-interface NativeCaptureBridge {
- start(options:{cameraId:string;width:number;height:number;fps:number;audio:boolean}):Promise<Status>;
- stop():Promise<Status>;
- status():Promise<Status>;
- requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
-}
-const bridge=registerPlugin<NativeCaptureBridge>("NativeCapture");
 export function NativeRecordingPanel(){
  const [cameras,setCameras]=useState<NativeCameraProfile[]>([]);
  const [camera,setCamera]=useState("");
@@ -47,7 +38,7 @@ export function NativeRecordingPanel(){
   finally{setBusy(false);}
  };
  const stop=async()=>{setBusy(true);try{setStatus(await bridge.stop());}catch(e){setError(String(e));}finally{setBusy(false);}};
- const active=["starting","recording","stopping"].includes(status?.state??"");
+ const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Для безопасного запуска откройте «Настройки» вместо активного предпросмотра камеры. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
