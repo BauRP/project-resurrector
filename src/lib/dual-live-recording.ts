@@ -101,8 +101,9 @@ export function startDualRecording(
   let stopReason = "";
   let startupTimer = 0, stopTimer = 0;
   const startTime = Date.now();
-  let folds: FoldTransitionEvidence[] = getActiveFoldBaseline() ? [getActiveFoldBaseline()!] : [];
+  let folds: FoldTransitionEvidence[] = [];
   const onFold = (event: Event) => {
+    if (!startedConfirmed || stopRequested) return;
     const reading = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
     if (reading) folds = appendFoldTransition(folds, reading);
   };
@@ -149,6 +150,8 @@ export function startDualRecording(
       starts[i] = performance.now();
       if (starts.every(x => x !== null) && !startedConfirmed && !stopRequested) {
         startedConfirmed = true;
+        const initialFold = getActiveFoldBaseline();
+        if (initialFold) folds = [initialFold];
         // Startup is complete. This timeout must never terminate an otherwise
         // healthy long-running two-camera recording after eight seconds.
         window.clearTimeout(startupTimer);
