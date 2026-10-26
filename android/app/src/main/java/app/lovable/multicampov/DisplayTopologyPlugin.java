@@ -35,6 +35,8 @@ public class DisplayTopologyPlugin extends Plugin {
     private Consumer<WindowLayoutInfo> listener;
     private WindowLayoutInfo latest;
     private long revision = 0L;
+    /** Reject queued topology callbacks belonging to a stopped observer. */
+    private long observerGeneration = 0L;
     /** Leases are specific to a WebView adaptation instance. A late stop
      * from an old screen must never close a listener held by its successor.
      */
@@ -105,15 +107,20 @@ public class DisplayTopologyPlugin extends Plugin {
         try {
             adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(getActivity()));
             Executor main = getActivity().getMainExecutor();
+            final long ownerGeneration = ++observerGeneration;
             listener = info -> {
                 synchronized (DisplayTopologyPlugin.this) {
+                    // A queued callback may arrive after observer teardown or
+                    // after a newer Activity has registered its own listener.
+                    if (ownerGeneration != observerGeneration || listener == null ||
+                            activeOwners.isEmpty()) return;
                     latest = info;
                     revision++;
+                    notifyListeners("topologyChanged", snapshot());
                 }
-                notifyListeners("topologyChanged", snapshot());
             };
-            adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
             activeOwners.add(ownerId);
+            adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
             stopListener();
@@ -134,6 +141,7 @@ public class DisplayTopologyPlugin extends Plugin {
     }
 
     private synchronized void stopListener() {
+        observerGeneration++;
         if (listener != null && adapter != null) {
             try { adapter.removeWindowLayoutInfoListener(listener); }
             catch (RuntimeException ignored) { /* Activity may be destroyed. */ }
