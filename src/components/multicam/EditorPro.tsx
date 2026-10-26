@@ -1,3 +1,4 @@
+import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -133,10 +134,10 @@ async function analyse(clip: StoredClip): Promise<Media> {
 
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
   const [media, setMedia] = useState<Media[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
-  const [overlays, setOverlays] = useState<Overlay[]>([]);
-  const [muted, setMuted] = useState<Record<string, boolean>>({});
-  const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  const [items, setItems] = useState<Item[]>(() => loadEditorProject().items as unknown as Item[]);
+  const [overlays, setOverlays] = useState<Overlay[]>(() => loadEditorProject().overlays as unknown as Overlay[]);
+  const [muted, setMuted] = useState<Record<string, boolean>>(() => loadEditorProject().muted);
+  const [hidden, setHidden] = useState<Record<string, boolean>>(() => loadEditorProject().hidden);
   const [thumbs, setThumbs] = useState<Record<string, string[]>>({});
   const [panel, setPanel] = useState<"transitions" | "color" | "audio" | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
@@ -206,7 +207,20 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const [aspOpen, setAspOpen] = useState(false); const [snap, setSnap] = useState<{ v: boolean; h: boolean }>({ v: false, h: false }); const tlRef = useRef<HTMLDivElement>(null); const [tlW, setTlW] = useState(0);
   useEffect(() => { const el = tlRef.current; if (!el) return; const ro = new ResizeObserver(() => setTlW(el.clientWidth)); ro.observe(el); setTlW(el.clientWidth); return () => ro.disconnect(); }, []);
   const [vTracks, setVTracks] = useState(1); const [aTracks, setATracks] = useState(1);
-  const [transitions, setTransitions] = useState<Transition[]>([]); const [selTr, setSelTr] = useState<string | null>(null);
+  const [transitions, setTransitions] = useState<Transition[]>(() => loadEditorProject().transitions as unknown as Transition[]); const [selTr, setSelTr] = useState<string | null>(null);
+  // Preserve the editor timeline across fold-driven Activity/WebView
+  // recreation. Only local metadata; original media stays in IndexedDB.
+  const latestProject = useRef({items,overlays,transitions,hidden,muted});
+  latestProject.current = {items,overlays,transitions,hidden,muted};
+  useEffect(() => {
+    const flush=()=>{saveEditorProject(latestProject.current);};
+    const timer=window.setTimeout(flush,400);
+    const onHidden=()=>{if(document.hidden)flush();};
+    window.addEventListener("pagehide",flush);
+    document.addEventListener("visibilitychange",onHidden);
+    return ()=>{window.clearTimeout(timer);window.removeEventListener("pagehide",flush);
+      document.removeEventListener("visibilitychange",onHidden);flush();};
+  },[items,overlays,transitions,hidden,muted]);
   const [trCat, setTrCat] = useState("basic"); const [ghost, setGhost] = useState<{ type: string; x: number; y: number } | null>(null); const [dropErr, setDropErr] = useState("");
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
   const monRef = useRef<HTMLDivElement>(null); const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
