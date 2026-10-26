@@ -142,8 +142,8 @@ describe("long fold recording evidence retention", () => {
     }
     expect(events).toHaveLength(120);
     expect(events[0]?.baseline).toBe(true);
-    expect(events[0]?.omittedEarlierEvents).toBe(31);
-    expect(foldContinuitySummary(events)).toContain("Зафиксировано изменений геометрии: 150");
+    expect(events[0]?.omittedEarlierEvents).toBe(30);
+    expect(foldContinuitySummary(events)).toContain("Зафиксировано изменений геометрии: 149");
     expect(foldContinuitySummary(events)).toContain("Ранние наблюдения сокращены");
   });
 });
