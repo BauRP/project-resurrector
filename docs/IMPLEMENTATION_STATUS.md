@@ -321,3 +321,9 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 - Fold continuity summary no longer silently reports zero transitions when the initial capture baseline was absent: it discloses unknown earlier activity and counts the actually observed events. A baseline remains distinguished from in-recording transitions.
 - In simultaneous two-camera recordings, the previous unfinished-capture warning is retained if no media clip was durably saved. The app does not claim successful recovery from a crashed/aborted encoder.
 - No full Vitest/Android build has been observed for these changes. Source commits are confirmed on the isolated branch; hardware behavior and true codec FPS remain unverified.
+
+
+## CI failure root-cause repair — 27 October 2026
+- Independently retrieved actual GitHub Actions run #319 (40397397407) for commit `449b26c0`: 12 of 159 Vitest tests failed (147 passed); the APK/AAB steps were skipped. Eleven failures were the lifecycle test double missing the standard `MediaStream.getTracks()` method after microphone-loss handling was added. One failure was an outdated fold summary assertion expecting one transition while the now explicitly uncertain, no-baseline chronology reports two observed states.
+- Updated the dual-recorder test mock to implement getTracks/getAudioTracks plus valid video track kind, preserving real audio/video source monitoring; adjusted fold chronology test to assert the exact no-baseline uncertainty semantics rather than a misleading substring. Workflows for these branch commits were triggered automatically. Do not claim full CI or APK success until the run completes successfully.
+- Real physical-camera and foldable-device tests still outstanding; 85% and 86% are historic planning estimates, not measured coverage.
