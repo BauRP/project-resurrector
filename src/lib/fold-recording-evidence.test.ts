@@ -178,6 +178,7 @@ describe("long recording keeps fold classification counts",()=>{
     expect(events).toHaveLength(120);
     expect(events[0]?.baseline).toBe(true);
     expect(events[0]?.omittedPostureChanges).toBeGreaterThan(0);
-    expect(foldContinuitySummary(events)).toContain("изменений шарниров/положения: 140");
+    expect(foldContinuitySummary(events)).toContain("изменений шарниров/положения: 139");
+    expect(foldContinuitySummary(events)).toContain("только геометрии окна: 1");
   });
 });
