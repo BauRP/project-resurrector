@@ -448,7 +448,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const entry=items[0];
       const source=entry && mediaById.get(entry.mediaId);
       const choice=canExportOriginalClip(items,overlays.length,transitions.length,
-        source?.duration ?? 0,config);
+        source?.duration ?? 0,config,{hidden:!!hidden[`v${entry?.track}`],muted:!!muted[`v${entry?.track}`]});
       if (!choice.allowed) throw new Error(choice.reason);
       if (!source || !entry || signal.aborted) throw new Error("Видео недоступно или экспорт отменён");
       const saved=await readPersistedClip(entry.mediaId);
@@ -460,7 +460,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       progress(100);
       return {blob:saved.blob,filename:`multicam-original-${Date.now()}.${mime.includes("mp4")?"mp4":"webm"}`};
     });
-  },[items,overlays,transitions,mediaById]);
+  },[items,overlays,transitions,mediaById,hidden,muted]);
   const aspect = useMulticamStore((x) => x.aspect);
   const ratio = ASPECTS.find((a) => a[0] === aspect)?.[2] ?? 16 / 9;
   const canvasBox = ratio >= 16 / 9 ? { width: "100%", height: `${(16 / 9 / ratio) * 100}%` } : { height: "100%", width: `${(ratio / (16 / 9)) * 100}%` };
