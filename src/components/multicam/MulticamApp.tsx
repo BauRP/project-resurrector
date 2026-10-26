@@ -1,3 +1,4 @@
+import { readUnfinishedCapture } from "@/lib/capture-interruption";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Download, FolderOpen, Link2, Settings, SlidersHorizontal } from "lucide-react";
@@ -32,6 +33,10 @@ function MulticamAppContent() {
   const recordingPhase = useMulticamStore((x) => x.recordingPhase);
   const [pendingTab, setPendingTab] = useState<AppTab | null>(null);
   const [navigationNotice, setNavigationNotice] = useState("");
+  const [interrupted] = useState(() => readUnfinishedCapture() !== null);
+  useEffect(() => {
+    if (interrupted) setNavigationNotice("Предыдущая запись могла прерваться при закрытии приложения. Проверьте медиатеку: непрерывность и сохранение файла не подтверждены.");
+  }, [interrupted]);
   useMeshBridge();
   // Window changes only rearrange UI; they never restart the camera pipeline.
   useEffect(() => startDisplayAdaptation(), []);
