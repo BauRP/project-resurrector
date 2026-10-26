@@ -71,6 +71,7 @@ public class NativeCaptureService extends Service {
     private boolean encoderStarted;
     private boolean stopRequested;
     private boolean wantAudio;
+    private boolean interruptedByCamera;
     private int generation = 0;
 
     public static boolean isRunning() {
@@ -180,6 +181,7 @@ public class NativeCaptureService extends Service {
             stopSelf(); return START_NOT_STICKY;
         }
         stopRequested = false;
+        interruptedByCamera = false;
         synchronized (STATE_LOCK) {
             savedPath = ""; savedUri = ""; chosenStabilization = "unknown";
             stabilizationResultSeen = false; recordingStartedAt = 0L;
@@ -331,11 +333,12 @@ public class NativeCaptureService extends Service {
                 @Override public void onDisconnected(CameraDevice disconnected) {
                     disconnected.close();
                     if (camera == disconnected) camera = null;
-                    if (!stopRequested) { stopRequested = true; worker.post(NativeCaptureService.this::finish); }
+                    if (!stopRequested) { interruptedByCamera = true; stopRequested = true; worker.post(NativeCaptureService.this::finish); }
                 }
                 @Override public void onError(CameraDevice broken, int error) {
                     broken.close();
                     if (camera == broken) camera = null;
+                    interruptedByCamera = true;
                     fail(new IllegalStateException("Camera2 error " + error));
                 }
             }, worker);
@@ -379,8 +382,9 @@ public class NativeCaptureService extends Service {
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
-            publish("saved", gallery == null
-                ? "MP4 записан в защищённое хранилище приложения; публикация в Галерее не удалась"
+            publish(interruptedByCamera ? "saved_interrupted" : "saved",
+                interruptedByCamera ? "Камера была потеряна: сохранён только завершённый сегмент MP4; непрерывность не подтверждена" :
+                gallery == null ? "MP4 записан в защищённое хранилище приложения; публикация в Галерее не удалась"
                 : "Настоящий MP4 сохранён в Галерее");
         } else if (!"error".equals(state)) {
             publish("interrupted", "Нативная запись не создала подтверждённый MP4.");
