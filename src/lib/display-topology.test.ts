@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -184,5 +184,14 @@ describe("strict in-window fold bounds",()=>{
     expect(calculateDisplayRegions(topology([acrossRight]),600,450).regions).toHaveLength(1);
     expect(calculateDisplayRegions(topology([belowBottom]),600,450).regions).toHaveLength(1);
     expect(calculateDisplayRegions(topology([hinge(590,610)]),600,450).regions).toHaveLength(2);
+  });
+});
+
+describe("transient Activity fold resize dimensions",()=>{
+  it("preserves the last valid CSS dimension during an invalid native resize",()=>{
+    expect(retainedViewportDimension(0,720)).toBe(720);
+    expect(retainedViewportDimension(Number.NaN,720)).toBe(720);
+    expect(retainedViewportDimension(820,720)).toBe(820);
+    expect(retainedViewportDimension(0,null)).toBe(null);
   });
 });
