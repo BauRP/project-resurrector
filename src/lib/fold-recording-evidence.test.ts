@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeFoldTransition, appendFoldTransition, foldContinuitySummary, validFoldRegionGeometry } from "./fold-recording-evidence";
+import { normalizeFoldTransition, appendFoldTransition, foldContinuitySummary, validFoldRegionGeometry, rememberActiveFoldSnapshot, forgetActiveFoldSnapshot, getActiveFoldBaseline } from "./fold-recording-evidence";
 
 const sample = { revision: 1, posture: "HALF_OPENED", hingeCount: 1, usableRegions: 2, layout: "vertical" };
 describe("fold events attached to capture", () => {
@@ -86,5 +86,30 @@ describe("fold feature count consistency", () => {
     expect(normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400"},101)).toBe(null);
     expect(normalizeFoldTransition({...sample,hingeCount:3,regionGeometry:"0,0,280,400;285,0,280,400"},101)).toBe(null);
     expect(normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},101)?.usableRegions).toBe(2);
+  });
+});
+
+
+describe("genuine pre-capture fold baseline", () => {
+  it("keeps the latest observed geometry with its real owner's lifetime", () => {
+    const old=Symbol("old"), active=Symbol("active");
+    expect(rememberActiveFoldSnapshot(old, {...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)).toBe(true);
+    expect(getActiveFoldBaseline()?.baseline).toBe(true);
+    expect(rememberActiveFoldSnapshot(active, {...sample,revision:2,regionGeometry:"0,0,300,400;305,0,300,400"},200)).toBe(true);
+    forgetActiveFoldSnapshot(old);
+    expect(getActiveFoldBaseline()?.revision).toBe(2);
+    forgetActiveFoldSnapshot(active);
+    expect(getActiveFoldBaseline()).toBe(null);
+  });
+  it("never substitutes an invalid topology or invents a fold during recording", () => {
+    const owner=Symbol("test");
+    expect(rememberActiveFoldSnapshot(owner, {...sample,regionGeometry:"0,0,300,400;100,0,300,400"},100)).toBe(false);
+    expect(getActiveFoldBaseline()).toBe(null);
+    expect(rememberActiveFoldSnapshot(owner, {...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)).toBe(true);
+    const baseline=getActiveFoldBaseline()!;
+    expect(foldContinuitySummary([baseline])).toContain("0");
+    const fold=normalizeFoldTransition({...sample,revision:2,posture:"FLAT",regionGeometry:"0,0,320,400;325,0,320,400"},200)!;
+    expect(appendFoldTransition([baseline],fold)).toHaveLength(2);
+    forgetActiveFoldSnapshot(owner);
   });
 });
