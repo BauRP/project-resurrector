@@ -58,6 +58,7 @@ export function CameraTab() {
   const chunksRef = useRef<Blob[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("loading");
+  const [nativeOwnsCamera,setNativeOwnsCamera] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const facingMode = s.facing === "front" ? "user" : "environment";
   // UI selection and actual camera ownership are intentionally separate.
@@ -103,8 +104,11 @@ export function CameraTab() {
     void (async()=>{
       if(isNative()){
         const native=await nativeCapture.status();
-        if(nativeRecorderOwnsCamera(native.state))
+        if(nativeRecorderOwnsCamera(native.state)) {
+          if(alive)setNativeOwnsCamera(true);
           throw Error("Идёт нативная запись. Остановите её в Настройках перед обычным предпросмотром.");
+        }
+        if(alive)setNativeOwnsCamera(false);
       }
       if(!alive)throw Error("Экран камеры уже закрыт");
       return cameraController.acquire(token, { video, audio });
@@ -633,7 +637,7 @@ export function CameraTab() {
 
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
     <section className={`camera-live-view absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
-      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
+      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
       {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording} hidden={clean} />}
       {!clean && <>
         {s.dualCamera && s.recording && <div className="absolute end-3 top-10 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Dual Camera · две отдельные дорожки (без покадровой синхронизации)</div>}
