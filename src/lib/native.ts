@@ -19,6 +19,11 @@ export interface NativeMp4Inspection {
   outOfOrderPresentationTimes: number;
   estimatedSampleFps: number | null;
   sampleLimitReached: boolean;
+  tailSamplesRead?: number; tailFirstPresentationTimeUs?: number | null;
+  tailLastPresentationTimeUs?: number | null; tailOutOfOrderPresentationTimes?: number;
+  tailDuplicatePresentationTimes?: number; tailSampleNearDeclaredEnd?: boolean | null;
+  tailEstimatedSampleFps?: number | null; fileEndVerified?: false;
+  rotationDegrees?: number | null;
   fpsMethod: string;
 }
 export interface NativeEncoderSupport {
