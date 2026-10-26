@@ -242,3 +242,10 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 
 ## Acceptance
 A **successful CI build only confirms compilation/tests/packaging**. Neither technical requirements document is complete at 100%. Evidence from actual supported Android devices is required before declaring hardware feature support.
+
+
+## Conservative saved-file duration and fold pane authenticity — 26 October 2026
+- Ordinary single-camera WebView recordings now retain a monotonic recorder-start observation for a bounded, conservative comparison between elapsed capture time and browser-reported duration of the saved, decoded clip. A substantial shortfall reports a possible truncated file; missing duration, short sessions and non-standard time-lapse/pause cases remain unknown. This never certifies all-frame completeness or codec FPS. Existing durable IndexedDB write and first-frame decode evidence are unchanged.
+- Added independent unit cases for strongly shortened output, consistent duration, unreported duration, invalid inputs and speed-altered/abnormal duration. This evidence is advisory, not a guarantee of physical phone performance.
+- Fold recording evidence now rejects impossible panes whose coordinate sums overflow the safe-integer range, or whose measured usable rectangles intersect. Duplicate, valid, contiguous nonoverlapping panes remain supported. Added regression tests for malformed multi-pane geometry and rejection before recording metadata is accepted.
+- Changes were written only to the independent backup branch. Physical tests, native encoded-FPS/complete-file inspection, long-duration capture, stabilization, dual-camera hardware synchronization and live folding/Activity recreation continuity remain outstanding.
