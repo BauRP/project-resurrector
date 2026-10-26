@@ -210,6 +210,11 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Added tests for revision-only fold notifications, the rejection of stale events and real same-revision geometry changes.
 - Neither the bounded test queue nor the fold event log proves recording continuity, precise encoded FPS or compatibility with all physical phones; native and device acceptance is still required.
 
+## Fair camera scanning over repeated quick checks — 26 October 2026
+- Fixed a starvation scenario in the bounded video capability scanner: with more than two cameras, repeated quick checks could keep selecting the same first devices. The scanner now chooses at most two distinct cameras with the fewest accumulated recording attempts across their modes, using each camera's least-attempted eligible mode. It preserves the existing cap and does not invent unsupported modes.
+- The work is persisted through the per-camera diagnostic queue. A regression test confirms progression from main/ultrawide to tele/front lenses on a later quick pass without needlessly heating the same cameras again.
+- Physical foldable and Camera2 recording acceptance remains separate from these automated queue checks.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
