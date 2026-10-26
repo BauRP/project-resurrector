@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeFoldTransition, appendFoldTransition, foldContinuitySummary } from "./fold-recording-evidence";
+import { normalizeFoldTransition, appendFoldTransition, foldContinuitySummary, validFoldRegionGeometry } from "./fold-recording-evidence";
 
 const sample = { revision: 1, posture: "HALF_OPENED", hingeCount: 1, usableRegions: 2, layout: "vertical" };
 describe("fold events attached to capture", () => {
@@ -25,6 +25,16 @@ describe("fold events attached to capture", () => {
   });
 });
 
+describe("measured fold geometry validation", () => {
+  it("accepts measured pane rectangles while rejecting corrupted or impossible values", () => {
+    expect(validFoldRegionGeometry("0,0,280,400;285,0,280,400")).toBe(true);
+    for (const broken of ["", "x,y,z", "0,0,0,400", "-1,0,100,400",
+      "0,0,Infinity,400", "0,0,280,400;", "0,0,280,400;garbage"]) {
+      expect(validFoldRegionGeometry(broken)).toBe(false);
+      expect(normalizeFoldTransition({...sample,regionGeometry:broken},101)).toBe(null);
+    }
+  });
+});
 describe("native fold event chronology", () => {
   it("rejects late older revisions but preserves same-revision viewport changes", () => {
     const current=normalizeFoldTransition({revision:10,posture:"FLAT",hingeCount:1,
