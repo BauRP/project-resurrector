@@ -1,3 +1,4 @@
+import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
@@ -244,21 +245,13 @@ export function CameraDiagnostics() {
     }
   };
   const download = () => {
-    const report = {
+    const report = buildAnonymousCameraReport({
       checkedAt: new Date().toISOString(),
-      warning: "Camera2 physical IDs and WebView device IDs must not be equated. EIS/OIS declarations are unverified for particular modes.",
-      camerasDeclaredByCamera2: nativeCameras,
-      cameraModeEvidence: tests,
-      cameraTestQueue: planned,
-      diagnosticSafetyNotice: safetyNotice,
-      encoderEvidence: encoder,
-      highSpeedMp4Inspection: lastMp4Inspection,
-      stabilizationCaptureResults: stabilizationResults,
-      dualCameraRecordedEvidence: dualEvidence,
-    };
+      nativeCameras, modes: tests, mp4: lastMp4Inspection,
+    });
     const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
     const a = document.createElement("a");
-    a.href = url; a.download = "multicam-camera-passport.json"; a.click();
+    a.href = url; a.download = "multicam-camera-passport-anonymous.json"; a.click();
     window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
   return <section className="rounded-lg border border-border bg-card p-4">
