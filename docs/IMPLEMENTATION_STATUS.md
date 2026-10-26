@@ -345,3 +345,9 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 ## In-window fold geometry verification — 27 October 2026
 - Native WindowManager fold rectangles whose bounds extend outside the actual Android application window are now rejected instead of clamped into invented usable panes. The pure geometry tests include horizontal/window overflow and valid baseline folding features. This prevents off-window OEM data from altering the editor or camera controls.
 - No physical tri-fold hardware was available; automated regression tests cover only synthetic input shapes while the implementation consumes real reported features in production. Actual camera/encoder continuity and fold touch coordinate correctness still require on-device validation.
+
+
+## Saved MP4 tail samples and rotation metadata — 27 October 2026
+- Native Camera2 high-speed MP4 inspector now reads bounded MediaExtractor samples near the container-declared end, separately from its initial 600-sample window. It reports near-end sample positions, timestamp ordering and approximate sampled FPS. Unsupported seeking or missing duration remains unknown; `fileEndVerified=false` prevents any full-file verification claim.
+- MediaMetadataRetriever reads MP4 rotation metadata (0/90/180/270 or unknown) without claiming correct preview mirror, overlays or rendered export orientation.
+- Camera Diagnostics shows head/tail sample evidence and orientation. Anonymous report includes numerical observations, never file paths or raw lens IDs. CI and real-device status must be confirmed separately.
