@@ -314,3 +314,10 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 - Editor/view restoration no longer synchronously writes the playhead to localStorage on every update: writes are coalesced within 400 ms, with navigation changes, pagehide, visibility loss, and unmount flushing the latest snapshot. Corrupt primary preferences no longer prevent independent restoration of valid UI-only state.
 - Added a 36-scenario acceptance matrix at `docs/FOLD_AND_CAPTURE_ACCEPTANCE_MATRIX.md` grounded in both specifications, with physical hardware and APK checks explicitly **NOT VERIFIED** until performed.
 - The full Vitest suite and Gradle APK/AAB build were NOT run in this environment (repository clone failed on DNS resolution for github.com; node_modules are absent). Source commits and GitHub branch existence are verifiable independently. No physical testing or unsupported completion percentages are claimed.
+
+
+## Late-frame seek verification and interruption accounting — 27 October 2026
+- Saved-video checkpoint inspection now waits for actual HTMLVideoElement metadata before seeking, with a bounded timeout, then requires a matching decoded frame and valid output geometry. Autoplay rejection alone is not called media corruption; unknown WebView capabilities remain unknown. Added regression tests for stale frame timestamps and invalid frame dimensions.
+- Fold continuity summary no longer silently reports zero transitions when the initial capture baseline was absent: it discloses unknown earlier activity and counts the actually observed events. A baseline remains distinguished from in-recording transitions.
+- In simultaneous two-camera recordings, the previous unfinished-capture warning is retained if no media clip was durably saved. The app does not claim successful recovery from a crashed/aborted encoder.
+- No full Vitest/Android build has been observed for these changes. Source commits are confirmed on the isolated branch; hardware behavior and true codec FPS remain unverified.
