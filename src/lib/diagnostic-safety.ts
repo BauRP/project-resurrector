@@ -31,6 +31,18 @@ export function evaluateDiagnosticSafety(input: {
     thermal, battery, storage,
   };
 }
+/** With any unknown safety signal, do only one bounded video probe per
+ * user-triggered invocation. Do not run an extensive camera/encoder sweep
+ * without verified resource conditions. This does not silently mark modes
+ * unsupported; the existing queue resumes later.
+ */
+export function diagnosticProbeLimit(safety: DiagnosticSafety, requested: number): number {
+  if (!Number.isSafeInteger(requested) || requested <= 0 || !safety.proceed) return 0;
+  if (safety.thermal === "unknown" || safety.battery === "unknown" ||
+      safety.storage === "unknown") return 1;
+  return requested;
+}
+
 /** Read only publicly exposed safety signals. No unavailable Android APIs or
  * guessed battery/temperature metrics are silently treated as healthy.
  */
