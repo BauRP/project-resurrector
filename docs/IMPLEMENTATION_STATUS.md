@@ -191,6 +191,13 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - During active capture, fold evidence rejects late Android native revisions older than the most recently stored revision. Valid same-revision WebView viewport/region changes remain logged, even when the native tracker revision has not advanced.
 - Neither mechanism claims guaranteed device-wide recovery or uninterrupted recording on physical foldables. CI tests prove expected mocked control flow only.
 
+## Stale diagnostic evidence and overlapping fold-screen resilience — 26 October 2026
+- A persisted per-camera diagnostic queue state (recorded or verified) is no longer accepted as evidence by itself. When a WebView update or diagnostic engine revision causes the current camera passport to classify old evidence as unknown, the queued mode changes to retry rather than retaining misleading recorded/verified status. Added restart tests for both expired states.
+- Recorded-only results remain persisted and are not needlessly repeated in a normal quick scan while CURRENT camera passport evidence is available.
+- Window layout classification treats NaN, Infinity and zero-width transitional viewports as compact instead of extra-large. Added tests for invalid widths.
+- A superseded fold adaptation instance can no longer overwrite the new screen's fold status if an old asynchronous native listener operation fails.
+- Real video coded FPS, long-duration performance, physical fold/unfold continuity, multi-camera synchronization and hardware stabilization remain unverified without device-specific tests.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
