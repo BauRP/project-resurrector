@@ -50,3 +50,19 @@ describe("conservative saved video duration evidence", () => {
     expect(assessSavedVideoDuration(12000, 60).status).toBe("unknown");
   });
 });
+
+
+describe("malformed playback frame samples", () => {
+  it("does not silently sort timestamps that went backwards", () => {
+    const samples=[0,250,500,450,1000].map((presentationTimeMs,i)=>({presentationTimeMs,presentedFrames:i*8}));
+    expect(summarizePresentedFrames(samples).status).toBe("unavailable");
+  });
+  it("does not infer FPS from counter resets, repeated timestamps or impossible rates", () => {
+    const reset=[0,250,500,750,1000].map((presentationTimeMs,i)=>({presentationTimeMs,presentedFrames:i===3?1:i*8}));
+    expect(summarizePresentedFrames(reset).approximateFps).toBe(null);
+    const repeated=[0,250,500,500,1000].map((presentationTimeMs,i)=>({presentationTimeMs,presentedFrames:i*8}));
+    expect(summarizePresentedFrames(repeated).approximateFps).toBe(null);
+    const impossible=[0,250,500,750,1000].map((presentationTimeMs,i)=>({presentationTimeMs,presentedFrames:i*1000}));
+    expect(summarizePresentedFrames(impossible).approximateFps).toBe(null);
+  });
+});
