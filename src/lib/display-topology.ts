@@ -22,6 +22,12 @@ const NativeDisplay = registerPlugin<NativeBridge>("DisplayTopology");
 let activeAdaptation: symbol | null = null;
 type Split = "vertical" | "horizontal" | "none";
 type Region = { left: number; top: number; width: number; height: number };
+/** Ignore transient zero, negative and non-finite WebView dimensions.
+ * In particular never feed "NaNpx" into the CSS layout after a fold.
+ */
+export function safeViewportDimension(value: number): number | null {
+  return Number.isFinite(value) && value > 0 ? value : null;
+}
 export function windowClass(width: number) {
   // Do not advertise a huge foldable layout for a temporarily invalid width.
   if (!Number.isFinite(width) || width <= 0) return "compact";
@@ -143,9 +149,12 @@ export function startDisplayAdaptation(): () => void {
   const height = () => window.innerHeight;
   const measure = () => {
     if (disposed || activeAdaptation !== token) return;
-    root.dataset.windowClass = windowClass(width());
-    root.dataset.windowHeight = height() < 480 ? "short" : "regular";
-    root.style.setProperty("--app-viewport-height", height() + "px");
+    const currentWidth = safeViewportDimension(width());
+    const currentHeight = safeViewportDimension(height());
+    if (currentWidth === null || currentHeight === null) return;
+    root.dataset.windowClass = windowClass(currentWidth);
+    root.dataset.windowHeight = currentHeight < 480 ? "short" : "regular";
+    root.style.setProperty("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
     if (lastNative) layout(lastNative);
