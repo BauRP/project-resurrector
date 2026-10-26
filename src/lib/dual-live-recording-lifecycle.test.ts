@@ -49,7 +49,13 @@ function camera(id: string) {
   const track = new EventTarget() as MediaStreamTrack;
   Object.defineProperty(track, "readyState", {value:"live"});
   Object.defineProperty(track, "getSettings", {configurable:true,value:()=>({deviceId:id})});
-  const stream = {getVideoTracks:()=>[track]} as unknown as MediaStream;
+  Object.defineProperty(track, "kind", {value:"video"});
+  // MediaStream.getTracks() is part of the real browser API. A mock omitting
+  // it masked source track termination logic and blocked the entire APK CI.
+  const stream = {
+    getVideoTracks:()=>[track], getAudioTracks:()=>[],
+    getTracks:()=>[track],
+  } as unknown as MediaStream;
   return {track, stream};
 }
 
