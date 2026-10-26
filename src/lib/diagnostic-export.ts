@@ -72,6 +72,11 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
       timestampSpanUs: safeNumber(input.mp4.timestampSpanUs),
       outOfOrderPresentationTimes: safeNumber(input.mp4.outOfOrderPresentationTimes),
       audioTrackCount: safeNumber(input.mp4.audioTrackCount),
+      tailSamplesRead: safeNumber(input.mp4.tailSamplesRead),
+      tailEstimatedSampleFps: safeNumber(input.mp4.tailEstimatedSampleFps),
+      tailSampleNearDeclaredEnd: input.mp4.tailSampleNearDeclaredEnd === true,
+      rotationDegrees: safeNumber(input.mp4.rotationDegrees),
+      fileEndVerified: false,
       audioSamplesDecoded: false,
     } : null,
   };
