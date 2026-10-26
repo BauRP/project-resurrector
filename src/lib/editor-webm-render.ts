@@ -1,3 +1,4 @@
+import type { EditorExportConfig } from "./editor-render-bridge";
 /** Offline WebM video render of ONE source clip using the local Canvas/MediaRecorder
  * encoder and a real WebAudio track. Not a fake timer and not a full NLE.
  * Avoids silent loss of multi-layer video/audio, transitions and unsupported FX.
@@ -44,6 +45,23 @@ export function planSimpleVideoRender(
     throw Error("Выбранный цветовой эффект не поддерживается WebM-рендером.");
   return {segment:item,overlays:overlays.map(x=>({...x})),duration};
 }
+/** Actual output canvas sizes; never pretend source dimensions satisfy a
+ * user's requested aspect. Limit GPU memory across fold/resume transitions.
+ */
+export function webmOutputSize(config: EditorExportConfig): {width:number;height:number;bitrate:number} {
+  if (config.videoCodec!=="VP8" || config.audioCodec!=="Opus" ||
+      config.resolution!=="720p" || config.fps!=="30")
+    throw Error("Поддерживается только WebM VP8 / Opus, 720p, 30 FPS.");
+  const dims:Record<string,[number,number]>={
+    "16:9":[1280,720],"9:16":[720,1280],"1:1":[720,720],"21:9":[1512,648],
+  };
+  const output=dims[config.aspect];
+  if(!output)throw Error("Неизвестное соотношение сторон для видеорендера.");
+  if(!Number.isFinite(config.bitrate) || config.bitrate<1.5 || config.bitrate>12)
+    throw Error("Выберите битрейт 1.5–12 Мбит/с для WebM-рендера.");
+  return {width:output[0],height:output[1],
+    bitrate:Math.round(config.bitrate*1000000)};
+}
 const LOOK_FILTER:Record<string,string>={
   "Без цвета":"none","Тёплый":"sepia(.25) saturate(1.2)",
   "Холодный":"hue-rotate(190deg) saturate(.9)","Ч/Б":"grayscale(1) contrast(1.1)",
@@ -57,10 +75,11 @@ const guarded=async(p:Promise<unknown>,millis:number,reason:string):Promise<void
   finally {if(timer!==undefined)clearTimeout(timer);}
 };
 export async function renderSimpleVideoWebm(
-  plan:SimpleRenderPlan, source:Blob, signal:AbortSignal,
-  progress:(n:number)=>void,
+  plan:SimpleRenderPlan, source:Blob, config:EditorExportConfig,
+  signal:AbortSignal, progress:(n:number)=>void,
 ):Promise<{blob:Blob;filename:string}>{
   if(signal.aborted)throw Error("Экспорт отменён");
+  const output=webmOutputSize(config);
   if(typeof MediaRecorder==="undefined"||typeof HTMLCanvasElement==="undefined"||
      !MediaRecorder.isTypeSupported("video/webm;codecs=vp8,opus"))
     throw Error("Устройство не поддерживает локальное кодирование WebM VP8/Opus.");
@@ -73,7 +92,15 @@ export async function renderSimpleVideoWebm(
   let audio:AudioContext|null=null, recorder:MediaRecorder|null=null, stream:MediaStream|null=null;
   let raf=0, watchdog:ReturnType<typeof setTimeout>|undefined;
   let halted=false,ended=false;
-  const abort=()=>{halted=true;try{video.pause();recorder?.stop();}catch{/* abort */}};
+  let failRender:((error:Error)=>void)|null=null;
+  const terminate=(reason:string)=>{
+    if(halted)return;
+    halted=true;
+    failRender?.(Error(reason));
+    try{video.pause();if(recorder?.state!=="inactive")recorder?.stop();}
+    catch{/* resources released in finally */}
+  };
+  const abort=()=>terminate("Экспорт отменён или приложение закрыто");
   signal.addEventListener("abort",abort,{once:true});
   const onHidden=()=>{if(document.hidden)abort();};
   document.addEventListener("visibilitychange",onHidden);
@@ -85,6 +112,7 @@ export async function renderSimpleVideoWebm(
       video.onerror=()=>reject(Error("Не удалось открыть исходное видео"));
       video.load();
     }),5500,"Исходное видео не открылось");
+    if(halted)throw Error("Экспорт прерван при открытии видео");
     if(!video.videoWidth||!video.videoHeight)throw Error("Видеодорожка не декодируется");
     if(plan.segment.out>video.duration+.12)throw Error("Монтаж выходит за пределы исходного файла");
     if(plan.segment.in>.05)
@@ -93,10 +121,7 @@ export async function renderSimpleVideoWebm(
         video.onerror=()=>reject(Error("Ошибка перемотки источника"));
         video.currentTime=plan.segment.in;
       }),4500,"Не удалось перемотать исходное видео");
-    const aspect=video.videoWidth/video.videoHeight;
-    const w=aspect>=1?Math.round(720*aspect/2)*2:720;
-    const h=aspect>=1?720:Math.round(720/aspect/2)*2;
-    if(w<2||h<2||w>1600||h>1600)throw Error("Нестандартный размер кадра");
+    const w=output.width,h=output.height;
     const canvas=document.createElement("canvas");canvas.width=w;canvas.height=h;
     const ctx=canvas.getContext("2d",{alpha:false});
     if(!ctx||typeof canvas.captureStream!=="function")throw Error("Canvas-энкодер не поддерживается");
@@ -111,9 +136,10 @@ export async function renderSimpleVideoWebm(
     if(!stream.getVideoTracks().length||!stream.getAudioTracks().length)
       throw Error("Не удалось создать видео- и звуковую дорожки");
     recorder=new MediaRecorder(stream,{mimeType:"video/webm;codecs=vp8,opus",
-      videoBitsPerSecond:3500000});
+      videoBitsPerSecond:output.bitrate});
     const pieces:Blob[]=[];
     const finished=new Promise<Blob>((resolve,reject)=>{
+      failRender=reject;
       recorder!.ondataavailable=e=>{if(e.data.size)pieces.push(e.data);};
       recorder!.onerror=()=>reject(Error("Ошибка WebM-кодировщика"));
       recorder!.onstop=()=>{if(halted)reject(Error("Экспорт прерван"));
@@ -156,11 +182,15 @@ export async function renderSimpleVideoWebm(
       progress(Math.max(0,Math.min(95,Math.floor(local/plan.duration*95))));
       raf=requestAnimationFrame(draw);
     };
+    video.onended=()=>{
+      if(!ended)terminate("Исходное видео закончилось раньше заданного конца монтажа");
+    };
     recorder.start(1000);
+    if(halted)throw Error("Экспорт отменён");
     video.playbackRate=plan.segment.speed;
     await guarded(video.play(),4500,"WebView запретил воспроизведение для экспорта");
     raf=requestAnimationFrame(draw);
-    watchdog=setTimeout(()=>abort(),Math.ceil(plan.duration*1000*2+14000));
+    watchdog=setTimeout(()=>terminate("Рендер превысил допустимое время и остановлен"),Math.ceil(plan.duration*1000*2+14000));
     const result=await finished;
     if(signal.aborted)throw Error("Экспорт отменён");
     progress(100);
@@ -174,6 +204,7 @@ export async function renderSimpleVideoWebm(
     stream?.getTracks().forEach(t=>t.stop());
     video.pause();video.removeAttribute("src");video.load();video.remove();
     URL.revokeObjectURL(url);
+    video.onended=null;
     if(audio)void audio.close().catch(()=>undefined);
   }
 }
