@@ -204,6 +204,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Regression tests cover distinct-lens quick selection, continuation from recorded evidence, and an empty queue.
 - Foldable layout changes remain layout-only; physical OEM camera and fold-continuity acceptance cannot be established by CI unit tests.
 
+## Quick per-lens probe distribution and non-fictitious fold events — 26 October 2026
+- The bounded quick WebView video mode test now selects one candidate mode for each of up to two **different camera devices** per invocation, instead of consuming its entire allowance on two resolutions from the first device. Pending modes remain in the persistent queue, while full diagnostic mode still covers the planned supported candidates. Tests cover first-pass distribution and continuation after a recorded-only result.
+- Fold transitions are now counted by **observable physical posture, effective hinges, panes and pane geometry**, not merely an incremented Android WindowManager revision. New revisions with unchanged physical state update the chronology watermark without adding fictitious fold transitions; older revisions remain rejected. Same-revision real viewport changes remain visible.
+- Added tests for revision-only fold notifications, the rejection of stale events and real same-revision geometry changes.
+- Neither the bounded test queue nor the fold event log proves recording continuity, precise encoded FPS or compatibility with all physical phones; native and device acceptance is still required.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
