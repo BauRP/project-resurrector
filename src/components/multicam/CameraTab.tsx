@@ -247,6 +247,7 @@ export function CameraTab() {
     let createdRecorder: MediaRecorder | null = null;
     let startGuard: ReturnType<typeof createRecorderStartGuard> | null = null;
     let stopWatch: (() => void) | null = null;
+    let detachLostInputHandlers: (() => void) | null = null;
     try {
       chunksRef.current = [];
       stopReasonRef.current = "";
@@ -303,13 +304,14 @@ export function CameraTab() {
       let recorderError = "";
       const sourceInputTracks = stream.getTracks();
       const lostInputHandlers: Array<{track: MediaStreamTrack; handler: EventListener}> = [];
+      detachLostInputHandlers = () => lostInputHandlers.forEach(({track,handler}) => track.removeEventListener("ended",handler));
       const sessionPipe = pipeRef.current;
       const sessionAudio = recordingAudio.current;
       const cleanUp = () => {
         startGuard?.cancel();
         if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
         window.removeEventListener(FOLD_EVENT, onFold);
-        lostInputHandlers.forEach(({track,handler}) => track.removeEventListener("ended",handler));
+        detachLostInputHandlers?.();
         // Old encoder completion must never stop a newer recording's
         // canvas track or audio limiter after a quick tab/session handoff.
         sessionPipe?.stop();
@@ -445,6 +447,7 @@ export function CameraTab() {
       // MediaRecorder.start() can throw synchronously. Cancel its 8-second
       // watchdog now, otherwise a stale timeout may later stop a NEW capture.
       startGuard?.cancel();
+      detachLostInputHandlers?.();
       if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
       if (stopWatch && recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
       if (createdRecorder) {
