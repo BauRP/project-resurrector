@@ -291,13 +291,19 @@ export function CameraTab() {
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
       };
       let recorderError = "";
+      const sessionPipe = pipeRef.current;
+      const sessionAudio = recordingAudio.current;
       let startGuard: ReturnType<typeof createRecorderStartGuard> | null = null;
       const cleanUp = () => {
         startGuard?.cancel();
         if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
         window.removeEventListener(FOLD_EVENT, onFold);
-        pipeRef.current?.stop(); pipeRef.current = null;
-        recordingAudio.current = null; void gainCtx?.close();
+        // Old encoder completion must never stop a newer recording's
+        // canvas track or audio limiter after a quick tab/session handoff.
+        sessionPipe?.stop();
+        if (pipeRef.current === sessionPipe) pipeRef.current = null;
+        if (recordingAudio.current === sessionAudio) recordingAudio.current = null;
+        void gainCtx?.close();
         if (recorderRef.current === recorder) recorderRef.current = null;
         if (recordingStopWatch.current === guard.waitForStop) recordingStopWatch.current = null;
       };
