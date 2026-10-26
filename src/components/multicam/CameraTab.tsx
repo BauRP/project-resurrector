@@ -511,7 +511,7 @@ export function CameraTab() {
       });
       dualSession.current = session;
       void session.done.then(result => {
-        clearUnfinishedCapture("dual", dualStartedAt);
+        if (result.savedIds.length) clearUnfinishedCapture("dual", dualStartedAt);
         updateCurrentDual({ recording: false, recordingStartedAt: null,
           recordingPhase: result.paired ? "saved" : "error", captureSaveError: result.message });
         // The library must refresh even if a newer camera screen is active.
