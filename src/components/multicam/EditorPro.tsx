@@ -1,3 +1,4 @@
+import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -463,7 +464,15 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const source=entry && mediaById.get(entry.mediaId);
       const choice=canExportOriginalClip(items,overlays.length,transitions.length,
         source?.duration ?? 0,config,{hidden:!!hidden[`v${entry?.track}`],muted:!!muted[`v${entry?.track}`]});
-      if (!choice.allowed) throw new Error(choice.reason);
+      if (!choice.allowed) {
+        const plan=planSimpleVideoRender(items,overlays,transitions.length,
+          !!muted[`v${entry?.track}`],!!hidden[`v${entry?.track}`]);
+        if(!entry)throw Error("Исходный клип не найден");
+        if(!config.videoCodec.toLowerCase().includes("vp8"))
+          throw Error("Для монтажа одного клипа выберите кодек VP8/WebM. H.264/HEVC и точный 4K пока не поддерживаются.");
+        const persisted=await readPersistedClip(entry.mediaId);
+        return renderSimpleVideoWebm(plan,persisted.blob,signal,progress);
+      }
       if (!source || !entry || signal.aborted) throw new Error("Видео недоступно или экспорт отменён");
       const saved=await readPersistedClip(entry.mediaId);
       if (signal.aborted) throw new Error("Экспорт отменён");
