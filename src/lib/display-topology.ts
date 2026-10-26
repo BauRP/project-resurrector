@@ -133,6 +133,17 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
   };
 }
 
+/** Emits when something OBSERVABLE changed or a newer native revision must
+ * advance the recording journal's chronology watermark. Purely repeating the
+ * same revision and pane layout is not a new event.
+ */
+export function shouldPublishFoldObservation(
+  previousSignature: string, previousRevision: number,
+  nextSignature: string, nextRevision: number,
+): boolean {
+  return nextSignature !== previousSignature || nextRevision > previousRevision;
+}
+
 export function startDisplayAdaptation(): () => void {
   const token = Symbol("display-adaptation");
   activeAdaptation = token;
@@ -141,6 +152,7 @@ export function startDisplayAdaptation(): () => void {
   // the new tab's WindowManager observer.
   const ownerId = "fold-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
   let lastFoldSignature = "";
+  let lastFoldRevision = -1;
   let listener: PluginListenerHandle | undefined;
   let lastNative: DisplayTopology | null = null;
   let refreshFrame = 0;
@@ -170,8 +182,11 @@ export function startDisplayAdaptation(): () => void {
       details.layout, details.regionGeometry].join("|");
     // Native revision alone is not a physical transition; the capture journal
     // records visible postures/regions, not OEM bookkeeping callbacks.
-    if (signature !== lastFoldSignature) {
+    if (shouldPublishFoldObservation(lastFoldSignature, lastFoldRevision, signature, state.revision)) {
       lastFoldSignature = signature;
+      lastFoldRevision = Math.max(lastFoldRevision, state.revision);
+      // appendFoldTransition deduplicates unchanged physical geometry while
+      // advancing the revision watermark to reject later stale native events.
       window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));
     }
     root.dataset.foldInfo = state.posture;

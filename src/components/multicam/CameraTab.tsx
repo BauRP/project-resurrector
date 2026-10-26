@@ -240,6 +240,8 @@ export function CameraTab() {
     if (active && active.state !== "inactive") return;
     let gainCtx: AudioContext | null = null;
     let createdRecorder: MediaRecorder | null = null;
+    let startGuard: ReturnType<typeof createRecorderStartGuard> | null = null;
+    let stopWatch: (() => void) | null = null;
     try {
       chunksRef.current = [];
       stopReasonRef.current = "";
@@ -293,7 +295,6 @@ export function CameraTab() {
       let recorderError = "";
       const sessionPipe = pipeRef.current;
       const sessionAudio = recordingAudio.current;
-      let startGuard: ReturnType<typeof createRecorderStartGuard> | null = null;
       const cleanUp = () => {
         startGuard?.cancel();
         if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
@@ -368,7 +369,8 @@ export function CameraTab() {
       const guard = createRecordingStopGuard(finalizeRecording, () => {
         recorderError ||= "Видеокодировщик не подтвердил остановку за 12 секунд";
       });
-      recordingStopWatch.current = guard.waitForStop;
+      stopWatch = guard.waitForStop;
+      recordingStopWatch.current = stopWatch;
       recorder.onstop = guard.finish;
       startGuard = createRecorderStartGuard(() => {
         recorderError ||= "Видеокодировщик не подтвердил запуск за 8 секунд";
@@ -383,7 +385,19 @@ export function CameraTab() {
       recorder.start(1000);
       window.addEventListener(FOLD_EVENT, onFold);
     } catch (error) {
-      if (createdRecorder && createdRecorder.state !== "inactive") try { createdRecorder.stop(); } catch { /* ignored */ }
+      // MediaRecorder.start() can throw synchronously. Cancel its 8-second
+      // watchdog now, otherwise a stale timeout may later stop a NEW capture.
+      startGuard?.cancel();
+      if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
+      if (stopWatch && recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
+      if (createdRecorder) {
+        if (createdRecorder.state !== "inactive") {
+          try { createdRecorder.stop(); } catch { /* existing onstop salvages data */ }
+        } else {
+          createdRecorder.onstart = null; createdRecorder.onerror = null;
+          createdRecorder.ondataavailable = null; createdRecorder.onstop = null;
+        }
+      }
       if (recorderRef.current === createdRecorder) recorderRef.current = null;
       pipeRef.current?.stop(); pipeRef.current = null;
       recordingAudio.current = null;

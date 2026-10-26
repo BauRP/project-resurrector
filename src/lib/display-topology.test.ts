@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, foldEventDetails, startDisplayAdaptation, safeViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -144,6 +144,14 @@ describe("multi-hinge topology", () => {
 
 });
 
+describe("fold capture journal chronology", () => {
+  it("advances on revision-only updates even when the measured panes do not move", () => {
+    expect(shouldPublishFoldObservation("two-panes", 8, "two-panes", 9)).toBe(true);
+    expect(shouldPublishFoldObservation("two-panes", 9, "two-panes", 9)).toBe(false);
+    expect(shouldPublishFoldObservation("two-panes", 9, "three-panes", 9)).toBe(true);
+    expect(shouldPublishFoldObservation("two-panes", 9, "two-panes", 8)).toBe(false);
+  });
+});
 describe("layout owner handoff during rapid tab remount", () => {
   it("rejects invalid fold-time WebView sizes rather than producing invalid CSS", () => {
     expect(safeViewportDimension(Number.NaN)).toBe(null);
