@@ -1,3 +1,4 @@
+import { recordingInputLostReason } from "./recording-finalization";
 import { describe, expect, it, vi } from "vitest";
 import { planRecordingFinalization, canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard } from "./recording-finalization";
 describe("recording recovery and truthful completion", () => {
@@ -90,5 +91,15 @@ describe("capture session ownership across stop, background, and remount", () =>
     };
     expect(report(2,1,true)).toBe(false);
     expect(saved).toBe(1);
+  });
+});
+
+
+describe("lost media input during capture", () => {
+  it("distinguishes camera and microphone loss", () => {
+    expect(recordingInputLostReason("audio")).toContain("Микрофон");
+    expect(recordingInputLostReason("video")).toContain("Камера");
+    expect(recordingInputLostReason("audio",true)).toContain("Аудиовход");
+    expect(recordingInputLostReason("video",true)).toContain("Видеовход");
   });
 });
