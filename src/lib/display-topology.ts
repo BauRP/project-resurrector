@@ -266,9 +266,6 @@ export function startDisplayAdaptation(): () => void {
     lastNative = state;
     measure();
   };
-  window.addEventListener("resize", measure);
-  window.addEventListener("orientationchange", measure);
-  window.visualViewport?.addEventListener("resize", measure);
   const content = document.querySelector(".app-scroll");
   // Coalesce resize/mutation bursts without postponing measurements forever:
   // continuous DOM mutations must not starve fold layout updates.
@@ -279,6 +276,11 @@ export function startDisplayAdaptation(): () => void {
       measure();
     });
   };
+  // WindowManager, CSS resize and viewport changes can occur in bursts when
+  // the hinge animates. One RAF update avoids repeated synchronous DOM writes.
+  window.addEventListener("resize", scheduleMeasure);
+  window.addEventListener("orientationchange", scheduleMeasure);
+  window.visualViewport?.addEventListener("resize", scheduleMeasure);
   const geometryObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(scheduleMeasure) : null;
   const shell = document.querySelector(".app-shell");
@@ -317,9 +319,9 @@ export function startDisplayAdaptation(): () => void {
   return () => {
     disposed = true;
     forgetActiveFoldSnapshot(token);
-    window.removeEventListener("resize", measure);
-    window.removeEventListener("orientationchange", measure);
-    window.visualViewport?.removeEventListener("resize", measure);
+    window.removeEventListener("resize", scheduleMeasure);
+    window.removeEventListener("orientationchange", scheduleMeasure);
+    window.visualViewport?.removeEventListener("resize", scheduleMeasure);
     mutations?.disconnect();
     if (observedCamera) geometryObserver?.unobserve(observedCamera);
     observedCamera = null;
