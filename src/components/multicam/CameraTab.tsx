@@ -307,6 +307,8 @@ export function CameraTab() {
         if (pipeRef.current === sessionPipe) pipeRef.current = null;
         if (recordingAudio.current === sessionAudio) recordingAudio.current = null;
         void gainCtx?.close();
+        recorder.onpause = null;
+        recorder.onresume = null;
         if (recorderRef.current === recorder) recorderRef.current = null;
         if (recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
       };
@@ -315,6 +317,8 @@ export function CameraTab() {
         durationClock.startedAt(performance.now());
         updateCurrentSession({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
       };
+      recorder.onpause = () => durationClock.pausedAtTime(performance.now());
+      recorder.onresume = () => durationClock.resumedAt(performance.now());
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
       recorder.onerror = (event) => {
         startGuard?.cancel();
@@ -407,6 +411,7 @@ export function CameraTab() {
         } else {
           createdRecorder.onstart = null; createdRecorder.onerror = null;
           createdRecorder.ondataavailable = null; createdRecorder.onstop = null;
+          createdRecorder.onpause = null; createdRecorder.onresume = null;
         }
       }
       if (recorderRef.current === createdRecorder) recorderRef.current = null;
