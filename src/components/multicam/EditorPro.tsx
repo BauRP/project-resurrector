@@ -1,3 +1,4 @@
+import { EditorVideoLayer } from "./EditorVideoLayer";
 import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
@@ -155,7 +156,6 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const [editing, setEditing] = useState<string | null>(null);
   const [subState, setSubState] = useState<"off" | "working" | "on">("off");
   const [loading, setLoading] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
   const loadGeneration = useRef(0);
@@ -279,6 +279,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, [playing, total, zoom]);
 
   const active = useMemo(() => [...items].filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i)).sort((a, b) => a.track - b.track)[0] ?? null, [items, t, hidden]);
+  const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (selected === null || i.id === selected)).sort((a,b)=>a.track-b.track),[items,t,hidden,selected]);
   /** Items whose sound is heard: audio clips on unmuted lanes, and video clips with attached (not detached) audio on unmuted lanes. Visibility does not affect sound. */
   const audible = useMemo(() => items.filter((i) => i.kind === "audio" ? !muted[`a${i.track}`] : !muted[`v${i.track}`] && !items.some((a) => a.kind === "audio" && a.mediaId === i.mediaId)), [items, muted]);
 
@@ -326,24 +327,6 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     return none;
   }, [active, validTr, items, t]);
 
-  // Native playback while playing (no per-frame seeking); seeks only for scrubbing, reverse, or drift > 0.3 s.
-  useEffect(() => {
-    const v = videoRef.current; if (!v || !active) return;
-    const m = mediaById.get(active.mediaId); if (!m) return;
-    const source = proxies[m.id] ?? m.url;
-    if (v.dataset["src"] !== source) { v.dataset["src"] = source; v.src = source; }
-    v.muted = true;
-    const local = (t - active.start) * active.speed;
-    const target = Math.max(0, active.reverse ? active.out - local : active.in + local);
-    if (playing && !active.reverse) {
-      if (v.playbackRate !== active.speed) v.playbackRate = active.speed;
-      if (v.paused) { v.currentTime = target; void v.play().catch(() => undefined); }
-      else if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
-    } else {
-      if (!v.paused) v.pause();
-      if (!v.seeking && Math.abs(v.currentTime - target) > (playing ? 0.06 : 0.02)) v.currentTime = target;
-    }
-  }, [active, t, mediaById, playing, proxies]);
   useEffect(() => {
     for (const i of audible) {
       const el = audioRefs.current[i.id]; if (!el) continue;
@@ -560,9 +543,19 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
     <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
-      {active && <svg className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${active.id}`} c={colorOf(active)} /></defs></svg>}
+      {visibleVideos.map(i=><svg key={i.id} className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${i.id}`} c={colorOf(i)} /></defs></svg>)}
       {audible.map((i) => <audio key={i.id} ref={(el) => { audioRefs.current[i.id] = el; }} src={mediaById.get(i.mediaId)?.url} preload="auto" className="hidden" />)}
-      {active ? <video ref={videoRef} muted playsInline className="h-full w-full object-cover" style={{ filter: `url(#cc-${active.id}) ${LOOKS[active.look] === "none" ? "" : LOOKS[active.look]} ${trStyle.filter}`, opacity: (active.opacity / 100) * trStyle.opacity, clipPath: trStyle.clip, transform: `translateX(${active.posX}%) scale(${active.scale / 100}) ${trStyle.transform} ${cropFor === active.id ? "" : cropTransform(active.crop)}`, transformOrigin: "50% 50%" }} />
+      {visibleVideos.length ? visibleVideos.map((i,index)=><EditorVideoLayer key={i.id}
+        source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}
+        timelineTime={t} start={i.start} inPoint={i.in} outPoint={i.out}
+        speed={i.speed} reverse={i.reverse} playing={playing}
+        label={`Видео дорожки ${i.track}`}
+        zIndex={index+1}
+        style={{filter:`url(#cc-${i.id}) ${LOOKS[i.look] === "none" ? "" : LOOKS[i.look]} ${i.id === active?.id ? trStyle.filter : ""}`,
+          opacity:(i.opacity/100)*(i.id === active?.id ? trStyle.opacity : 1),
+          clipPath:i.id === active?.id ? trStyle.clip : undefined,
+          transform:`translateX(${i.posX}%) scale(${i.scale/100}) ${i.id === active?.id ? trStyle.transform : ""} ${cropFor === i.id ? "" : cropTransform(i.crop)}`,
+          transformOrigin:"50% 50%"}} />)
         : <div className="flex h-full items-center justify-center p-4 text-center text-muted-foreground">{loading ? "Загрузка клипов…" : "00:00.00"}</div>}
       {overlays.filter((o) => t >= o.start && t <= o.end).map((o) => <div key={o.id} onPointerDown={dragOverlay(o.id)} onClick={(e) => e.stopPropagation()} className={`absolute max-w-[90%] -translate-x-1/2 -translate-y-1/2 cursor-move select-none rounded px-2 py-0.5 text-center font-semibold [touch-action:none] ${editing === o.id ? "ring-2 ring-primary" : ""}`} style={{ left: `${o.x}%`, top: `${o.y}%`, fontSize: o.size, color: o.color, fontFamily: o.font, background: o.bg ? "rgb(0 0 0 / .55)" : "transparent" }}>{o.text}</div>)}
       {cropDraft && cropItem && <div className="absolute inset-0 z-20 [touch-action:none]" onClick={(e) => e.stopPropagation()}>
