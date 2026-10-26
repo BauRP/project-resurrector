@@ -23,6 +23,8 @@ let activeAdaptation: symbol | null = null;
 type Split = "vertical" | "horizontal" | "none";
 type Region = { left: number; top: number; width: number; height: number };
 export function windowClass(width: number) {
+  // Do not advertise a huge foldable layout for a temporarily invalid width.
+  if (!Number.isFinite(width) || width <= 0) return "compact";
   return width < 600 ? "compact" : width < 840 ? "medium" : width < 1200 ? "expanded" : width < 1600 ? "large" : "extra-large";
 }
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
@@ -282,8 +284,8 @@ export function startDisplayAdaptation(): () => void {
           return;
         }
         apply(state);
-      }).catch(() => { if (!disposed) root.dataset.foldInfo = "unknown"; });
-    }).catch(() => { if (!disposed) root.dataset.foldInfo = "unknown"; });
+      }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset.foldInfo = "unknown"; });
+    }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset.foldInfo = "unknown"; });
   }
   return () => {
     disposed = true;
