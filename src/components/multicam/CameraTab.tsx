@@ -1,3 +1,4 @@
+import { CaptureDurationClock } from "@/lib/recording-duration";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, ChevronDown, CircleDot, Eye, EyeOff, Focus, Lock, Maximize, Pause, Play, ScanFace, SlidersHorizontal, Video, X, Zap, Sparkles, Grid3x3, Circle, Crosshair, Palette, AudioLines, Download } from "lucide-react";
@@ -282,7 +283,7 @@ export function CameraTab() {
       createdRecorder = recorder;
       recorderRef.current = recorder;
       const camera = s.activeCamera; const startedAt = Date.now();
-      let confirmedStartAt: number | null = null;
+      const durationClock = new CaptureDurationClock();
       const sessionGeneration = ++recordingSessionGeneration.current;
       const updateCurrentSession = (value: Parameters<typeof s.set>[0]) => {
         if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
@@ -307,11 +308,11 @@ export function CameraTab() {
         if (recordingAudio.current === sessionAudio) recordingAudio.current = null;
         void gainCtx?.close();
         if (recorderRef.current === recorder) recorderRef.current = null;
-        if (recordingStopWatch.current === guard.waitForStop) recordingStopWatch.current = null;
+        if (recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
       };
       recorder.onstart = () => {
         if (startGuard && !startGuard.started()) return;
-        confirmedStartAt = performance.now();
+        durationClock.startedAt(performance.now());
         updateCurrentSession({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
       };
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
@@ -326,8 +327,7 @@ export function CameraTab() {
       const finalizeRecording = () => {
         // Stop callback time includes any delayed finalization; it is only an
         // approximate lower-confidence duration signal, never codec FPS proof.
-        const elapsedMs = confirmedStartAt === null || lapse || s.paused ? null :
-          Math.max(0, performance.now() - confirmedStartAt);
+        const elapsedMs = lapse ? null : durationClock.durationMs();
         cleanUp();
         updateCurrentSession({ recording: false, recordingStartedAt: null, paused: false });
         const stopReason = stopReasonRef.current;
@@ -376,14 +376,18 @@ export function CameraTab() {
       const guard = createRecordingStopGuard(finalizeRecording, () => {
         recorderError ||= "Видеокодировщик не подтвердил остановку за 12 секунд";
       });
-      stopWatch = guard.waitForStop;
-      recordingStopWatch.current = stopWatch;
+      const requestStop = () => {
+        durationClock.stopRequestedAt(performance.now());
+        guard.waitForStop();
+      };
+      stopWatch = requestStop;
+      recordingStopWatch.current = requestStop;
       recorder.onstop = guard.finish;
       startGuard = createRecorderStartGuard(() => {
         recorderError ||= "Видеокодировщик не подтвердил запуск за 8 секунд";
         stopReasonRef.current = recorderError;
         updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: recorderError });
-        guard.waitForStop();
+        requestStop();
         if (recorder.state !== "inactive") {
           try { recorder.stop(); } catch { /* onstop guard salvages existing chunks */ }
         } else guard.finish();
