@@ -68,3 +68,15 @@ describe("geometry changes during actual fold recording", () => {
     expect(normalizeFoldTransition({...a,regionGeometry:"x".repeat(600)},100)).toBe(null);
   });
 });
+
+
+describe("fold pane region authenticity", () => {
+  it("rejects overlapping screen areas and overflowing coordinate sums", () => {
+    expect(validFoldRegionGeometry("0,0,300,400;250,0,300,400")).toBe(false);
+    expect(validFoldRegionGeometry("9007199254740990,0,100,400")).toBe(false);
+    expect(validFoldRegionGeometry("0,0,300,400;300,0,300,400")).toBe(true);
+  });
+  it("does not attach impossible overlapping panes to a recording", () => {
+    expect(normalizeFoldTransition({...sample,regionGeometry:"0,0,300,400;150,0,300,400"},101)).toBe(null);
+  });
+});
