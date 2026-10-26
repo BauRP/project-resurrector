@@ -39,16 +39,19 @@ export function appendFoldTransition(
   events: readonly FoldTransitionEvidence[], value: FoldTransitionEvidence,
 ): FoldTransitionEvidence[] {
   const last = events[events.length - 1];
-  if (last && last.revision === value.revision &&
+  // Ignore delayed/stale events before deciding whether they are duplicates.
+  // A newer native revision with the same observed physical geometry is NOT
+  // another fold. Keep its revision as the chronology watermark.
+  if (last && (value.revision < last.revision ||
+      value.observedAtMs < last.observedAtMs)) return [...events];
+  if (last &&
       last.posture === value.posture &&
       last.hingeCount === value.hingeCount &&
       last.usableRegions === value.usableRegions &&
       last.layout === value.layout &&
-      last.regionGeometry === value.regionGeometry) return [...events];
-  // Delayed older WindowManager callbacks can arrive after a newer fold.
-  // Same-revision CSS viewport changes are valid and remain recorded.
-  if (last && (value.revision < last.revision ||
-      value.observedAtMs < last.observedAtMs)) return [...events];
+      last.regionGeometry === value.regionGeometry)
+    return value.revision === last.revision ? [...events] :
+      [...events.slice(0,-1), { ...last, revision:value.revision }];
   return [...events, value].slice(-120);
 }
 export function foldContinuitySummary(events: readonly FoldTransitionEvidence[]): string {

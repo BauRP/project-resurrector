@@ -158,7 +158,9 @@ export function startDisplayAdaptation(): () => void {
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());
     const signature = [details.posture, details.hingeCount, details.usableRegions,
-      details.layout, details.regionGeometry, state.revision].join("|");
+      details.layout, details.regionGeometry].join("|");
+    // Native revision alone is not a physical transition; the capture journal
+    // records visible postures/regions, not OEM bookkeeping callbacks.
     if (signature !== lastFoldSignature) {
       lastFoldSignature = signature;
       window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));

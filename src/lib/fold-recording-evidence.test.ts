@@ -35,6 +35,19 @@ describe("native fold event chronology", () => {
     expect(appendFoldTransition([current],resized)).toEqual([current,resized]);
   });
 });
+describe("unchanged physical fold with a new native revision", () => {
+  it("does not count revision-only native updates as a second fold", () => {
+    const initial=normalizeFoldTransition({...sample,revision:10,regionGeometry:"0,0,280,400"},100)!;
+    const repeated=normalizeFoldTransition({...sample,revision:11,regionGeometry:"0,0,280,400"},120)!;
+    const journal=appendFoldTransition([initial],repeated);
+    expect(journal).toHaveLength(1);
+    expect(journal[0]?.revision).toBe(11);
+    expect(appendFoldTransition(journal,{...repeated,revision:10,observedAtMs:130,
+      regionGeometry:"0,0,260,400"})).toEqual(journal);
+    const moved={...repeated,revision:11,observedAtMs:140,regionGeometry:"0,0,300,400"};
+    expect(appendFoldTransition(journal,moved)).toHaveLength(2);
+  });
+});
 describe("geometry changes during actual fold recording", () => {
   it("retains a resize with an unchanged native revision but changed region dimensions", () => {
     const a=normalizeFoldTransition({revision:2,posture:"FLAT",hingeCount:1,
