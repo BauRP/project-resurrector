@@ -1,3 +1,4 @@
+import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { CaptureDurationClock } from "@/lib/recording-duration";
 import { useEffect, useRef, useState } from "react";
@@ -373,7 +374,15 @@ export function CameraTab() {
               updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
                 "Клип сохранён; первый кадр декодирован. " + durationEvidence.message + " " +
                 (sample.approximateFps !== null ? "Оценка показанных кадров: " + sample.approximateFps + " FPS. " : "Оценка FPS недоступна. ") +
-                "FPS кодека, HDR, EIS/OIS и все кадры не подтверждены." });
+                "Проверяю последующие участки файла…" });
+              void probeStoredClipCheckpoints(clipId, evidence.durationSeconds).then(checks => {
+                updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                  durationEvidence.message + " " + checks.message +
+                  " FPS кодека, HDR, EIS/OIS и полная непрерывность не подтверждены." });
+              }).catch(() => {
+                updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                  durationEvidence.message + " Дополнительные кадры проверить не удалось." });
+              });
             }).catch(() => {
               updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
                 "Клип сохранён и первый кадр декодирован. " +
