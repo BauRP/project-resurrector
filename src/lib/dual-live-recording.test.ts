@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { independentStreamsReady, isCleanDualRecording } from "./dual-live-recording";
+import { independentStreamsReady, isCleanDualRecording, compareDualFileDurations } from "./dual-live-recording";
 const track = (id: string, state: "live"|"ended"="live") =>
   ({readyState:state, getSettings:()=>({deviceId:id})}) as unknown as MediaStreamTrack;
 const stream = (t: MediaStreamTrack) =>
@@ -28,5 +28,19 @@ describe("honest two-encoder result status", () => {
     expect(isCleanDualRecording({ ...good, stopReason: "background" })).toBe(false);
     expect(isCleanDualRecording({ ...good, failures: 1 })).toBe(false);
     expect(isCleanDualRecording({ ...good, endedUnexpectedly: true })).toBe(false);
+  });
+});
+
+
+describe("dual recording file duration evidence", () => {
+  it("reports unknown when WebView cannot expose a reliable duration", () => {
+    expect(compareDualFileDurations(null, 20)).toBe("unknown");
+    expect(compareDualFileDurations(0, 20)).toBe("unknown");
+    expect(compareDualFileDurations(1, 2)).toBe("unknown");
+    expect(compareDualFileDurations(Number.NaN, 20)).toBe("unknown");
+  });
+  it("flags large asymmetric truncation without claiming frame synchronization", () => {
+    expect(compareDualFileDurations(60, 12)).toBe("mismatch");
+    expect(compareDualFileDurations(60, 58)).toBe("consistent");
   });
 });
