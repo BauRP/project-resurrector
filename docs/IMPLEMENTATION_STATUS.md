@@ -306,3 +306,11 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 - On WebView `pagehide`, CameraTab attempts bounded recorder shutdown/salvage in addition to handling `visibilitychange`; a sudden process death cannot be guaranteed to finish saving data and the durable warning is deliberately preserved.
 - Interruption warning after a WebView/Activity recreation is now shown in Editor and Settings too, not only Camera. No camera is automatically reactivated from stale stored state.
 - These are committed source changes; hardware tests, full CI, and encoded video stabilization remain outstanding; do not advance overall completion percentages absent independent validation.
+
+
+## High-speed bitrate and MP4 timestamps; fold UI persistence performance — 27 October 2026
+- Android Camera2 native high-speed recorder bitrate arithmetic now uses 64-bit multiplication, conservative bounds, and a valid positive 32-bit encoder target; a 4K high-FPS multiplication no longer silently overflows to a negative MediaRecorder bitrate.
+- Android MediaExtractor video evidence now tracks duplicated and reversed sample presentation timestamps and does not emit a misleading estimated FPS from malformed sample chronology. Bounded samples still do not prove entire video continuity.
+- Editor/view restoration no longer synchronously writes the playhead to localStorage on every update: writes are coalesced within 400 ms, with navigation changes, pagehide, visibility loss, and unmount flushing the latest snapshot. Corrupt primary preferences no longer prevent independent restoration of valid UI-only state.
+- Added a 36-scenario acceptance matrix at `docs/FOLD_AND_CAPTURE_ACCEPTANCE_MATRIX.md` grounded in both specifications, with physical hardware and APK checks explicitly **NOT VERIFIED** until performed.
+- The full Vitest suite and Gradle APK/AAB build were NOT run in this environment (repository clone failed on DNS resolution for github.com; node_modules are absent). Source commits and GitHub branch existence are verifiable independently. No physical testing or unsupported completion percentages are claimed.
