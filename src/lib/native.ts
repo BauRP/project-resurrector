@@ -15,6 +15,7 @@ export interface NativeMp4Inspection {
   hdrRecordingVerified: false;
   source: string;
   samplesRead: number; timestampSpanUs: number;
+  audioTrackCount?: number; audioMime?: string | null; audioSamplesDecoded?: false;
   outOfOrderPresentationTimes: number;
   estimatedSampleFps: number | null;
   sampleLimitReached: boolean;
