@@ -17,7 +17,7 @@ import { createLimiter } from "@/lib/audio-limiter";
 import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
-import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps } from "@/lib/clip-playback";
+import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
@@ -282,6 +282,7 @@ export function CameraTab() {
       createdRecorder = recorder;
       recorderRef.current = recorder;
       const camera = s.activeCamera; const startedAt = Date.now();
+      let confirmedStartAt: number | null = null;
       const sessionGeneration = ++recordingSessionGeneration.current;
       const updateCurrentSession = (value: Parameters<typeof s.set>[0]) => {
         if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
@@ -310,6 +311,7 @@ export function CameraTab() {
       };
       recorder.onstart = () => {
         if (startGuard && !startGuard.started()) return;
+        confirmedStartAt = performance.now();
         updateCurrentSession({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
       };
       recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
@@ -322,6 +324,10 @@ export function CameraTab() {
         if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* already stopped */ }
       };
       const finalizeRecording = () => {
+        // Stop callback time includes any delayed finalization; it is only an
+        // approximate lower-confidence duration signal, never codec FPS proof.
+        const elapsedMs = confirmedStartAt === null || lapse || s.paused ? null :
+          Math.max(0, performance.now() - confirmedStartAt);
         cleanUp();
         updateCurrentSession({ recording: false, recordingStartedAt: null, paused: false });
         const stopReason = stopReasonRef.current;
@@ -345,12 +351,13 @@ export function CameraTab() {
               "Видео сохранено. Проверяю воспроизведение…" });
           window.dispatchEvent(new Event("multicam-clips-changed"));
           void verifyStoredClipPlayback(clipId).then(evidence => {
+            const durationEvidence = assessSavedVideoDuration(elapsedMs, evidence.durationSeconds);
             updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
-              ". Измеряю отображаемые кадры…" });
+              ". " + durationEvidence.message + " Измеряю отображаемые кадры…" });
             void sampleStoredClipDisplayedFps(clipId).then(sample => {
               updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
-                "Клип сохранён; первый кадр декодирован. " +
+                "Клип сохранён; первый кадр декодирован. " + durationEvidence.message + " " +
                 (sample.approximateFps !== null ? "Оценка показанных кадров: " + sample.approximateFps + " FPS. " : "Оценка FPS недоступна. ") +
                 "FPS кодека, HDR, EIS/OIS и все кадры не подтверждены." });
             }).catch(() => {
