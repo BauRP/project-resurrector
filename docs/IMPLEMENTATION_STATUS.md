@@ -351,3 +351,8 @@ A **successful CI build only confirms compilation/tests/packaging**. Neither tec
 - Native Camera2 high-speed MP4 inspector now reads bounded MediaExtractor samples near the container-declared end, separately from its initial 600-sample window. It reports near-end sample positions, timestamp ordering and approximate sampled FPS. Unsupported seeking or missing duration remains unknown; `fileEndVerified=false` prevents any full-file verification claim.
 - MediaMetadataRetriever reads MP4 rotation metadata (0/90/180/270 or unknown) without claiming correct preview mirror, overlays or rendered export orientation.
 - Camera Diagnostics shows head/tail sample evidence and orientation. Anonymous report includes numerical observations, never file paths or raw lens IDs. CI and real-device status must be confirmed separately.
+
+
+## Fold window-resize versus observed hinge posture evidence — 27 October 2026
+- The video capture fold event summary now separates WindowManager-reported posture/hinge/layout changes from **geometry-only** WebView viewport or window resizing. Such a geometry-only event can no longer be presented as physical folding evidence. An original pre-capture baseline and bounded loss/omission counting still apply.
+- Added tests for a pure CSS geometry change and an actual reported posture change. These software tests do not verify a real manufacturer's fold sensor, recording continuity or touch mapping on an actual handset.
