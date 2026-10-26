@@ -85,33 +85,61 @@ export function createMulticamStore(): StoreApi {
 }
 const g = globalThis as { __multicamStoreApiCtx?: React.Context<StoreApi | null> };
 const StoreContext = g.__multicamStoreApiCtx ??= createContext<StoreApi | null>(null);
+/** Only whitelisted, non-capture view state is written on restoration. */
+function viewSnapshot(state: MulticamState) {
+  return { tab: state.tab, playhead: state.playhead, editMode: state.editMode,
+    aspect: state.aspect, captureKind: state.captureKind };
+}
 const persistedKeys = ["language", "hardwareAcceleration", "selectedLut", "exportConfig", "markers", "cuts", "subtitles", "teleprompterText", "teleprompterSpeed", "teleprompterSize", "theme"] as const;
 export function MulticamStoreProvider({ children }: { children: ReactNode }) {
   const ref = useRef<StoreApi | null>(null);
   if (!ref.current) ref.current = createMulticamStore();
   const store = ref.current;
   useEffect(() => {
+    let patch: Partial<StateData> = {};
     try {
       const saved = JSON.parse(window.localStorage.getItem("multicam-pov-state-native") ?? "{}") as Partial<StateData>;
-      const patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
+      patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
       if (patch.theme !== "light" && patch.theme !== "dark") delete patch.theme;
-      store.getSnapshot().set({ ...patch, ...restoreViewState() });
-    } catch { /* Restricted storage: retain in-memory state. */ }
+    } catch { /* Restricted/corrupt main preferences do not block view recovery. */ }
+    store.getSnapshot().set({ ...patch, ...restoreViewState() });
     let previous = persistedKeys.map((k) => store.getSnapshot()[k]);
     let previousView = [store.getSnapshot().tab, store.getSnapshot().playhead,
       store.getSnapshot().editMode, store.getSnapshot().aspect, store.getSnapshot().captureKind];
-    return store.subscribe(() => {
+    let pendingView: ReturnType<typeof viewSnapshot> | null = null;
+    let viewTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushView = () => {
+      if (viewTimer !== null) clearTimeout(viewTimer);
+      viewTimer = null;
+      if (pendingView) saveViewState(pendingView);
+      pendingView = null;
+    };
+    const onVisibility = () => { if (document.hidden) flushView(); };
+    // Activity destruction may dispatch pagehide without visibilitychange.
+    window.addEventListener("pagehide", flushView);
+    document.addEventListener("visibilitychange", onVisibility);
+    const unsubscribe = store.subscribe(() => {
       const state = store.getSnapshot(); const values = persistedKeys.map((k) => state[k]);
       const view = [state.tab, state.playhead, state.editMode, state.aspect, state.captureKind];
       if (!view.every((value, index) => Object.is(value, previousView[index]))) {
+        const tabChanged = view[0] !== previousView[0];
         previousView = view;
-        saveViewState({ tab: state.tab, playhead: state.playhead, editMode: state.editMode,
-          aspect: state.aspect, captureKind: state.captureKind });
+        pendingView = viewSnapshot(state);
+        // Persist navigation immediately. Debounce rapidly changing playhead
+        // updates to avoid synchronous localStorage writes on every frame.
+        if (tabChanged) flushView();
+        else if (viewTimer === null) viewTimer = setTimeout(flushView, 400);
       }
       if (values.every((v, i) => Object.is(v, previous[i]))) return;
       previous = values;
       try { window.localStorage.setItem("multicam-pov-state-native", JSON.stringify(Object.fromEntries(persistedKeys.map((k) => [k, state[k]])))); } catch { /* Memory remains available. */ }
     });
+    return () => {
+      unsubscribe();
+      window.removeEventListener("pagehide", flushView);
+      document.removeEventListener("visibilitychange", onVisibility);
+      flushView();
+    };
   }, [store]);
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }
