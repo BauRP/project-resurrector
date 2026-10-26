@@ -1,3 +1,4 @@
+import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
@@ -323,7 +324,7 @@ export function CameraDiagnostics() {
           <Button size="sm" variant="outline" disabled={stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void checkStabilization(c.cameraId)}>Проверить OIS/EIS · CAM {c.cameraId}</Button>
         </div>
         {stabilizationResults.filter(x => x.cameraId === c.cameraId).map(x =>
-          <p key={x.cameraId} className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · файл не проверялся</p>
+          <p key={x.cameraId} className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:1280,height:720,fps:30}).message}</p>
         )}
       </div>)}
       {stabilizationMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{stabilizationMessage}</p>}
