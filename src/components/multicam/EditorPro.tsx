@@ -472,7 +472,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
            config.fps!=="30"||config.audioCodec!=="Opus")
           throw Error("Этот офлайн-рендер поддерживает только VP8, Opus, 720p, 30 FPS. Выберите эти параметры в экспорте.");
         const persisted=await readPersistedClip(entry.mediaId);
-        return renderSimpleVideoWebm(plan,persisted.blob,signal,progress);
+        return renderSimpleVideoWebm(plan,persisted.blob,config,signal,progress);
       }
       if (!source || !entry || signal.aborted) throw new Error("Видео недоступно или экспорт отменён");
       const saved=await readPersistedClip(entry.mediaId);
