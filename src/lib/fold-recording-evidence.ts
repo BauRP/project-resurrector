@@ -13,6 +13,24 @@ export interface FoldTransitionEvidence {
   regionGeometry?: string;
 }
 export const FOLD_EVENT = "multicam-fold-topology";
+/** Reject corrupted geometry, not just oversized metadata. Native pane values
+ * are rounded to CSS pixels. Only non-negative finite rectangular regions
+ * from the measured application window are acceptable as capture evidence.
+ */
+export function validFoldRegionGeometry(value: string): boolean {
+  if (!value || value.length > 512) return false;
+  const panes = value.split(";");
+  if (panes.length > 16) return false;
+  return panes.every(pane => {
+    const values = pane.split(",");
+    if (values.length !== 4) return false;
+    const numbers = values.map(Number);
+    return values.every(value => /^-?\d+$/.test(value)) &&
+      numbers.every(Number.isSafeInteger) &&
+      numbers[0]! >= 0 && numbers[1]! >= 0 &&
+      numbers[2]! > 0 && numbers[3]! > 0;
+  });
+}
 export function normalizeFoldTransition(value: unknown, observedAtMs: number): FoldTransitionEvidence | null {
   if (!value || typeof value !== "object") return null;
   const event = value as Record<string, unknown>;
@@ -24,7 +42,7 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
       Number(event.hingeCount) > 16 ||
       !["none", "vertical", "horizontal"].includes(String(event.layout)) ||
       (event.regionGeometry !== undefined &&
-        (typeof event.regionGeometry !== "string" || event.regionGeometry.length > 512))) return null;
+        (typeof event.regionGeometry !== "string" || !validFoldRegionGeometry(event.regionGeometry)))) return null;
   return {
     revision: event.revision as number,
     observedAtMs, posture: event.posture,
