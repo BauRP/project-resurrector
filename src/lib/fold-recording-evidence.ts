@@ -13,6 +13,8 @@ export interface FoldTransitionEvidence {
   regionGeometry?: string;
   /** A topology observed before video capture, not a transition during it. */
   baseline?: true;
+  /** Count of discarded old observations after the bounded journal filled. */
+  omittedEarlierEvents?: number;
 }
 export const FOLD_EVENT = "multicam-fold-topology";
 
@@ -107,13 +109,29 @@ export function appendFoldTransition(
       last.regionGeometry === value.regionGeometry)
     return value.revision === last.revision ? [...events] :
       [...events.slice(0,-1), { ...last, revision:value.revision }];
-  return [...events, value].slice(-120);
+  const next = [...events, value];
+  if (next.length <= 120) return next;
+  // Keep the ORIGINAL measured starting posture for the entire recording.
+  // Silently deleting it previously converted a genuine baseline into an
+  // unknown starting position after 120 fold/resize observations.
+  const baseline = next[0]?.baseline === true;
+  const trimmed = baseline
+    ? [next[0]!, ...next.slice(-119)]
+    : next.slice(-120);
+  const previouslyOmitted = events[0]?.omittedEarlierEvents ?? 0;
+  trimmed[0] = {
+    ...trimmed[0]!,
+    omittedEarlierEvents: previouslyOmitted + (next.length - 120),
+  };
+  return trimmed;
 }
 export function foldContinuitySummary(events: readonly FoldTransitionEvidence[]): string {
   if (!events.length) return "Во время записи данные о складках недоступны: непрерывность не подтверждена.";
-  const changes = Math.max(0, events.length - (events[0]?.baseline === true ? 1 : 0));
+  const omitted = events[0]?.omittedEarlierEvents ?? 0;
+  const changes = Math.max(0, events.length - (events[0]?.baseline === true ? 1 : 0)) + omitted;
   const uncertain = events[0]?.baseline !== true;
   const prefix = uncertain ? "Начальная геометрия на момент старта отсутствует; число изменений частично неизвестно. " : "";
-  return prefix + "Зафиксировано изменений геометрии: " + changes +
+  return prefix + (omitted ? "Ранние наблюдения сокращены в журнале: " + omitted + ". " : "") +
+    "Зафиксировано изменений геометрии: " + changes +
     ". Журнал не подтверждает непрерывность кадров или сохранение записи при повороте.";
 }
