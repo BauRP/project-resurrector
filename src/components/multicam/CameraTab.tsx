@@ -362,6 +362,10 @@ export function CameraTab() {
           window.dispatchEvent(new Event("multicam-clips-changed"));
           void verifyStoredClipPlayback(clipId).then(evidence => {
             const durationEvidence = assessSavedVideoDuration(elapsedMs, evidence.durationSeconds);
+            // Do not leave a materially shortened recording marked as
+            // successfully verified merely because its first frame decoded.
+            if (durationEvidence.status === "short")
+              updateCurrentSession({ recordingPhase: "error" });
             updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
               "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
               ". " + durationEvidence.message + " Измеряю отображаемые кадры…" });
@@ -372,7 +376,8 @@ export function CameraTab() {
                 "FPS кодека, HDR, EIS/OIS и все кадры не подтверждены." });
             }).catch(() => {
               updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
-                "Клип сохранён и первый кадр декодирован; оценка FPS недоступна." });
+                "Клип сохранён и первый кадр декодирован. " +
+                durationEvidence.message + " Оценка FPS недоступна." });
             });
           }).catch(error => {
             updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
