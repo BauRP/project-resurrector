@@ -279,7 +279,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, [playing, total, zoom]);
 
   const active = useMemo(() => [...items].filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i)).sort((a, b) => a.track - b.track)[0] ?? null, [items, t, hidden]);
-  const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (selected === null || i.id === selected)).sort((a,b)=>a.track-b.track),[items,t,hidden,selected]);
+  const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (!selected || !items.some(x=>x.id === selected && x.kind === "video") || i.id === selected)).sort((a,b)=>a.track-b.track),[items,t,hidden,selected]);
   /** Items whose sound is heard: audio clips on unmuted lanes, and video clips with attached (not detached) audio on unmuted lanes. Visibility does not affect sound. */
   const audible = useMemo(() => items.filter((i) => i.kind === "audio" ? !muted[`a${i.track}`] : !muted[`v${i.track}`] && !items.some((a) => a.kind === "audio" && a.mediaId === i.mediaId)), [items, muted]);
 
