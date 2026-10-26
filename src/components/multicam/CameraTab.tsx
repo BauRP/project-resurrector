@@ -1,3 +1,4 @@
+import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { CaptureDurationClock } from "@/lib/recording-duration";
 import { useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -289,7 +290,7 @@ export function CameraTab() {
         if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
       };
       const chunks: Blob[] = [];
-      let foldTransitions: FoldTransitionEvidence[] = [];
+      let foldTransitions: FoldTransitionEvidence[] = getActiveFoldBaseline() ? [getActiveFoldBaseline()!] : [];
       const onFold = (event: Event) => {
         const evidence = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
