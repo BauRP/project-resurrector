@@ -94,6 +94,10 @@ function MulticamAppContent() {
       {interrupted && <div className="mt-2 flex flex-wrap gap-2">
         <button className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground" onClick={() => { setTab("editor"); setStore({mediaOpen:true}); }}>Проверить клипы</button>
         <button className="rounded-md border border-border px-3 py-1.5" onClick={() => {
+          setTab("camera");
+          setNavigationNotice("Открыта камера. Нажмите «Запись» вручную, чтобы начать НОВЫЙ сегмент. Прошлая запись не продолжается автоматически.");
+        }}>Перейти к новой записи</button>
+        <button className="rounded-md border border-border px-3 py-1.5" onClick={() => {
           clearUnfinishedCapture(interrupted.kind,interrupted.startedAt);
           setInterrupted(null); setNavigationNotice("");
         }}>Понятно, закрыть предупреждение</button>
