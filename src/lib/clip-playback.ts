@@ -105,14 +105,22 @@ export interface VideoFrameRateEvidence {
  * frames. Browser throttling, dropped frames or playback speed can change it.
  */
 export function summarizePresentedFrames(samples: readonly PlaybackFrameSample[]): VideoFrameRateEvidence {
-  const ordered = [...samples].filter(x => Number.isFinite(x.presentationTimeMs) &&
-    Number.isFinite(x.presentedFrames)).sort((a,b) => a.presentationTimeMs-b.presentationTimeMs);
-  const first = ordered[0], last = ordered[ordered.length-1];
-  const duration = first && last ? last.presentationTimeMs - first.presentationTimeMs : 0;
-  const frames = first && last ? last.presentedFrames - first.presentedFrames : 0;
-  const sufficient = ordered.length >= 5 && duration >= 350 && frames >= 3;
+  // Check data in callback arrival order: sorting malformed OEM timestamps
+  // would hide rollback and could fabricate an apparently valid frame rate.
+  const valid = samples.length >= 5 && samples.every((sample, index) =>
+    Number.isFinite(sample.presentationTimeMs) && sample.presentationTimeMs >= 0 &&
+    Number.isSafeInteger(sample.presentedFrames) && sample.presentedFrames >= 0 &&
+    (index === 0 ||
+      (sample.presentationTimeMs > samples[index - 1]!.presentationTimeMs &&
+       sample.presentedFrames >= samples[index - 1]!.presentedFrames)));
+  const first = samples[0], last = samples[samples.length - 1];
+  const duration = valid && first && last ? last.presentationTimeMs - first.presentationTimeMs : 0;
+  const frames = valid && first && last ? last.presentedFrames - first.presentedFrames : 0;
+  const calculated = duration > 0 ? frames * 1000 / duration : null;
+  const sufficient = valid && duration >= 350 && frames >= 3 &&
+    calculated !== null && calculated >= 1 && calculated <= 240;
   return {
-    approximateFps: sufficient ? Math.round((frames * 1000 / duration) * 10) / 10 : null,
+    approximateFps: sufficient ? Math.round(calculated! * 10) / 10 : null,
     observedFrames: Math.max(0, frames),
     sampledDurationMs: Math.max(0, Math.round(duration)),
     status: sufficient ? "sampled" : "unavailable",
