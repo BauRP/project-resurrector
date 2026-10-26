@@ -97,16 +97,29 @@ export function prepareCameraTestQueue(
  */
 export function selectQuickCameraTasks(
   eligible: readonly CameraTestTask[], maxCameras = 2,
+  allTasks: readonly CameraTestTask[] = eligible,
 ): CameraTestTask[] {
-  const selected: CameraTestTask[] = [];
-  const seen = new Set<string>();
+  if (!Number.isSafeInteger(maxCameras) || maxCameras <= 0) return [];
+  // Count completed and incomplete attempts across ALL modes, including
+  // recorded-only ones which are intentionally excluded from eligibility.
+  // This prevents an untested tele/ultrawide lens from starving behind a
+  // previously examined main camera on every two-probe quick scan.
+  const attemptsByCamera = new Map<string, number>();
+  for (const task of allTasks)
+    attemptsByCamera.set(task.cameraId, (attemptsByCamera.get(task.cameraId) ?? 0) + task.attempts);
+  const preferred = new Map<string, CameraTestTask>();
   for (const task of eligible) {
-    if (seen.has(task.cameraId)) continue;
-    selected.push(task);
-    seen.add(task.cameraId);
-    if (selected.length >= maxCameras) break;
+    const current = preferred.get(task.cameraId);
+    if (!current || task.attempts < current.attempts ||
+      (task.attempts === current.attempts &&
+        (task.checkedAt ?? 0) < (current.checkedAt ?? 0))) preferred.set(task.cameraId, task);
   }
-  return selected;
+  const candidates = [...preferred.values()];
+  // The stable original device enumeration breaks ties without inventing
+  // physical camera order or favoring a specific manufacturer.
+  return candidates.sort((a,b) =>
+    (attemptsByCamera.get(a.cameraId) ?? 0) - (attemptsByCamera.get(b.cameraId) ?? 0))
+    .slice(0,maxCameras);
 }
 export function updateCameraTestTask(
   tasks: readonly CameraTestTask[], key: string, status: CameraQueueStatus, message: string,

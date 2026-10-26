@@ -68,9 +68,22 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(selected.map(t=>t.cameraId)).toEqual(["rear","front"]);
     expect(selected.every(t=>t.mode.width===1920)).toBe(true);
     const after=updateCameraTestTask(tasks,selected[0]!.key,"recorded","файл есть");
-    const remaining=selectQuickCameraTasks(after.filter(t=>["pending","retry"].includes(t.status)));
-    expect(remaining.map(t=>t.cameraId)).toEqual(["rear","front"]);
-    expect(remaining[0]!.mode.width).toBe(1280);
+    const remaining=selectQuickCameraTasks(after.filter(t=>["pending","retry"].includes(t.status)),2,after);
+    expect(remaining.map(t=>t.cameraId)).toEqual(["front","tele"]);
+    expect(remaining.every(t=>t.mode.width===1920)).toBe(true);
+  });
+  it("eventually reaches the least tested cameras after two previous quick passes", () => {
+    const tasks=prepareCameraTestQueue(["main","ultrawide","tele","front"],[base],[],[]);
+    const first=selectQuickCameraTasks(tasks,2,tasks);
+    expect(first.map(t=>t.cameraId)).toEqual(["main","ultrawide"]);
+    let after=tasks;
+    for(const task of first) {
+      after=updateCameraTestTask(after,task.key,"running","probe");
+      after=updateCameraTestTask(after,task.key,"recorded","file");
+    }
+    const remaining=after.filter(t=>t.status==="pending");
+    const second=selectQuickCameraTasks(remaining,2,after);
+    expect(second.map(t=>t.cameraId)).toEqual(["tele","front"]);
   });
   it("never invents a camera task when no untested modes remain", () => {
     expect(selectQuickCameraTasks([])).toEqual([]);

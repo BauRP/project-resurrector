@@ -97,7 +97,7 @@ export function CameraDiagnostics() {
     const candidates = queue.filter(task => queueIds.includes(task.cameraId) &&
       (full || TEST_MODES.slice(0, 2).some(mode => mode.width === task.mode.width && mode.height === task.mode.height && mode.fps === task.mode.fps)) &&
       (["pending","retry","deferred"].includes(task.status) || (full && ["error","recorded"].includes(task.status))));
-    const eligible = full ? candidates : selectQuickCameraTasks(candidates);
+    const eligible = full ? candidates : selectQuickCameraTasks(candidates, 2, queue);
     try {
       let count = 0;
       for (const task of eligible) {
