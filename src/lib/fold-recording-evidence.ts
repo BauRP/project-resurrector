@@ -11,8 +11,29 @@ export interface FoldTransitionEvidence {
   usableRegions: number;
   layout: "none" | "vertical" | "horizontal";
   regionGeometry?: string;
+  /** A topology observed before video capture, not a transition during it. */
+  baseline?: true;
 }
 export const FOLD_EVENT = "multicam-fold-topology";
+
+/** Latest ACTUALLY observed fold layout, owned by the currently mounted
+ * display adapter. Recordings may use it as a PRE-CAPTURE baseline, never
+ * as proof of uninterrupted video or a fold event during capture.
+ */
+let activeFoldSnapshot: { owner: symbol; observed: FoldTransitionEvidence } | null = null;
+export function rememberActiveFoldSnapshot(owner: symbol, value: unknown, observedAtMs: number): boolean {
+  const evidence = normalizeFoldTransition(value, observedAtMs);
+  if (!evidence) return false;
+  activeFoldSnapshot = { owner, observed: evidence };
+  return true;
+}
+export function forgetActiveFoldSnapshot(owner: symbol): void {
+  if (activeFoldSnapshot?.owner === owner) activeFoldSnapshot = null;
+}
+export function getActiveFoldBaseline(): FoldTransitionEvidence | null {
+  return activeFoldSnapshot ? { ...activeFoldSnapshot.observed, baseline: true } : null;
+}
+
 /** Reject corrupted geometry, not just oversized metadata. Native pane values
  * are rounded to CSS pixels. Only non-negative finite rectangular regions
  * from the measured application window are acceptable as capture evidence.
@@ -62,6 +83,7 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
     usableRegions: event.usableRegions as number,
     layout: event.layout as FoldTransitionEvidence["layout"],
     regionGeometry: typeof event.regionGeometry === "string" ? event.regionGeometry : undefined,
+    baseline: event.baseline === true ? true : undefined,
   };
 }
 /** Avoid duplicate initial native topology callbacks or unbounded metadata. */
