@@ -178,7 +178,8 @@ export function startDisplayAdaptation(): () => void {
     root.style.setProperty("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
-    if (lastNative) layout(lastNative);
+    if (lastNative && safeViewportDimension(width()) !== null && safeViewportDimension(height()) !== null)
+      layout(lastNative);
   };
   const layout = (state: DisplayTopology) => {
     if (disposed || activeAdaptation !== token) return;
