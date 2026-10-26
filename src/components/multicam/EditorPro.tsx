@@ -1,3 +1,4 @@
+import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -464,6 +465,15 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const source=entry && mediaById.get(entry.mediaId);
       const choice=canExportOriginalClip(items,overlays.length,transitions.length,
         source?.duration ?? 0,config,{hidden:!!hidden[`v${entry?.track}`],muted:!!muted[`v${entry?.track}`]});
+      if (!choice.allowed && items.length>=2) {
+        if(config.videoCodec!=="VP8"||config.audioCodec!=="Opus"||
+          config.resolution!=="720p"||config.fps!=="30")
+          throw Error("Для склейки выберите VP8 / Opus, 720p и 30 FPS.");
+        const plan=planSequentialVideoRender(items,overlays,transitions.length,muted,hidden);
+        const files=await Promise.all(plan.parts.map(part=>readPersistedClip(part.segment.mediaId)));
+        if(signal.aborted)throw Error("Экспорт отменён");
+        return renderSequentialVideoWebm(plan,files.map(file=>file.blob),config,signal,progress);
+      }
       if (!choice.allowed) {
         const plan=planSimpleVideoRender(items,overlays,transitions.length,
           !!muted[`v${entry?.track}`],!!hidden[`v${entry?.track}`]);
