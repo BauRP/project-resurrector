@@ -3,7 +3,7 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
-import { prepareCameraTestQueue, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, type CameraTestTask } from "@/lib/camera-test-queue";
+import { prepareCameraTestQueue, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
@@ -94,9 +94,10 @@ export function CameraDiagnostics() {
       if (mounted.current) setTestQueue(queue);
     };
     persist(queue);
-    const eligible = queue.filter(task => queueIds.includes(task.cameraId) &&
+    const candidates = queue.filter(task => queueIds.includes(task.cameraId) &&
       (full || TEST_MODES.slice(0, 2).some(mode => mode.width === task.mode.width && mode.height === task.mode.height && mode.fps === task.mode.fps)) &&
       (["pending","retry","deferred"].includes(task.status) || (full && ["error","recorded"].includes(task.status))));
+    const eligible = full ? candidates : selectQuickCameraTasks(candidates);
     try {
       let count = 0;
       for (const task of eligible) {
@@ -114,8 +115,7 @@ export function CameraDiagnostics() {
           return;
         }
         if (safe.thermal === "unknown" || safe.battery === "unknown" || safe.storage === "unknown") setSafetyNotice(safe.reason);
-        if (!full && count >= 2) break;
-        const name = devices.find(d => d.deviceId === task.cameraId)?.label || "Камера";
+         const name = devices.find(d => d.deviceId === task.cameraId)?.label || "Камера";
         setProgress("Испытание " + (++count) + "/" + eligible.length + " · " + name + " · " +
           task.mode.width + "×" + task.mode.height + " " + task.mode.fps + " FPS");
         persist(updateCameraTestTask(queue, task.key, "running", "Идёт реальная видеопроба"));

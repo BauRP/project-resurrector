@@ -91,6 +91,23 @@ export function prepareCameraTestQueue(
   }
   return [...tasks.values()].slice(-500);
 }
+/** Quick scan tests at most one pending mode per lens per invocation.
+ * Spreads bounded recording effort over distinct cameras. Remaining tasks
+ * stay queued for a future quick pass or user-approved full verification.
+ */
+export function selectQuickCameraTasks(
+  eligible: readonly CameraTestTask[], maxCameras = 2,
+): CameraTestTask[] {
+  const selected: CameraTestTask[] = [];
+  const seen = new Set<string>();
+  for (const task of eligible) {
+    if (seen.has(task.cameraId)) continue;
+    selected.push(task);
+    seen.add(task.cameraId);
+    if (selected.length >= maxCameras) break;
+  }
+  return selected;
+}
 export function updateCameraTestTask(
   tasks: readonly CameraTestTask[], key: string, status: CameraQueueStatus, message: string,
   checkedAt = Date.now(),

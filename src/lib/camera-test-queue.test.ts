@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cameraTaskKey, prepareCameraTestQueue, updateCameraTestTask, queueSummary } from "./camera-test-queue";
+import { cameraTaskKey, prepareCameraTestQueue, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
 import type { ModeEvidence } from "./camera-passport";
 
 const base = { width:1920, height:1080, fps:30 };
@@ -60,6 +60,20 @@ describe("per-lens resumable diagnostic queue", () => {
     const after=prepareCameraTestQueue(["rear"],[base],before,[]);
     expect(after[0]?.status).toBe("retry");
     expect(after[0]?.message).toContain("повторная проверка");
+  });
+  it("spreads short initial video tests over distinct lenses instead of exhausting one lens", () => {
+    const hd={width:1280,height:720,fps:30};
+    const tasks=prepareCameraTestQueue(["rear","front","tele"],[base,hd],[],[]);
+    const selected=selectQuickCameraTasks(tasks);
+    expect(selected.map(t=>t.cameraId)).toEqual(["rear","front"]);
+    expect(selected.every(t=>t.mode.width===1920)).toBe(true);
+    const after=updateCameraTestTask(tasks,selected[0]!.key,"recorded","файл есть");
+    const remaining=selectQuickCameraTasks(after.filter(t=>["pending","retry"].includes(t.status)));
+    expect(remaining.map(t=>t.cameraId)).toEqual(["rear","front"]);
+    expect(remaining[0]!.mode.width).toBe(1280);
+  });
+  it("never invents a camera task when no untested modes remain", () => {
+    expect(selectQuickCameraTasks([])).toEqual([]);
   });
   it("keeps a verified result even if another mode fails", () => {
     const start = prepareCameraTestQueue(["rear"],[base,{...base,fps:60}],[],[proof]);
