@@ -481,13 +481,14 @@ public class MultiCamNativePlugin extends Plugin {
             MediaFormat video = null;
             int videoTrack = -1;
             int audioTracks = 0;
+            int firstAudioTrack = -1;
             String audioMime = null;
             for (int index = 0; index < extractor.getTrackCount(); index++) {
                 MediaFormat candidate = extractor.getTrackFormat(index);
                 final String mime = candidate.getString(MediaFormat.KEY_MIME);
                 if (mime != null && mime.startsWith("audio/")) {
                     audioTracks++;
-                    if (audioMime == null) audioMime = mime;
+                    if (audioMime == null) { audioMime = mime; firstAudioTrack = index; }
                 }
                 if (videoTrack < 0 && mime != null && mime.startsWith("video/")) {
                     video = candidate; videoTrack = index;
@@ -597,6 +598,44 @@ public class MultiCamNativePlugin extends Plugin {
                 tailTimestampsValid && tailRate >= 1 && tailRate <= 960 &&
                 tailSamples > 7 ? Math.round(tailRate * 10.0) / 10.0 : JSObject.NULL);
             result.put("fileEndVerified", false); // A sample near the end is NOT a full decode.
+            // A track declaration does NOT mean actual encoded audio samples
+            // exist. Independently inspect a bounded head sample window.
+            // High-speed Camera2 capture is commonly video-only by design.
+            int audioSamplesRead = 0, audioTimestampRollbacks = 0, audioRepeatedTimes = 0;
+            long audioFirstUs = -1L, audioLastUs = -1L, audioPreviousUs = -1L;
+            boolean audioSampleInspectionFailed = false;
+            if (firstAudioTrack >= 0) {
+                try {
+                    extractor.unselectTrack(videoTrack);
+                    extractor.selectTrack(firstAudioTrack);
+                    while (audioSamplesRead < 300) {
+                        long pts = extractor.getSampleTime();
+                        if (pts < 0) break;
+                        if (audioFirstUs < 0) audioFirstUs = pts;
+                        if (audioPreviousUs >= 0) {
+                            if (pts < audioPreviousUs) audioTimestampRollbacks++;
+                            else if (pts == audioPreviousUs) audioRepeatedTimes++;
+                        }
+                        audioLastUs = pts;
+                        audioPreviousUs = pts;
+                        audioSamplesRead++;
+                        if (!extractor.advance()) break;
+                    }
+                } catch (RuntimeException error) {
+                    audioSampleInspectionFailed = true;
+                    audioSamplesRead = 0;
+                    audioFirstUs = -1L; audioLastUs = -1L;
+                }
+            }
+            result.put("audioSamplesRead", audioSamplesRead);
+            result.put("audioSamplePresentationStartUs", audioFirstUs >= 0 ? audioFirstUs : JSObject.NULL);
+            result.put("audioSamplePresentationEndUs", audioLastUs >= 0 ? audioLastUs : JSObject.NULL);
+            result.put("audioSampleTimestampRollbacks", audioTimestampRollbacks);
+            result.put("audioSampleTimestampDuplicates", audioRepeatedTimes);
+            result.put("audioSampleInspectionFailed", audioSampleInspectionFailed);
+            result.put("audioSamplesDecoded", false);
+            result.put("audioFidelityVerified", false);
+
             // Video rotation is metadata only, not proof of visible orientation
             // after front-facing mirroring, overlays or editor export.
             MediaMetadataRetriever retriever = new MediaMetadataRetriever();
