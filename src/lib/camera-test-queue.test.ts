@@ -67,7 +67,8 @@ describe("per-lens resumable diagnostic queue", () => {
     const selected=selectQuickCameraTasks(tasks);
     expect(selected.map(t=>t.cameraId)).toEqual(["rear","front"]);
     expect(selected.every(t=>t.mode.width===1920)).toBe(true);
-    const after=updateCameraTestTask(tasks,selected[0]!.key,"recorded","файл есть");
+    const started=updateCameraTestTask(tasks,selected[0]!.key,"running","началась запись");
+    const after=updateCameraTestTask(started,selected[0]!.key,"recorded","файл есть");
     const remaining=selectQuickCameraTasks(after.filter(t=>["pending","retry"].includes(t.status)),2,after);
     expect(remaining.map(t=>t.cameraId)).toEqual(["front","tele"]);
     expect(remaining.every(t=>t.mode.width===1920)).toBe(true);
