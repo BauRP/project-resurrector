@@ -113,7 +113,7 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     session.stop("Экран закрыт");
     const result=await session.done;
     expect(result.paired).toBe(false);
-    expect(result.message).toContain("Видеопоток потерян");
+    expect(result.message).toContain("Видеовход потерян");
     expect(result.message).not.toContain("Экран закрыт");
   });
   it("preserves clips but reports interruption after actual camera track loss", async () => {
@@ -123,7 +123,7 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     const result=await session.done;
     expect(result.savedIds).toHaveLength(2);
     expect(result.paired).toBe(false);
-    expect(result.message).toContain("Видеопоток потерян");
+    expect(result.message).toContain("Видеовход потерян");
   });
   it("salvages available data without claiming a clean pair when an encoder errors", async () => {
     const one=camera("rear"), two=camera("front");
