@@ -45,7 +45,10 @@ export function appendFoldTransition(
       last.usableRegions === value.usableRegions &&
       last.layout === value.layout &&
       last.regionGeometry === value.regionGeometry) return [...events];
-  if (last && value.observedAtMs < last.observedAtMs) return [...events];
+  // Delayed older WindowManager callbacks can arrive after a newer fold.
+  // Same-revision CSS viewport changes are valid and remain recorded.
+  if (last && (value.revision < last.revision ||
+      value.observedAtMs < last.observedAtMs)) return [...events];
   return [...events, value].slice(-120);
 }
 export function foldContinuitySummary(events: readonly FoldTransitionEvidence[]): string {
