@@ -1,3 +1,5 @@
+import { recordModeEvidence } from "@/lib/camera-passport";
+import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useRef, useState } from "react";
@@ -168,6 +170,15 @@ export function CameraDiagnostics() {
     try {
       const file = await MultiCamNative.stopHighSpeedRecording();
       if (mounted.current) setLastMp4Inspection(file.inspection ?? null);
+      const selectedMode = highSpeedOptions.find(x => x.cameraId === highSpeedCamera && x.key === highSpeedMode);
+      if (selectedMode) {
+        const [requestedWidth,requestedHeight] = selectedMode.size.split("x").map(Number);
+        const evidence = highSpeedRecordedModeEvidence(selectedMode.cameraId,
+          { width:requestedWidth, height:requestedHeight, fps:selectedMode.fps },
+          {bytes:file.bytes,inspection:file.inspection,inspectionError:file.inspectionError},Date.now());
+        recordModeEvidence(evidence);
+        if (mounted.current) setTests(loadModeEvidence());
+      }
       if (mounted.current) {
         const parsed = file.inspection;
         setHighSpeedMessage("Сохранён Camera2 MP4: " + file.bytes + " байт. " +
