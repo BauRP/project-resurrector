@@ -186,6 +186,11 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - Added a regression test for an extreme malformed native width and an otherwise valid reported fold.
 - This is protective fallback, not evidence that particular untested foldable hardware supports all requested layouts.
 
+## Timeout-safe camera settings and fold event chronology — 26 October 2026
+- A MediaStreamTrack whose `applyConstraints` call times out is quarantined from further camera setting commands. Timed-out WebView/OEM driver calls may still complete later, so running newer focus/zoom commands against that uncertain track would introduce overlapping changes. Reopen/replace the camera stream before attempting further changes. Added a regression test with a deliberately stalled driver promise.
+- During active capture, fold evidence rejects late Android native revisions older than the most recently stored revision. Valid same-revision WebView viewport/region changes remain logged, even when the native tracker revision has not advanced.
+- Neither mechanism claims guaranteed device-wide recovery or uninterrupted recording on physical foldables. CI tests prove expected mocked control flow only.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
