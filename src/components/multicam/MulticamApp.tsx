@@ -1,4 +1,4 @@
-import { readUnfinishedCapture } from "@/lib/capture-interruption";
+import { readUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Download, FolderOpen, Link2, Settings, SlidersHorizontal } from "lucide-react";
@@ -33,9 +33,9 @@ function MulticamAppContent() {
   const recordingPhase = useMulticamStore((x) => x.recordingPhase);
   const [pendingTab, setPendingTab] = useState<AppTab | null>(null);
   const [navigationNotice, setNavigationNotice] = useState("");
-  const [interrupted] = useState(() => readUnfinishedCapture() !== null);
+  const [interrupted, setInterrupted] = useState(() => readUnfinishedCapture());
   useEffect(() => {
-    if (interrupted) setNavigationNotice("Предыдущая запись могла прерваться при закрытии приложения. Проверьте медиатеку: непрерывность и сохранение файла не подтверждены.");
+    if (interrupted) setNavigationNotice("Предыдущая запись могла прерваться. Проверьте сохранённые клипы; запись автоматически не продолжалась.");
   }, [interrupted]);
   useMeshBridge();
   // Window changes only rearrange UI; they never restart the camera pipeline.
@@ -90,7 +90,15 @@ function MulticamAppContent() {
     </header>}
     <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}>{tab === "camera" ? <CameraTab /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</motion.div></AnimatePresence>
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
-    {navigationNotice && <div role="status" className="pointer-events-none absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}</div>}
+    {navigationNotice && <div role="status" className="absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}
+      {interrupted && <div className="mt-2 flex flex-wrap gap-2">
+        <button className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground" onClick={() => { setTab("editor"); setStore({mediaOpen:true}); }}>Проверить клипы</button>
+        <button className="rounded-md border border-border px-3 py-1.5" onClick={() => {
+          clearUnfinishedCapture(interrupted.kind,interrupted.startedAt);
+          setInterrupted(null); setNavigationNotice("");
+        }}>Понятно, закрыть предупреждение</button>
+      </div>}
+    </div>}
     <AnimatePresence>{connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}</AnimatePresence>
   </div></div>;
 }
