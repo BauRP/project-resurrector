@@ -479,11 +479,17 @@ public class MultiCamNativePlugin extends Plugin {
             extractor.setDataSource(file.getAbsolutePath());
             MediaFormat video = null;
             int videoTrack = -1;
+            int audioTracks = 0;
+            String audioMime = null;
             for (int index = 0; index < extractor.getTrackCount(); index++) {
                 MediaFormat candidate = extractor.getTrackFormat(index);
                 final String mime = candidate.getString(MediaFormat.KEY_MIME);
-                if (mime != null && mime.startsWith("video/")) {
-                    video = candidate; videoTrack = index; break;
+                if (mime != null && mime.startsWith("audio/")) {
+                    audioTracks++;
+                    if (audioMime == null) audioMime = mime;
+                }
+                if (videoTrack < 0 && mime != null && mime.startsWith("video/")) {
+                    video = candidate; videoTrack = index;
                 }
             }
             if (videoTrack < 0 || video == null)
@@ -491,6 +497,10 @@ public class MultiCamNativePlugin extends Plugin {
             JSObject result = new JSObject();
             result.put("path", file.getAbsolutePath());
             result.put("bytes", file.length());
+            result.put("audioTrackCount", audioTracks);
+            result.put("audioMime", audioMime != null ? audioMime : JSObject.NULL);
+            result.put("audioSamplesDecoded", false);
+            result.put("audioNote", audioTracks > 0 ? "Аудиодорожка обнаружена; звук не декодирован и не прослушан" : "Аудиодорожка не обнаружена; для записи без микрофона это может быть ожидаемо");
             result.put("mime", video.getString(MediaFormat.KEY_MIME));
             result.put("width", valueOrUnknown(video, MediaFormat.KEY_WIDTH));
             result.put("height", valueOrUnknown(video, MediaFormat.KEY_HEIGHT));
