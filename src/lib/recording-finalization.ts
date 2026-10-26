@@ -25,6 +25,20 @@ export function planRecordingFinalization(bytes: number, encoderError: string, s
   };
 }
 
+/** The original microphone/video input disappearing is an interruption,
+ * even if a canvas or audio processing output track remains "live".
+ * Preserve already emitted media bytes but never label session complete.
+ */
+export type CaptureTrackKind = "audio" | "video";
+export function recordingInputLostReason(kind: CaptureTrackKind, dual = false): string {
+  if (kind === "audio") return dual
+    ? "Аудиовход потерян во время одновременной записи; оба сегмента завершаются."
+    : "Микрофон отключился во время записи; сегмент завершается, звук мог оборваться.";
+  return dual
+    ? "Видеовход потерян во время одновременной записи; оба сегмента завершаются."
+    : "Камера отключилась во время видеозаписи; запись завершается.";
+}
+
 /** Late MediaRecorder or IndexedDB completions must not update a later capture
  * (or a camera screen already unmounted). Storage work still finishes.
  */
