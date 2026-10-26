@@ -21,15 +21,25 @@ export function validFoldRegionGeometry(value: string): boolean {
   if (!value || value.length > 512) return false;
   const panes = value.split(";");
   if (panes.length > 16) return false;
-  return panes.every(pane => {
+  const rectangles = panes.map(pane => {
     const values = pane.split(",");
-    if (values.length !== 4) return false;
+    if (values.length !== 4 || !values.every(value => /^-?\d+$/.test(value))) return null;
     const numbers = values.map(Number);
-    return values.every(value => /^-?\d+$/.test(value)) &&
-      numbers.every(Number.isSafeInteger) &&
-      numbers[0]! >= 0 && numbers[1]! >= 0 &&
-      numbers[2]! > 0 && numbers[3]! > 0;
+    if (!numbers.every(Number.isSafeInteger) ||
+        numbers[0]! < 0 || numbers[1]! < 0 ||
+        numbers[2]! <= 0 || numbers[3]! <= 0 ||
+        !Number.isSafeInteger(numbers[0]! + numbers[2]!) ||
+        !Number.isSafeInteger(numbers[1]! + numbers[3]!)) return null;
+    return { x: numbers[0]!, y: numbers[1]!, w: numbers[2]!, h: numbers[3]! };
   });
+  if (rectangles.some(rect => !rect)) return false;
+  // Real usable pane rectangles must not overlap.
+  for (let i = 0; i < rectangles.length; i++) for (let j = i + 1; j < rectangles.length; j++) {
+    const a = rectangles[i]!, b = rectangles[j]!;
+    if (a.x < b.x + b.w && b.x < a.x + a.w &&
+        a.y < b.y + b.h && b.y < a.y + a.h) return false;
+  }
+  return true;
 }
 export function normalizeFoldTransition(value: unknown, observedAtMs: number): FoldTransitionEvidence | null {
   if (!value || typeof value !== "object") return null;
