@@ -12,6 +12,15 @@ export function NativeRecordingPanel(){
  const [status,setStatus]=useState<Status|null>(null);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
+ const refreshCameras=async()=>{
+   try{
+    const permissions=await bridge.requestPermissions({permissions:["camera"]});
+    if(permissions.camera!=="granted")throw Error("Android не разрешил доступ к камере");
+    const list=(await MultiCamNative.getCapabilities()).cameras;
+    setCameras(list);setCamera(previous=>list.some(c=>c.cameraId===previous)?previous:list[0]?.cameraId??"");
+    setError("");
+   }catch(e){setError(String(e));}
+ };
  useEffect(()=>{
   if(!isNative())return;
   let live=true;
@@ -42,6 +51,7 @@ export function NativeRecordingPanel(){
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Для безопасного запуска откройте «Настройки» вместо активного предпросмотра камеры. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
+   {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
    <div className="grid grid-cols-2 gap-2">
     <label>Камера<select className="w-full bg-background p-2" value={camera} disabled={active}
       onChange={e=>{setCamera(e.target.value);setResolution("1920x1080");}}>
