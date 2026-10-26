@@ -129,9 +129,25 @@ export function foldContinuitySummary(events: readonly FoldTransitionEvidence[])
   if (!events.length) return "Во время записи данные о складках недоступны: непрерывность не подтверждена.";
   const omitted = events[0]?.omittedEarlierEvents ?? 0;
   const changes = Math.max(0, events.length - (events[0]?.baseline === true ? 1 : 0)) + omitted;
+  // Geometry changes can be ordinary WebView resizing or window-manager
+  // adjustments. Count observed hinge/posture changes separately, never
+  // infer a real physical fold just from a resized app window.
+  let postureChanges = 0;
+  let geometryOnlyChanges = 0;
+  for (let i = 1; i < events.length; i++) {
+    const before = events[i - 1]!, after = events[i]!;
+    if (before.hingeCount !== after.hingeCount ||
+        before.posture !== after.posture || before.layout !== after.layout)
+      postureChanges++;
+    else if (before.regionGeometry !== after.regionGeometry ||
+             before.usableRegions !== after.usableRegions)
+      geometryOnlyChanges++;
+  }
   const uncertain = events[0]?.baseline !== true;
   const prefix = uncertain ? "Начальная геометрия на момент старта отсутствует; число изменений частично неизвестно. " : "";
   return prefix + (omitted ? "Ранние наблюдения сокращены в журнале: " + omitted + ". " : "") +
     "Зафиксировано изменений геометрии: " + changes +
-    ". Журнал не подтверждает непрерывность кадров или сохранение записи при повороте.";
+    ". Наблюдаемых изменений шарниров/положения: " + postureChanges +
+    "; только геометрии окна: " + geometryOnlyChanges +
+    ". Это не доказательство физического складывания или непрерывности видеокадров.";
 }
