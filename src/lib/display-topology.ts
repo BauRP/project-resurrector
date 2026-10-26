@@ -129,7 +129,7 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
     // Sort measured pane coordinates to avoid fictitious fold events.
     regionGeometry: [...geometry.regions].sort((a,b)=>a.left-b.left || a.top-b.top)
       .map(r => [r.left,r.top,r.width,r.height]
-        .map(n => Math.round(n)).join(",")).join(";").slice(0,512),
+        .map(n => Math.round(n)).join(",")).join(";"),
   };
 }
 
