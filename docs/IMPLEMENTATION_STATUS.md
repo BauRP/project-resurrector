@@ -198,6 +198,12 @@ Branch: `chatgpt/independent-preview-20261023`. Main must remain unchanged.
 - A superseded fold adaptation instance can no longer overwrite the new screen's fold status if an old asynchronous native listener operation fails.
 - Real video coded FPS, long-duration performance, physical fold/unfold continuity, multi-camera synchronization and hardware stabilization remain unverified without device-specific tests.
 
+## Distributed quick lens diagnostics — 26 October 2026
+- The quick video diagnostics now select up to two *different WebView camera device IDs*, rather than using both expensive recording probes for two resolutions of the first lens. 1080p30 is tried first and 720p30 remains the next safe fallback; no unsupported mode is claimed.
+- Untested modes and remaining lenses stay in the durable queue, and user-approved full diagnostics still process the complete planned set. On later quick passes, the next untested mode on a camera may run without restarting previously recorded-only tests.
+- Regression tests cover distinct-lens quick selection, continuation from recorded evidence, and an empty queue.
+- Foldable layout changes remain layout-only; physical OEM camera and fold-continuity acceptance cannot be established by CI unit tests.
+
 ## Not completed / cannot yet be proven
 - A full actual encoded-frame analysis of output FPS/bitrate, all-frame integrity, HDR metadata, EIS/OIS optical performance, colour space and audio fidelity.
 - Real native HDR10/HLG 10-bit capture and export pipeline; declared camera/encoder modes alone do not prove functioning HDR.
