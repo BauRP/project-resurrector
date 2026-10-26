@@ -36,6 +36,20 @@ export function summarizeVideoCheckpoints(expected: number, observed: number): V
  * seeked/metadata events. On older WebViews without requestVideoFrameCallback
  * return unknown; do not count seeked as a decoded frame.
  */
+/** A decoded presentation timestamp must match the segment actually sought.
+ * `seeked` or readystatechange alone are not proof of a decoded frame.
+ */
+export function checkpointFrameMatches(actualSeconds: number, targetSeconds: number,
+  readyState: number, width: number, height: number): boolean {
+  return Number.isFinite(actualSeconds) && Number.isFinite(targetSeconds) &&
+    Math.abs(actualSeconds - targetSeconds) <= 1 &&
+    readyState >= 2 && Number.isFinite(width) && Number.isFinite(height) &&
+    width > 0 && height > 0;
+}
+
+/** The metadata/seek lifecycle is intentionally bounded. MediaRecorder WebM
+ * can have unknown duration or unsupported seeks; neither implies corruption.
+ */
 export async function probeVideoBlobCheckpoints(
   blob: Blob, durationSeconds: number | null, maxProbeMs = 6500,
 ): Promise<VideoCheckpointEvidence> {
@@ -45,66 +59,93 @@ export async function probeVideoBlobCheckpoints(
   const video = document.createElement("video");
   if (typeof video.requestVideoFrameCallback !== "function")
     return summarizeVideoCheckpoints(positions.length, 0);
-  const source = URL.createObjectURL(blob);
+  let source: string | null = null;
   const holder = document.createElement("div");
   holder.style.cssText = "position:fixed;left:-10000px;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
   video.muted = true;
   video.playsInline = true;
   video.preload = "auto";
   holder.appendChild(video);
-  document.body.appendChild(holder);
   let handle = 0;
   let observed = 0;
-  const totalDeadline = performance.now() + Math.max(1500, Math.min(9000, maxProbeMs));
+  const deadline = performance.now() + Math.max(1500, Math.min(9000, maxProbeMs));
   try {
-    video.src = source;
-    video.load();
+    if (!document.body) return summarizeVideoCheckpoints(positions.length, 0);
+    document.body.appendChild(holder);
+    source = URL.createObjectURL(blob);
+    // Wait for metadata BEFORE seeking. Seeking immediately after assigning
+    // src silently fails on some Android WebView/Chromium versions.
+    const metadataReady = await new Promise<boolean>(resolve => {
+      let done = false;
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const complete = (ok: boolean) => {
+        if (done) return;
+        done = true;
+        if (timer !== undefined) clearTimeout(timer);
+        video.onloadedmetadata = null;
+        video.onerror = null;
+        resolve(ok);
+      };
+      video.onloadedmetadata = () => complete(video.readyState >= 1 &&
+        Number.isFinite(video.duration) && video.duration >= 8);
+      video.onerror = () => complete(false);
+      timer = setTimeout(() => complete(false), Math.max(250, Math.min(2200, deadline - performance.now())));
+      video.src = source!;
+      video.load();
+    });
+    if (!metadataReady) return summarizeVideoCheckpoints(positions.length, 0);
     for (const position of positions) {
-      const remaining = totalDeadline - performance.now();
+      const remaining = deadline - performance.now();
       if (remaining < 250) break;
       const success = await new Promise<boolean>(resolve => {
         let finished = false;
-        let timer = 0;
+        let timer: ReturnType<typeof setTimeout> | undefined;
         const finish = (ok: boolean) => {
           if (finished) return;
           finished = true;
-          clearTimeout(timer);
-          if (handle) { video.cancelVideoFrameCallback(handle); handle = 0; }
+          if (timer !== undefined) clearTimeout(timer);
+          if (handle && typeof video.cancelVideoFrameCallback === "function") {
+            video.cancelVideoFrameCallback(handle);
+            handle = 0;
+          }
           video.onseeked = null;
           video.onerror = null;
           resolve(ok);
         };
-        timer = window.setTimeout(() => finish(false), Math.min(remaining, 3500));
+        timer = setTimeout(() => finish(false), Math.min(remaining, 3000));
         video.pause();
         video.onseeked = () => {
           if (finished) return;
           try {
             handle = video.requestVideoFrameCallback((_time, frame) => {
-              const actual = frame.mediaTime;
-              finish(video.readyState >= 2 && video.videoWidth > 0 && video.videoHeight > 0 &&
-                Number.isFinite(actual) && Math.abs(actual - position) < 2);
+              finish(checkpointFrameMatches(frame.mediaTime, position,
+                video.readyState, video.videoWidth, video.videoHeight));
             });
-            void video.play().catch(() => finish(false));
+            // Some WebViews return a decoded frame on seek without playback.
+            // Autoplay rejection is not file corruption: keep waiting for the
+            // real frame callback until the bounded timeout.
+            void video.play().catch(() => undefined);
           } catch { finish(false); }
         };
         video.onerror = () => finish(false);
-        try { video.currentTime = position; }
-        catch { finish(false); }
+        try { video.currentTime = position; } catch { finish(false); }
       });
       if (!success) break;
       observed++;
     }
   } catch {
-    // Some WebViews cannot seek MediaRecorder WebM; do not call this corruption.
+    // Decoder/seek support may be missing; never call an unknown a failure.
   } finally {
-    if (handle) video.cancelVideoFrameCallback(handle);
+    if (handle && typeof video.cancelVideoFrameCallback === "function")
+      video.cancelVideoFrameCallback(handle);
     video.pause();
     video.onseeked = null;
+    video.onloadedmetadata = null;
     video.onerror = null;
     video.removeAttribute("src");
     video.load();
     holder.remove();
-    URL.revokeObjectURL(source);
+    if (source !== null) URL.revokeObjectURL(source);
   }
   return summarizeVideoCheckpoints(positions.length, observed);
 }
