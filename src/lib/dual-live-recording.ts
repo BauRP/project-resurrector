@@ -217,6 +217,7 @@ export function startDualRecording(
     await saveRecordedClipsAtomically(clips);
     const playable: RecordedClip[] = [];
     const fileDurations: (number | null)[] = [null, null];
+    let sampledLaterClips = 0;
     for (const clip of clips) {
       try {
         const stored = await readPersistedClip(clip.id);
@@ -225,9 +226,7 @@ export function startDualRecording(
         const laterFrames = await probeVideoBlobCheckpoints(stored.blob, decoded.durationSeconds, 4500);
         // Seek-based checks can be unavailable on WebView/WebM. In that
         // case do not treat the video as corrupt or fabricate completeness.
-        if (laterFrames.status === "sampled") {
-          // Evidence is limited to two actual decoded points, not full-frame sync.
-        }
+        if (laterFrames.status === "sampled") sampledLaterClips++;
         if (stopAt !== null && starts[clip.camera - 1] !== null) {
           const expected = Math.max(0, stopAt - starts[clip.camera - 1]!);
           const evidence = assessSavedVideoDuration(expected, decoded.durationSeconds);
@@ -262,7 +261,9 @@ export function startDualRecording(
       startedSkewMs: starts.every(x=>x!==null) ? Math.round(Math.abs(starts[0]! - starts[1]!)) : null,
       bytes: clips.map(c => c.blob.size),
       message: both
-        ? "Оба видео сохранены и первый кадр каждого декодирован; дополнительные кадры проверяются выборочно, не для всех устройств. Точная синхронизация, HDR и стабилизация не проверены."
+        ? "Оба видео сохранены и первый кадр каждого декодирован. " +
+          (sampledLaterClips === 2 ? "По два поздних кадра выборочно декодированы в каждом файле. " : "Проверка поздних кадров частично недоступна. ") +
+          "Точная синхронизация, все кадры, HDR и стабилизация не проверены."
         : "Запись завершилась частично/с ошибкой; доступные файлы сохранены. " +
           [stopReason, ...failures].filter(Boolean).join("; "),
     };
