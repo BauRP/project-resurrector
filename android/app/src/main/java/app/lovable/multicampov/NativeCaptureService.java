@@ -26,6 +26,7 @@ import android.media.MediaRecorder;
 import android.media.ImageReader;
 import android.media.Image;
 import android.graphics.ImageFormat;
+import android.graphics.Rect;
 import java.util.ArrayList;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
@@ -100,6 +101,13 @@ public class NativeCaptureService extends Service {
     private boolean interruptedByCamera;
     private int generation = 0;
     private Runnable openingTimeout;
+    private CaptureRequest.Builder liveRequest;
+    private CameraCaptureSession.CaptureCallback liveCallback;
+    private Rect activeSensor;
+    private float maxDigitalZoom = 1f, requestedZoom = 1f;
+    private Range<Integer> exposureRange = new Range<>(0,0);
+    private int requestedExposure = 0;
+    private float exposureStep = 0f;
 
     public static com.getcapacitor.JSObject previewFrame() {
         com.getcapacitor.JSObject result = new com.getcapacitor.JSObject();
@@ -111,6 +119,62 @@ public class NativeCaptureService extends Service {
             } else result.put("jpeg", "");
         }
         return result;
+    }
+    public static boolean updateControls(float zoom, int evIndex) {
+        synchronized (STATE_LOCK) {
+            NativeCaptureService owner = runningInstance;
+            if (owner == null || owner.worker == null ||
+                !("previewing".equals(state) || "recording".equals(state) ||
+                  "paused".equals(state))) return false;
+            if (!Float.isFinite(zoom) || zoom < 1f || zoom > owner.maxDigitalZoom ||
+                evIndex < owner.exposureRange.getLower() ||
+                evIndex > owner.exposureRange.getUpper()) return false;
+            owner.worker.post(() -> owner.applyControls(zoom,evIndex));
+            return true;
+        }
+    }
+    private void configureControlLimits(CameraCharacteristics characteristics) {
+        Float maximum=characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
+        Rect region=characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
+        Range<Integer> exposure=characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);
+        android.util.Rational step=characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);
+        activeSensor=region;
+        maxDigitalZoom=region==null?1f:Math.max(1f,Math.min(20f,maximum==null?1f:maximum));
+        exposureRange=exposure==null?new Range<>(0,0):exposure;
+        exposureStep=step==null?0f:step.floatValue();
+        requestedZoom=Math.max(1f,Math.min(requestedZoom,maxDigitalZoom));
+        requestedExposure=Math.max(exposureRange.getLower(),
+            Math.min(requestedExposure,exposureRange.getUpper()));
+    }
+    private void setRequestControls(CaptureRequest.Builder request) {
+        if (request==null)return;
+        if (activeSensor!=null && requestedZoom>1.005f) {
+            int width=Math.max(2,(int)(activeSensor.width()/requestedZoom));
+            int height=Math.max(2,(int)(activeSensor.height()/requestedZoom));
+            int left=activeSensor.left+(activeSensor.width()-width)/2;
+            int top=activeSensor.top+(activeSensor.height()-height)/2;
+            request.set(CaptureRequest.SCALER_CROP_REGION,
+                new Rect(left,top,left+width,top+height));
+        } else if(activeSensor!=null) {
+            request.set(CaptureRequest.SCALER_CROP_REGION,activeSensor);
+        }
+        if(exposureRange!=null)
+            request.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,requestedExposure);
+    }
+    private void applyControls(float zoom,int evIndex) {
+        if(liveRequest==null || capture==null || camera==null || stopRequested)return;
+        float previousZoom=requestedZoom;
+        int previousEv=requestedExposure;
+        requestedZoom=zoom;requestedExposure=evIndex;
+        try {
+            setRequestControls(liveRequest);
+            capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            publish(state,lastMessage);
+        } catch(Exception error) {
+            requestedZoom=previousZoom;requestedExposure=previousEv;
+            try {setRequestControls(liveRequest);}catch(Exception ignored){}
+            publish(state,"Не удалось применить увеличение или экспозицию: "+error.getMessage());
+        }
     }
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
