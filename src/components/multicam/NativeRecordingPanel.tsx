@@ -97,7 +97,7 @@ export function NativeRecordingPanel(){
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
    <div className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
-    {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" style={{transform:status?.orientationDegrees===90?"rotate(90deg) scale(.5625)":status?.orientationDegrees===270?"rotate(270deg) scale(.5625)":status?.orientationDegrees===180?"rotate(180deg)":undefined}}/> :
+    {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" /> :
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
         "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
         "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
