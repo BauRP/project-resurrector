@@ -637,8 +637,7 @@ public class NativeCaptureService extends Service {
                                     }
                                     capture = sessionHandle;
                                     try {
-                                        capture.setRepeatingRequest(request.build(),
-                                            new CameraCaptureSession.CaptureCallback() {
+                                        liveCallback=new CameraCaptureSession.CaptureCallback() {
                                                 @Override public void onCaptureCompleted(
                                                     CameraCaptureSession session,
                                                     CaptureRequest request,
@@ -661,7 +660,8 @@ public class NativeCaptureService extends Service {
                                                         publish(state, lastMessage);
                                                     }
                                                 }
-                                            }, worker);
+                                            };
+                                        capture.setRepeatingRequest(request.build(),liveCallback,worker);
                                         if (openingTimeout != null) {
                                             worker.removeCallbacks(openingTimeout);
                                             openingTimeout = null;
