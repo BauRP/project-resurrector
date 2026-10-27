@@ -51,6 +51,8 @@ import java.util.Arrays;
 public class NativeCaptureService extends Service {
     public static final String ACTION_START = "app.lovable.multicampov.NATIVE_START";
     public static final String ACTION_STOP = "app.lovable.multicampov.NATIVE_STOP";
+    public static final String ACTION_PAUSE = "app.lovable.multicampov.NATIVE_PAUSE";
+    public static final String ACTION_RESUME = "app.lovable.multicampov.NATIVE_RESUME";
     private static final String CHANNEL = "multicam_native_capture";
     private static final int NOTIFICATION = 2017;
     private static final String STORE = "native_capture_v1";
@@ -64,6 +66,9 @@ public class NativeCaptureService extends Service {
     private static boolean stabilizationResultSeen = false;
     private static long recordingStartedAt = 0L;
     private static int recordedOrientation = -1;
+    private static String selectedCameraId = "";
+    private static int selectedWidth = 0, selectedHeight = 0, selectedFps = 0;
+    private static long pausedAtMs = 0L, totalPausedMs = 0L, finishedDurationMs = 0L;
 
     private HandlerThread workerThread;
     private Handler worker;
@@ -72,6 +77,7 @@ public class NativeCaptureService extends Service {
     private MediaRecorder encoder;
     private File media;
     private boolean encoderStarted;
+    private boolean encoderPaused;
     private boolean stopRequested;
     private boolean wantAudio;
     private boolean interruptedByCamera;
@@ -81,7 +87,7 @@ public class NativeCaptureService extends Service {
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
             return runningInstance != null &&
-              ("starting".equals(state) || "recording".equals(state) || "stopping".equals(state));
+              ("starting".equals(state) || "recording".equals(state) || "paused".equals(state) || "stopping".equals(state));
         }
     }
     public static com.getcapacitor.JSObject status(Context context) {
@@ -94,6 +100,9 @@ public class NativeCaptureService extends Service {
             String stab = chosenStabilization;
             boolean observed = stabilizationResultSeen;
             long started = recordingStartedAt;
+            long pausedAt = pausedAtMs, excluded = totalPausedMs, finished = finishedDurationMs;
+            String chosenCamera = selectedCameraId;
+            int width = selectedWidth, height = selectedHeight, fps = selectedFps;
             if (runningInstance == null) {
                 android.content.SharedPreferences preferences =
                     context.getSharedPreferences(STORE, MODE_PRIVATE);
@@ -104,8 +113,15 @@ public class NativeCaptureService extends Service {
                 stab = preferences.getString("stabilization", "unknown");
                 observed = preferences.getBoolean("stabilizationObserved", false);
                 started = preferences.getLong("started", 0L);
+                pausedAt = preferences.getLong("pausedAt", 0L);
+                excluded = preferences.getLong("totalPaused", 0L);
+                finished = preferences.getLong("finishedDuration", 0L);
+                chosenCamera = preferences.getString("cameraId", "");
+                width = preferences.getInt("width", 0);
+                height = preferences.getInt("height", 0);
+                fps = preferences.getInt("fps", 0);
                 // A process killed mid-recording cannot reattach an old MediaRecorder.
-                if ("recording".equals(value) || "starting".equals(value)
+                if ("recording".equals(value) || "paused".equals(value) || "starting".equals(value)
                     || "stopping".equals(value)) {
                     value = "interrupted";
                     message = "Android завершил процесс записи. Целостность файла не подтверждена.";
@@ -114,6 +130,15 @@ public class NativeCaptureService extends Service {
             out.put("state", value);
             out.put("message", message);
             out.put("startedAt", started);
+            out.put("cameraId", chosenCamera);
+            out.put("width", width);
+            out.put("height", height);
+            out.put("fps", fps);
+            long end = "recording".equals(value) ? System.currentTimeMillis() :
+                "paused".equals(value) ? pausedAt : started + finished + excluded;
+            long elapsed = started > 0 ? Math.max(0L, end - started - excluded) : 0L;
+            out.put("recordedDurationMs", "recording".equals(value) || "paused".equals(value)
+                ? elapsed : finished);
             out.put("orientationDegrees", runningInstance == null
                 ? context.getSharedPreferences(STORE, MODE_PRIVATE).getInt("orientation", -1)
                 : recordedOrientation);
@@ -137,6 +162,13 @@ public class NativeCaptureService extends Service {
                 .putString("stabilization", chosenStabilization)
                 .putBoolean("stabilizationObserved", stabilizationResultSeen)
                 .putLong("started", recordingStartedAt)
+                .putString("cameraId", selectedCameraId)
+                .putInt("width", selectedWidth)
+                .putInt("height", selectedHeight)
+                .putInt("fps", selectedFps)
+                .putLong("pausedAt", pausedAtMs)
+                .putLong("totalPaused", totalPausedMs)
+                .putLong("finishedDuration", finishedDurationMs)
                 .putInt("orientation", recordedOrientation)
                 .putBoolean("recordAudio", wantAudio).apply();
         }
