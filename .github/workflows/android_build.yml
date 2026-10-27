@@ -38,8 +38,8 @@ jobs:
       - name: Run TypeScript and fold layout unit tests
         run: bun run test
 
-      - name: Audit TypeScript types (legacy backlog, non-blocking)
-        continue-on-error: true
+      - name: Verify TypeScript types (required)
+        # Any future type regression must fail before releasing APK/AAB.
         run: bunx tsc --noEmit
 
       - name: Build Capacitor SPA
