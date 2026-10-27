@@ -1,3 +1,4 @@
+import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
 import { useEffect, useState } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
@@ -13,6 +14,15 @@ export function NativeRecordingPanel(){
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
  const [preview,setPreview]=useState("");
+ const tapPreview=async(e:React.MouseEvent<HTMLImageElement>)=>{
+  if(!status?.tapAfSupported&&!status?.tapAeSupported)return;
+  const image=e.currentTarget;
+  const point=previewTapPoint(e.clientX,e.clientY,image.getBoundingClientRect(),
+    image.naturalWidth,image.naturalHeight);
+  if(!point)return;
+  try{setStatus(await bridge.tapToMeter(point));setError("");}
+  catch(error){setError(String(error));}
+ };
  const refreshCameras=async()=>{
    try{
     const permissions=await bridge.requestPermissions({permissions:["camera"]});
@@ -97,12 +107,14 @@ export function NativeRecordingPanel(){
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
    <div className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
-    {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" /> :
+    {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} /> :
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
         "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
         "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
+    {status?.tapSubmitted&&status.tapX!==undefined&&status.tapY!==undefined&&status.tapX>=0&&status.tapY>=0&&preview&&<span className="pointer-events-none absolute rounded-full border-2 border-yellow-300" style={{left:`${status.tapX*100}%`,top:`${status.tapY*100}%`,width:22,height:22,transform:"translate(-50%,-50%)"}}/>}
     {nativeRecorderOwnsCamera(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
    </div>
+   {(status?.tapAfSupported||status?.tapAeSupported)&&<p className="text-muted-foreground">Коснитесь изображения, чтобы выбрать точку {status.tapAfSupported?"автофокуса и ":""}экспозамера. Чёрные поля неактивны. Подтверждение команды не означает успешное наведение.</p>}
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
    <div className="grid gap-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
