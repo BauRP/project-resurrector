@@ -108,6 +108,7 @@ public class NativeCaptureService extends Service {
     private Range<Integer> exposureRange = new Range<>(0,0);
     private int requestedExposure = 0;
     private float exposureStep = 0f;
+    private boolean torchAvailable, torchEnabled;
 
     public static com.getcapacitor.JSObject previewFrame() {
         com.getcapacitor.JSObject result = new com.getcapacitor.JSObject();
@@ -134,6 +135,9 @@ public class NativeCaptureService extends Service {
         }
     }
     private void configureControlLimits(CameraCharacteristics characteristics) {
+        Boolean flash=characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
+        torchAvailable=Boolean.TRUE.equals(flash);
+        if(!torchAvailable)torchEnabled=false;
         Float maximum=characteristics.get(CameraCharacteristics.SCALER_AVAILABLE_MAX_DIGITAL_ZOOM);
         Rect region=characteristics.get(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE);
         Range<Integer> exposure=characteristics.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);
@@ -147,6 +151,8 @@ public class NativeCaptureService extends Service {
             Math.min(requestedExposure,exposureRange.getUpper()));
     }
     private void setRequestControls(CaptureRequest.Builder request) {
+        if(torchAvailable)request.set(CaptureRequest.FLASH_MODE,
+            torchEnabled?CaptureRequest.FLASH_MODE_TORCH:CaptureRequest.FLASH_MODE_OFF);
         if (request==null)return;
         if (activeSensor!=null && requestedZoom>1.005f) {
             int width=Math.max(2,(int)(activeSensor.width()/requestedZoom));
@@ -175,6 +181,32 @@ public class NativeCaptureService extends Service {
             requestedZoom=previousZoom;requestedExposure=previousEv;
             try {setRequestControls(liveRequest);}catch(Exception ignored){}
             publish(state,"Не удалось применить увеличение или экспозицию: "+error.getMessage());
+            return false;
+        }
+    }
+    public static boolean updateTorch(boolean enabled,
+        java.util.function.Consumer<Boolean> completed) {
+        synchronized(STATE_LOCK) {
+            NativeCaptureService owner=runningInstance;
+            if(owner==null || owner.worker==null || !owner.torchAvailable ||
+               !( "previewing".equals(state) || "recording".equals(state) ||
+                  "paused".equals(state)))return false;
+            return owner.worker.post(()->completed.accept(owner.applyTorch(enabled)));
+        }
+    }
+    private boolean applyTorch(boolean enabled) {
+        if(liveRequest==null||capture==null||camera==null||stopRequested)return false;
+        boolean old=torchEnabled;
+        torchEnabled=enabled;
+        try {
+            setRequestControls(liveRequest);
+            capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            publish(state,lastMessage);
+            return true;
+        }catch(Exception error){
+            torchEnabled=old;
+            try{setRequestControls(liveRequest);}catch(Exception ignored){}
+            publish(state,"Невозможно включить фонарик: "+error.getMessage());
             return false;
         }
     }
@@ -237,6 +269,8 @@ public class NativeCaptureService extends Service {
             long elapsed = started > 0 ? Math.max(0L, end - started - excluded) : 0L;
             out.put("recordedDurationMs", "recording".equals(value) || "paused".equals(value)
                 ? elapsed : finished);
+            out.put("torchAvailable",runningInstance != null && runningInstance.torchAvailable);
+            out.put("torchEnabled",runningInstance != null && runningInstance.torchEnabled);
             out.put("zoom",runningInstance == null?1f:runningInstance.requestedZoom);
             out.put("maxZoom",runningInstance == null?1f:runningInstance.maxDigitalZoom);
             out.put("exposureIndex",runningInstance == null?0:runningInstance.requestedExposure);
