@@ -295,7 +295,6 @@ public class NativeCaptureService extends Service {
             recordedOrientation = -1;
             pausedAtMs = 0L; totalPausedMs = 0L; finishedDurationMs = 0L;
         }
-        publish("starting", "Открываю Camera2 и кодировщик");
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
         final int width = intent.getIntExtra("width", 1920);
@@ -688,7 +687,15 @@ public class NativeCaptureService extends Service {
             stopSelf();
             return;
         }
-        if (encoder == null && camera == null) { stopSelf(); return; }
+        if (encoder == null && camera == null) {
+            if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+            releaseCamera();
+            if ("starting".equals(state) || "previewing".equals(state))
+                publish("idle","Открытие камеры остановлено без MP4");
+            stopForeground(true);
+            stopSelf();
+            return;
+        }
         generation++;
         if (openingTimeout != null) {
             worker.removeCallbacks(openingTimeout);
