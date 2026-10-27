@@ -56,6 +56,15 @@ export function NativeRecordingPanel(){
  if(!isNative())return null;
  const current=cameras.find(x=>x.cameraId===camera);
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
+ const openPreview=async()=>{
+  if(busy || !camera)return;
+  setBusy(true);setError("");
+  try{
+   const permission=await bridge.requestPermissions({permissions:["camera"]});
+   if(permission["camera"]!=="granted")throw Error("Предоставьте доступ к камере Android");
+   setStatus(await bridge.startPreview({cameraId:camera}));
+  }catch(e){setError(String(e));}finally{setBusy(false);}
+ };
  const start=async()=>{
   if(busy)return;setBusy(true);setError("");
   try{
@@ -81,7 +90,7 @@ export function NativeRecordingPanel(){
     {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" style={{transform:status?.orientationDegrees===90?"rotate(90deg) scale(.5625)":status?.orientationDegrees===270?"rotate(270deg) scale(.5625)":status?.orientationDegrees===180?"rotate(180deg)":undefined}}/> :
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
         "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
-        "Для предпросмотра начните нативную запись. Камера останется под управлением Android."}</p>}
+        "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
     {nativeRecorderOwnsCamera(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
    </div>
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
@@ -105,10 +114,11 @@ export function NativeRecordingPanel(){
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {error&&<p role="alert" className="text-destructive">{error}</p>}
-   <div className="flex gap-2">
-    <Button disabled={busy||active||!camera} onClick={()=>void start()}>Начать нативную запись</Button>
+   <div className="flex flex-wrap gap-2">
+    <Button variant="outline" disabled={busy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
+    <Button disabled={busy||!camera||(active && status?.state!=="previewing")} onClick={()=>void start()}>Начать нативную запись</Button>
     <Button disabled={busy||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
-    <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>Остановить</Button>
+    <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>{status?.state==="previewing"?"Закрыть камеру":"Остановить"}</Button>
    </div>
  </section>;
 }
