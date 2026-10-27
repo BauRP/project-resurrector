@@ -38,6 +38,9 @@ jobs:
       - name: Run TypeScript and fold layout unit tests
         run: bun run test
 
+      - name: Type-check all TypeScript sources
+        run: bunx tsc --noEmit
+
       - name: Build Capacitor SPA
         run: bun run build:android
 
