@@ -393,11 +393,15 @@ public class NativeCaptureService extends Service {
                         }catch(Exception error){fail(error);}
                     }
                     @Override public void onDisconnected(CameraDevice disconnected){
-                        disconnected.close();if(camera==disconnected)camera=null;
+                        disconnected.close();
+                        if(token!=generation)return; // stale preview after MP4 handoff
+                        if(camera==disconnected)camera=null;
                         fail(new IllegalStateException("Камера предпросмотра отключилась"));
                     }
                     @Override public void onError(CameraDevice broken,int code){
-                        broken.close();if(camera==broken)camera=null;
+                        broken.close();
+                        if(token!=generation)return;
+                        if(camera==broken)camera=null;
                         fail(new IllegalStateException("Ошибка предпросмотра Camera2 "+code));
                     }
                 },worker);
@@ -688,6 +692,7 @@ public class NativeCaptureService extends Service {
             return;
         }
         if (encoder == null && camera == null) {
+            generation++;
             if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
             releaseCamera();
             if ("starting".equals(state) || "previewing".equals(state))
