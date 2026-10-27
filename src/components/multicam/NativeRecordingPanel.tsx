@@ -88,6 +88,11 @@ export function NativeRecordingPanel(){
   try{setStatus(await bridge.setControls({zoom,exposureIndex}));setError("");}
   catch(e){setError(String(e));}
  };
+ const focus=async(manual:boolean,diopters:number)=>{
+  if(busy)return;
+  try{setStatus(await bridge.setFocus({manual,diopters}));setError("");}
+  catch(e){setError(String(e));}
+ };
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
@@ -130,6 +135,27 @@ export function NativeRecordingPanel(){
           onChange={e=>void adjust(status.zoom??1,Number(e.target.value))}/>
       </label>
    </div>}
+   {active&&status&&(status.manualFocusSupported||status.autoFocusSupported)&&
+      <div className="space-y-2 rounded-lg border border-border p-2">
+        <p className="font-medium">Фокусировка Camera2</p>
+        <div className="flex flex-wrap gap-2">
+         {status.autoFocusSupported&&<Button size="sm" variant={status.focusMode==="manual"?"outline":"default"}
+           onClick={()=>void focus(false,0)}>Автофокус</Button>}
+         {status.manualFocusSupported&&<Button size="sm" variant={status.focusMode==="manual"?"default":"outline"}
+           onClick={()=>void focus(true,status.focusDiopters??0)}>Ручной фокус</Button>}
+        </div>
+        {status.manualFocusSupported&&status.focusMode==="manual"&&<label className="block space-y-1">
+         Расстояние фокуса: {(status.focusDiopters??0).toFixed(2)} диоптрии
+         <input type="range" className="w-full" min={0} max={status.maxFocusDiopters??0}
+          step={0.05} value={status.focusDiopters??0}
+          onChange={e=>void focus(true,Number(e.target.value))}/>
+        </label>}
+        <p className="text-muted-foreground">
+         {status.reportedFocusDiopters!==undefined&&status.reportedFocusDiopters>=0
+           ? `Camera2 сообщает: ${status.reportedFocusDiopters.toFixed(2)} дптр.`
+           : "Фактическое положение объектива пока не подтверждено системой."}
+        </p>
+      </div>}
    {active&&status?.torchAvailable&&<Button variant="outline" className="w-full"
      onClick={()=>void bridge.setTorch({enabled:!status.torchEnabled}).then(setStatus).catch(e=>setError(String(e)))}>
       {status.torchEnabled?"Выключить фонарик":"Включить фонарик"}
