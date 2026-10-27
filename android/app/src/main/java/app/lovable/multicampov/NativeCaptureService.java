@@ -22,6 +22,7 @@ import android.hardware.camera2.CaptureRequest;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
+import android.hardware.camera2.params.MeteringRectangle;
 import android.media.MediaRecorder;
 import android.media.ImageReader;
 import android.media.Image;
@@ -115,6 +116,10 @@ public class NativeCaptureService extends Service {
     private int automaticAfMode = CaptureRequest.CONTROL_AF_MODE_OFF;
     private volatile float reportedFocusDiopters = -1f;
     private volatile int reportedAfState = -1;
+    private int maxAfRegions=0, maxAeRegions=0;
+    private float focusTapX=Float.NaN, focusTapY=Float.NaN;
+    private volatile boolean focusTapSubmitted=false;
+    private boolean focusTapAf=false,focusTapAe=false;
 
     public static com.getcapacitor.JSObject previewFrame() {
         com.getcapacitor.JSObject result = new com.getcapacitor.JSObject();
@@ -141,6 +146,12 @@ public class NativeCaptureService extends Service {
         }
     }
     private void configureControlLimits(CameraCharacteristics characteristics) {
+        Integer afLimit=characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF);
+        Integer aeLimit=characteristics.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE);
+        maxAfRegions=Math.max(0,afLimit==null?0:afLimit);
+        maxAeRegions=Math.max(0,aeLimit==null?0:aeLimit);
+        if(maxAfRegions==0&&!autoFocusSupported)focusTapAf=false;
+        if(maxAeRegions==0)focusTapAe=false;
         Float minimumDistance=characteristics.get(
             CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
         int[] afModes=characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
@@ -176,6 +187,45 @@ public class NativeCaptureService extends Service {
         requestedExposure=Math.max(exposureRange.getLower(),
             Math.min(requestedExposure,exposureRange.getUpper()));
     }
+    private Rect currentSensorCrop(){
+        if(activeSensor==null)return null;
+        if(requestedZoom<=1.005f)return new Rect(activeSensor);
+        int width=Math.max(2,(int)(activeSensor.width()/requestedZoom));
+        int height=Math.max(2,(int)(activeSensor.height()/requestedZoom));
+        int left=activeSensor.left+(activeSensor.width()-width)/2;
+        int top=activeSensor.top+(activeSensor.height()-height)/2;
+        return new Rect(left,top,left+width,top+height);
+    }
+    private MeteringRectangle tapRegion(){
+        Rect zoomCrop=currentSensorCrop();
+        if(zoomCrop==null||!Float.isFinite(focusTapX)||!Float.isFinite(focusTapY))
+            return null;
+        // Camera2 YUV preview frames are delivered in sensor orientation without
+        // a CSS rotation or mirroring. Match the stream center crop to the
+        // selected active sensor crop; never include fold hinge/screen margins.
+        Rect visible=new Rect(zoomCrop);
+        if(previewReader!=null){
+            float frameRatio=(float)previewReader.getWidth()/previewReader.getHeight();
+            float cropRatio=(float)visible.width()/visible.height();
+            if(cropRatio>frameRatio){
+                int width=Math.max(2,Math.round(visible.height()*frameRatio));
+                visible.left+=(visible.width()-width)/2;visible.right=visible.left+width;
+            }else if(cropRatio<frameRatio){
+                int height=Math.max(2,Math.round(visible.width()/frameRatio));
+                visible.top+=(visible.height()-height)/2;visible.bottom=visible.top+height;
+            }
+        }
+        int centerX=visible.left+Math.round(focusTapX*visible.width());
+        int centerY=visible.top+Math.round(focusTapY*visible.height());
+        int boxWidth=Math.max(2,Math.round(visible.width()*.12f));
+        int boxHeight=Math.max(2,Math.round(visible.height()*.12f));
+        boxWidth=Math.min(boxWidth,zoomCrop.width());
+        boxHeight=Math.min(boxHeight,zoomCrop.height());
+        int x=Math.max(zoomCrop.left,Math.min(centerX-boxWidth/2,zoomCrop.right-boxWidth));
+        int y=Math.max(zoomCrop.top,Math.min(centerY-boxHeight/2,zoomCrop.bottom-boxHeight));
+        return new MeteringRectangle(x,y,boxWidth,boxHeight,
+            MeteringRectangle.METERING_WEIGHT_MAX);
+    }
     private void setRequestControls(CaptureRequest.Builder request) {
         if(request==null)return;
         request.set(CaptureRequest.CONTROL_AF_MODE,
@@ -197,6 +247,13 @@ public class NativeCaptureService extends Service {
         }
         if(exposureRange!=null)
             request.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,requestedExposure);
+        MeteringRectangle region=tapRegion();
+        if(region!=null){
+            if(focusTapAf&&maxAfRegions>0&&!manualFocus)
+                request.set(CaptureRequest.CONTROL_AF_REGIONS,new MeteringRectangle[]{region});
+            if(focusTapAe&&maxAeRegions>0)
+                request.set(CaptureRequest.CONTROL_AE_REGIONS,new MeteringRectangle[]{region});
+        }
     }
     private boolean applyControls(float zoom,int evIndex) {
         if(liveRequest==null || capture==null || camera==null || stopRequested)return false;
@@ -305,6 +362,57 @@ public class NativeCaptureService extends Service {
             }
         };
     }
+    public static boolean tapToMeter(float x,float y,
+        java.util.function.Consumer<Boolean> completed) {
+        synchronized(STATE_LOCK){
+            NativeCaptureService owner=runningInstance;
+            if(owner==null||owner.worker==null||
+              !("previewing".equals(state)||"recording".equals(state)||"paused".equals(state)))
+                return false;
+            if(!Float.isFinite(x)||!Float.isFinite(y)||x<0f||x>1f||y<0f||y>1f
+                ||owner.previewReader==null||
+                !(owner.maxAfRegions>0&&owner.autoFocusSupported ||
+                  owner.maxAeRegions>0))return false;
+            return owner.worker.post(()->completed.accept(owner.applyTapToMeter(x,y)));
+        }
+    }
+    private boolean applyTapToMeter(float x,float y){
+        if(liveRequest==null||capture==null||camera==null||stopRequested||
+           previewReader==null)return false;
+        float oldX=focusTapX,oldY=focusTapY;
+        boolean wasManual=manualFocus, oldAf=focusTapAf,oldAe=focusTapAe;
+        focusTapX=x;focusTapY=y;
+        focusTapAf=maxAfRegions>0 && autoFocusSupported;
+        focusTapAe=maxAeRegions>0;
+        if(focusTapAf)manualFocus=false; // explicit user tap switches manual to autofocus
+        focusTapSubmitted=false;
+        try{
+            setRequestControls(liveRequest);
+            capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            if(focusTapAf){
+                liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                    CaptureRequest.CONTROL_AF_TRIGGER_START);
+                capture.capture(liveRequest.build(),liveCallback,worker);
+                liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                    CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+                capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            }
+            focusTapSubmitted=true; // Camera2 accepted command, focus outcome still unknown
+            publish(state,lastMessage);
+            return true;
+        }catch(Exception error){
+            focusTapX=oldX;focusTapY=oldY;manualFocus=wasManual;
+            focusTapAf=oldAf;focusTapAe=oldAe;
+            try{
+                liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                    CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+                setRequestControls(liveRequest);
+                capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            }catch(Exception ignored){}
+            publish(state,"Фокус/экспозамер по касанию не применён: "+error.getMessage());
+            return false;
+        }
+    }
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
             return runningInstance != null &&
@@ -364,6 +472,14 @@ public class NativeCaptureService extends Service {
             long elapsed = started > 0 ? Math.max(0L, end - started - excluded) : 0L;
             out.put("recordedDurationMs", "recording".equals(value) || "paused".equals(value)
                 ? elapsed : finished);
+            out.put("tapAfSupported",runningInstance!=null && runningInstance.maxAfRegions>0 &&
+                runningInstance.autoFocusSupported);
+            out.put("tapAeSupported",runningInstance!=null && runningInstance.maxAeRegions>0);
+            out.put("tapX",runningInstance==null || !Float.isFinite(runningInstance.focusTapX)
+                ? -1f:runningInstance.focusTapX);
+            out.put("tapY",runningInstance==null || !Float.isFinite(runningInstance.focusTapY)
+                ? -1f:runningInstance.focusTapY);
+            out.put("tapSubmitted",runningInstance!=null && runningInstance.focusTapSubmitted);
             out.put("manualFocusSupported",runningInstance!=null && runningInstance.manualFocusSupported);
             out.put("autoFocusSupported",runningInstance!=null && runningInstance.autoFocusSupported);
             out.put("focusMode",runningInstance!=null && runningInstance.manualFocus?"manual":"auto");
