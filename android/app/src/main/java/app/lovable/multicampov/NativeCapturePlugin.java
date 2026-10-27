@@ -47,7 +47,10 @@ public class NativeCapturePlugin extends Plugin {
     (audio && getPermissionState("microphone")!=com.getcapacitor.PermissionState.GRANTED)){
    call.reject("Разрешите камеру и, если нужен звук, микрофон в Android.");return;
   }
-  if(NativeCaptureService.isRunning()){call.reject("Нативная запись уже работает");return;}
+  String currentState=NativeCaptureService.status(getContext()).getString("state");
+  if(NativeCaptureService.isRunning() && !"previewing".equals(currentState)){
+   call.reject("Нативная запись уже работает");return;
+  }
   String id=call.getString("cameraId");
   int width=call.getInt("width",1920),height=call.getInt("height",1080),fps=call.getInt("fps",30);
   if(id==null||id.isEmpty()||width<160||height<120||width>3840||height>2160||fps<15||fps>60){
