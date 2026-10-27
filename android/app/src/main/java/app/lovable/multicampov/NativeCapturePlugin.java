@@ -26,11 +26,13 @@ public class NativeCapturePlugin extends Plugin {
   Double zoom=call.getDouble("zoom");
   Integer exposure=call.getInt("exposureIndex");
   if(zoom==null||exposure==null ||
-    !NativeCaptureService.updateControls(zoom.floatValue(),exposure)){
+    !NativeCaptureService.updateControls(zoom.floatValue(),exposure,
+       applied->{
+        if(applied)call.resolve(NativeCaptureService.status(getContext()));
+        else call.reject("Camera2 отклонил увеличение или экспозицию");
+       })){
     call.reject("Увеличение или экспозиция недоступны для этого Camera2 режима");
-    return;
   }
-  call.resolve(NativeCaptureService.status(getContext()));
  }
  @PluginMethod public void status(PluginCall call){
   call.resolve(NativeCaptureService.status(getContext()));
