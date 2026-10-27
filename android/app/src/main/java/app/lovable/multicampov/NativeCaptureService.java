@@ -263,6 +263,16 @@ public class NativeCaptureService extends Service {
         try {
             setRequestControls(liveRequest);
             capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            // CONTROL_AF_MODE_AUTO requires a one-shot START trigger;
+            // continuous AF modes must NOT be retriggered for every frame.
+            if(!manual && automaticAfMode==CaptureRequest.CONTROL_AF_MODE_AUTO) {
+                liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                    CaptureRequest.CONTROL_AF_TRIGGER_START);
+                capture.capture(liveRequest.build(),liveCallback,worker);
+                liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                    CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+                capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            }
             publish(state,lastMessage);
             return true;
         }catch(Exception error){
