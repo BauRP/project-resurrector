@@ -16,24 +16,24 @@ const plain=(v:unknown):v is AnyRecord=>!!v&&typeof v==="object"&&!Array.isArray
 const identifier=(v:unknown):v is string=>typeof v==="string"&&v.length>0&&v.length<=128;
 const finite=(v:unknown,min:number,max:number):v is number=>typeof v==="number"&&Number.isFinite(v)&&v>=min&&v<=max;
 function validItem(v:unknown):v is AnyRecord {
-  return plain(v)&&identifier(v.id)&&identifier(v.mediaId)&&
-    (v.kind==="video"||v.kind==="audio")&&finite(v.track,1,64)&&
-    finite(v.start,0,86400)&&finite(v.in,0,86400)&&finite(v.out,0,86400)&&
-    (v.out as number)>(v.in as number)&&
-    finite(v.speed,.05,16)&&typeof v.reverse==="boolean"&&
-    finite(v.scale,1,800)&&finite(v.posX,-1000,1000)&&
-    finite(v.opacity,0,100)&&typeof v.look==="string"&&v.look.length<128;
+  return plain(v)&&identifier(v["id"])&&identifier(v["mediaId"])&&
+    (v["kind"]==="video"||v["kind"]==="audio")&&finite(v["track"],1,64)&&
+    finite(v["start"],0,86400)&&finite(v["in"],0,86400)&&finite(v["out"],0,86400)&&
+    (v["out"] as number)>(v["in"] as number)&&
+    finite(v["speed"],.05,16)&&typeof v["reverse"]==="boolean"&&
+    finite(v["scale"],1,800)&&finite(v["posX"],-1000,1000)&&
+    finite(v["opacity"],0,100)&&typeof v["look"]==="string"&&v["look"].length<128;
 }
 function validOverlay(v:unknown):v is AnyRecord {
-  return plain(v)&&identifier(v.id)&&typeof v.text==="string"&&v.text.length<=3000&&
-    finite(v.x,-100,200)&&finite(v.y,-100,200)&&
-    finite(v.start,0,86400)&&finite(v.end,0,86400)&&
-    (v.end as number)>(v.start as number)&&finite(v.size,4,300);
+  return plain(v)&&identifier(v["id"])&&typeof v["text"]==="string"&&v["text"].length<=3000&&
+    finite(v["x"],-100,200)&&finite(v["y"],-100,200)&&
+    finite(v["start"],0,86400)&&finite(v["end"],0,86400)&&
+    (v["end"] as number)>(v["start"] as number)&&finite(v["size"],4,300);
 }
 function validTransition(v:unknown):v is AnyRecord {
-  return plain(v)&&identifier(v.id)&&identifier(v.aId)&&identifier(v.bId)&&
-    finite(v.track,1,64)&&typeof v.type==="string"&&v.type.length<64&&
-    finite(v.dur,.01,30);
+  return plain(v)&&identifier(v["id"])&&identifier(v["aId"])&&identifier(v["bId"])&&
+    finite(v["track"],1,64)&&typeof v["type"]==="string"&&v["type"].length<64&&
+    finite(v["dur"],.01,30);
 }
 // Explicit allowlist avoids persisting arbitrary metadata injected by
 // imported projects; nested crop/color must stay bounded numeric settings.
@@ -43,20 +43,20 @@ const numericMap=(v:unknown):Record<string,number>|undefined=>{
   return Object.fromEntries(entries) as Record<string,number>;
 };
 function cleanItem(v:AnyRecord):AnyRecord {
-  return {id:v.id,mediaId:v.mediaId,kind:v.kind,track:v.track,start:v.start,
-    in:v.in,out:v.out,speed:v.speed,reverse:v.reverse,scale:v.scale,
-    posX:v.posX,opacity:v.opacity,look:v.look,
-    ...(numericMap(v.crop)?{crop:numericMap(v.crop)}:{}),
-    ...(numericMap(v.color)?{color:numericMap(v.color)}:{})};
+  return {id:v["id"],mediaId:v["mediaId"],kind:v["kind"],track:v["track"],start:v["start"],
+    in:v["in"],out:v["out"],speed:v["speed"],reverse:v["reverse"],scale:v["scale"],
+    posX:v["posX"],opacity:v["opacity"],look:v["look"],
+    ...(numericMap(v["crop"])?{crop:numericMap(v["crop"])}:{}),
+    ...(numericMap(v["color"])?{color:numericMap(v["color"])}:{})};
 }
 function cleanOverlay(v:AnyRecord):AnyRecord {
-  return {id:v.id,text:v.text,x:v.x,y:v.y,size:v.size,start:v.start,end:v.end,
-    color:typeof v.color==="string"&&v.color.length<40?v.color:"#ffffff",
-    bg:v.bg===true,font:typeof v.font==="string"&&v.font.length<140?v.font:"sans-serif",
-    subtitle:v.subtitle===true};
+  return {id:v["id"],text:v["text"],x:v["x"],y:v["y"],size:v["size"],start:v["start"],end:v["end"],
+    color:typeof v["color"]==="string"&&v["color"].length<40?v["color"]:"#ffffff",
+    bg:v["bg"]===true,font:typeof v["font"]==="string"&&v["font"].length<140?v["font"]:"sans-serif",
+    subtitle:v["subtitle"]===true};
 }
 function cleanTransition(v:AnyRecord):AnyRecord {
-  return {id:v.id,track:v.track,aId:v.aId,bId:v.bId,type:v.type,dur:v.dur};
+  return {id:v["id"],track:v["track"],aId:v["aId"],bId:v["bId"],type:v["type"],dur:v["dur"]};
 }
 const booleans=(v:unknown):Record<string,boolean>=>{
   if(!plain(v))return {};
@@ -65,10 +65,10 @@ const booleans=(v:unknown):Record<string,boolean>=>{
 export function sanitizeEditorProject(value:unknown):RecoverableEditorProject {
   const v=plain(value)?value:{};
   return {
-    items:(Array.isArray(v.items)?v.items:[]).filter(validItem).slice(0,400).map(cleanItem),
-    overlays:(Array.isArray(v.overlays)?v.overlays:[]).filter(validOverlay).slice(0,250).map(cleanOverlay),
-    transitions:(Array.isArray(v.transitions)?v.transitions:[]).filter(validTransition).slice(0,200).map(cleanTransition),
-    hidden:booleans(v.hidden), muted:booleans(v.muted),
+    items:(Array.isArray(v["items"])?v["items"]:[]).filter(validItem).slice(0,400).map(cleanItem),
+    overlays:(Array.isArray(v["overlays"])?v["overlays"]:[]).filter(validOverlay).slice(0,250).map(cleanOverlay),
+    transitions:(Array.isArray(v["transitions"])?v["transitions"]:[]).filter(validTransition).slice(0,200).map(cleanTransition),
+    hidden:booleans(v["hidden"]), muted:booleans(v["muted"]),
   };
 }
 export function loadEditorProject():RecoverableEditorProject {

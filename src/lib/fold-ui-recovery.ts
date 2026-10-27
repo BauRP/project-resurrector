@@ -15,17 +15,17 @@ export function sanitizeViewState(value: unknown): Partial<RestorableViewState> 
   if (!value || typeof value !== "object" || Array.isArray(value)) return {};
   const source = value as Record<string, unknown>;
   const restored: Partial<RestorableViewState> = {};
-  if (source.tab === "camera" || source.tab === "editor" || source.tab === "settings")
-    restored.tab = source.tab;
-  if (typeof source.playhead === "number" && Number.isFinite(source.playhead) &&
-      source.playhead >= 0 && source.playhead <= 86400)
-    restored.playhead = source.playhead;
-  if (typeof source.editMode === "string" && /^[\w -]{1,32}$/.test(source.editMode))
-    restored.editMode = source.editMode;
-  if (typeof source.aspect === "string" && /^\d{1,3}:\d{1,3}$/.test(source.aspect))
-    restored.aspect = source.aspect;
-  if (source.captureKind === "photo" || source.captureKind === "video")
-    restored.captureKind = source.captureKind;
+  if (source["tab"] === "camera" || source["tab"] === "editor" || source["tab"] === "settings")
+    restored["tab"] = source["tab"];
+  if (typeof source["playhead"] === "number" && Number.isFinite(source["playhead"]) &&
+      source["playhead"] >= 0 && source["playhead"] <= 86400)
+    restored["playhead"] = source["playhead"];
+  if (typeof source["editMode"] === "string" && /^[\w -]{1,32}$/.test(source["editMode"]))
+    restored["editMode"] = source["editMode"];
+  if (typeof source["aspect"] === "string" && /^\d{1,3}:\d{1,3}$/.test(source["aspect"]))
+    restored["aspect"] = source["aspect"];
+  if (source["captureKind"] === "photo" || source["captureKind"] === "video")
+    restored["captureKind"] = source["captureKind"];
   return restored;
 }
 export function restoreViewState(): Partial<RestorableViewState> {

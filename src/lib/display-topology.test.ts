@@ -164,15 +164,15 @@ describe("layout owner handoff during rapid tab remount", () => {
     const first = startDisplayAdaptation();
     const second = startDisplayAdaptation();
     try {
-      expect(document.documentElement.dataset.windowClass).toBeDefined();
+      expect(document.documentElement.dataset["windowClass"]).toBeDefined();
       expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).not.toBe("");
       first();
-      expect(document.documentElement.dataset.windowClass).toBeDefined();
+      expect(document.documentElement.dataset["windowClass"]).toBeDefined();
       expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).not.toBe("");
     } finally {
       second();
     }
-    expect(document.documentElement.dataset.windowClass).toBeUndefined();
+    expect(document.documentElement.dataset["windowClass"]).toBeUndefined();
     expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("");
   });
 });

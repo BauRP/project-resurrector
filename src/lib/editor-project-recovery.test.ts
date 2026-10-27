@@ -7,7 +7,7 @@ describe("fold-safe editor project persistence",()=>{
   const state=sanitizeEditorProject({items:[item],overlays:[],transitions:[],
     hidden:{v1:true},muted:{a1:false},recording:true,cameraId:"private"});
   expect(state.items).toHaveLength(1);
-  expect(state.hidden.v1).toBe(true);
+  expect(state.hidden["v1"]).toBe(true);
   expect(JSON.stringify(state)).not.toContain("recording");
   expect(JSON.stringify(state)).not.toContain("cameraId");
  });

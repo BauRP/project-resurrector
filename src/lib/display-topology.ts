@@ -173,8 +173,8 @@ export function startDisplayAdaptation(): () => void {
     const currentHeight = retainedViewportDimension(height(), lastGoodHeight);
     if (currentWidth === null || currentHeight === null) return;
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
-    root.dataset.windowClass = windowClass(currentWidth);
-    root.dataset.windowHeight = currentHeight < 480 ? "short" : "regular";
+    root.dataset["windowClass"] = windowClass(currentWidth);
+    root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
     root.style.setProperty("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
@@ -200,14 +200,14 @@ export function startDisplayAdaptation(): () => void {
       // advancing the revision watermark to reject later stale native events.
       window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));
     }
-    root.dataset.foldInfo = state.posture;
+    root.dataset["foldInfo"] = state.posture;
     // Never present off-window or malformed reported features as active folds.
-    root.dataset.foldCount = String(geometry.hinges.length);
-    root.dataset.foldSplit = geometry.split;
-    root.dataset.separatingFold = String(geometry.hinges.length > 0);
-    root.dataset.occludingFold = String(geometry.occluded);
+    root.dataset["foldCount"] = String(geometry.hinges.length);
+    root.dataset["foldSplit"] = geometry.split;
+    root.dataset["separatingFold"] = String(geometry.hinges.length > 0);
+    root.dataset["occludingFold"] = String(geometry.occluded);
     // Keep all reported hinge bounds: two separate hinges stay two separate features.
-    root.dataset.foldRegions = String(geometry.regions.length);
+    root.dataset["foldRegions"] = String(geometry.regions.length);
     // Keep non-camera working surfaces fully inside an available pane if a real
     // hinge cuts across the app window. Unlike camera this region is chosen
     // by usable size rather than a hard-coded left/right position.
@@ -220,7 +220,7 @@ export function startDisplayAdaptation(): () => void {
       return { ...region, left, width: Math.max(0, right - left) };
     }).sort((a,b)=> b.width*b.height-a.width*a.height)[0];
     const safeWorkspace = geometry.regions.length > 1 && !!workspace && workspace.width >= 300 && workspace.height >= 220;
-    root.dataset.foldWorkspace = safeWorkspace ? "pane" : "normal";
+    root.dataset["foldWorkspace"] = safeWorkspace ? "pane" : "normal";
     root.style.setProperty("--fold-work-left", (workspace?.left ?? 0) + "px");
     root.style.setProperty("--fold-work-width", (workspace?.width ?? shellWidth) + "px");
     const panes = [...geometry.regions].sort((a,b) => a.left - b.left || a.top - b.top);
@@ -237,7 +237,7 @@ export function startDisplayAdaptation(): () => void {
       thirdPane.height >= 260 && panes[1]!.height >= 260;
     // In a verified three-region window: primary viewfinder | HUD/tools |
     // record controls. Never synthesize a third region from device branding.
-    root.dataset.cameraSplit = eligibleThree ? "tri" : eligible ? "side" : "none";
+    root.dataset["cameraSplit"] = eligibleThree ? "tri" : eligible ? "side" : "none";
     const leftPane = panes[0], rightPane = panes[1];
     const controlPane = eligibleThree ? thirdPane : rightPane;
     const cameraRect = document.querySelector(".camera-screen")?.getBoundingClientRect();
@@ -257,7 +257,7 @@ export function startDisplayAdaptation(): () => void {
       panes[0]!.top + panes[0]!.height <= panes[1]!.top + 4;
     const horizontal = stacked && geometry.split === "horizontal" &&
       panes[0]!.height >= 170 && panes[1]!.height >= 170;
-    root.dataset.cameraTabletop = horizontal ? "true" : "false";
+    root.dataset["cameraTabletop"] = horizontal ? "true" : "false";
     if (horizontal) {
       root.style.setProperty("--camera-upper-height", Math.max(0, panes[0]!.top + panes[0]!.height - cameraTop) + "px");
       root.style.setProperty("--camera-lower-top", Math.max(0, panes[1]!.top - cameraTop) + "px");
@@ -323,8 +323,8 @@ export function startDisplayAdaptation(): () => void {
           return;
         }
         apply(state);
-      }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset.foldInfo = "unknown"; });
-    }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset.foldInfo = "unknown"; });
+      }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset["foldInfo"] = "unknown"; });
+    }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset["foldInfo"] = "unknown"; });
   }
   return () => {
     disposed = true;

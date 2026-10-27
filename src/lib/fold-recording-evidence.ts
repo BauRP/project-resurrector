@@ -72,25 +72,25 @@ export function validFoldRegionGeometry(value: string): boolean {
 export function normalizeFoldTransition(value: unknown, observedAtMs: number): FoldTransitionEvidence | null {
   if (!value || typeof value !== "object") return null;
   const event = value as Record<string, unknown>;
-  if (!Number.isSafeInteger(event.revision) || Number(event.revision) < 0 ||
-      typeof event.posture !== "string" || event.posture.length > 512 ||
+  if (!Number.isSafeInteger(event["revision"]) || Number(event["revision"]) < 0 ||
+      typeof event["posture"] !== "string" || event["posture"].length > 512 ||
       !Number.isFinite(observedAtMs) || observedAtMs <= 0 ||
-      !Number.isSafeInteger(event.hingeCount) || Number(event.hingeCount) < 0 ||
-      !Number.isSafeInteger(event.usableRegions) || Number(event.usableRegions) < 1 || Number(event.usableRegions) > 16 ||
-      Number(event.hingeCount) > 16 ||
-      Number(event.hingeCount) > Number(event.usableRegions) - 1 ||
-      !["none", "vertical", "horizontal"].includes(String(event.layout)) ||
-      (event.regionGeometry !== undefined &&
-        (typeof event.regionGeometry !== "string" || !validFoldRegionGeometry(event.regionGeometry) ||
-          event.regionGeometry.split(";").length !== Number(event.usableRegions)))) return null;
+      !Number.isSafeInteger(event["hingeCount"]) || Number(event["hingeCount"]) < 0 ||
+      !Number.isSafeInteger(event["usableRegions"]) || Number(event["usableRegions"]) < 1 || Number(event["usableRegions"]) > 16 ||
+      Number(event["hingeCount"]) > 16 ||
+      Number(event["hingeCount"]) > Number(event["usableRegions"]) - 1 ||
+      !["none", "vertical", "horizontal"].includes(String(event["layout"])) ||
+      (event["regionGeometry"] !== undefined &&
+        (typeof event["regionGeometry"] !== "string" || !validFoldRegionGeometry(event["regionGeometry"]) ||
+          event["regionGeometry"].split(";").length !== Number(event["usableRegions"])))) return null;
   return {
-    revision: event.revision as number,
-    observedAtMs, posture: event.posture,
-    hingeCount: event.hingeCount as number,
-    usableRegions: event.usableRegions as number,
-    layout: event.layout as FoldTransitionEvidence["layout"],
-    regionGeometry: typeof event.regionGeometry === "string" ? event.regionGeometry : undefined,
-    baseline: event.baseline === true ? true : undefined,
+    revision: event["revision"] as number,
+    observedAtMs, posture: event["posture"],
+    hingeCount: event["hingeCount"] as number,
+    usableRegions: event["usableRegions"] as number,
+    layout: event["layout"] as FoldTransitionEvidence["layout"],
+    regionGeometry: typeof event["regionGeometry"] === "string" ? event["regionGeometry"] : undefined,
+    baseline: event["baseline"] === true ? true : undefined,
   };
 }
 /** Avoid duplicate initial native topology callbacks or unbounded metadata. */
