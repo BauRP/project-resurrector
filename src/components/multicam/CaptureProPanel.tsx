@@ -138,7 +138,7 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
       const mismatch = requestedGeometry && modeState === "rejected";
       if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { ...(applied.width !== undefined ? {width:applied.width} : {}),
           ...(applied.height !== undefined ? {height:applied.height} : {}),
-          ...(actualFps !== undefined ? {fps:actualFps} : {}) }, state: requestedGeometry && modeState === "confirmed" ? "applied" : "unknown", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : modeState === "unknown" ? "WebView did not report enough applied mode settings" : "WebView track settings confirmed; encoded output not verified" });
+          ...(actualFps !== undefined ? {fps:actualFps} : {}) }, state: requestedGeometry ? (modeState === "rejected" ? "rejected" : modeState === "confirmed" ? "applied" : "unknown") : "unknown", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : modeState === "unknown" ? "WebView did not report enough applied mode settings" : "WebView track settings confirmed; encoded output not verified" });
       if (mismatch) {
         warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
         await rollback();
