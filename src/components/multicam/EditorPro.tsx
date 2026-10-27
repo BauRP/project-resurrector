@@ -226,9 +226,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // Keep the editor's strongly typed color controls while providing the
   // renderer with an explicit plain numeric adjustment map.
   const renderItems = useMemo(() => items.map(item => {
-    const {color, ...source} = item;
+    const {color, crop, ...source} = item;
     return {
       ...source,
+      ...(crop ? {crop} : {}),
       ...(color ? {color: Object.fromEntries(Object.entries(color)) as Record<string,number>} : {}),
     };
   }), [items]);
