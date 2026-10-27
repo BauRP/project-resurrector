@@ -1,4 +1,5 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
+import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
 import { useEffect, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
@@ -44,24 +45,47 @@ export function NativeRecordingPanel(){
  },[]);
  useEffect(()=>{
   if(!isNative())return;
-  let live=true,inFlight=false;
-  const enable=()=>void bridge.setPreviewVisible({visible:true}).catch(()=>undefined);
-  const disable=()=>void bridge.setPreviewVisible({visible:false}).catch(()=>undefined);
-  enable();
-  const onVisibility=()=>{if(document.hidden)disable();else enable();};
-  document.addEventListener("visibilitychange",onVisibility);
+  let live=true,inFlight=false,visible=!document.hidden,latestFrameAt=0;
+  // Each mounted viewer owns its Android preview lease. A late cleanup from
+  // an old fold/Activity view cannot hide the new viewer.
+  const ownerId="native-preview-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
+  const setVisible=(value:boolean)=>{
+    void bridge.setPreviewVisible({visible:value,ownerId}).catch(()=>undefined);
+  };
   const read=async()=>{
-    if(!live||inFlight)return;
+    if(!live||!visible||inFlight)return;
     inFlight=true;
     try {
-      const image=await bridge.previewFrame();
-      if(live)setPreview(image.jpeg ? "data:image/jpeg;base64,"+image.jpeg : "");
-    }catch{if(live)setPreview("");}
-    finally{inFlight=false;}
+      const frame=await bridge.previewFrame();
+      if(!live||!visible)return;
+      if(!frame.jpeg){
+        latestFrameAt=0;
+        setPreview(previous=>previous ? "" : previous);
+      }else if(isFreshNativeFrame(frame,latestFrameAt)){
+        latestFrameAt=typeof frame.frameAt==="number"&&frame.frameAt>0 ? frame.frameAt : 0;
+        setPreview("data:image/jpeg;base64,"+frame.jpeg);
+      }
+    }catch{
+      // Keep the last valid frame for transient native bridge failures.
+      // Missing/stopped camera frames are cleared by the empty response.
+    }finally{inFlight=false;}
   };
-  void read();
-  const timer=window.setInterval(()=>{void read();},600);
-  return ()=>{live=false;window.clearInterval(timer);document.removeEventListener("visibilitychange",onVisibility);disable();};
+  const onVisibility=()=>{
+    visible=!document.hidden;
+    setVisible(visible);
+    if(visible)void read();
+    else{latestFrameAt=0;setPreview(previous=>previous ? "" : previous);}
+  };
+  document.addEventListener("visibilitychange",onVisibility);
+  setVisible(visible);
+  if(visible)void read();
+  // Bounded JPEG transport, not a 30/60 FPS native SurfaceView.
+  const timer=window.setInterval(()=>{void read();},250);
+  return ()=>{
+    live=false;window.clearInterval(timer);
+    document.removeEventListener("visibilitychange",onVisibility);
+    setVisible(false);
+  };
  },[]);
  if(!isNative())return null;
  const current=cameras.find(x=>x.cameraId===camera);

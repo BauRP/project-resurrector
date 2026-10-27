@@ -16,7 +16,12 @@ import com.getcapacitor.annotation.Permission;
 })
 public class NativeCapturePlugin extends Plugin {
  @PluginMethod public void setPreviewVisible(PluginCall call) {
-  NativeCaptureService.setPreviewConsumerVisible(Boolean.TRUE.equals(call.getBoolean("visible",false)));
+  String ownerId=call.getString("ownerId");
+  if(ownerId==null || ownerId.isEmpty()){
+   call.reject("Требуется идентификатор текущего видоискателя");return;
+  }
+  NativeCaptureService.setPreviewConsumerVisible(
+   Boolean.TRUE.equals(call.getBoolean("visible",false)),ownerId);
   call.resolve();
  }
  @PluginMethod public void previewFrame(PluginCall call) {

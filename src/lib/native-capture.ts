@@ -16,12 +16,12 @@ export interface NativeCaptureBridge {
  pause():Promise<NativeCaptureStatus>;
  resume():Promise<NativeCaptureStatus>;
  status():Promise<NativeCaptureStatus>;
- previewFrame():Promise<{jpeg:string}>;
+ previewFrame():Promise<{jpeg:string;frameAt?:number}>;
  setControls(options:{zoom:number;exposureIndex:number}):Promise<NativeCaptureStatus>;
  setTorch(options:{enabled:boolean}):Promise<NativeCaptureStatus>;
  setFocus(options:{manual:boolean;diopters:number}):Promise<NativeCaptureStatus>;
  tapToMeter(options:{x:number;y:number}):Promise<NativeCaptureStatus>;
- setPreviewVisible(options:{visible:boolean}):Promise<void>;
+ setPreviewVisible(options:{visible:boolean;ownerId:string}):Promise<void>;
  requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
 }
 export const nativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");

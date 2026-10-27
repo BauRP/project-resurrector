@@ -12,8 +12,8 @@ const PREF = "multicam-user-camera-mode-v1";
 /** Switching mode actually unmounts WebCameraTab and releases its MediaStream.
  * Recording never changes owner on a responsive layout breakpoint. */
 export function CameraWorkspace() {
-  const recording = useCameraStore(s => s.recording);
-  const phase = useCameraStore(s => s.recordingPhase);
+  const recording = useMulticamStore(s => s.recording);
+  const phase = useMulticamStore(s => s.recordingPhase);
   const [mode, setMode] = useState<Mode | null>(isNative() ? null : "web");
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);

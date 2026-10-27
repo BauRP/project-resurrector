@@ -65,6 +65,9 @@ public class NativeCaptureService extends Service {
     private static final String STORE = "native_capture_v1";
     private static final Object STATE_LOCK = new Object();
     private static NativeCaptureService runningInstance;
+    // A preview consumer can mount before the foreground service is created.
+    // A stale WebView teardown must not hide a newer camera view.
+    private static String previewOwnerId;
     private static String state = "idle";
     private static String lastMessage = "Нативная запись не запускалась";
     private static String savedPath = "";
@@ -84,11 +87,18 @@ public class NativeCaptureService extends Service {
     private MediaRecorder encoder;
     private ImageReader previewReader;
     private volatile boolean previewConsumerVisible;
-    public static void setPreviewConsumerVisible(boolean visible) {
+    public static void setPreviewConsumerVisible(boolean visible, String ownerId) {
+        if (ownerId == null || ownerId.isEmpty()) return;
         synchronized (STATE_LOCK) {
-            if(runningInstance!=null) {
-                runningInstance.previewConsumerVisible=visible;
-                if(!visible)runningInstance.latestPreviewJpeg=null;
+            if (visible) {
+                previewOwnerId = ownerId;
+                if (runningInstance != null) runningInstance.previewConsumerVisible = true;
+            } else if (ownerId.equals(previewOwnerId)) {
+                previewOwnerId = null;
+                if (runningInstance != null) {
+                    runningInstance.previewConsumerVisible = false;
+                    runningInstance.latestPreviewJpeg = null;
+                }
             }
         }
     }
@@ -128,7 +138,11 @@ public class NativeCaptureService extends Service {
             if (service != null && service.latestPreviewJpeg != null
                 && System.currentTimeMillis() - service.latestPreviewAt < 3000) {
                 result.put("jpeg", service.latestPreviewJpeg);
-            } else result.put("jpeg", "");
+                result.put("frameAt", service.latestPreviewAt);
+            } else {
+                result.put("jpeg", "");
+                result.put("frameAt", 0L);
+            }
         }
         return result;
     }
@@ -534,7 +548,10 @@ public class NativeCaptureService extends Service {
         workerThread = new HandlerThread("Native-Camera2-Record");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
-        synchronized (STATE_LOCK) { runningInstance = this; }
+        synchronized (STATE_LOCK) {
+            runningInstance = this;
+            previewConsumerVisible = previewOwnerId != null;
+        }
         NotificationManager notifications =
             (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(
@@ -686,7 +703,7 @@ public class NativeCaptureService extends Service {
                     try{
                         frame=reader.acquireLatestImage();
                         if(frame!=null && previewConsumerVisible &&
-                            System.currentTimeMillis()-latestPreviewAt>=350){
+                            System.currentTimeMillis()-latestPreviewAt>=240){
                             String jpeg=NativePreviewFrames.compressYuv420(frame);
                             if(jpeg!=null){latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();}
                         }
@@ -827,7 +844,7 @@ public class NativeCaptureService extends Service {
                         try {
                             frame = reader.acquireLatestImage();
                             if (frame != null && previewConsumerVisible &&
-                                System.currentTimeMillis()-latestPreviewAt>=350) {
+                                System.currentTimeMillis()-latestPreviewAt>=240) {
                                 String jpeg = NativePreviewFrames.compressYuv420(frame);
                                 if (jpeg != null) {
                                     latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();
