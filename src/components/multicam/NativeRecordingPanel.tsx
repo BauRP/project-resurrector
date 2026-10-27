@@ -15,7 +15,7 @@ export function NativeRecordingPanel(){
  const refreshCameras=async()=>{
    try{
     const permissions=await bridge.requestPermissions({permissions:["camera"]});
-    if(permissions.camera!=="granted")throw Error("Android не разрешил доступ к камере");
+    if(permissions["camera"]!=="granted")throw Error("Android не разрешил доступ к камере");
     const list=(await MultiCamNative.getCapabilities()).cameras;
     setCameras(list);setCamera(previous=>list.some(c=>c.cameraId===previous)?previous:list[0]?.cameraId??"");
     setError("");
@@ -38,10 +38,10 @@ export function NativeRecordingPanel(){
   if(busy)return;setBusy(true);setError("");
   try{
    const result=await bridge.requestPermissions({permissions:audio?["camera","microphone"]:["camera"]});
-   if(result.camera!=="granted"||(audio&&result.microphone!=="granted"))
+   if(result["camera"]!=="granted"||(audio&&result["microphone"]!=="granted"))
     throw Error("Android не предоставил разрешение на камеру/микрофон.");
    if(!window.confirm("Запустить отдельную нативную запись Camera2? Обычный предпросмотр WebView должен быть закрыт. Запись продолжается при пересоздании интерфейса, но не гарантирована при гибели процесса Android."))return;
-   const [width,height]=resolution.split("x").map(Number);
+   const [width = 0,height = 0]=resolution.split("x").map(Number);
    setStatus(await bridge.start({cameraId:camera,width,height,fps,audio}));
   }catch(e){setError(String(e));}
   finally{setBusy(false);}
