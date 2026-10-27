@@ -5,6 +5,7 @@ export interface NativeCaptureStatus {
  savedUri:string;videoOnly:boolean;orientationDegrees?:number;
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
  zoom?:number;maxZoom?:number;exposureIndex?:number;exposureMin?:number;exposureMax?:number;exposureStep?:number;
+ torchAvailable?:boolean;torchEnabled?:boolean;
 }
 export interface NativeCaptureBridge {
  startPreview(options:{cameraId:string}):Promise<NativeCaptureStatus>;
@@ -15,6 +16,7 @@ export interface NativeCaptureBridge {
  status():Promise<NativeCaptureStatus>;
  previewFrame():Promise<{jpeg:string}>;
  setControls(options:{zoom:number;exposureIndex:number}):Promise<NativeCaptureStatus>;
+ setTorch(options:{enabled:boolean}):Promise<NativeCaptureStatus>;
  setPreviewVisible(options:{visible:boolean}):Promise<void>;
  requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
 }
