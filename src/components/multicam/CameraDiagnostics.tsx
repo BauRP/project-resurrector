@@ -178,7 +178,7 @@ export function CameraDiagnostics() {
       if (selectedMode) {
         const [requestedWidth,requestedHeight] = selectedMode.size.split("x").map(Number);
         const evidence = highSpeedRecordedModeEvidence(selectedMode.cameraId,
-          { width:requestedWidth, height:requestedHeight, fps:selectedMode.fps },
+          { width:requestedWidth ?? 0, height:requestedHeight ?? 0, fps:selectedMode.fps },
           {bytes:file.bytes,inspection:file.inspection,inspectionError:file.inspectionError},Date.now());
         recordModeEvidence(evidence);
         if (mounted.current) setTests(loadModeEvidence());
