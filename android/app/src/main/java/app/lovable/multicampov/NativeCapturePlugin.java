@@ -15,6 +15,10 @@ import com.getcapacitor.annotation.Permission;
  @Permission(alias="microphone",strings={Manifest.permission.RECORD_AUDIO})
 })
 public class NativeCapturePlugin extends Plugin {
+ @PluginMethod public void setPreviewVisible(PluginCall call) {
+  NativeCaptureService.setPreviewConsumerVisible(Boolean.TRUE.equals(call.getBoolean("visible",false)));
+  call.resolve();
+ }
  @PluginMethod public void previewFrame(PluginCall call) {
   call.resolve(NativeCaptureService.previewFrame());
  }
