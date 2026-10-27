@@ -100,7 +100,7 @@ export function NativeRecordingPanel(){
    </div>
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
-   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+   <div className="grid gap-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
     <label>Камера<select className="w-full bg-background p-2" value={camera} disabled={active}
       onChange={e=>{setCamera(e.target.value);setResolution("1920x1080");}}>
        {cameras.map(x=><option key={x.cameraId} value={x.cameraId}>{x.cameraId} · {x.facing}</option>)}
@@ -118,7 +118,7 @@ export function NativeRecordingPanel(){
    </div>
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
-   {active&&status&&<div className="grid grid-cols-1 gap-3 rounded-lg border border-border p-2 sm:grid-cols-2">
+   {active&&status&&<div className="grid gap-3 rounded-lg border border-border p-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
       <label className="space-y-1">Увеличение: {(status.zoom??1).toFixed(1)}×
         <input type="range" className="w-full" min={1} max={Math.max(1,status.maxZoom??1)}
           step={0.1} value={status.zoom??1}
