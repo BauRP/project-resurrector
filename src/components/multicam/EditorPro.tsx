@@ -225,10 +225,13 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   },[items,overlays,transitions,hidden,muted]);
   // Keep the editor's strongly typed color controls while providing the
   // renderer with an explicit plain numeric adjustment map.
-  const renderItems = useMemo(() => items.map(item => ({
-    ...item,
-    ...(item.color ? {color: Object.fromEntries(Object.entries(item.color)) as Record<string,number>} : {}),
-  })), [items]);
+  const renderItems = useMemo(() => items.map(item => {
+    const {color, ...source} = item;
+    return {
+      ...source,
+      ...(color ? {color: Object.fromEntries(Object.entries(color)) as Record<string,number>} : {}),
+    };
+  }), [items]);
   const [trCat, setTrCat] = useState("basic"); const [ghost, setGhost] = useState<{ type: string; x: number; y: number } | null>(null); const [dropErr, setDropErr] = useState("");
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
   const monRef = useRef<HTMLDivElement>(null); const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
