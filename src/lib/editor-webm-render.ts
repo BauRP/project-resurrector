@@ -6,7 +6,7 @@ import type { EditorExportConfig } from "./editor-render-bridge";
 export interface SimpleVideoSegment {
   kind: "video" | "audio"; mediaId: string; start: number; in: number; out: number;
   speed: number; reverse: boolean; opacity: number; scale: number; posX: number;
-  look: string; crop?: {x:number;y:number;w:number;h:number}; color?: Record<string,number>;
+  look: string; crop?: {x:number;y:number;w:number;h:number}; color?: Partial<Record<string,number>>;
 }
 export interface SimpleOverlay {
   text:string; x:number; y:number; size:number; color:string; bg:boolean;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeFoldTransition, appendFoldTransition, foldContinuitySummary, validFoldRegionGeometry, rememberActiveFoldSnapshot, forgetActiveFoldSnapshot, getActiveFoldBaseline } from "./fold-recording-evidence";
+import type { FoldTransitionEvidence } from "./fold-recording-evidence";
 
 const sample = { revision: 1, posture: "HALF_OPENED", hingeCount: 1, usableRegions: 2, layout: "vertical" };
 describe("fold events attached to capture", () => {
@@ -134,7 +135,7 @@ describe("stale fold baseline rejection", () => {
 describe("long fold recording evidence retention", () => {
   it("preserves the actual starting posture through over 120 different observations", () => {
     const start=normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
-    let events=[{...start,baseline:true as const}];
+    let events: FoldTransitionEvidence[]=[{...start,baseline:true as const}];
     for(let i=0;i<150;i++) {
       const update=normalizeFoldTransition({...sample,revision:i+2,
         regionGeometry:`0,0,${280+i},400;${285+i},0,280,400`},101+i)!;
@@ -168,7 +169,7 @@ describe("fold posture versus app-window resize reporting",()=>{
 describe("long recording keeps fold classification counts",()=>{
   it("retains the number of hinge and window-only changes after journal trimming",()=>{
     const start=normalizeFoldTransition({...sample,revision:1,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
-    let events=[{...start,baseline:true as const}];
+    let events: FoldTransitionEvidence[]=[{...start,baseline:true as const}];
     for(let i=1;i<=140;i++){
       const next=normalizeFoldTransition({...sample,revision:i+1,
         posture:i%2===0?"HALF_OPENED":"FLAT",

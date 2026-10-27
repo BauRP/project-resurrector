@@ -89,8 +89,8 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
     hingeCount: event["hingeCount"] as number,
     usableRegions: event["usableRegions"] as number,
     layout: event["layout"] as FoldTransitionEvidence["layout"],
-    regionGeometry: typeof event["regionGeometry"] === "string" ? event["regionGeometry"] : undefined,
-    baseline: event["baseline"] === true ? true : undefined,
+    ...(typeof event["regionGeometry"] === "string" ? {regionGeometry:event["regionGeometry"]} : {}),
+    ...(event["baseline"] === true ? {baseline:true as const} : {}),
   };
 }
 /** Avoid duplicate initial native topology callbacks or unbounded metadata. */

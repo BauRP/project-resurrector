@@ -78,7 +78,7 @@ export function loadEditorProject():RecoverableEditorProject {
     return sanitizeEditorProject(JSON.parse(raw));
   }catch{return sanitizeEditorProject(null);}
 }
-export function saveEditorProject(project:RecoverableEditorProject):boolean {
+export function saveEditorProject<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>}>(project:T):boolean {
   try {
     const raw=JSON.stringify(sanitizeEditorProject(project));
     if(raw.length>MAX_BYTES)return false;
