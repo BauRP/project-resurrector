@@ -223,6 +223,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     return ()=>{window.clearTimeout(timer);window.removeEventListener("pagehide",flush);
       document.removeEventListener("visibilitychange",onHidden);flush();};
   },[items,overlays,transitions,hidden,muted]);
+  // Keep the editor's strongly typed color controls while providing the
+  // renderer with an explicit plain numeric adjustment map.
+  const renderItems = useMemo(() => items.map(item => ({
+    ...item,
+    ...(item.color ? {color: Object.fromEntries(Object.entries(item.color)) as Record<string,number>} : {}),
+  })), [items]);
   const [trCat, setTrCat] = useState("basic"); const [ghost, setGhost] = useState<{ type: string; x: number; y: number } | null>(null); const [dropErr, setDropErr] = useState("");
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
   const monRef = useRef<HTMLDivElement>(null); const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
@@ -452,13 +458,13 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         if(config.videoCodec!=="VP8"||config.audioCodec!=="Opus"||
           config.resolution!=="720p"||config.fps!=="30")
           throw Error("Для склейки выберите VP8 / Opus, 720p и 30 FPS.");
-        const plan=planSequentialVideoRender(items,overlays,transitions.length,muted,hidden);
+        const plan=planSequentialVideoRender(renderItems,overlays,transitions.length,muted,hidden);
         const files=await Promise.all(plan.parts.map(part=>readPersistedClip(part.segment.mediaId)));
         if(signal.aborted)throw Error("Экспорт отменён");
         return renderSequentialVideoWebm(plan,files.map(file=>file.blob),config,signal,progress);
       }
       if (!choice.allowed) {
-        const plan=planSimpleVideoRender(items,overlays,transitions.length,
+        const plan=planSimpleVideoRender(renderItems,overlays,transitions.length,
           !!muted[`v${entry?.track}`],!!hidden[`v${entry?.track}`]);
         if(!entry)throw Error("Исходный клип не найден");
         if(config.videoCodec!=="VP8"||config.resolution!=="720p"||
