@@ -6,6 +6,7 @@ export interface NativeCaptureStatus {
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
  zoom?:number;maxZoom?:number;exposureIndex?:number;exposureMin?:number;exposureMax?:number;exposureStep?:number;
  torchAvailable?:boolean;torchEnabled?:boolean;
+ tapAfSupported?:boolean;tapAeSupported?:boolean;tapX?:number;tapY?:number;tapSubmitted?:boolean;
  manualFocusSupported?:boolean;autoFocusSupported?:boolean;focusMode?:string;focusDiopters?:number;maxFocusDiopters?:number;reportedFocusDiopters?:number;reportedAfState?:number;
 }
 export interface NativeCaptureBridge {
@@ -19,6 +20,7 @@ export interface NativeCaptureBridge {
  setControls(options:{zoom:number;exposureIndex:number}):Promise<NativeCaptureStatus>;
  setTorch(options:{enabled:boolean}):Promise<NativeCaptureStatus>;
  setFocus(options:{manual:boolean;diopters:number}):Promise<NativeCaptureStatus>;
+ tapToMeter(options:{x:number;y:number}):Promise<NativeCaptureStatus>;
  setPreviewVisible(options:{visible:boolean}):Promise<void>;
  requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
 }
