@@ -109,6 +109,12 @@ public class NativeCaptureService extends Service {
     private int requestedExposure = 0;
     private float exposureStep = 0f;
     private boolean torchAvailable, torchEnabled;
+    private boolean manualFocusSupported, autoFocusSupported;
+    private float maxFocusDiopters, requestedFocusDiopters;
+    private boolean manualFocus;
+    private int automaticAfMode = CaptureRequest.CONTROL_AF_MODE_OFF;
+    private volatile float reportedFocusDiopters = -1f;
+    private volatile int reportedAfState = -1;
 
     public static com.getcapacitor.JSObject previewFrame() {
         com.getcapacitor.JSObject result = new com.getcapacitor.JSObject();
@@ -135,6 +141,26 @@ public class NativeCaptureService extends Service {
         }
     }
     private void configureControlLimits(CameraCharacteristics characteristics) {
+        Float minimumDistance=characteristics.get(
+            CameraCharacteristics.LENS_INFO_MINIMUM_FOCUS_DISTANCE);
+        int[] afModes=characteristics.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES);
+        boolean hasAfOff=false, hasAuto=false, hasVideo=false, hasPicture=false;
+        if(afModes!=null)for(int candidate:afModes){
+            if(candidate==CaptureRequest.CONTROL_AF_MODE_OFF)hasAfOff=true;
+            if(candidate==CaptureRequest.CONTROL_AF_MODE_AUTO)hasAuto=true;
+            if(candidate==CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO)hasVideo=true;
+            if(candidate==CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE)hasPicture=true;
+        }
+        autoFocusSupported=hasAuto||hasVideo||hasPicture;
+        automaticAfMode=hasVideo?CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO:
+            hasPicture?CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE:
+            hasAuto?CaptureRequest.CONTROL_AF_MODE_AUTO:CaptureRequest.CONTROL_AF_MODE_OFF;
+        maxFocusDiopters=minimumDistance==null?0f:Math.max(0f,minimumDistance);
+        manualFocusSupported=hasAfOff && maxFocusDiopters>0f;
+        if(!manualFocusSupported)manualFocus=false;
+        requestedFocusDiopters=Math.max(0f,Math.min(requestedFocusDiopters,maxFocusDiopters));
+        reportedFocusDiopters=-1f;
+        reportedAfState=-1;
         Boolean flash=characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE);
         torchAvailable=Boolean.TRUE.equals(flash);
         if(!torchAvailable)torchEnabled=false;
@@ -151,6 +177,11 @@ public class NativeCaptureService extends Service {
             Math.min(requestedExposure,exposureRange.getUpper()));
     }
     private void setRequestControls(CaptureRequest.Builder request) {
+        if(request==null)return;
+        request.set(CaptureRequest.CONTROL_AF_MODE,
+            manualFocus?CaptureRequest.CONTROL_AF_MODE_OFF:automaticAfMode);
+        if(manualFocus && manualFocusSupported)
+            request.set(CaptureRequest.LENS_FOCUS_DISTANCE,requestedFocusDiopters);
         if(torchAvailable)request.set(CaptureRequest.FLASH_MODE,
             torchEnabled?CaptureRequest.FLASH_MODE_TORCH:CaptureRequest.FLASH_MODE_OFF);
         if (request==null)return;
@@ -209,6 +240,60 @@ public class NativeCaptureService extends Service {
             publish(state,"Невозможно включить фонарик: "+error.getMessage());
             return false;
         }
+    }
+    public static boolean setFocus(boolean manual,float diopters,
+        java.util.function.Consumer<Boolean> completed) {
+        synchronized(STATE_LOCK){
+            NativeCaptureService owner=runningInstance;
+            if(owner==null||owner.worker==null||
+              !("previewing".equals(state)||"recording".equals(state)||"paused".equals(state)))
+                return false;
+            if(manual && (!owner.manualFocusSupported || !Float.isFinite(diopters) ||
+                diopters<0f || diopters>owner.maxFocusDiopters))return false;
+            if(!manual && !owner.autoFocusSupported)return false;
+            return owner.worker.post(()->completed.accept(owner.applyFocus(manual,diopters)));
+        }
+    }
+    private boolean applyFocus(boolean manual,float diopters){
+        if(liveRequest==null||capture==null||camera==null||stopRequested)return false;
+        boolean previousMode=manualFocus;
+        float previousDistance=requestedFocusDiopters;
+        manualFocus=manual;
+        if(manual)requestedFocusDiopters=diopters;
+        try {
+            setRequestControls(liveRequest);
+            capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            publish(state,lastMessage);
+            return true;
+        }catch(Exception error){
+            manualFocus=previousMode;requestedFocusDiopters=previousDistance;
+            try{setRequestControls(liveRequest);}catch(Exception ignored){}
+            publish(state,"Не удалось установить фокус: "+error.getMessage());
+            return false;
+        }
+    }
+    private CameraCaptureSession.CaptureCallback captureFeedback(){
+        return new CameraCaptureSession.CaptureCallback(){
+            @Override public void onCaptureCompleted(CameraCaptureSession session,
+                CaptureRequest request,TotalCaptureResult result){
+                Float focus=result.get(CaptureResult.LENS_FOCUS_DISTANCE);
+                Integer af=result.get(CaptureResult.CONTROL_AF_STATE);
+                if(focus!=null)reportedFocusDiopters=focus;
+                if(af!=null)reportedAfState=af;
+                if(stabilizationResultSeen)return;
+                Integer eis=result.get(CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE);
+                Integer ois=result.get(CaptureResult.LENS_OPTICAL_STABILIZATION_MODE);
+                if(eis!=null||ois!=null){
+                    stabilizationResultSeen=true;
+                    chosenStabilization=eis!=null &&
+                        eis==CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE_ON
+                        ? "EIS CaptureResult ON" :
+                        ois!=null && ois==CaptureResult.LENS_OPTICAL_STABILIZATION_MODE_ON
+                        ? "OIS CaptureResult ON":"CaptureResult stabilization OFF";
+                    publish(state,lastMessage);
+                }
+            }
+        };
     }
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
@@ -269,6 +354,13 @@ public class NativeCaptureService extends Service {
             long elapsed = started > 0 ? Math.max(0L, end - started - excluded) : 0L;
             out.put("recordedDurationMs", "recording".equals(value) || "paused".equals(value)
                 ? elapsed : finished);
+            out.put("manualFocusSupported",runningInstance!=null && runningInstance.manualFocusSupported);
+            out.put("autoFocusSupported",runningInstance!=null && runningInstance.autoFocusSupported);
+            out.put("focusMode",runningInstance!=null && runningInstance.manualFocus?"manual":"auto");
+            out.put("focusDiopters",runningInstance==null?0f:runningInstance.requestedFocusDiopters);
+            out.put("maxFocusDiopters",runningInstance==null?0f:runningInstance.maxFocusDiopters);
+            out.put("reportedFocusDiopters",runningInstance==null?-1f:runningInstance.reportedFocusDiopters);
+            out.put("reportedAfState",runningInstance==null?-1:runningInstance.reportedAfState);
             out.put("torchAvailable",runningInstance != null && runningInstance.torchAvailable);
             out.put("torchEnabled",runningInstance != null && runningInstance.torchEnabled);
             out.put("zoom",runningInstance == null?1f:runningInstance.requestedZoom);
@@ -484,14 +576,14 @@ public class NativeCaptureService extends Service {
                             request.addTarget(previewReader.getSurface());
                             setRequestControls(request);
                             liveRequest=request;
-                            liveCallback=null;
+                            liveCallback=captureFeedback();
                             opened.createCaptureSession(Arrays.asList(previewReader.getSurface()),
                                 new CameraCaptureSession.StateCallback(){
                                     @Override public void onConfigured(CameraCaptureSession ready){
                                         if(token!=generation||stopRequested){ready.close();return;}
                                         capture=ready;
                                         try{
-                                            capture.setRepeatingRequest(request.build(),null,worker);
+                                            capture.setRepeatingRequest(request.build(),liveCallback,worker);
                                             if(openingTimeout!=null){worker.removeCallbacks(openingTimeout);openingTimeout=null;}
                                             publish("previewing","Камера готова к записи MP4");
                                         }catch(Exception error){fail(error);}
@@ -639,8 +731,7 @@ public class NativeCaptureService extends Service {
                         request.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
                         setRequestControls(request);
                         liveRequest=request;
-                        request.set(CaptureRequest.CONTROL_AF_MODE,
-                            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+
                         // Apply EIS OR OIS to the actual recorded Camera2 session
                         // when declared for this camera. CaptureResult confirms.
                         int[] eis = info.get(
@@ -674,30 +765,7 @@ public class NativeCaptureService extends Service {
                                     }
                                     capture = sessionHandle;
                                     try {
-                                        liveCallback=new CameraCaptureSession.CaptureCallback() {
-                                                @Override public void onCaptureCompleted(
-                                                    CameraCaptureSession session,
-                                                    CaptureRequest request,
-                                                    TotalCaptureResult result) {
-                                                    if (stabilizationResultSeen) return;
-                                                    Integer appliedEis = result.get(
-                                                        CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE);
-                                                    Integer appliedOis = result.get(
-                                                        CaptureResult.LENS_OPTICAL_STABILIZATION_MODE);
-                                                    if (appliedEis != null || appliedOis != null) {
-                                                        stabilizationResultSeen = true;
-                                                        chosenStabilization =
-                                                            appliedEis != null &&
-                                                            appliedEis == CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE_ON
-                                                                ? "EIS CaptureResult ON" :
-                                                            appliedOis != null &&
-                                                            appliedOis == CaptureResult.LENS_OPTICAL_STABILIZATION_MODE_ON
-                                                                ? "OIS CaptureResult ON" :
-                                                                "CaptureResult stabilization OFF";
-                                                        publish(state, lastMessage);
-                                                    }
-                                                }
-                                            };
+                                        liveCallback=captureFeedback();
                                         capture.setRepeatingRequest(request.build(),liveCallback,worker);
                                         if (openingTimeout != null) {
                                             worker.removeCallbacks(openingTimeout);
@@ -725,8 +793,7 @@ public class NativeCaptureService extends Service {
                                             CameraDevice.TEMPLATE_RECORD);
                                         only.addTarget(surface);
                                         only.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,fpsRange);
-                                        only.set(CaptureRequest.CONTROL_AF_MODE,
-                                            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+
                                         if (useEis) {
                                             only.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
                                                 CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON);
@@ -738,13 +805,13 @@ public class NativeCaptureService extends Service {
                                             CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
                                         setRequestControls(only);
                                         liveRequest=only;
-                                        liveCallback=null;
+                                        liveCallback=captureFeedback();
                                         opened.createCaptureSession(Arrays.asList(surface),
                                             new CameraCaptureSession.StateCallback() {
                                                 @Override public void onConfigured(CameraCaptureSession ready) {
                                                     capture=ready;
                                                     try {
-                                                        capture.setRepeatingRequest(only.build(),null,worker);
+                                                        capture.setRepeatingRequest(only.build(),liveCallback,worker);
                                                         if(openingTimeout!=null){
                                                             worker.removeCallbacks(openingTimeout);
                                                             openingTimeout=null;
