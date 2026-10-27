@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useCameraStore } from "@/lib/multicam-store";
+import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
 import { Button } from "@/components/ui/button";
