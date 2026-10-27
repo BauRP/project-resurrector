@@ -198,17 +198,47 @@ public class NativeCaptureService extends Service {
             .addAction(android.R.drawable.ic_media_pause, "Завершить запись", stopPending)
             .build();
     }
+    private void pauseRecording() {
+        if (!encoderStarted || encoderPaused || stopRequested || !"recording".equals(state)) return;
+        try {
+            encoder.pause();
+            encoderPaused = true;
+            pausedAtMs = System.currentTimeMillis();
+            publish("paused", "Нативная запись на паузе, Camera2 остаётся открытой");
+        } catch (RuntimeException error) {
+            publish("recording", "Пауза не поддерживается кодировщиком: " + error.getMessage());
+        }
+    }
+    private void resumeRecording() {
+        if (!encoderStarted || !encoderPaused || stopRequested || !"paused".equals(state)) return;
+        try {
+            encoder.resume();
+            totalPausedMs += Math.max(0L, System.currentTimeMillis() - pausedAtMs);
+            pausedAtMs = 0L;
+            encoderPaused = false;
+            publish("recording", "Нативная запись возобновлена в тот же MP4");
+        } catch (RuntimeException error) {
+            publish("paused", "Не удалось возобновить запись: " + error.getMessage());
+        }
+    }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopRequested = true;
             if (worker != null) worker.post(this::finish);
             return START_NOT_STICKY;
         }
+        if (intent != null && (ACTION_PAUSE.equals(intent.getAction()) ||
+            ACTION_RESUME.equals(intent.getAction()))) {
+            if (worker != null) worker.post(ACTION_PAUSE.equals(intent.getAction())
+                ? this::pauseRecording : this::resumeRecording);
+            return START_NOT_STICKY;
+        }
         if (intent == null || !ACTION_START.equals(intent.getAction())) {
             stopSelf(); return START_NOT_STICKY;
         }
         if (camera != null || encoder != null || "starting".equals(state) ||
-            "recording".equals(state)) return START_NOT_STICKY;
+            "recording".equals(state) || "paused".equals(state) ||
+            "stopping".equals(state)) return START_NOT_STICKY;
         wantAudio = intent.getBooleanExtra("audio", false);
         int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
         if (wantAudio) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
@@ -226,6 +256,7 @@ public class NativeCaptureService extends Service {
             savedPath = ""; savedUri = ""; chosenStabilization = "unknown";
             stabilizationResultSeen = false; recordingStartedAt = 0L;
             recordedOrientation = -1;
+            pausedAtMs = 0L; totalPausedMs = 0L; finishedDurationMs = 0L;
         }
         publish("starting", "Открываю Camera2 и кодировщик");
         final int session = ++generation;
@@ -233,6 +264,9 @@ public class NativeCaptureService extends Service {
         final int width = intent.getIntExtra("width", 1920);
         final int height = intent.getIntExtra("height", 1080);
         final int fps = intent.getIntExtra("fps", 30);
+        selectedCameraId = id == null ? "" : id;
+        selectedWidth = width; selectedHeight = height; selectedFps = fps;
+        publish("starting", "Открываю Camera2 и кодировщик");
         // Camera2 OEM drivers may never invoke the open callback. Stop a hung
         // foreground session instead of leaving the camera busy indefinitely.
         openingTimeout = () -> {
@@ -387,6 +421,7 @@ public class NativeCaptureService extends Service {
                                         }
                                         encoder.start();
                                         encoderStarted = true;
+                                        encoderPaused = false;
                                         recordingStartedAt = System.currentTimeMillis();
                                         publish("recording",
                                             "Нативная Camera2 запись запущена. Контроль через уведомление.");
@@ -449,6 +484,9 @@ public class NativeCaptureService extends Service {
             openingTimeout = null;
         }
         boolean previouslyRecording = encoderStarted;
+        long endedAt = encoderPaused ? pausedAtMs : System.currentTimeMillis();
+        finishedDurationMs = recordingStartedAt > 0L
+            ? Math.max(0L, endedAt - recordingStartedAt - totalPausedMs) : 0L;
         if (!"error".equals(state)) publish("stopping", "Закрываю и сохраняю MP4");
         releaseCamera();
         boolean valid = false;
@@ -463,6 +501,7 @@ public class NativeCaptureService extends Service {
                 encoder = null;
             }
             encoderStarted = false;
+            encoderPaused = false;
         }
         if (valid && media != null) {
             savedPath = media.getAbsolutePath();
