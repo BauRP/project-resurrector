@@ -54,6 +54,7 @@ import java.util.Arrays;
  */
 public class NativeCaptureService extends Service {
     public static final String ACTION_START = "app.lovable.multicampov.NATIVE_START";
+    public static final String ACTION_PREVIEW = "app.lovable.multicampov.NATIVE_PREVIEW";
     public static final String ACTION_STOP = "app.lovable.multicampov.NATIVE_STOP";
     public static final String ACTION_PAUSE = "app.lovable.multicampov.NATIVE_PAUSE";
     public static final String ACTION_RESUME = "app.lovable.multicampov.NATIVE_RESUME";
@@ -114,7 +115,7 @@ public class NativeCaptureService extends Service {
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
             return runningInstance != null &&
-              ("starting".equals(state) || "recording".equals(state) || "paused".equals(state) || "stopping".equals(state));
+              ("starting".equals(state) || "previewing".equals(state) || "recording".equals(state) || "paused".equals(state) || "stopping".equals(state));
         }
     }
     public static com.getcapacitor.JSObject status(Context context) {
@@ -153,6 +154,10 @@ public class NativeCaptureService extends Service {
                     value = "interrupted";
                     message = "Android завершил процесс записи. Целостность файла не подтверждена.";
                 }
+            }
+            if (runningInstance == null && "previewing".equals(value)) {
+                value = "idle";
+                message = "Предпросмотр остановлен при закрытии Android-процесса";
             }
             out.put("state", value);
             out.put("message", message);
@@ -260,10 +265,15 @@ public class NativeCaptureService extends Service {
                 ? this::pauseRecording : this::resumeRecording);
             return START_NOT_STICKY;
         }
+        if (intent != null && ACTION_PREVIEW.equals(intent.getAction())) {
+            startPreview(intent);
+            return START_NOT_STICKY;
+        }
         if (intent == null || !ACTION_START.equals(intent.getAction())) {
             stopSelf(); return START_NOT_STICKY;
         }
-        if (camera != null || encoder != null || "starting".equals(state) ||
+        final boolean handoff = "previewing".equals(state) && camera != null;
+        if ((!handoff && camera != null) || encoder != null || "starting".equals(state) ||
             "recording".equals(state) || "paused".equals(state) ||
             "stopping".equals(state)) return START_NOT_STICKY;
         wantAudio = intent.getBooleanExtra("audio", false);
@@ -301,7 +311,10 @@ public class NativeCaptureService extends Service {
                 fail(new IllegalStateException("Истекло время открытия Camera2"));
         };
         worker.postDelayed(openingTimeout, 12000L);
-        worker.post(() -> open(session, id, width, height, fps));
+        worker.post(() -> {
+            if (handoff) releaseCamera();
+            if (session == generation && !stopRequested) open(session, id, width, height, fps);
+        });
         return START_NOT_STICKY;
     }
     private void open(int session, String id, int width, int height, int fps) {
@@ -408,7 +421,9 @@ public class NativeCaptureService extends Service {
             manager.openCamera(id, new CameraDevice.StateCallback() {
                 @Override public void onOpened(CameraDevice opened) {
                     if (session != generation || stopRequested) {
-                        opened.close(); finish(); return;
+                        opened.close();
+                        if (stopRequested && session == generation) finish();
+                        return;
                     }
                     camera = opened;
                     try {
@@ -573,6 +588,15 @@ public class NativeCaptureService extends Service {
         finally { try {reader.release();}catch(Exception ignored) {} }
     }
     private void finish() {
+        if ("previewing".equals(state) && encoder == null) {
+            generation++;
+            if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+            releaseCamera();
+            publish("idle", "Предпросмотр остановлен, MP4 не создавался");
+            stopForeground(true);
+            stopSelf();
+            return;
+        }
         if (encoder == null && camera == null) { stopSelf(); return; }
         generation++;
         if (openingTimeout != null) {
