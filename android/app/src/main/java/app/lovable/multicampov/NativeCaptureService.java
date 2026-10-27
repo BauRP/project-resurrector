@@ -80,6 +80,15 @@ public class NativeCaptureService extends Service {
     private CameraCaptureSession capture;
     private MediaRecorder encoder;
     private ImageReader previewReader;
+    private volatile boolean previewConsumerVisible;
+    public static void setPreviewConsumerVisible(boolean visible) {
+        synchronized (STATE_LOCK) {
+            if(runningInstance!=null) {
+                runningInstance.previewConsumerVisible=visible;
+                if(!visible)runningInstance.latestPreviewJpeg=null;
+            }
+        }
+    }
     private volatile String latestPreviewJpeg;
     private volatile long latestPreviewAt;
     private File media;
@@ -381,7 +390,8 @@ public class NativeCaptureService extends Service {
                         Image frame = null;
                         try {
                             frame = reader.acquireLatestImage();
-                            if (frame != null && System.currentTimeMillis()-latestPreviewAt>=350) {
+                            if (frame != null && previewConsumerVisible &&
+                                System.currentTimeMillis()-latestPreviewAt>=350) {
                                 String jpeg = NativePreviewFrames.compressYuv420(frame);
                                 if (jpeg != null) {
                                     latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();
