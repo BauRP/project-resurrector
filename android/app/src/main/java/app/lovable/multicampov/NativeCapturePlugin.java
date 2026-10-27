@@ -55,6 +55,16 @@ public class NativeCapturePlugin extends Plugin {
     call.reject("Ручной или автоматический фокус не поддерживается объективом");
   }
  }
+ @PluginMethod public void tapToMeter(PluginCall call) {
+  Double x=call.getDouble("x"), y=call.getDouble("y");
+  if(x==null||y==null||!NativeCaptureService.tapToMeter(x.floatValue(),y.floatValue(),
+     applied->{
+      if(applied)call.resolve(NativeCaptureService.status(getContext()));
+      else call.reject("Camera2 не принял точку фокусировки/экспозамера");
+     })){
+    call.reject("Фокусировка или экспозамер по касанию недоступны для текущей камеры");
+  }
+ }
  @PluginMethod public void status(PluginCall call){
   call.resolve(NativeCaptureService.status(getContext()));
  }
