@@ -34,6 +34,16 @@ public class NativeCapturePlugin extends Plugin {
     call.reject("Увеличение или экспозиция недоступны для этого Camera2 режима");
   }
  }
+ @PluginMethod public void setTorch(PluginCall call) {
+  Boolean enabled=call.getBoolean("enabled");
+  if(enabled==null || !NativeCaptureService.updateTorch(enabled,
+     applied->{
+      if(applied)call.resolve(NativeCaptureService.status(getContext()));
+      else call.reject("Camera2 не подтвердил включение фонарика");
+     })){
+    call.reject("Фонарик недоступен для выбранной Camera2 камеры");
+  }
+ }
  @PluginMethod public void status(PluginCall call){
   call.resolve(NativeCaptureService.status(getContext()));
  }
