@@ -12,6 +12,7 @@ export interface NativeCaptureBridge {
  resume():Promise<NativeCaptureStatus>;
  status():Promise<NativeCaptureStatus>;
  previewFrame():Promise<{jpeg:string}>;
+ setPreviewVisible(options:{visible:boolean}):Promise<void>;
  requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
 }
 export const nativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
