@@ -5,6 +5,7 @@ import { useMulticamStore, type CaptureMode, type ToneProfile } from "@/lib/mult
 import { HelpDot } from "./Help";
 import { MultiCamNative, isNative, thermalLabel, type NativeCapabilities } from "@/lib/native";
 import { recordModeEvidence } from "@/lib/camera-passport";
+import { assessTrackMode } from "@/lib/capture-mode-transaction";
 
 const RES: Record<string, [number, number]> = { "720p": [1280, 720], "1080p": [1920, 1080], "2K": [2560, 1440], "4K": [3840, 2160] };
 const FPS = [24, 30, 60];
@@ -28,6 +29,8 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   const [thermal, setThermal] = useState<string>("Недоступно в браузере");
   const peakRef = useRef(-90);
   const configRevision = useRef(0);
+  const applyingMode = useRef(false);
+  useEffect(() => () => { configRevision.current++; }, [stream]);
   const m = s.capMatrix?.[s.facing] ?? null; const NS = "Не поддерживается";
   const update = (patch: Partial<typeof c>) => s.set({ capture: { ...c, ...patch } });
   const warn = (msg: string) => { setNotice(msg); window.setTimeout(() => setNotice(""), 3500); };
@@ -96,37 +99,63 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   const blocked = (what: string) => warn(`${what}: не поддерживается ${s.facing === "front" ? "фронтальной" : "основной"} камерой — выбор заблокирован для защиты от перегрева и сбоев.`);
 
   const applyTrack = (patch: Partial<typeof c>) => {
+    // Do not submit parallel hardware configurations. The driver might
+    // apply an old request after a newer UI choice or camera replacement.
+    if (applyingMode.current || s.recording) {
+      warn("Настройки камеры заняты или идёт запись. Дождитесь завершения.");
+      return;
+    }
     const next = { ...c, ...patch };
     const revision = ++configRevision.current;
-    const track = stream?.getVideoTracks()[0]; if (!track) { blocked("Камера"); return; }
-    const previous = track.getConstraints();
+    const track = stream?.getVideoTracks()[0];
+    if (!track || track.readyState !== "live") { blocked("Камера"); return; }
+    let previous: MediaTrackConstraints;
+    try { previous = track.getConstraints(); }
+    catch { warn("Не удалось прочитать предыдущий режим камеры."); return; }
+    applyingMode.current = true;
+    const current = () => revision === configRevision.current && track.readyState === "live";
+    const rollback = async () => {
+      if (!current()) return;
+      try { await track.applyConstraints(previous); }
+      catch { if (current()) warn("Откат камеры не подтверждён. Переоткройте видоискатель."); }
+    };
     const [w, h] = RES[next.resolution]!;
     const advanced: Record<string, unknown>[] = [];
     if (next.iso !== null) advanced.push({ exposureMode: "manual", iso: next.iso });
     if (next.exposure !== null) advanced.push({ exposureMode: "manual", exposureTime: next.exposure });
     if (next.focus !== null) advanced.push({ focusMode: "manual", focusDistance: next.focus });
-    void track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).then(() => {
-      if (revision !== configRevision.current) return;
-      const applied = track.getSettings();
+    void track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).then(async () => {
+      if (!current()) return;
+      let applied: MediaTrackSettings;
+      try { applied = track.getSettings(); }
+      catch { warn("Камера не сообщает фактические настройки; подтверждение невозможно."); return; }
       const captureKey = applied.deviceId || track.id || "webview-unknown";
       const requestedGeometry = "resolution" in patch || "fps" in patch;
       const actualW = Math.max(applied.width ?? 0, applied.height ?? 0);
       const actualH = Math.min(applied.width ?? 0, applied.height ?? 0);
       const actualFps = applied.frameRate;
-      const mismatch = requestedGeometry && (actualW !== Math.max(w, h) || actualH !== Math.min(w, h) || (actualFps !== undefined && Math.abs(actualFps - next.fps) > 1));
+      const modeState = assessTrackMode({width:w,height:h,fps:next.fps},applied);
+      const mismatch = requestedGeometry && modeState === "rejected";
       if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { ...(applied.width !== undefined ? {width:applied.width} : {}),
           ...(applied.height !== undefined ? {height:applied.height} : {}),
-          ...(actualFps !== undefined ? {fps:actualFps} : {}) }, state: mismatch ? "rejected" : "applied", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : "WebView track setting applied; recorded output not verified" });
+          ...(actualFps !== undefined ? {fps:actualFps} : {}) }, state: requestedGeometry && modeState === "confirmed" ? "applied" : "unknown", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : modeState === "unknown" ? "WebView did not report enough applied mode settings" : "WebView track settings confirmed; encoded output not verified" });
       if (mismatch) {
         warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
-        void track.applyConstraints(previous).catch(() => warn("Не удалось восстановить предыдущие настройки камеры"));
+        await rollback();
         return;
       }
-      update(patch);
-    }).catch(() => {
-      if (revision !== configRevision.current) return;
+      if (requestedGeometry && modeState === "unknown") {
+        warn("Система не раскрыла применённый режим. Старые настройки сохранены в интерфейсе.");
+        await rollback();
+        return;
+      }
+      if (current()) update(patch);
+    }).catch(async () => {
+      if (!current()) return;
       blocked("Этот режим");
-      void track.applyConstraints(previous).catch(() => warn("Откат режима не удался. Проверьте активную камеру."));
+      await rollback();
+    }).finally(() => {
+      applyingMode.current = false;
     });
   };
 
