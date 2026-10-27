@@ -44,6 +44,17 @@ public class NativeCapturePlugin extends Plugin {
     call.reject("Фонарик недоступен для выбранной Camera2 камеры");
   }
  }
+ @PluginMethod public void setFocus(PluginCall call) {
+  Boolean manual=call.getBoolean("manual");
+  Double distance=call.getDouble("diopters",0.0);
+  if(manual==null||distance==null ||
+      !NativeCaptureService.setFocus(manual,distance.floatValue(),applied->{
+        if(applied)call.resolve(NativeCaptureService.status(getContext()));
+        else call.reject("Camera2 не принял выбранную фокусировку");
+      })){
+    call.reject("Ручной или автоматический фокус не поддерживается объективом");
+  }
+ }
  @PluginMethod public void status(PluginCall call){
   call.resolve(NativeCaptureService.status(getContext()));
  }
