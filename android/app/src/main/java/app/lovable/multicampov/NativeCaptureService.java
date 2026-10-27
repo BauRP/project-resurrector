@@ -235,6 +235,12 @@ public class NativeCaptureService extends Service {
             long elapsed = started > 0 ? Math.max(0L, end - started - excluded) : 0L;
             out.put("recordedDurationMs", "recording".equals(value) || "paused".equals(value)
                 ? elapsed : finished);
+            out.put("zoom",runningInstance == null?1f:runningInstance.requestedZoom);
+            out.put("maxZoom",runningInstance == null?1f:runningInstance.maxDigitalZoom);
+            out.put("exposureIndex",runningInstance == null?0:runningInstance.requestedExposure);
+            out.put("exposureMin",runningInstance == null?0:runningInstance.exposureRange.getLower());
+            out.put("exposureMax",runningInstance == null?0:runningInstance.exposureRange.getUpper());
+            out.put("exposureStep",runningInstance == null?0f:runningInstance.exposureStep);
             out.put("orientationDegrees", runningInstance == null
                 ? context.getSharedPreferences(STORE, MODE_PRIVATE).getInt("orientation", -1)
                 : recordedOrientation);
@@ -407,6 +413,7 @@ public class NativeCaptureService extends Service {
             try {
                 CameraManager manager=(CameraManager)getSystemService(Context.CAMERA_SERVICE);
                 CameraCharacteristics characteristics=manager.getCameraCharacteristics(id);
+                configureControlLimits(characteristics);
                 StreamConfigurationMap config=characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
                 Size[] sizes=config==null?null:config.getOutputSizes(ImageFormat.YUV_420_888);
@@ -439,6 +446,9 @@ public class NativeCaptureService extends Service {
                             CaptureRequest.Builder request=opened.createCaptureRequest(
                                 CameraDevice.TEMPLATE_PREVIEW);
                             request.addTarget(previewReader.getSurface());
+                            setRequestControls(request);
+                            liveRequest=request;
+                            liveCallback=null;
                             opened.createCaptureSession(Arrays.asList(previewReader.getSurface()),
                                 new CameraCaptureSession.StateCallback(){
                                     @Override public void onConfigured(CameraCaptureSession ready){
@@ -488,6 +498,7 @@ public class NativeCaptureService extends Service {
                 throw new SecurityException("Разрешение микрофона отсутствует");
             CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
             CameraCharacteristics info = manager.getCameraCharacteristics(id);
+            configureControlLimits(info);
             StreamConfigurationMap map =
                 info.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             boolean supported = false;
@@ -590,6 +601,8 @@ public class NativeCaptureService extends Service {
                         request.addTarget(surface);
                         if(previewReader!=null)request.addTarget(previewReader.getSurface());
                         request.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
+                        setRequestControls(request);
+                        liveRequest=request;
                         request.set(CaptureRequest.CONTROL_AF_MODE,
                             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
                         // Apply EIS OR OIS to the actual recorded Camera2 session
@@ -722,6 +735,8 @@ public class NativeCaptureService extends Service {
         finish();
     }
     private void releaseCamera() {
+        liveRequest=null;
+        liveCallback=null;
         latestPreviewJpeg = null; latestPreviewAt = 0;
         if(previewReader!=null){try{previewReader.close();}catch(Exception ignored){}previewReader=null;}
         if (capture != null) {
