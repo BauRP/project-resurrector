@@ -69,7 +69,7 @@ export function NativeRecordingPanel(){
      onChange={e=>setAudio(e.target.checked)}/>Записать звук</label>
    </div>
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""}</p>
-   {status&&<p>Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
+   {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {error&&<p role="alert" className="text-destructive">{error}</p>}
    <div className="flex gap-2">
     <Button disabled={busy||active||!camera} onClick={()=>void start()}>Начать нативную запись</Button>
