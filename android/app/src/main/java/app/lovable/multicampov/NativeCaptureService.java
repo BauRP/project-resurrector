@@ -688,6 +688,9 @@ public class NativeCaptureService extends Service {
                                             CameraDevice.TEMPLATE_RECORD);
                                         only.addTarget(surface);
                                         only.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,fpsRange);
+                                        setRequestControls(only);
+                                        liveRequest=only;
+                                        liveCallback=null;
                                         opened.createCaptureSession(Arrays.asList(surface),
                                             new CameraCaptureSession.StateCallback() {
                                                 @Override public void onConfigured(CameraCaptureSession ready) {
