@@ -130,6 +130,10 @@ export function NativeRecordingPanel(){
           onChange={e=>void adjust(status.zoom??1,Number(e.target.value))}/>
       </label>
    </div>}
+   {active&&status?.torchAvailable&&<Button variant="outline" className="w-full"
+     onClick={()=>void bridge.setTorch({enabled:!status.torchEnabled}).then(setStatus).catch(e=>setError(String(e)))}>
+      {status.torchEnabled?"Выключить фонарик":"Включить фонарик"}
+    </Button>}
    {error&&<p role="alert" className="text-destructive">{error}</p>}
    <div className="flex flex-wrap gap-2">
     <Button variant="outline" disabled={busy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
