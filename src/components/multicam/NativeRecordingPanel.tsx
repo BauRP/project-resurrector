@@ -35,6 +35,11 @@ export function NativeRecordingPanel(){
  useEffect(()=>{
   if(!isNative())return;
   let live=true,inFlight=false;
+  const enable=()=>void bridge.setPreviewVisible({visible:true}).catch(()=>undefined);
+  const disable=()=>void bridge.setPreviewVisible({visible:false}).catch(()=>undefined);
+  enable();
+  const onVisibility=()=>{if(document.hidden)disable();else enable();};
+  document.addEventListener("visibilitychange",onVisibility);
   const read=async()=>{
     if(!live||inFlight)return;
     inFlight=true;
@@ -46,7 +51,7 @@ export function NativeRecordingPanel(){
   };
   void read();
   const timer=window.setInterval(()=>{void read();},600);
-  return ()=>{live=false;window.clearInterval(timer);};
+  return ()=>{live=false;window.clearInterval(timer);document.removeEventListener("visibilitychange",onVisibility);disable();};
  },[]);
  if(!isNative())return null;
  const current=cameras.find(x=>x.cameraId===camera);
