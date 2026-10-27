@@ -39,6 +39,20 @@ public class NativeCapturePlugin extends Plugin {
    call.resolve(NativeCaptureService.status(getContext()));
   }catch(Exception error){call.reject("Служба записи недоступна: "+error.getMessage());}
  }
+ @PluginMethod public void pause(PluginCall call) {
+  if (!NativeCaptureService.isRunning()) {call.reject("Нативная запись не активна");return;}
+  Intent intent=new Intent(getContext(),NativeCaptureService.class);
+  intent.setAction(NativeCaptureService.ACTION_PAUSE);
+  try {getContext().startService(intent);call.resolve(NativeCaptureService.status(getContext()));}
+  catch(Exception error){call.reject("Пауза недоступна: "+error.getMessage());}
+ }
+ @PluginMethod public void resume(PluginCall call) {
+  if (!NativeCaptureService.isRunning()) {call.reject("Нативная запись не активна");return;}
+  Intent intent=new Intent(getContext(),NativeCaptureService.class);
+  intent.setAction(NativeCaptureService.ACTION_RESUME);
+  try {getContext().startService(intent);call.resolve(NativeCaptureService.status(getContext()));}
+  catch(Exception error){call.reject("Продолжение недоступно: "+error.getMessage());}
+ }
  @PluginMethod public void stop(PluginCall call){
   if(!NativeCaptureService.isRunning()){call.resolve(NativeCaptureService.status(getContext()));return;}
   Intent intent=new Intent(getContext(),NativeCaptureService.class);
