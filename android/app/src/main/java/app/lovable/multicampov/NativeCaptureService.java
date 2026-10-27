@@ -34,6 +34,7 @@ import android.provider.MediaStore;
 import android.util.Range;
 import android.util.Size;
 import android.view.Surface;
+import android.view.WindowManager;
 import androidx.core.app.NotificationCompat;
 import java.io.File;
 import java.io.FileInputStream;
@@ -62,6 +63,7 @@ public class NativeCaptureService extends Service {
     private static String chosenStabilization = "unknown";
     private static boolean stabilizationResultSeen = false;
     private static long recordingStartedAt = 0L;
+    private static int recordedOrientation = -1;
 
     private HandlerThread workerThread;
     private Handler worker;
@@ -74,6 +76,7 @@ public class NativeCaptureService extends Service {
     private boolean wantAudio;
     private boolean interruptedByCamera;
     private int generation = 0;
+    private Runnable openingTimeout;
 
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
@@ -111,6 +114,9 @@ public class NativeCaptureService extends Service {
             out.put("state", value);
             out.put("message", message);
             out.put("startedAt", started);
+            out.put("orientationDegrees", runningInstance == null
+                ? context.getSharedPreferences(STORE, MODE_PRIVATE).getInt("orientation", -1)
+                : recordedOrientation);
             out.put("stabilization", stab);
             out.put("stabilizationCaptureResultObserved", observed);
             out.put("savedBytes", !path.isEmpty() && new File(path).isFile()
@@ -131,6 +137,7 @@ public class NativeCaptureService extends Service {
                 .putString("stabilization", chosenStabilization)
                 .putBoolean("stabilizationObserved", stabilizationResultSeen)
                 .putLong("started", recordingStartedAt)
+                .putInt("orientation", recordedOrientation)
                 .putBoolean("recordAudio", wantAudio).apply();
         }
     }
@@ -186,6 +193,7 @@ public class NativeCaptureService extends Service {
         synchronized (STATE_LOCK) {
             savedPath = ""; savedUri = ""; chosenStabilization = "unknown";
             stabilizationResultSeen = false; recordingStartedAt = 0L;
+            recordedOrientation = -1;
         }
         publish("starting", "Открываю Camera2 и кодировщик");
         final int session = ++generation;
@@ -193,6 +201,13 @@ public class NativeCaptureService extends Service {
         final int width = intent.getIntExtra("width", 1920);
         final int height = intent.getIntExtra("height", 1080);
         final int fps = intent.getIntExtra("fps", 30);
+        // Camera2 OEM drivers may never invoke the open callback. Stop a hung
+        // foreground session instead of leaving the camera busy indefinitely.
+        openingTimeout = () -> {
+            if (session == generation && !encoderStarted && !stopRequested)
+                fail(new IllegalStateException("Истекло время открытия Camera2"));
+        };
+        worker.postDelayed(openingTimeout, 12000L);
         worker.post(() -> open(session, id, width, height, fps));
         return START_NOT_STICKY;
     }
@@ -239,6 +254,23 @@ public class NativeCaptureService extends Service {
                 encoder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);
                 encoder.setAudioEncodingBitRate(128000);
                 encoder.setAudioSamplingRate(44100);
+            }
+            // The orientation hint is frozen at the beginning of each MP4;
+            // later Activity rotation or fold geometry never rewrites frames.
+            Integer sensor = info.get(CameraCharacteristics.SENSOR_ORIENTATION);
+            int sensorDegrees = sensor == null ? 0 : sensor;
+            WindowManager window = (WindowManager)getSystemService(Context.WINDOW_SERVICE);
+            int rotation = window == null ? Surface.ROTATION_0 : window.getDefaultDisplay().getRotation();
+            int screenDegrees = rotation == Surface.ROTATION_90 ? 90 :
+                rotation == Surface.ROTATION_180 ? 180 :
+                rotation == Surface.ROTATION_270 ? 270 : 0;
+            Integer lens = info.get(CameraCharacteristics.LENS_FACING);
+            boolean front = lens != null && lens == CameraCharacteristics.LENS_FACING_FRONT;
+            int orientation = ((front ? sensorDegrees + screenDegrees :
+                sensorDegrees - screenDegrees) % 360 + 360) % 360;
+            if (orientation % 90 == 0) {
+                encoder.setOrientationHint(orientation);
+                recordedOrientation = orientation;
             }
             encoder.setVideoSize(width,height);
             encoder.setVideoFrameRate(fps);
@@ -317,6 +349,10 @@ public class NativeCaptureService extends Service {
                                                     }
                                                 }
                                             }, worker);
+                                        if (openingTimeout != null) {
+                                            worker.removeCallbacks(openingTimeout);
+                                            openingTimeout = null;
+                                        }
                                         encoder.start();
                                         encoderStarted = true;
                                         recordingStartedAt = System.currentTimeMillis();
@@ -376,6 +412,10 @@ public class NativeCaptureService extends Service {
     private void finish() {
         if (encoder == null && camera == null) { stopSelf(); return; }
         generation++;
+        if (openingTimeout != null) {
+            worker.removeCallbacks(openingTimeout);
+            openingTimeout = null;
+        }
         boolean previouslyRecording = encoderStarted;
         if (!"error".equals(state)) publish("stopping", "Закрываю и сохраняю MP4");
         releaseCamera();
