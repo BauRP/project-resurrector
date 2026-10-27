@@ -83,6 +83,11 @@ export function NativeRecordingPanel(){
   try{setStatus(status?.state==="paused"?await bridge.resume():await bridge.pause());}
   catch(e){setError(String(e));}finally{setBusy(false);}
  };
+ const adjust=async(zoom:number,exposureIndex:number)=>{
+  if(busy)return;
+  try{setStatus(await bridge.setControls({zoom,exposureIndex}));setError("");}
+  catch(e){setError(String(e));}
+ };
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
@@ -113,6 +118,18 @@ export function NativeRecordingPanel(){
    </div>
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
+   {active&&status&&<div className="grid grid-cols-2 gap-3 rounded-lg border border-border p-2">
+      <label className="space-y-1">Увеличение: {(status.zoom??1).toFixed(1)}×
+        <input type="range" className="w-full" min={1} max={Math.max(1,status.maxZoom??1)}
+          step={0.1} value={status.zoom??1}
+          onChange={e=>void adjust(Number(e.target.value),status.exposureIndex??0)}/>
+      </label>
+      <label className="space-y-1">Экспозиция: {((status.exposureIndex??0)*(status.exposureStep??0)).toFixed(1)} EV
+        <input type="range" className="w-full" min={status.exposureMin??0}
+          max={status.exposureMax??0} step={1} value={status.exposureIndex??0}
+          onChange={e=>void adjust(status.zoom??1,Number(e.target.value))}/>
+      </label>
+   </div>}
    {error&&<p role="alert" className="text-destructive">{error}</p>}
    <div className="flex flex-wrap gap-2">
     <Button variant="outline" disabled={busy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
