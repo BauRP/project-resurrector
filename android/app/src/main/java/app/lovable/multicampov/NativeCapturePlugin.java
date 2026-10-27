@@ -25,6 +25,22 @@ public class NativeCapturePlugin extends Plugin {
  @PluginMethod public void status(PluginCall call){
   call.resolve(NativeCaptureService.status(getContext()));
  }
+ @PluginMethod public void startPreview(PluginCall call) {
+  if(getPermissionState("camera")!=com.getcapacitor.PermissionState.GRANTED){
+   call.reject("Разрешите камеру для предпросмотра");return;
+  }
+  if(NativeCaptureService.isRunning()){
+   call.reject("Камера уже занята нативной сессией");return;
+  }
+  String id=call.getString("cameraId");
+  if(id==null||id.isEmpty()){call.reject("Выберите объектив");return;}
+  Intent intent=new Intent(getContext(),NativeCaptureService.class);
+  intent.setAction(NativeCaptureService.ACTION_PREVIEW);
+  intent.putExtra("cameraId",id);
+  try{ContextCompat.startForegroundService(getContext(),intent);
+   call.resolve(NativeCaptureService.status(getContext()));
+  }catch(Exception error){call.reject("Не удалось открыть предпросмотр: "+error.getMessage());}
+ }
  @PluginMethod public void start(PluginCall call){
   boolean audio=Boolean.TRUE.equals(call.getBoolean("audio",false));
   if(getPermissionState("camera")!=com.getcapacitor.PermissionState.GRANTED ||
