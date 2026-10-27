@@ -23,6 +23,10 @@ import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.MediaRecorder;
+import android.media.ImageReader;
+import android.media.Image;
+import android.graphics.ImageFormat;
+import java.util.ArrayList;
 import android.media.MediaMetadataRetriever;
 import android.net.Uri;
 import android.os.Build;
@@ -75,6 +79,9 @@ public class NativeCaptureService extends Service {
     private CameraDevice camera;
     private CameraCaptureSession capture;
     private MediaRecorder encoder;
+    private ImageReader previewReader;
+    private volatile String latestPreviewJpeg;
+    private volatile long latestPreviewAt;
     private File media;
     private boolean encoderStarted;
     private boolean encoderPaused;
@@ -84,6 +91,17 @@ public class NativeCaptureService extends Service {
     private int generation = 0;
     private Runnable openingTimeout;
 
+    public static com.getcapacitor.JSObject previewFrame() {
+        com.getcapacitor.JSObject result = new com.getcapacitor.JSObject();
+        synchronized (STATE_LOCK) {
+            NativeCaptureService service = runningInstance;
+            if (service != null && service.latestPreviewJpeg != null
+                && System.currentTimeMillis() - service.latestPreviewAt < 3000) {
+                result.put("jpeg", service.latestPreviewJpeg);
+            } else result.put("jpeg", "");
+        }
+        return result;
+    }
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
             return runningInstance != null &&
@@ -345,6 +363,38 @@ public class NativeCaptureService extends Service {
             encoder.setOutputFile(media.getAbsolutePath());
             encoder.prepare();
             final Surface surface = encoder.getSurface();
+            final ArrayList<Surface> outputs = new ArrayList<>();
+            outputs.add(surface);
+            try {
+                Size[] choices = map == null ? null : map.getOutputSizes(ImageFormat.YUV_420_888);
+                Size small = null;
+                if (choices != null) for (Size candidate : choices)
+                    if (candidate.getWidth() >= 160 && candidate.getHeight() >= 120 &&
+                        candidate.getWidth() <= 640 && candidate.getHeight() <= 480 &&
+                        candidate.getWidth() % 2 == 0 && candidate.getHeight() % 2 == 0 &&
+                        (small == null || candidate.getWidth()*candidate.getHeight() >
+                         small.getWidth()*small.getHeight())) small = candidate;
+                if (small != null) {
+                    previewReader = ImageReader.newInstance(small.getWidth(),small.getHeight(),
+                        ImageFormat.YUV_420_888,2);
+                    previewReader.setOnImageAvailableListener(reader -> {
+                        Image frame = null;
+                        try {
+                            frame = reader.acquireLatestImage();
+                            if (frame != null && System.currentTimeMillis()-latestPreviewAt>=350) {
+                                String jpeg = NativePreviewFrames.compressYuv420(frame);
+                                if (jpeg != null) {
+                                    latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();
+                                }
+                            }
+                        } catch(Exception ignored) {}
+                        finally {if(frame!=null)frame.close();}
+                    },worker);
+                    outputs.add(previewReader.getSurface());
+                }
+            } catch(Exception ignored) {
+                if(previewReader!=null){previewReader.close();previewReader=null;}
+            }
             manager.openCamera(id, new CameraDevice.StateCallback() {
                 @Override public void onOpened(CameraDevice opened) {
                     if (session != generation || stopRequested) {
@@ -355,6 +405,7 @@ public class NativeCaptureService extends Service {
                         CaptureRequest.Builder request = opened.createCaptureRequest(
                             CameraDevice.TEMPLATE_RECORD);
                         request.addTarget(surface);
+                        if(previewReader!=null)request.addTarget(previewReader.getSurface());
                         request.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, fpsRange);
                         request.set(CaptureRequest.CONTROL_AF_MODE,
                             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
@@ -382,7 +433,7 @@ public class NativeCaptureService extends Service {
                                 CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
                             chosenStabilization = "OIS requested";
                         } else chosenStabilization = "not declared for selected Camera2 mode";
-                        opened.createCaptureSession(Arrays.asList(surface),
+                        opened.createCaptureSession(outputs,
                             new CameraCaptureSession.StateCallback() {
                                 @Override public void onConfigured(CameraCaptureSession sessionHandle) {
                                     if (session != generation || stopRequested) {
@@ -455,6 +506,8 @@ public class NativeCaptureService extends Service {
         finish();
     }
     private void releaseCamera() {
+        latestPreviewJpeg = null; latestPreviewAt = 0;
+        if(previewReader!=null){try{previewReader.close();}catch(Exception ignored){}previewReader=null;}
         if (capture != null) {
             try { capture.stopRepeating();capture.abortCaptures(); } catch(Exception ignored) {}
             try { capture.close(); } catch(Exception ignored) {}
