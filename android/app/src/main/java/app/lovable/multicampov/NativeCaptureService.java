@@ -479,8 +479,41 @@ public class NativeCaptureService extends Service {
                                     } catch(Exception error) { fail(error); }
                                 }
                                 @Override public void onConfigureFailed(CameraCaptureSession sessionHandle) {
-                                    sessionHandle.close(); fail(new IllegalStateException(
-                                        "Camera2 capture session failed"));
+                                    sessionHandle.close();
+                                    if (previewReader == null) {
+                                        fail(new IllegalStateException("Camera2 capture session failed"));
+                                        return;
+                                    }
+                                    // Recording has priority over optional preview. Some
+                                    // OEM combinations do not permit a parallel YUV stream.
+                                    previewReader.close(); previewReader=null;
+                                    try {
+                                        CaptureRequest.Builder only=opened.createCaptureRequest(
+                                            CameraDevice.TEMPLATE_RECORD);
+                                        only.addTarget(surface);
+                                        only.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,fpsRange);
+                                        opened.createCaptureSession(Arrays.asList(surface),
+                                            new CameraCaptureSession.StateCallback() {
+                                                @Override public void onConfigured(CameraCaptureSession ready) {
+                                                    capture=ready;
+                                                    try {
+                                                        capture.setRepeatingRequest(only.build(),null,worker);
+                                                        if(openingTimeout!=null){
+                                                            worker.removeCallbacks(openingTimeout);
+                                                            openingTimeout=null;
+                                                        }
+                                                        encoder.start();encoderStarted=true;encoderPaused=false;
+                                                        recordingStartedAt=System.currentTimeMillis();
+                                                        publish("recording",
+                                                            "MP4 записывается; параллельный предпросмотр камерой не поддержан");
+                                                    } catch(Exception error){fail(error);}
+                                                }
+                                                @Override public void onConfigureFailed(CameraCaptureSession broken) {
+                                                    broken.close();
+                                                    fail(new IllegalStateException("Camera2 recording session failed"));
+                                                }
+                                            },worker);
+                                    } catch(Exception error){fail(error);}
                                 }
                             }, worker);
                     } catch(Exception error) { fail(error); }
