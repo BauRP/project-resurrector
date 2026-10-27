@@ -102,7 +102,7 @@ describe("camera ownership and serialized settings", () => {
     vi.useFakeTimers();
     const cam = camera();
     let complete!: () => void;
-    cam.track.applyConstraints.mockImplementationOnce(() => new Promise<void>(resolve => { complete = resolve; }));
+    cam.track.applyConstraints.mockImplementationOnce(() => new Promise<undefined>(resolve => { complete = () => resolve(undefined); }));
     vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue(cam.stream)}});
     await cameraController.acquire(Symbol("ui"),{video:true});
     const first = cameraController.apply(cam.stream,{zoom:2});
@@ -121,7 +121,7 @@ describe("camera ownership and serialized settings", () => {
     vi.useFakeTimers();
     const cam = camera();
     let finish!: () => void;
-    cam.track.applyConstraints.mockImplementation(() => new Promise<void>(resolve => { finish = resolve; }));
+    cam.track.applyConstraints.mockImplementation(() => new Promise<undefined>(resolve => { finish = () => resolve(undefined); }));
     vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: vi.fn().mockResolvedValue(cam.stream) } });
     const owner = Symbol("ui");
     await cameraController.acquire(owner, { video: true });

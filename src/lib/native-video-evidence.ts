@@ -38,11 +38,11 @@ export function highSpeedRecordedModeEvidence(
       : "Размер MP4 совпал; FPS начала/конца файла и наличие поздних кадров полностью не подтверждены.";
   return {
     api: "camera2", cameraId, requested, checkedAt, state,
-    applied: undefined, // Camera2 configure request is not a per-frame CaptureResult.
-    file: inspectedDimensions && filePresent ? {
+    // Camera2 configure request is not per-frame CaptureResult evidence.
+    ...(inspectedDimensions && filePresent ? {file: {
       width: width!, height: height!, bytes: output.bytes,
       mimeType: inspected?.mime?.startsWith("video/") ? inspected.mime : "video/unknown",
-    } : undefined,
+    }} : {}),
     message: (filePresent ? "Нативный MP4 сохранён. " : "MP4 не сохранён. ") +
       details + " Проверка всех кадров, стабилизации и качества звука не выполнена.",
   };

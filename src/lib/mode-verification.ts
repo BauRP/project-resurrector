@@ -136,7 +136,11 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
     const track = stream.getVideoTracks()[0];
     if (!track || track.readyState !== "live") throw new Error("Камера не открылась");
     const actual = track.getSettings();
-    result.applied = { width: actual.width, height: actual.height, fps: actual.frameRate };
+    result.applied = {
+      ...(actual.width !== undefined ? {width:actual.width} : {}),
+      ...(actual.height !== undefined ? {height:actual.height} : {}),
+      ...(actual.frameRate !== undefined ? {fps:actual.frameRate} : {}),
+    };
     const dimensionsMatch = (actual.width === mode.width && actual.height === mode.height) ||
       (actual.width === mode.height && actual.height === mode.width);
     const fpsKnown = typeof actual.frameRate === "number" && Number.isFinite(actual.frameRate);

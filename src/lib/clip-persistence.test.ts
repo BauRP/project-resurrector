@@ -23,7 +23,7 @@ describe("bounded persisted-byte sampling (not full-file integrity)", () => {
   });
   it("detects same-sized corruption in middle, start and end samples", async () => {
     for (const at of [0, 4096, 8191]) {
-      const changed = payload.slice(); changed[at] ^= 0xff;
+      const changed = payload.slice(); changed[at] = (changed[at] ?? 0) ^ 0xff;
       expect(await sampledClipBytesMatch(media(payload),media(changed))).toBe(false);
     }
   });

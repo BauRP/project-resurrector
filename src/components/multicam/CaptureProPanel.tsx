@@ -114,7 +114,9 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
       const actualH = Math.min(applied.width ?? 0, applied.height ?? 0);
       const actualFps = applied.frameRate;
       const mismatch = requestedGeometry && (actualW !== Math.max(w, h) || actualH !== Math.min(w, h) || (actualFps !== undefined && Math.abs(actualFps - next.fps) > 1));
-      if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { width: applied.width, height: applied.height, fps: actualFps }, state: mismatch ? "rejected" : "applied", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : "WebView track setting applied; recorded output not verified" });
+      if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { ...(applied.width !== undefined ? {width:applied.width} : {}),
+          ...(applied.height !== undefined ? {height:applied.height} : {}),
+          ...(actualFps !== undefined ? {fps:actualFps} : {}) }, state: mismatch ? "rejected" : "applied", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : "WebView track setting applied; recorded output not verified" });
       if (mismatch) {
         warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
         void track.applyConstraints(previous).catch(() => warn("Не удалось восстановить предыдущие настройки камеры"));

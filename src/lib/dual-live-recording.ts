@@ -46,7 +46,7 @@ export function compareDualFileDurations(
  */
 export function salvageBufferedEncoderChunks(chunks: readonly Blob[], mime: string): Blob | null {
   const bytes = chunks.reduce((sum, chunk) => sum + (chunk.size || 0), 0);
-  return bytes >= 1024 ? new Blob(chunks, { type: mime }) : null;
+  return bytes >= 1024 ? new Blob([...chunks], { type: mime }) : null;
 }
 /** Validate and capture identities in one step. Re-reading after the device
  * disappears can fail, even though partial encoded clips must still be saved.
@@ -206,8 +206,8 @@ export function startDualRecording(
         id: "dual-live-" + token + "-" + (index+1), createdAt: startTime,
         camera: index+1, mode: "dual-live", profile: "standard", playbackRate: 1, blob,
         captureGroupId: "dual-live-" + token,
-        cameraDeviceId: deviceIds[index],
-        monotonicStartMs: starts[index] ?? undefined,
+        ...(deviceIds[index] ? {cameraDeviceId:deviceIds[index]!} : {}),
+        ...(typeof starts[index] === "number" ? {monotonicStartMs:starts[index]!} : {}),
         synchronizationVerified: false,
         foldTransitions: folds,
         foldContinuityVerified: false,
@@ -247,7 +247,7 @@ export function startDualRecording(
       bytes: clips.map(c => c.blob.size),
       message: "Файлы сохранены, но их воспроизведение из медиатеки не подтверждено. " + failures.join("; "),
     };
-    const durationRelation = compareDualFileDurations(fileDurations[0], fileDurations[1]);
+    const durationRelation = compareDualFileDurations(fileDurations[0] ?? null, fileDurations[1] ?? null);
     if (durationRelation === "mismatch")
       failures.push("Длительность двух видеоклипов сильно различается; совместная запись не подтверждена");
     // A disappearing stream or forced recording stop is not equivalent
