@@ -317,6 +317,97 @@ public class NativeCaptureService extends Service {
         });
         return START_NOT_STICKY;
     }
+    private void startPreview(Intent intent) {
+        if (camera != null || encoder != null || isRecordingState()) return;
+        final String id = intent.getStringExtra("cameraId");
+        if (id == null || id.isEmpty() ||
+            checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            publish("error","Разрешение на камеру или объектив недоступны"); stopSelf(); return;
+        }
+        try {
+            if (Build.VERSION.SDK_INT >= 29)
+                startForeground(NOTIFICATION,notification(),ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA);
+            else startForeground(NOTIFICATION,notification());
+        } catch(RuntimeException error) {
+            publish("error","Android запретил предпросмотр: "+error.getMessage());stopSelf();return;
+        }
+        stopRequested=false;
+        int token=++generation;
+        selectedCameraId=id;
+        publish("starting","Открываю нативный предпросмотр");
+        openingTimeout=()->{
+            if(token==generation && !"previewing".equals(state) && !stopRequested)
+                fail(new IllegalStateException("Тайм-аут предпросмотра Camera2"));
+        };
+        worker.postDelayed(openingTimeout,12000);
+        worker.post(()->{
+            try {
+                CameraManager manager=(CameraManager)getSystemService(Context.CAMERA_SERVICE);
+                CameraCharacteristics characteristics=manager.getCameraCharacteristics(id);
+                StreamConfigurationMap config=characteristics.get(
+                    CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                Size[] sizes=config==null?null:config.getOutputSizes(ImageFormat.YUV_420_888);
+                Size best=null;
+                if(sizes!=null)for(Size candidate:sizes)
+                    if(candidate.getWidth()>=160 && candidate.getHeight()>=120 &&
+                        candidate.getWidth()<=640 && candidate.getHeight()<=480 &&
+                        candidate.getWidth()%2==0 && candidate.getHeight()%2==0 &&
+                        (best==null || candidate.getWidth()*candidate.getHeight()>
+                          best.getWidth()*best.getHeight()))best=candidate;
+                if(best==null)throw new IllegalStateException("YUV предпросмотр недоступен");
+                previewReader=ImageReader.newInstance(best.getWidth(),best.getHeight(),
+                    ImageFormat.YUV_420_888,2);
+                previewReader.setOnImageAvailableListener(reader->{
+                    Image frame=null;
+                    try{
+                        frame=reader.acquireLatestImage();
+                        if(frame!=null && previewConsumerVisible &&
+                            System.currentTimeMillis()-latestPreviewAt>=350){
+                            String jpeg=NativePreviewFrames.compressYuv420(frame);
+                            if(jpeg!=null){latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();}
+                        }
+                    }catch(Exception ignored){}finally{if(frame!=null)frame.close();}
+                },worker);
+                manager.openCamera(id,new CameraDevice.StateCallback(){
+                    @Override public void onOpened(CameraDevice opened){
+                        if(token!=generation || stopRequested){opened.close();return;}
+                        camera=opened;
+                        try {
+                            CaptureRequest.Builder request=opened.createCaptureRequest(
+                                CameraDevice.TEMPLATE_PREVIEW);
+                            request.addTarget(previewReader.getSurface());
+                            opened.createCaptureSession(Arrays.asList(previewReader.getSurface()),
+                                new CameraCaptureSession.StateCallback(){
+                                    @Override public void onConfigured(CameraCaptureSession ready){
+                                        if(token!=generation||stopRequested){ready.close();return;}
+                                        capture=ready;
+                                        try{
+                                            capture.setRepeatingRequest(request.build(),null,worker);
+                                            if(openingTimeout!=null){worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+                                            publish("previewing","Камера готова к записи MP4");
+                                        }catch(Exception error){fail(error);}
+                                    }
+                                    @Override public void onConfigureFailed(CameraCaptureSession broken){
+                                        broken.close();fail(new IllegalStateException("Сессия предпросмотра не поддерживается"));
+                                    }
+                                },worker);
+                        }catch(Exception error){fail(error);}
+                    }
+                    @Override public void onDisconnected(CameraDevice disconnected){
+                        disconnected.close();if(camera==disconnected)camera=null;
+                        fail(new IllegalStateException("Камера предпросмотра отключилась"));
+                    }
+                    @Override public void onError(CameraDevice broken,int code){
+                        broken.close();if(camera==broken)camera=null;
+                        fail(new IllegalStateException("Ошибка предпросмотра Camera2 "+code));
+                    }
+                },worker);
+            }catch(Exception error){fail(error);}
+        });
+    }
+    private boolean isRecordingState() {
+        return "recording".equals(state) || "paused".equals(state) || "stopping".equals(state);
+    }
     private void open(int session, String id, int width, int height, int fps) {
         try {
             if (stopRequested || session != generation) { finish(); return; }
