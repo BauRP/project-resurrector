@@ -688,6 +688,17 @@ public class NativeCaptureService extends Service {
                                             CameraDevice.TEMPLATE_RECORD);
                                         only.addTarget(surface);
                                         only.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,fpsRange);
+                                        only.set(CaptureRequest.CONTROL_AF_MODE,
+                                            CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
+                                        if (eisAvailable) {
+                                            only.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
+                                                CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON);
+                                            if (oisAvailable)only.set(
+                                                CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+                                                CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF);
+                                        } else if(oisAvailable)only.set(
+                                            CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
+                                            CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
                                         setRequestControls(only);
                                         liveRequest=only;
                                         liveCallback=null;
