@@ -6,6 +6,7 @@ export interface NativeCaptureStatus {
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
 }
 export interface NativeCaptureBridge {
+ startPreview(options:{cameraId:string}):Promise<NativeCaptureStatus>;
  start(options:{cameraId:string;width:number;height:number;fps:number;audio:boolean}):Promise<NativeCaptureStatus>;
  stop():Promise<NativeCaptureStatus>;
  pause():Promise<NativeCaptureStatus>;
@@ -17,4 +18,4 @@ export interface NativeCaptureBridge {
 }
 export const nativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
 export const nativeRecorderOwnsCamera=(state:string):boolean=>
- ["starting","recording","paused","stopping"].includes(state);
+ ["starting","previewing","recording","paused","stopping"].includes(state);
