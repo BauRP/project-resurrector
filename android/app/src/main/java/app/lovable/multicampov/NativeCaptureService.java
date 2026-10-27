@@ -120,7 +120,8 @@ public class NativeCaptureService extends Service {
         }
         return result;
     }
-    public static boolean updateControls(float zoom, int evIndex) {
+    public static boolean updateControls(float zoom, int evIndex,
+        java.util.function.Consumer<Boolean> completed) {
         synchronized (STATE_LOCK) {
             NativeCaptureService owner = runningInstance;
             if (owner == null || owner.worker == null ||
@@ -129,8 +130,7 @@ public class NativeCaptureService extends Service {
             if (!Float.isFinite(zoom) || zoom < 1f || zoom > owner.maxDigitalZoom ||
                 evIndex < owner.exposureRange.getLower() ||
                 evIndex > owner.exposureRange.getUpper()) return false;
-            owner.worker.post(() -> owner.applyControls(zoom,evIndex));
-            return true;
+            return owner.worker.post(() -> completed.accept(owner.applyControls(zoom,evIndex)));
         }
     }
     private void configureControlLimits(CameraCharacteristics characteristics) {
@@ -161,8 +161,8 @@ public class NativeCaptureService extends Service {
         if(exposureRange!=null)
             request.set(CaptureRequest.CONTROL_AE_EXPOSURE_COMPENSATION,requestedExposure);
     }
-    private void applyControls(float zoom,int evIndex) {
-        if(liveRequest==null || capture==null || camera==null || stopRequested)return;
+    private boolean applyControls(float zoom,int evIndex) {
+        if(liveRequest==null || capture==null || camera==null || stopRequested)return false;
         float previousZoom=requestedZoom;
         int previousEv=requestedExposure;
         requestedZoom=zoom;requestedExposure=evIndex;
@@ -170,10 +170,12 @@ public class NativeCaptureService extends Service {
             setRequestControls(liveRequest);
             capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
             publish(state,lastMessage);
+            return true;
         } catch(Exception error) {
             requestedZoom=previousZoom;requestedExposure=previousEv;
             try {setRequestControls(liveRequest);}catch(Exception ignored){}
             publish(state,"Не удалось применить увеличение или экспозицию: "+error.getMessage());
+            return false;
         }
     }
     public static boolean isRunning() {
