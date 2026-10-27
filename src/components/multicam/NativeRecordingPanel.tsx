@@ -1,6 +1,6 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
 import { Button } from "@/components/ui/button";
 
@@ -14,7 +14,7 @@ export function NativeRecordingPanel(){
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
  const [preview,setPreview]=useState("");
- const tapPreview=async(e:React.MouseEvent<HTMLImageElement>)=>{
+ const tapPreview=async(e:MouseEvent<HTMLImageElement>)=>{
   if(!status?.tapAfSupported&&!status?.tapAeSupported)return;
   const image=e.currentTarget;
   const point=previewTapPoint(e.clientX,e.clientY,image.getBoundingClientRect(),
@@ -111,7 +111,6 @@ export function NativeRecordingPanel(){
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
         "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
         "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
-    {status?.tapSubmitted&&status.tapX!==undefined&&status.tapY!==undefined&&status.tapX>=0&&status.tapY>=0&&preview&&<span className="pointer-events-none absolute rounded-full border-2 border-yellow-300" style={{left:`${status.tapX*100}%`,top:`${status.tapY*100}%`,width:22,height:22,transform:"translate(-50%,-50%)"}}/>}
     {nativeRecorderOwnsCamera(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
    </div>
    {(status?.tapAfSupported||status?.tapAeSupported)&&<p className="text-muted-foreground">Коснитесь изображения, чтобы выбрать точку {status.tapAfSupported?"автофокуса и ":""}экспозамера. Чёрные поля неактивны. Подтверждение команды не означает успешное наведение.</p>}
