@@ -212,14 +212,18 @@ export function startDisplayAdaptation(): () => void {
     // hinge cuts across the app window. Unlike camera this region is chosen
     // by usable size rather than a hard-coded left/right position.
     const shell = document.querySelector(".app-shell")?.getBoundingClientRect();
-    const shellLeft = shell?.left ?? 0;
-    const shellWidth = shell?.width ?? width();
+    const shellLeft = Number.isFinite(shell?.left) ? shell!.left : 0;
+    const shellWidth = Number.isFinite(shell?.width) && shell!.width > 0 ? shell!.width : width();
     const workspace = [...geometry.regions].map(region => {
       const left = Math.max(0, region.left - shellLeft);
       const right = Math.min(shellWidth, region.left + region.width - shellLeft);
       return { ...region, left, width: Math.max(0, right - left) };
     }).sort((a,b)=> b.width*b.height-a.width*a.height)[0];
-    const safeWorkspace = geometry.regions.length > 1 && !!workspace && workspace.width >= 300 && workspace.height >= 220;
+    // The selected editor/settings pane must have both dimensions usable.
+    // A narrow letterbox from a partially folded window must not become
+    // the global workspace merely because its total area is largest.
+    const safeWorkspace = geometry.regions.length > 1 && !!workspace &&
+      workspace.width >= 300 && workspace.height >= 220 && shellWidth > 0;
     root.dataset["foldWorkspace"] = safeWorkspace ? "pane" : "normal";
     root.style.setProperty("--fold-work-left", (workspace?.left ?? 0) + "px");
     root.style.setProperty("--fold-work-width", (workspace?.width ?? shellWidth) + "px");
