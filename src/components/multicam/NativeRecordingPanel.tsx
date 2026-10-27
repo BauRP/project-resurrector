@@ -27,7 +27,7 @@ export function NativeRecordingPanel(){
   void MultiCamNative.getCapabilities().then(x=>{
    if(live){setCameras(x.cameras);setCamera(x.cameras[0]?.cameraId??"");}
   }).catch(e=>{if(live)setError(String(e));});
-  const refresh=()=>void bridge.status().then(x=>{if(live)setStatus(x);}).catch(()=>undefined);
+  const refresh=()=>void bridge.status().then(x=>{if(live){setStatus(x);if(nativeRecorderOwnsCamera(x.state)){if(x.cameraId)setCamera(x.cameraId);if(x.width&&x.height)setResolution(`${x.width}x${x.height}`);if(x.fps)setFps(x.fps);}}}).catch(()=>undefined);
   refresh();const timer=window.setInterval(refresh,1700);
   return ()=>{live=false;window.clearInterval(timer);};
  },[]);
@@ -47,10 +47,15 @@ export function NativeRecordingPanel(){
   finally{setBusy(false);}
  };
  const stop=async()=>{setBusy(true);try{setStatus(await bridge.stop());}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const changePause=async()=>{
+  if(busy)return;setBusy(true);setError("");
+  try{setStatus(status?.state==="paused"?await bridge.resume():await bridge.pause());}
+  catch(e){setError(String(e));}finally{setBusy(false);}
+ };
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
-   <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Для безопасного запуска откройте «Настройки» вместо активного предпросмотра камеры. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
+   <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
    <div className="grid grid-cols-2 gap-2">
     <label>Камера<select className="w-full bg-background p-2" value={camera} disabled={active}
@@ -68,11 +73,12 @@ export function NativeRecordingPanel(){
     <label className="flex items-center gap-2"><input type="checkbox" checked={audio} disabled={active}
      onChange={e=>setAudio(e.target.checked)}/>Записать звук</label>
    </div>
-   <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""}</p>
+   <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {error&&<p role="alert" className="text-destructive">{error}</p>}
    <div className="flex gap-2">
     <Button disabled={busy||active||!camera} onClick={()=>void start()}>Начать нативную запись</Button>
+    <Button disabled={busy||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
     <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>Остановить</Button>
    </div>
  </section>;
