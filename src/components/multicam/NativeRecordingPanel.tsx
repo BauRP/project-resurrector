@@ -12,6 +12,7 @@ export function NativeRecordingPanel(){
  const [status,setStatus]=useState<Status|null>(null);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
+ const [preview,setPreview]=useState("");
  const refreshCameras=async()=>{
    try{
     const permissions=await bridge.requestPermissions({permissions:["camera"]});
@@ -29,6 +30,22 @@ export function NativeRecordingPanel(){
   }).catch(e=>{if(live)setError(String(e));});
   const refresh=()=>void bridge.status().then(x=>{if(live){setStatus(x);if(nativeRecorderOwnsCamera(x.state)){if(x.cameraId)setCamera(x.cameraId);if(x.width&&x.height)setResolution(`${x.width}x${x.height}`);if(x.fps)setFps(x.fps);}}}).catch(()=>undefined);
   refresh();const timer=window.setInterval(refresh,1700);
+  return ()=>{live=false;window.clearInterval(timer);};
+ },[]);
+ useEffect(()=>{
+  if(!isNative())return;
+  let live=true,inFlight=false;
+  const read=async()=>{
+    if(!live||inFlight)return;
+    inFlight=true;
+    try {
+      const image=await bridge.previewFrame();
+      if(live)setPreview(image.jpeg ? "data:image/jpeg;base64,"+image.jpeg : "");
+    }catch{if(live)setPreview("");}
+    finally{inFlight=false;}
+  };
+  void read();
+  const timer=window.setInterval(()=>{void read();},600);
   return ()=>{live=false;window.clearInterval(timer);};
  },[]);
  if(!isNative())return null;
@@ -55,6 +72,13 @@ export function NativeRecordingPanel(){
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
+   <div className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
+    {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" style={{transform:status?.orientationDegrees===90?"rotate(90deg) scale(.5625)":status?.orientationDegrees===270?"rotate(270deg) scale(.5625)":status?.orientationDegrees===180?"rotate(180deg)":undefined}}/> :
+      <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
+        "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
+        "Для предпросмотра начните нативную запись. Камера останется под управлением Android."}</p>}
+    {nativeRecorderOwnsCamera(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
+   </div>
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
    <div className="grid grid-cols-2 gap-2">
