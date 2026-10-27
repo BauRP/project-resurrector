@@ -629,6 +629,7 @@ public class NativeCaptureService extends Service {
                                 CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
                             chosenStabilization = "OIS requested";
                         } else chosenStabilization = "not declared for selected Camera2 mode";
+                        final boolean useEis=eisAvailable, useOis=oisAvailable;
                         opened.createCaptureSession(outputs,
                             new CameraCaptureSession.StateCallback() {
                                 @Override public void onConfigured(CameraCaptureSession sessionHandle) {
@@ -690,13 +691,13 @@ public class NativeCaptureService extends Service {
                                         only.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,fpsRange);
                                         only.set(CaptureRequest.CONTROL_AF_MODE,
                                             CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO);
-                                        if (eisAvailable) {
+                                        if (useEis) {
                                             only.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
                                                 CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE_ON);
-                                            if (oisAvailable)only.set(
+                                            if (useOis)only.set(
                                                 CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
                                                 CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_OFF);
-                                        } else if(oisAvailable)only.set(
+                                        } else if(useOis)only.set(
                                             CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE,
                                             CaptureRequest.LENS_OPTICAL_STABILIZATION_MODE_ON);
                                         setRequestControls(only);
