@@ -2017,8 +2017,11 @@ public class NativeCaptureService extends Service {
                  audit.timestampDuplicates > 0);
             // A truncated tail is a warning only when a bounded scan and
             // file duration are both available, not when metadata is unknown.
-            boolean tailIssue = audit != null && audit.durationMs > 0L &&
-                audit.tailSamples > 0 && !audit.tailNearEnd;
+            // A successful closest-keyframe decode can return an older
+            // frame even when no samples were found near the MP4 end.
+            // For longer clips require actual tail timestamps as evidence.
+            boolean tailIssue = audit != null && audit.durationMs > 2000L &&
+                (audit.tailSamples <= 0 || !audit.tailNearEnd);
             boolean checkpointIssue = !mp4CheckpointAuditCompleted ||
                 (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
