@@ -112,6 +112,11 @@ public class NativeCaptureService extends Service {
     private volatile ImageReader previewReader;
     private Surface activeDirectPreviewSurface;
     private int previewSessionRevision = 0;
+    private volatile long sensorFramesSeen = 0L;
+    private volatile float recentSensorFps = -1f;
+    private long sensorWindowFirstNs = 0L;
+    private int sensorWindowFrames = 0;
+    private long lastSensorNs = 0L;
     private volatile boolean previewConsumerVisible;
     /** An Activity contributes only a surface, not a second Camera2 owner.
      * Unmounting its surface cannot terminate a MediaRecorder session.
@@ -440,6 +445,25 @@ public class NativeCaptureService extends Service {
                 Integer af=result.get(CaptureResult.CONTROL_AF_STATE);
                 if(focus!=null)reportedFocusDiopters=focus;
                 if(af!=null)reportedAfState=af;
+                // These are SENSOR capture timestamps, NOT encoded MP4 FPS.
+                // Keep a sliding bounded window and report unknown until
+                // multiple valid sensor timestamps were observed.
+                Long sensorTime=result.get(CaptureResult.SENSOR_TIMESTAMP);
+                if(sensorTime!=null&&sensorTime>0L){
+                    sensorFramesSeen++;
+                    if(lastSensorNs>0L && sensorTime<=lastSensorNs){
+                        sensorWindowFrames=0;sensorWindowFirstNs=0L;
+                        recentSensorFps=-1f;
+                    }
+                    lastSensorNs=sensorTime;
+                    if(sensorWindowFrames==0) sensorWindowFirstNs=sensorTime;
+                    sensorWindowFrames++;
+                    if(sensorWindowFrames>=31 && sensorTime>sensorWindowFirstNs){
+                        recentSensorFps=(float)((sensorWindowFrames-1)*1_000_000_000.0/
+                            (sensorTime-sensorWindowFirstNs));
+                        sensorWindowFrames=0;
+                    }
+                }
                 if(stabilizationResultSeen)return;
                 Integer eis=result.get(CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE);
                 Integer ois=result.get(CaptureResult.LENS_OPTICAL_STABILIZATION_MODE);
@@ -555,6 +579,8 @@ public class NativeCaptureService extends Service {
             }
             out.put("directPreviewActive", runningInstance != null &&
                 directPreviewActive && "previewing".equals(value));
+            out.put("cameraSensorFrames",runningInstance==null?0L:runningInstance.sensorFramesSeen);
+            out.put("cameraSensorFps",runningInstance==null?-1f:runningInstance.recentSensorFps);
             out.put("state", value);
             out.put("message", message);
             out.put("startedAt", started);
@@ -864,6 +890,8 @@ public class NativeCaptureService extends Service {
             }
             liveRequest = null; liveCallback = null;
             directPreviewActive = false;
+            recentSensorFps=-1f;
+            sensorWindowFrames=0;sensorWindowFirstNs=0L;lastSensorNs=0L;
             if (activeDirectPreviewSurface != null) {
                 try {activeDirectPreviewSurface.release();}catch(Exception ignored){}
                 activeDirectPreviewSurface = null;
@@ -1226,6 +1254,8 @@ public class NativeCaptureService extends Service {
     }
     private void releaseCamera() {
         previewSessionRevision++;
+        recentSensorFps=-1f;sensorWindowFrames=0;
+        sensorWindowFirstNs=0L;lastSensorNs=0L;
         liveRequest=null;
         liveCallback=null;
         latestPreviewJpeg = null; latestPreviewAt = 0; lastPreviewAttemptAt = 0;
