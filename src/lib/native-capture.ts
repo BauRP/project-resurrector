@@ -12,6 +12,7 @@ export interface NativeCaptureStatus {
  mp4FirstFrameDecodable?:boolean;mp4TailFrameDecodable?:boolean;mp4AvStartOffsetMs?:number;mp4AvStartMeasured?:boolean;
  foldObservations?:number;foldPostureChanges?:number;lastFoldAt?:number;
  foldNearbyCallbackGaps?:number;maxFoldNearbyCallbackGapMs?:number;
+ mp4MiddleProbes?:number;mp4MiddleMatched?:number;mp4FoldProbes?:number;mp4FoldMatched?:number;
  mp4VideoSamples?:number;mp4AudioSamples?:number;mp4VideoTimestampRollbacks?:number;
  mp4DurationMs?:number;mp4TailVideoSamples?:number;mp4TailSampledFps?:number;mp4TailNearEnd?:boolean;
  mp4VideoTimestampDuplicates?:number;mp4VideoSampleLimitReached?:boolean;mp4SampledFps?:number;
