@@ -60,6 +60,10 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:-1,mp4FoldMatched:0},12345)?.state)
     .toBe("unknown");
  });
+ it("never accepts a fractional or missing actual MP4 frame count",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4VideoSamples:0.5},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4VideoSamples:0},12345)?.state).toBe("unknown");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
