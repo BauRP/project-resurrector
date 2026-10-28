@@ -44,6 +44,7 @@ function entrySummary(item:Record<string,unknown>) {
       geometryOnlyChanges:count(item["foldGeometryOnlyChanges"]),
       callbackGaps:count(item["foldNearbyCallbackGaps"]),
       checkpointAuditCompleted:flag(item["mp4CheckpointAuditCompleted"]),
+      skippedCheckpoints:count(item["mp4FoldPointsSkipped"],8),
       encodedPtsChecks:count(item["mp4FoldPtsSpanChecks"],8),
       encodedPtsLargeGaps:count(item["mp4FoldPtsLargeGaps"],8),
       maximumEncodedPtsGapMs:count(item["mp4MaxFoldPtsGapMs"],600000),
