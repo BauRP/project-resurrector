@@ -125,6 +125,10 @@ public class NativeCaptureService extends Service {
     private static String recordingFoldPointsMs = "";
     private static int mp4MiddleProbes = 0, mp4MiddleMatched = 0;
     private static int mp4FoldProbes = 0, mp4FoldMatched = 0;
+    // Separate evidence: a nearby video sample does not rule out a large
+    // presentation timestamp gap STRADDLING the actual fold observation.
+    private static int mp4FoldPtsSpanChecks=0, mp4FoldPtsLargeGaps=0;
+    private static long mp4MaxFoldPtsGapMs=0L;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     /** Recover an attempt that belonged to a dead Android process.
@@ -848,6 +852,12 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4FoldProbes",0):mp4FoldProbes);
             out.put("mp4FoldMatched",runningInstance==null
                 ? previous.getInt("mp4FoldMatched",0):mp4FoldMatched);
+            out.put("mp4FoldPtsSpanChecks",runningInstance==null
+                ? previous.getInt("mp4FoldPtsSpanChecks",0):mp4FoldPtsSpanChecks);
+            out.put("mp4FoldPtsLargeGaps",runningInstance==null
+                ? previous.getInt("mp4FoldPtsLargeGaps",0):mp4FoldPtsLargeGaps);
+            out.put("mp4MaxFoldPtsGapMs",runningInstance==null
+                ? previous.getLong("mp4MaxFoldPtsGapMs",0L):mp4MaxFoldPtsGapMs);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -896,6 +906,9 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4MiddleMatched",mp4MiddleMatched)
                 .putInt("mp4FoldProbes",mp4FoldProbes)
                 .putInt("mp4FoldMatched",mp4FoldMatched)
+                .putInt("mp4FoldPtsSpanChecks",mp4FoldPtsSpanChecks)
+                .putInt("mp4FoldPtsLargeGaps",mp4FoldPtsLargeGaps)
+                .putLong("mp4MaxFoldPtsGapMs",mp4MaxFoldPtsGapMs)
                 .putLong("mp4AvStartOffsetMs",mp4AvStartOffsetMs)
                 .putBoolean("mp4AvStartMeasured",mp4AvStartMeasured)
                 .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable)
@@ -1043,6 +1056,7 @@ public class NativeCaptureService extends Service {
             maxFoldNearbyCallbackGapMs=0L;lastCaptureCallbackElapsedMs=-1L;
             recordingFoldPointsMs="";
             mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
+            mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;mp4MaxFoldPtsGapMs=0L;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1745,6 +1759,26 @@ public class NativeCaptureService extends Service {
             return !badOrder&&nearest<=MP4_CHECKPOINT_TOLERANCE_US;
         }catch(Exception ignored){return false;}
     }
+    /** Return the PTS gap across a fold instant, not a camera callback gap.
+     * -1 means that a bounded seek could not find samples on both sides.
+     * This requires both timestamps; a single nearby keyframe is insufficient.
+     */
+    private long foldPtsSpanMs(MediaExtractor extractor,long targetUs) {
+        try {
+            extractor.seekTo(Math.max(0L,targetUs-1000000L),
+                MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+            long before=-1L,after=-1L;
+            for(int scanned=0;scanned<1536;scanned++){
+                long pts=extractor.getSampleTime();
+                if(pts<0L)break;
+                if(pts<targetUs)before=Math.max(before,pts);
+                else {after=pts;break;}
+                if(!extractor.advance())break;
+            }
+            if(before<0L||after<before||after<targetUs)return -1L;
+            return (after-before)/1000L;
+        }catch(Exception ignored){return -1L;}
+    }
     /** This audit samples middle and REAL observed fold positions.
      * Presence of one nearby sample plus a decoded keyframe is limited
      * evidence, not full video continuity or exact frame-at-fold proof.
@@ -1752,6 +1786,8 @@ public class NativeCaptureService extends Service {
     private void inspectMp4Checkpoints(File file,long durationMs) {
         mp4MiddleProbes=0;mp4MiddleMatched=0;
         mp4FoldProbes=0;mp4FoldMatched=0;
+        mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;
+        mp4MaxFoldPtsGapMs=0L;
         if(durationMs<=2000L || file==null||!file.isFile())return;
         MediaExtractor extractor=new MediaExtractor();
         try {
@@ -1781,6 +1817,14 @@ public class NativeCaptureService extends Service {
                     mp4FoldProbes++;
                     if(hasNearVideoSample(extractor,at*1000L) &&
                        decodeMp4FrameAt(file,at*1000L))mp4FoldMatched++;
+                    long span=foldPtsSpanMs(extractor,at*1000L);
+                    if(span>=0L) {
+                        mp4FoldPtsSpanChecks++;
+                        mp4MaxFoldPtsGapMs=Math.max(mp4MaxFoldPtsGapMs,span);
+                        // >250ms is conservatively above 4 typical frames at
+                        // 15-60FPS. It signals suspicion, not definitive loss.
+                        if(span>250L)mp4FoldPtsLargeGaps++;
+                    }
                 }catch(NumberFormatException ignored){}
             }
         }catch(Exception ignored){
@@ -1893,7 +1937,8 @@ public class NativeCaptureService extends Service {
                 audit.tailSamples > 0 && !audit.tailNearEnd;
             boolean checkpointIssue =
                 (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
-                (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes);
+                (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
+                mp4FoldPtsLargeGaps>0;
             // A nominally saved MP4 must not be marked clean when its
             // decoder or actual video-track audit cannot confirm the result.
             // This is independent of later WebView passport validation.
