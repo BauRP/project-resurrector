@@ -3,8 +3,9 @@
 Evidence rule: **NOT VERIFIED** means this full scenario has not been proven on a physical device.
 "CODE ...; APK CI PASSED" records only that an implementation exists and the main Android CI pipeline passed (run #521, 28 October); it is NOT a claim that the complete physical scenario passed.
 This matrix deliberately separates code/CI progress from device acceptance.
-At this checkpoint: 36 scenarios; 5 with code/CI evidence; 0 fully device-verified.
-Code/CI evidence coverage = 5/36 = 13.9%; physical acceptance = 0/36 = 0%.
+At this checkpoint: 36 scenarios; 6 with code/CI evidence; 0 fully device-verified.
+Code/CI evidence coverage = 6/36 = 16.7%; physical acceptance = 0/36 = 0%.
+Scenario 05 has PARTIAL source/CI evidence: WindowManager fold observations and Camera2 callback-gap telemetry during a real native recorder session (CI #580); this cannot prove preserved MP4 frames.
 Scenario 04 has a Camera2 TextureView output rebind implementation that passed Android CI (#546); the scenario's actual fold behavior and preview FPS remain NOT VERIFIED on physical hardware.
 These are auditable per-scenario counts, NOT overall application completeness.
 
@@ -14,7 +15,7 @@ These are auditable per-scenario counts, NOT overall application completeness.
 | 02 | Book fold fully open | Expand workspace from real app-window width | NOT VERIFIED |
 | 03 | Repeated open-close | No leaked observers or mistaken hinge count | NOT VERIFIED |
 | 04 | Live preview while folding | Correct aspect and no camera re-acquisition on resize alone | CODE PRESENT; APK CI PASSED (#546); PHYSICAL NOT VERIFIED |
-| 05 | Recording while folding | Preserve frames when possible; disclose interruptions | NOT VERIFIED |
+| 05 | Recording while folding | Preserve frames when possible; disclose interruptions | PARTIAL CODE; APK CI PASSED (#580); PHYSICAL NOT VERIFIED |
 | 06 | Folding with camera settings open | Reachable controls; no full-page jump | NOT VERIFIED |
 | 07 | Folding while editing | Playhead and selected workspace retained | NOT VERIFIED |
 | 08 | Supported tabletop posture | Preview/control regions outside hinge | NOT VERIFIED |
