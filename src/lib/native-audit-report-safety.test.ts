@@ -19,6 +19,14 @@ describe("recovered native fold and camera report safety",()=>{
     expect(report).not.toContain("content://private");
     expect(report).not.toContain("/private/video.mp4");
   });
+  it("reports uncheckable fold checkpoints without media paths",()=>{
+    const parsed=JSON.parse(nativeAnonymizedAuditReport({
+      entries:[{state:"saved_interrupted",mp4FoldPointsSkipped:2,
+        mp4FoldProbes:0,mp4FoldPtsSpanChecks:0}],
+      omittedEarlier:0,maxEntries:24,
+    }));
+    expect(parsed.entries[0].fold.skippedCheckpoints).toBe(2);
+  });
   it("separates real hinge posture from coordinate-only changes",()=>{
     const parsed=JSON.parse(nativeAnonymizedAuditReport({
       entries:[{state:"saved",foldPostureChanges:2,foldGeometryOnlyChanges:19}],
