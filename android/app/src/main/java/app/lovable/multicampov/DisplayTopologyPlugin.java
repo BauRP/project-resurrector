@@ -39,6 +39,11 @@ public class DisplayTopologyPlugin extends Plugin {
     private long revision = 0L;
     /** Reject queued topology callbacks belonging to a stopped observer. */
     private long observerGeneration = 0L;
+    /** One unique lease per WindowManager listener registration. This lease
+     * prevents a destroyed Activity from injecting late fold observations into
+     * the Camera2 service owned by its successor.
+     */
+    private String observerLease;
     /** Leases are specific to a WebView adaptation instance. A late stop
      * from an old screen must never close a listener held by its successor.
      */
@@ -110,6 +115,8 @@ public class DisplayTopologyPlugin extends Plugin {
             adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(getActivity()));
             Executor main = getActivity().getMainExecutor();
             final long ownerGeneration = ++observerGeneration;
+            final String lease = java.util.UUID.randomUUID().toString();
+            observerLease = lease;
             listener = info -> {
                 synchronized (DisplayTopologyPlugin.this) {
                     // A queued callback may arrive after observer teardown or
@@ -144,12 +151,13 @@ public class DisplayTopologyPlugin extends Plugin {
                     // A changing hinge rectangle is NOT proof of a changed
                     // folding posture. Geometry-only updates have their own counter.
                     NativeCaptureService.observeFoldDuringRecording(
-                        foldCount,postureSignature,geometrySignature);
+                        lease,foldCount,postureSignature,geometrySignature);
                     notifyListeners("topologyChanged", snapshot());
                 }
             };
             activeOwners.add(ownerId);
             adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
+            NativeCaptureService.observeFoldObserverActive(lease);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
             stopListener();
@@ -171,6 +179,12 @@ public class DisplayTopologyPlugin extends Plugin {
 
     private synchronized void stopListener() {
         observerGeneration++;
+        // An old Activity may stop after a new one registered. Only the
+        // matching lease may report an observation gap to the recorder.
+        if(observerLease!=null){
+            NativeCaptureService.observeFoldObserverStopped(observerLease);
+            observerLease=null;
+        }
         if (listener != null && adapter != null) {
             try { adapter.removeWindowLayoutInfoListener(listener); }
             catch (RuntimeException ignored) { /* Activity may be destroyed. */ }
