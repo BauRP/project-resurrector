@@ -48,7 +48,7 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:3,
     mp4FoldProbes:2,mp4FoldMatched:1},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:3,
-    mp4FoldProbes:2,mp4FoldMatched:2},12345)?.state).toBe("recorded");
+    mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2},12345)?.state).toBe("recorded");
   expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:0,mp4FoldMatched:0},12345)?.message)
     .toContain("не подтверждены");
  });
@@ -66,12 +66,18 @@ describe("native Camera2 per-mode recorded evidence",()=>{
  });
  it("downgrades real MP4 fold PTS gaps without claiming all frames lost",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:1,mp4MaxFoldPtsGapMs:500},12345)?.state).toBe("unknown");
-  expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:0,mp4MaxFoldPtsGapMs:40},12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:0,mp4MaxFoldPtsGapMs:40},12345)?.state).toBe("recorded");
  });
  it("rejects impossible or contradictory encoded fold PTS gap counts",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:3},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:-1,mp4FoldPtsLargeGaps:0},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:1,mp4FoldPtsLargeGaps:0,mp4MaxFoldPtsGapMs:-20},12345)?.state).toBe("unknown");
+ });
+ it("does not call a fold recording confirmed when local MP4 bracketing PTS could not be read",()=>{
+  const r=nativeRecordedModeEvidence({...base,mp4FoldProbes:2,mp4FoldMatched:2,
+    mp4FoldPtsSpanChecks:1,mp4FoldPtsLargeGaps:0},12345);
+  expect(r?.state).toBe("unknown");
+  expect(r?.message).toContain("не удалось проверить");
  });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
