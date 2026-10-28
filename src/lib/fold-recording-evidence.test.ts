@@ -179,7 +179,36 @@ describe("long recording keeps fold classification counts",()=>{
     expect(events).toHaveLength(120);
     expect(events[0]?.baseline).toBe(true);
     expect(events[0]?.omittedPostureChanges).toBeGreaterThan(0);
-    expect(foldContinuitySummary(events)).toContain("изменений шарниров/положения: 139");
+    expect(foldContinuitySummary(events)).toContain("изменений шарниров/положения: 140");
     expect(foldContinuitySummary(events)).toContain("только геометрии окна: 1");
+  });
+});
+
+describe("baseline-preserving fold journal under repeated folding",()=>{
+  it("does not discard the first open-close cycle when the bounded journal overflows",()=>{
+    const start=normalizeFoldTransition({...sample,revision:1,
+      regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    let events:FoldTransitionEvidence[]=[{...start,baseline:true}];
+    for(let index=1;index<=140;index++){
+      const posture=index%2?"FLAT":"HALF_OPENED";
+      const next=normalizeFoldTransition({...sample,revision:index+1,posture,
+        regionGeometry:"0,0,280,400;285,0,280,400"},100+index)!;
+      events=appendFoldTransition(events,next);
+    }
+    const summary=foldContinuitySummary(events);
+    expect(summary).toContain("изменений шарниров/положения: 140");
+    expect(summary).toContain("только геометрии окна: 0");
+    expect(events[0]?.omittedEarlierEvents).toBe(21);
+  });
+  it("keeps a newer Activity owner when the previous owner delivers a late event",()=>{
+    const previous=Symbol("previous"), current=Symbol("current");
+    const topology={...sample,regionGeometry:"0,0,280,400;285,0,280,400"};
+    expect(rememberActiveFoldSnapshot(previous,{...topology,revision:900},100)).toBe(true);
+    expect(rememberActiveFoldSnapshot(current,{...topology,revision:1,posture:"FLAT"},200)).toBe(true);
+    expect(rememberActiveFoldSnapshot(previous,{...topology,revision:901},150)).toBe(false);
+    expect(getActiveFoldBaseline()?.posture).toBe("FLAT");
+    forgetActiveFoldSnapshot(previous);
+    expect(getActiveFoldBaseline()?.posture).toBe("FLAT");
+    forgetActiveFoldSnapshot(current);
   });
 });
