@@ -54,10 +54,13 @@ public class NativeCapturePlugin extends Plugin {
      }
      WebView web=getBridge().getWebView();
      if(web==null){call.reject("WebView not available");return;}
-     float scale=web.getWidth()/(float)Math.max(1,web.getResources().getDisplayMetrics().widthPixels);
-     // CSS visualViewport values are supplied as absolute WebView CSS pixels.
-     // Capacitor WebView may resize inside a fold; use measured dimensions.
-     float cssScale=web.getWidth()/(float)Math.max(1,call.getDouble("viewportWidth",1.0).floatValue());
+     // Client coordinates are relative to the actual measured WebView,
+     // rather than full device pixels on a foldable or split-screen window.
+     Double viewportWidth=call.getDouble("viewportWidth");
+     if(viewportWidth==null||!Double.isFinite(viewportWidth)||viewportWidth<=0){
+       call.reject("Invalid viewport width");return;
+     }
+     float cssScale=web.getWidth()/viewportWidth.floatValue();
      if(!Float.isFinite(cssScale)||cssScale<=0){call.reject("Invalid WebView scale");return;}
      int px=Math.round(x.floatValue()*cssScale)+web.getLeft();
      int py=Math.round(y.floatValue()*cssScale)+web.getTop();
