@@ -3,6 +3,8 @@ export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;stabilization:string;directPreviewActive?:boolean;
  cameraSensorFrames?:number;cameraSensorFps?:number;
  stabilizationCaptureResultObserved:boolean;savedBytes:number;
+ recordingEisFrames?:number;recordingOisFrames?:number;
+ recordingStabilizationOffFrames?:number;recordingStabilizationUnknownFrames?:number;
  savedUri:string;videoOnly:boolean;orientationDegrees?:number;
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
  audioRequested?:boolean;mp4TracksInspected?:boolean;mp4HasVideoTrack?:boolean;mp4HasAudioTrack?:boolean;
