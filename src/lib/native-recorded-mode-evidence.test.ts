@@ -114,6 +114,11 @@ describe("native Camera2 per-mode recorded evidence",()=>{
     mp4TailFrameDecodable:true,mp4TailVideoSamples:90,mp4TailNearEnd:true},12345)?.state)
     .toBe("recorded");
  });
+ it("does not call a fold-capture complete after Activity observer gap",()=>{
+  const r=nativeRecordedModeEvidence({...base,foldObserverGap:true},12345);
+  expect(r?.state).toBe("unknown");
+  expect(r?.message).toContain("Наблюдение за складыванием прерывалось");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
