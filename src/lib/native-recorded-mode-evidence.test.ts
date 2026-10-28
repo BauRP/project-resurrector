@@ -12,6 +12,15 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(r?.file?.bytes).toBe(100000);
   expect(r?.message).toContain("не подтверждены");
  });
+ it("keeps measured recording EIS/OIS separate from visual stabilization proof",()=>{
+  const observed=nativeRecordedModeEvidence({...base,recordingEisFrames:72,
+    recordingOisFrames:0,recordingStabilizationOffFrames:0,
+    recordingStabilizationUnknownFrames:8},12345);
+  expect(observed?.message).toContain("72/0/0/8");
+  expect(observed?.message).toContain("не подтверждены");
+  const absent=nativeRecordedModeEvidence({...base,recordingEisFrames:0},12345);
+  expect(absent?.message).toContain("неизвестно");
+ });
  it("does not fabricate success on missing audio, decoder or damaged timing",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4AudioSamples:0},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4FirstFrameDecodable:false},12345)?.state).toBe("unknown");
