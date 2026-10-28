@@ -93,7 +93,11 @@ export function NativeRecordingPanel(){
   void MultiCamNative.addListener("cameraAvailabilityChanged",()=>void refresh()).then(handle=>{
     if(!live)void handle.remove();else listener=handle;
   }).catch(()=>undefined);
-  void MultiCamNative.startCameraAvailability({ownerId:availabilityOwner}).catch(()=>undefined);
+  void MultiCamNative.startCameraAvailability({ownerId:availabilityOwner}).then(()=>{
+    // An old Activity can unmount while the Android registration is pending.
+    // Never keep its observer lease after its new Activity takes over.
+    if(!live)void MultiCamNative.stopCameraAvailability({ownerId:availabilityOwner}).catch(()=>undefined);
+  }).catch(()=>undefined);
   return ()=>{
     live=false;token++;
     document.removeEventListener("visibilitychange",onVisibility);
