@@ -77,3 +77,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Native Android now separately requires a before-and-after encoded PTS measurement for every attempted fold checkpoint. Decoding a nearby frame alone is insufficient; missing PTS spans are an incomplete audit.
 - The Camera2 bridge, mode passport, on-screen diagnostics and anonymized report expose the skipped count; regression tests cover invalid/skipped values and privacy-safe export.
 - This is bounded checkpoint evidence, not frame-by-frame validation. Android hardware and GitHub Actions acceptance have not been verified for this batch; physical acceptance figures must not be increased.
+
+## Durable Camera2 / fold evidence after process death — 29 October 2026
+- Found a cross-layer persistence gap: the Android history store did not copy `mp4CheckpointAuditCompleted`, `mp4FoldPointsSkipped` or `foldGeometryOnlyChanges` despite their presence in live Camera2 capture status, on-screen diagnostics and the anonymized export. These fields are now retained in the bounded 24-entry durable history.
+- Abandoned recordings now explicitly carry `mp4CheckpointAuditCompleted=false` and `savedBytes=0` with `state=interrupted`; historical posture/geometry counters are retained, but stale or orphaned media are not certified.
+- Added a source-level regression contract test to check Android native service/history fields against the anonymized TypeScript reporting layer. This guards against accidental future omission; it does NOT replace an Android instrumented test.
+- **Acceptance state remains open:** GitHub source changes committed, but current CI results and a successful APK/AAB build were not independently confirmed, and no real foldable device was tested. Do not equate 98%/99% indicative software-readiness estimates with hardware certification.
