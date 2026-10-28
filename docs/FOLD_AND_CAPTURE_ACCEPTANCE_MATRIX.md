@@ -1,7 +1,11 @@
-# Foldable and recording acceptance matrix (27 October 2026)
+# Foldable and recording acceptance matrix (28 October 2026)
 
-Evidence rule: **NOT VERIFIED** means no physical device or APK build was run in this batch.
-The scenarios below are required checks, not claimed passing tests.
+Evidence rule: **NOT VERIFIED** means this full scenario has not been proven on a physical device.
+"CODE ...; APK CI PASSED" records only that an implementation exists and the main Android CI pipeline passed (run #521, 28 October); it is NOT a claim that the complete physical scenario passed.
+This matrix deliberately separates code/CI progress from device acceptance.
+At this checkpoint: 36 scenarios; 4 with code/CI evidence; 0 fully device-verified.
+Code/CI evidence coverage = 4/36 = 11.1%; physical acceptance = 0/36 = 0%.
+These are auditable per-scenario counts, NOT overall application completeness.
 
 | ID | Device / condition | Expected camera/editor behavior | Status |
 |---|---|---|---|
@@ -37,9 +41,11 @@ The scenarios below are required checks, not claimed passing tests.
 | 30 | Capability and viewfinder states | No fake/placeholder support claims | NOT VERIFIED |
 | 31 | Single recorder microphone unplug | Show incomplete recording; salvage original bytes | NOT VERIFIED |
 | 32 | Two recorders and mic unplug | Both streams finalize; no fake clean pair | NOT VERIFIED |
-| 33 | High-speed 4K/FPS encoder | Bitrate has no 32-bit arithmetic overflow | STATIC FIX; APK NOT VERIFIED |
-| 34 | Encoded MP4 sample timestamps rollback | Do not certify FPS | STATIC FIX; APK NOT VERIFIED |
-| 35 | Slow editor playhead updates | Debounced persistence, flush on pagehide | STATIC FIX; APK NOT VERIFIED |
-| 36 | Android Activity recreation | Restore UI-only state, never fake recorder continuation | NOT VERIFIED |
+| 33 | High-speed 4K/FPS encoder | Bitrate has no 32-bit arithmetic overflow | CODE PRESENT; APK CI PASSED; PHYSICAL NOT VERIFIED |
+| 34 | Encoded MP4 sample timestamps rollback | Do not certify FPS | CODE PRESENT; APK CI PASSED; PHYSICAL NOT VERIFIED |
+| 35 | Slow editor playhead updates | Debounced persistence, flush on pagehide | CODE PRESENT; APK CI PASSED; PHYSICAL NOT VERIFIED |
+| 36 | Android Activity recreation | Restore UI-only state, never fake recorder continuation | CODE UNIT-TESTED; APK CI PASSED; PHYSICAL NOT VERIFIED |
+
+Tracking rule: a scenario becomes PHYSICAL VERIFIED only with a device, APK version, observed result, and saved evidence. Adding source code or passing the CI pipeline must never upgrade it to PHYSICAL VERIFIED.
 
 See source requirements: `СДелать Раскладушки(2).txt`, scenarios 1–30, and `MULTI-CAM-POV_Обнаружение камер и проверка(3).txt`, camera/video acceptance. A passing unit test cannot replace a physical-device observation.
