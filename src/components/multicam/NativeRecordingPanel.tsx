@@ -314,6 +314,14 @@ export function NativeRecordingPanel(){
        ?"первый кадр успешно прочитан"
        :"не подтверждено"}. Это не проверка всего видеоролика.
    </p>}
+   {status&&["recording","paused","saved","saved_interrupted"].includes(status.state)&&
+     <p role="status">Нативные наблюдения складного экрана во время записи:
+       {status.foldObservations??0} событий WindowManager;
+       {status.foldPostureChanges??0} изменений наблюдаемой геометрии/положения.
+       {status.lastFoldAt? ` Последнее изменение: ${new Date(status.lastFoldAt).toLocaleTimeString()}.`:""}
+       События не доказывают отсутствие потерянных кадров и могут отсутствовать,
+       если экран приложения не наблюдался.
+     </p>}
    {status?.mp4TracksInspected&&<p role="status">Проверка сохранённого MP4: видеодорожка {status.mp4HasVideoTrack?"обнаружена":"не обнаружена"}, звуковая дорожка {status.mp4HasAudioTrack?"обнаружена":"не обнаружена"}. {status.mp4VideoWidth&&status.mp4VideoHeight?`Размер видеофайла: ${status.mp4VideoWidth}×${status.mp4VideoHeight}.`:""} Это проверка дорожек, а не каждого кадра или качества звука.</p>}
    {status?.mp4TracksInspected&&<p role="status">
      Выборочная проверка сэмплов MP4: видео {status.mp4VideoSamples??0}, звук {status.mp4AudioSamples??0};
