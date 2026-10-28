@@ -1163,7 +1163,8 @@ public class NativeCaptureService extends Service {
     }
     private void open(int session, String id, int width, int height, int fps) {
         try {
-            if (stopRequested || session != generation) { finish(); return; }
+            if (session != generation) return; // stale open must not finish new session
+            if (stopRequested) { finish(); return; }
             if (id == null || id.isEmpty() || width < 160 || height < 120 ||
                 width > 3840 || height > 2160 || fps < 15 || fps > 60)
                 throw new IllegalArgumentException("Недопустимый режим Native Camera2");
@@ -1311,7 +1312,9 @@ public class NativeCaptureService extends Service {
                             new CameraCaptureSession.StateCallback() {
                                 @Override public void onConfigured(CameraCaptureSession sessionHandle) {
                                     if (session != generation || stopRequested) {
-                                        sessionHandle.close(); finish(); return;
+                                        sessionHandle.close();
+                                         if (session == generation && stopRequested) finish();
+                                         return;
                                     }
                                     capture = sessionHandle;
                                     try {
@@ -1331,7 +1334,8 @@ public class NativeCaptureService extends Service {
                                 }
                                 @Override public void onConfigureFailed(CameraCaptureSession sessionHandle) {
                                     sessionHandle.close();
-                                    if (previewReader == null) {
+                                     if (session != generation || stopRequested) return;
+                                     if (previewReader == null) {
                                         fail(new IllegalStateException("Camera2 capture session failed"));
                                         return;
                                     }
@@ -1359,7 +1363,12 @@ public class NativeCaptureService extends Service {
                                         opened.createCaptureSession(Arrays.asList(surface),
                                             new CameraCaptureSession.StateCallback() {
                                                 @Override public void onConfigured(CameraCaptureSession ready) {
-                                                    capture=ready;
+                                                     if (session != generation || stopRequested) {
+                                                         ready.close();
+                                                         if (session == generation && stopRequested) finish();
+                                                         return;
+                                                     }
+                                                     capture=ready;
                                                     try {
                                                         capture.setRepeatingRequest(only.build(),liveCallback,worker);
                                                         if(openingTimeout!=null){
@@ -1374,7 +1383,8 @@ public class NativeCaptureService extends Service {
                                                 }
                                                 @Override public void onConfigureFailed(CameraCaptureSession broken) {
                                                     broken.close();
-                                                    fail(new IllegalStateException("Camera2 recording session failed"));
+                                                     if (session != generation || stopRequested) return;
+                                                     fail(new IllegalStateException("Camera2 recording session failed"));
                                                 }
                                             },worker);
                                     } catch(Exception error){fail(error);}
@@ -1384,11 +1394,13 @@ public class NativeCaptureService extends Service {
                 }
                 @Override public void onDisconnected(CameraDevice disconnected) {
                     disconnected.close();
+                    if (session != generation || stopRequested) return;
                     if (camera == disconnected) camera = null;
-                    if (!stopRequested) { interruptedByCamera = true; stopRequested = true; worker.post(NativeCaptureService.this::finish); }
+                    interruptedByCamera = true; stopRequested = true; worker.post(NativeCaptureService.this::finish);
                 }
                 @Override public void onError(CameraDevice broken, int error) {
                     broken.close();
+                    if (session != generation || stopRequested) return;
                     if (camera == broken) camera = null;
                     interruptedByCamera = true;
                     fail(new IllegalStateException("Camera2 error " + error));
