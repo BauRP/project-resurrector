@@ -17,6 +17,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FirstFrameDecodable:false},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4VideoTimestampDuplicates:2},12345)?.state).toBe("unknown");
  });
+ it("marks a measured MP4 FPS mismatch as unconfirmed, not verified 60fps",()=>{
+  expect(nativeRecordedModeEvidence({...base,fps:60,mp4SampledFps:24,mp4TailSampledFps:24},12345)?.state)
+    .toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,fps:30,mp4SampledFps:29.7,mp4TailSampledFps:30.2},12345)?.state)
+    .toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,fps:30,mp4SampledFps:-1,mp4TailSampledFps:-1},12345)?.state)
+    .toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
