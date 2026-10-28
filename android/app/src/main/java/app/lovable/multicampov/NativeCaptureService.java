@@ -1466,8 +1466,14 @@ public class NativeCaptureService extends Service {
         android.graphics.Bitmap frame=null;
         try {
             retriever.setDataSource(file.getAbsolutePath());
-            frame=retriever.getScaledFrameAtTime(0L,
-                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,320,180);
+            // Android 7/7.1 (minSdk 24) has no getScaledFrameAtTime.
+            // Use the older decoder entry point on those devices rather than
+            // crashing a completed MP4 finalization with NoSuchMethodError.
+            if (Build.VERSION.SDK_INT >= 27)
+                frame=retriever.getScaledFrameAtTime(0L,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC,320,180);
+            else frame=retriever.getFrameAtTime(0L,
+                    MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
             return frame!=null && frame.getWidth()>0 && frame.getHeight()>0;
         } catch (Exception error) {
             return false;
