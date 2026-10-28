@@ -1,6 +1,7 @@
 import {registerPlugin} from "@capacitor/core";
 export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;stabilization:string;directPreviewActive?:boolean;
+ cameraSensorFrames?:number;cameraSensorFps?:number;
  stabilizationCaptureResultObserved:boolean;savedBytes:number;
  savedUri:string;videoOnly:boolean;orientationDegrees?:number;
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
