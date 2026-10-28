@@ -124,6 +124,8 @@ public class NativeCaptureService extends Service {
     private static String recordingLastFoldPostureSignature = "";
     private static String recordingLastFoldGeometrySignature = "";
     private static boolean recordingFoldBaselineObserved = false;
+    private static String recordingFoldObserverLease = "";
+    private static boolean recordingFoldObserverGap = false;
     private static volatile long recordingLastFoldElapsedMs = -1L;
     private static volatile int foldNearbyCameraCallbackGaps = 0;
     private static volatile long maxFoldNearbyCallbackGapMs = 0L;
@@ -185,6 +187,7 @@ public class NativeCaptureService extends Service {
                 preferences.getInt("foldCheckpointsOmitted",0));
             recovered.put("foldChangesWhilePaused",
                 preferences.getInt("foldChangesWhilePaused",0));
+            recovered.put("foldObserverGap",preferences.getBoolean("foldObserverGap",false));
             recovered.put("mp4CheckpointAuditCompleted",false);
             recovered.put("mp4FoldPointsSkipped",preferences.getInt("mp4FoldPointsSkipped",0));
             recovered.put("lastFoldAt",preferences.getLong("lastFoldAt",0L));
@@ -217,14 +220,40 @@ public class NativeCaptureService extends Service {
         }
     }
 
+    public static void observeFoldObserverActive(String lease){
+        if(lease==null||lease.isEmpty())return;
+        synchronized(STATE_LOCK){
+            if(!lease.equals(recordingFoldObserverLease)){
+                if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state)) &&
+                   !recordingFoldObserverLease.isEmpty())recordingFoldObserverGap=true;
+                recordingFoldObserverLease=lease;
+                recordingFoldBaselineObserved=false;
+            }
+        }
+    }
+    public static void observeFoldObserverStopped(String lease){
+        if(lease==null)return;
+        synchronized(STATE_LOCK){
+            if(!lease.equals(recordingFoldObserverLease))return;
+            recordingFoldObserverLease="";
+            recordingFoldBaselineObserved=false;
+            recordingLastFoldElapsedMs=-1L;
+            if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state))){
+                recordingFoldObserverGap=true;
+                runningInstance.getSharedPreferences(STORE,MODE_PRIVATE).edit()
+                    .putBoolean("foldObserverGap",true).apply();
+            }
+        }
+    }
     public static void observeFoldDuringRecording(
-        int hingeCount,String postureSignature,String geometrySignature) {
-        if (postureSignature==null||geometrySignature==null||
+        String lease,int hingeCount,String postureSignature,String geometrySignature) {
+        if (lease==null||postureSignature==null||geometrySignature==null||
             postureSignature.length()>1000||geometrySignature.length()>1600||
             hingeCount<0||hingeCount>16)return;
         synchronized(STATE_LOCK){
             NativeCaptureService service=runningInstance;
             if(service==null||!("recording".equals(state)||"paused".equals(state)))return;
+            if(!lease.equals(recordingFoldObserverLease))return;
             recordingFoldObservations++;
             if(recordingFoldBaselineObserved){
                 if(!postureSignature.equals(recordingLastFoldPostureSignature)){
@@ -265,6 +294,7 @@ public class NativeCaptureService extends Service {
                 .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
                 .putInt("foldCheckpointsOmitted",recordingFoldCheckpointsOmitted)
                 .putInt("foldChangesWhilePaused",recordingFoldChangesWhilePaused)
+                .putBoolean("foldObserverGap",recordingFoldObserverGap)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
@@ -899,6 +929,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("foldCheckpointsOmitted",0):recordingFoldCheckpointsOmitted);
             out.put("foldChangesWhilePaused",runningInstance==null
                 ? previous.getInt("foldChangesWhilePaused",0):recordingFoldChangesWhilePaused);
+            out.put("foldObserverGap",runningInstance==null
+                ? previous.getBoolean("foldObserverGap",false):recordingFoldObserverGap);
             out.put("lastFoldAt", runningInstance==null
                 ? previous.getLong("lastFoldAt",0L):recordingLastFoldAt);
             out.put("foldNearbyCallbackGaps",runningInstance==null
@@ -986,6 +1018,7 @@ public class NativeCaptureService extends Service {
                 .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
                 .putInt("foldCheckpointsOmitted",recordingFoldCheckpointsOmitted)
                 .putInt("foldChangesWhilePaused",recordingFoldChangesWhilePaused)
+                .putBoolean("foldObserverGap",recordingFoldObserverGap)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
@@ -1127,6 +1160,7 @@ public class NativeCaptureService extends Service {
             recordingFoldObservations=0;recordingPostureChanges=0;
             recordingFoldGeometryOnlyChanges=0;
             recordingFoldCheckpointsOmitted=0;recordingFoldChangesWhilePaused=0;
+            recordingFoldObserverGap=false;
             recordingLastFoldAt=0L;
             recordingLastFoldPostureSignature="";
             recordingLastFoldGeometrySignature="";
@@ -2052,7 +2086,7 @@ public class NativeCaptureService extends Service {
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
                 mp4FoldPtsSpanChecks<mp4FoldProbes ||
                 mp4FoldPointsSkipped>0 || mp4FoldPtsLargeGaps>0 ||
-                recordingFoldCheckpointsOmitted>0;
+                recordingFoldCheckpointsOmitted>0 || recordingFoldObserverGap;
             // A nominally saved MP4 must not be marked clean when its
             // decoder or actual video-track audit cannot confirm the result.
             // This is independent of later WebView passport validation.
@@ -2067,6 +2101,8 @@ public class NativeCaptureService extends Service {
             savedUri = gallery == null ? "" : gallery;
             String message = !mp4CheckpointAuditCompleted
                 ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
+                : recordingFoldObserverGap
+                ? "MP4 сохранён, но наблюдение за складным экраном прерывалось"
                 : recordingFoldCheckpointsOmitted>0
                 ? "MP4 сохранён, но проверка не охватила более восьми складываний"
                 : mp4FoldPointsSkipped>0
