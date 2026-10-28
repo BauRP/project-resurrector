@@ -71,3 +71,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Approximate MP4 checkpoints are created for posture transitions only; geometry-only window updates no longer fabricate a physical folding checkpoint. Existing Camera2 recording remains owned by its foreground service; this observer change does not restart the recorder.
 - Native bridge, screen diagnostics and anonymized audit output now expose separate posture/geometry counts. A regression test checks this separation in the exported audit.
 - Validation: changes committed to isolated branch; these code changes do **not** establish physical device continuity, actual fold acceptance, new APK success or visual EIS/OIS performance. Hardware acceptance remains unverified.
+
+## Fold checkpoint audit completeness — 29 October 2026
+- Previously, a fold position outside the 500 ms middle window could be silently skipped while the MP4 audit still returned `saved`. Such near-start/end observations are now counted in `mp4FoldPointsSkipped` and downgrade the finalized result to `saved_interrupted` (video bytes may still be present).
+- Native Android now separately requires a before-and-after encoded PTS measurement for every attempted fold checkpoint. Decoding a nearby frame alone is insufficient; missing PTS spans are an incomplete audit.
+- The Camera2 bridge, mode passport, on-screen diagnostics and anonymized report expose the skipped count; regression tests cover invalid/skipped values and privacy-safe export.
+- This is bounded checkpoint evidence, not frame-by-frame validation. Android hardware and GitHub Actions acceptance have not been verified for this batch; physical acceptance figures must not be increased.
