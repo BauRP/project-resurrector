@@ -178,6 +178,8 @@ export function startDisplayAdaptation(): () => void {
     root.style.setProperty("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
+    // Avoid repeatedly publishing identical pane geometry on mutation storms.
+    // Actual viewport changes still re-evaluate the latest Android topology.
     if (lastNative && safeViewportDimension(width()) !== null && safeViewportDimension(height()) !== null)
       layout(lastNative);
   };
@@ -188,6 +190,8 @@ export function startDisplayAdaptation(): () => void {
     // A viewport resize can change the usable panes without a fresh native
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());
+    // Camera sessions outlive layout changes. Only observed geometry is logged;
+    // do not restart or reopen Android capture on a fold transition.
     rememberActiveFoldSnapshot(token, details, Date.now());
     const signature = [details.posture, details.hingeCount, details.usableRegions,
       details.layout, details.regionGeometry].join("|");
