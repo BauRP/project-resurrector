@@ -89,3 +89,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Hinge-posture changes during `MediaRecorder.pause()` increment a **separate** `foldChangesWhilePaused` counter rather than creating fictitious PTS samples or consuming one of eight MP4 checkpoints. Resume clears fold-adjacent callback timing reference.
 - Both counters flow through persisted Android history, Capacitor bridge, on-screen diagnostics and privacy-safe exported audit. Regression tests cover exceeded checkpoint counts and paused changes in the report.
 - A status downgrade is a limitation of **the bounded verification**, not proof of damaged video or dropped encoded frames. Current hardware acceptance and new build/test outcomes remain unverified.
+
+## Finalized MP4 track fidelity — 29 October 2026
+- Native Camera2 finalization now treats a long MP4 with no readable video samples near its end as incomplete even when a nearest-sync-frame decoder returns an earlier frame. This distinguishes tail-keyframe decoding from actual tail sample evidence.
+- The per-camera mode passport requires encoded MP4 track width and height to match the requested dimensions **in order**. A transposed track is not reinterpreted as the original mode merely because portrait/landscape rotation metadata may differ.
+- Added TypeScript regressions for missing tail samples and transposed track dimensions. This is bounded file validation, not full-frame decode, optical/EIS effectiveness certification, or real hardware fold acceptance.
+- Commits alone do not verify Android APK/AAB compilation; hardware and CI outcomes remain unconfirmed until actually observed.
