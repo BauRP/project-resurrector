@@ -7,10 +7,30 @@ import { Button } from "@/components/ui/button";
 
 export function NativeRecordingPanel(){
  const [cameras,setCameras]=useState<NativeCameraProfile[]>([]);
- const [camera,setCamera]=useState("");
- const [resolution,setResolution]=useState("1920x1080");
- const [fps,setFps]=useState(30);
+ const [camera,setCamera]=useState(()=>{
+   try{return localStorage.getItem("multicam-native-last-camera-v1")??"";}catch{return "";}
+ });
+ const [resolution,setResolution]=useState(()=>{
+   try{const saved=localStorage.getItem("multicam-native-last-size-v1");
+     return saved && /^\d{3,4}x\d{3,4}$/.test(saved) ? saved : "1920x1080";
+   }catch{return "1920x1080";}
+ });
+ const [fps,setFps]=useState(()=>{
+   try{const n=Number(localStorage.getItem("multicam-native-last-fps-v1"));
+     return [24,25,30,60].includes(n)?n:30;
+   }catch{return 30;}
+ });
  const [audio,setAudio]=useState(true);
+ // Save UI choices only, never recorder ownership or a fictitious resumed
+ // recording. A persisted lens must match current Camera2 enumeration.
+ useEffect(()=>{
+   if(!camera)return;
+   try{localStorage.setItem("multicam-native-last-camera-v1",camera);}catch{}
+ },[camera]);
+ useEffect(()=>{
+   try{localStorage.setItem("multicam-native-last-size-v1",resolution);
+     localStorage.setItem("multicam-native-last-fps-v1",String(fps));}catch{}
+ },[resolution,fps]);
  const [status,setStatus]=useState<Status|null>(null);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
@@ -39,7 +59,8 @@ export function NativeRecordingPanel(){
   if(!isNative())return;
   let live=true;
   void MultiCamNative.getCapabilities().then(x=>{
-   if(live){setCameras(x.cameras);setCamera(x.cameras[0]?.cameraId??"");}
+   if(live){setCameras(x.cameras);setCamera(previous=>
+     x.cameras.some(camera=>camera.cameraId===previous)?previous:x.cameras[0]?.cameraId??"");}
   }).catch(e=>{if(live)setError(String(e));});
   const refresh=()=>void bridge.status().then(x=>{if(live){setStatus(x);if(nativeRecorderOwnsCamera(x.state)){if(x.cameraId)setCamera(x.cameraId);if(x.width&&x.height)setResolution(`${x.width}x${x.height}`);if(x.fps)setFps(x.fps);}}}).catch(()=>undefined);
   refresh();const timer=window.setInterval(refresh,1700);
