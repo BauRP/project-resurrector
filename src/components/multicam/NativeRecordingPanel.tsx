@@ -38,7 +38,13 @@ export function NativeRecordingPanel(){
  // Keep the interface responsive to hardware reconnects while never dropping
  // the selected camera or interrupting an active Android recording session.
  const [preview,setPreview]=useState("");
- const [directEnabled,setDirectEnabled]=useState(false);
+ const [directEnabled,setDirectEnabled]=useState(()=>{
+   try{return localStorage.getItem("multicam-native-direct-preview-v1")==="yes";}
+   catch{return false;}
+ });
+ useEffect(()=>{
+   try{localStorage.setItem("multicam-native-direct-preview-v1",directEnabled?"yes":"no");}catch{}
+ },[directEnabled]);
  const [directNotice,setDirectNotice]=useState("");
  const directTarget=useRef<HTMLDivElement|null>(null);
  const directLease=useRef("native-direct-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2));
