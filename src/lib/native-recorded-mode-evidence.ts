@@ -49,6 +49,7 @@ export function nativeRecordedModeEvidence(
     !validCount(foldPassed,foldTotal,8) ||
     (middleTotal>0 && middlePassed<middleTotal) ||
     (foldTotal>0 && foldPassed<foldTotal);
+  const suspiciousFoldPts = (status.mp4FoldPtsLargeGaps ?? 0)>0;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -64,7 +65,7 @@ export function nativeRecordedModeEvidence(
   const recordingConfirmed = filePresent && track && decoded &&
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
     dimensionsMatch && !anomalies && !audioIncomplete &&
-    !measuredFpsMismatch && !tailDecodeFailure && !checkpointMismatch;
+    !measuredFpsMismatch && !tailDecodeFailure && !checkpointMismatch && !suspiciousFoldPts;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -77,6 +78,7 @@ export function nativeRecordedModeEvidence(
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
+    suspiciousFoldPts ? "Обнаружен большой интервал видеометок возле складывания." :
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
   const prefix = status.state === "saved_interrupted" || status.state === "interrupted"
     ? "При записи было прерывание или неполное подтверждение. " : "";
