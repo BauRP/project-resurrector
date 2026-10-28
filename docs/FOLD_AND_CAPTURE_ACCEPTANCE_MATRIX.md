@@ -106,3 +106,8 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - When an active recording loses its fold observer, `foldObserverGap=true` is persisted and carried through the native recording status, 24-entry audit history, Capacitor bridge, diagnostic UI and Camera2 per-mode passport. This prevents inferring uninterrupted fold observation from a silent observer disconnect.
 - Attaching a new observer resets its posture baseline instead of counting the first geometry as a physical fold; no Camera2 encoder restart is requested. Native MP4 files are preserved while the unverified fold period is labeled incomplete.
 - Added TypeScript regression checks for unknown fold observer continuity and anonymized export. No hardware-driven lifecycle acceptance or Android CI success has yet been demonstrated for these changes.
+
+## Fold journal callback chronology and unknown initial posture — 29 October 2026
+- A duplicate native callback now advances both the revision and most-recent observation-time watermarks without rewriting the original pre-recording baseline timestamp. This blocks queued older geometry observations with the same native revision from entering the capture log.
+- A journal lacking a verified pre-capture baseline counts only actual consecutive transitions, not its first observed screen as a fold. Status remains explicitly uncertain where baseline evidence was unavailable.
+- Added regression coverage for delayed same-revision callback, baseline timestamp preservation and the actual observed transition count. These are unit/source-level checks; they do not establish hardware acceptance.
