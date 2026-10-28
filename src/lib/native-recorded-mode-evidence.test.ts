@@ -52,6 +52,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:0,mp4FoldMatched:0},12345)?.message)
     .toContain("не подтверждены");
  });
+ it("rejects impossible checkpoint counts rather than trusting corrupted evidence",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:4},12345)?.state)
+    .toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:9,mp4FoldMatched:9},12345)?.state)
+    .toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:-1,mp4FoldMatched:0},12345)?.state)
+    .toBe("unknown");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
