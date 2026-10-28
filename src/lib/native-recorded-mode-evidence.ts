@@ -32,10 +32,19 @@ export function nativeRecordedModeEvidence(
     (status.mp4VideoTimestampDuplicates ?? 0) > 0;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
+  // Treat measured beginning/end MP4 timing as evidence about the selected
+  // mode, not as full-file verification. Unknown measurements stay unknown.
+  const fpsTolerance = Math.max(2, fps! * .1);
+  const observedFps = [status.mp4SampledFps,status.mp4TailSampledFps]
+    .filter((value): value is number => typeof value === "number" &&
+      Number.isFinite(value) && value > 0);
+  const measuredFpsMismatch = observedFps.some(value =>
+    Math.abs(value - fps!) > fpsTolerance);
   // A video file with confirmed decoding, dimensions and samples is RECORDED,
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
-    videoSamples > 0 && dimensionsMatch && !anomalies && !audioIncomplete;
+    videoSamples > 0 && dimensionsMatch && !anomalies && !audioIncomplete &&
+    !measuredFpsMismatch;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -45,6 +54,7 @@ export function nativeRecordedModeEvidence(
     videoSamples <= 0 ? "Наличие видеокадров не подтверждено." :
     anomalies ? "В проверенном участке обнаружены нарушения времени кадров." :
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
+    measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
   const prefix = status.state === "saved_interrupted" || status.state === "interrupted"
     ? "При записи было прерывание или неполное подтверждение. " : "";
