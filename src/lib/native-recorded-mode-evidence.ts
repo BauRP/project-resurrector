@@ -36,7 +36,8 @@ export function nativeRecordedModeEvidence(
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
     videoSamples > 0 && dimensionsMatch && !anomalies && !audioIncomplete;
-  const state: ModeEvidence["state"] = recordingConfirmed ? "recorded" : "unknown";
+  const state: ModeEvidence["state"] = recordingConfirmed &&
+    status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
     !track ? "Наличие видеодорожки не подтверждено." :
     !decoded ? "Декодирование видеокадра не подтверждено." :
