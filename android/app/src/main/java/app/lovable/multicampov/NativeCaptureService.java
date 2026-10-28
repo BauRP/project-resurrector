@@ -99,7 +99,8 @@ public class NativeCaptureService extends Service {
     private static float mp4TailSampledFps = -1f;
     private static boolean mp4TailNearEnd = false;
     private static boolean mp4FirstFrameDecodable = false;
-    private static long mp4AvStartOffsetMs = Long.MIN_VALUE;
+    private static long mp4AvStartOffsetMs = 0L;
+    private static boolean mp4AvStartMeasured = false;
     // Passive native WindowManager samples: not a claim of continuous fold
     // monitoring when an Activity is absent, or of unbroken MP4 frames.
     private static int recordingFoldObservations = 0;
@@ -690,7 +691,9 @@ public class NativeCaptureService extends Service {
             out.put("mp4TailNearEnd", runningInstance == null
                 ? previous.getBoolean("mp4TailNearEnd", false) : mp4TailNearEnd);
             out.put("mp4AvStartOffsetMs", runningInstance == null
-                ? previous.getLong("mp4AvStartOffsetMs", Long.MIN_VALUE) : mp4AvStartOffsetMs);
+                ? previous.getLong("mp4AvStartOffsetMs", 0L) : mp4AvStartOffsetMs);
+            out.put("mp4AvStartMeasured", runningInstance == null
+                ? previous.getBoolean("mp4AvStartMeasured", false) : mp4AvStartMeasured);
             out.put("mp4FirstFrameDecodable", runningInstance == null
                 ? previous.getBoolean("mp4FirstFrameDecodable", false) : mp4FirstFrameDecodable);
             out.put("foldObservations", runningInstance==null
@@ -739,6 +742,7 @@ public class NativeCaptureService extends Service {
                 .putFloat("mp4TailSampledFps", mp4TailSampledFps)
                 .putBoolean("mp4TailNearEnd", mp4TailNearEnd)
                 .putLong("mp4AvStartOffsetMs",mp4AvStartOffsetMs)
+                .putBoolean("mp4AvStartMeasured",mp4AvStartMeasured)
                 .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable)
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
@@ -848,7 +852,7 @@ public class NativeCaptureService extends Service {
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
             mp4TailSampledFps = -1f; mp4TailNearEnd = false;
             mp4FirstFrameDecodable = false;
-            mp4AvStartOffsetMs = Long.MIN_VALUE;
+            mp4AvStartOffsetMs = 0L;mp4AvStartMeasured = false;
             recordingFoldObservations=0;recordingPostureChanges=0;
             recordingLastFoldAt=0L;recordingLastFoldSignature="";
         }
@@ -1325,7 +1329,8 @@ public class NativeCaptureService extends Service {
     private static final class Mp4TrackAudit {
         boolean video, audio;
         long firstVideoPtsUs = -1L, firstAudioPtsUs = -1L;
-        long avStartOffsetMs = Long.MIN_VALUE;
+        long avStartOffsetMs = 0L;
+        boolean avStartMeasured;
         int width, height, videoSamples, audioSamples;
         int timestampRollbacks, timestampDuplicates;
         boolean sampleLimitReached;
@@ -1461,9 +1466,11 @@ public class NativeCaptureService extends Service {
                 scanMp4Tail(extractor, videoTrack, result);
             }
             if (audioTrack >= 0) scanMp4Track(extractor, audioTrack, false, result);
-            if (result.firstVideoPtsUs >= 0L && result.firstAudioPtsUs >= 0L)
+            if (result.firstVideoPtsUs >= 0L && result.firstAudioPtsUs >= 0L) {
+                result.avStartMeasured = true;
                 result.avStartOffsetMs =
                     (result.firstAudioPtsUs - result.firstVideoPtsUs) / 1000L;
+            }
             return result;
         } catch (Exception ignored) {
             return null;
@@ -1573,7 +1580,8 @@ public class NativeCaptureService extends Service {
             mp4TailSampledFps = audit == null ? -1f : audit.tailSampledFps;
             mp4TailNearEnd = audit != null && audit.tailNearEnd;
             mp4FirstFrameDecodable=decodeMp4FirstFrame(media);
-            mp4AvStartOffsetMs = audit == null ? Long.MIN_VALUE : audit.avStartOffsetMs;
+            mp4AvStartOffsetMs = audit == null ? 0L : audit.avStartOffsetMs;
+            mp4AvStartMeasured = audit != null && audit.avStartMeasured;
             // A missing audio track is not a clean video+audio recording.
             // A missing parser result is UNKNOWN rather than "audio absent".
             boolean audioNotConfirmed = wantAudio &&
