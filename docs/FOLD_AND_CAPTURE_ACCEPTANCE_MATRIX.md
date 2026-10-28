@@ -95,3 +95,8 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - The per-camera mode passport requires encoded MP4 track width and height to match the requested dimensions **in order**. A transposed track is not reinterpreted as the original mode merely because portrait/landscape rotation metadata may differ.
 - Added TypeScript regressions for missing tail samples and transposed track dimensions. This is bounded file validation, not full-frame decode, optical/EIS effectiveness certification, or real hardware fold acceptance.
 - Commits alone do not verify Android APK/AAB compilation; hardware and CI outcomes remain unconfirmed until actually observed.
+
+## Android crash recovery / recorded FPS consistency — 29 October 2026
+- Recovery from an abandoned Camera2 service now clears persistent file path, gallery URI, MP4 track/decoder claims, sample counts and prior checkpoint-completion state. The interrupted attempt remains retained in the bounded audit log, with no claim that an orphaned MP4 was validated.
+- Native MP4 finalization now checks measured bounded start/end FPS against the requested recording FPS using the same 10% / minimum 2-fps tolerance as the Camera2 passport. It also refuses missing or mismatched video track dimensions. These checks flag incomplete evidence without deleting the finalized recording.
+- Added regression contract assertions for the cleared persisted state; this is **source-level** evidence only. The changes require successful Android CI and on-device lifecycle, audio/video and fold testing before acceptance.
