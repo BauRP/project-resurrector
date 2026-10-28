@@ -252,7 +252,7 @@ export function NativeRecordingPanel(){
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
         "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
         "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
-    {nativeRecorderOwnsCamera(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
+    {["recording","paused"].includes(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
    </div>
    <label className="flex items-center gap-2"><input type="checkbox" checked={directEnabled}
      disabled={busy||["recording","paused","starting","stopping"].includes(status?.state??"")}
