@@ -25,9 +25,10 @@ export function nativeRecordedModeEvidence(
     Number.isSafeInteger(status.mp4VideoWidth) &&
     Number.isSafeInteger(status.mp4VideoHeight)
     ? {width:status.mp4VideoWidth,height:status.mp4VideoHeight} : null;
-  const dimensionsMatch = !!dimensions && (
-    (dimensions.width === width && dimensions.height === height) ||
-    (dimensions.width === height && dimensions.height === width));
+  // MediaFormat track dimensions are encoded dimensions, not the
+  // orientation metadata. Swapping width/height changes the recorded mode.
+  const dimensionsMatch = !!dimensions &&
+    dimensions.width === width && dimensions.height === height;
   const anomalies = (status.mp4VideoTimestampRollbacks ?? 0) > 0 ||
     (status.mp4VideoTimestampDuplicates ?? 0) > 0;
   // On an explicitly audited MP4 longer than 1.5 seconds, a failed tail
@@ -35,6 +36,9 @@ export function nativeRecordedModeEvidence(
   // tail decoder field remain historical evidence, not invented failures.
   const tailDecodeFailure = (status.mp4DurationMs ?? -1)>1500 &&
     status.mp4TailFrameDecodable === false;
+  const missingTailSamples = (status.mp4DurationMs ?? -1)>2000 &&
+    (status.mp4TailVideoSamples !== undefined && status.mp4TailVideoSamples<=0 ||
+     status.mp4TailNearEnd === false);
   // Native counters are untrusted until they form a possible bounded
   // result. Reject negative/overflowed values and "more passed than tested".
   const middleTotal=status.mp4MiddleProbes??0;
@@ -80,7 +84,8 @@ export function nativeRecordedModeEvidence(
   const recordingConfirmed = filePresent && track && decoded &&
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
     dimensionsMatch && !anomalies && !audioIncomplete &&
-    !measuredFpsMismatch && !tailDecodeFailure && !checkpointMismatch && !suspiciousFoldPts;
+    !measuredFpsMismatch && !tailDecodeFailure && !missingTailSamples &&
+    !checkpointMismatch && !suspiciousFoldPts;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -92,6 +97,7 @@ export function nativeRecordedModeEvidence(
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
+    missingTailSamples ? "Не подтверждены видеосэмплы возле конца MP4." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
     suspiciousFoldPts ? (omitted>0
       ? "Не все изменения положения проверены: журнал MP4 ограничен восемью точками."
