@@ -57,6 +57,7 @@ export function CameraDiagnostics() {
     refresh();
     navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
     let removeAvailability: (() => void) | undefined;
+    const availabilityOwner = "diagnostics-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
     if (isNative()) {
       void MultiCamNative.addListener("cameraAvailabilityChanged", event => {
         if (mounted.current) {
@@ -66,7 +67,9 @@ export function CameraDiagnostics() {
       }).then(listener => {
         if (!mounted.current) { void listener.remove(); return; }
         removeAvailability = () => { void listener.remove(); };
-        void MultiCamNative.startCameraAvailability().catch(() => setError("События доступности Camera2 недоступны"));
+        void MultiCamNative.startCameraAvailability({ownerId:availabilityOwner}).then(() => {
+          if (!mounted.current) void MultiCamNative.stopCameraAvailability({ownerId:availabilityOwner}).catch(() => undefined);
+        }).catch(() => { if (mounted.current) setError("События доступности Camera2 недоступны"); });
       }).catch(() => { if (mounted.current) setError("События доступности Camera2 недоступны"); });
     }
     if (isNative()) void MultiCamNative.getCapabilities()
@@ -79,7 +82,7 @@ export function CameraDiagnostics() {
         void MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
       }
       removeAvailability?.();
-      if (isNative()) void MultiCamNative.stopCameraAvailability().catch(() => undefined);
+      if (isNative()) void MultiCamNative.stopCameraAvailability({ownerId:availabilityOwner}).catch(() => undefined);
       navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
     };
   }, []);
