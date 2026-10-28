@@ -86,6 +86,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(result?.message).toContain("пропущена");
   expect(nativeRecordedModeEvidence({...base,mp4FoldPointsSkipped:-1},12345)?.state).toBe("unknown");
  });
+ it("does not claim MP4 fold continuity when more than eight positions occurred",()=>{
+  const report=nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:true,
+    foldCheckpointsOmitted:3,mp4FoldProbes:8,mp4FoldMatched:8,
+    mp4FoldPtsSpanChecks:8},12345);
+  expect(report?.state).toBe("unknown");
+  expect(report?.message).toContain("восемью точками");
+  expect(nativeRecordedModeEvidence({...base,foldCheckpointsOmitted:-2},12345)?.state).toBe("unknown");
+ });
  it("cannot confirm a recording when native checkpoint scanning aborted",()=>{
   const failure=nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:false},12345);
   expect(failure?.state).toBe("unknown");
