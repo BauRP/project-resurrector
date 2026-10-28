@@ -58,7 +58,8 @@ export function nativeRecordedModeEvidence(
   // A checkpoint that was decoded but had no bracketing video timestamps
   // cannot establish local continuity. Keep it unknown rather than recorded.
   const missingFoldSpan = foldTotal > 0 && ptsChecks < foldTotal;
-  const suspiciousFoldPts = invalidFoldPts || ptsLarge>0 || missingFoldSpan;
+  const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
+  const suspiciousFoldPts = invalidFoldPts || ptsLarge>0 || missingFoldSpan || missingCheckpointAudit;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -87,7 +88,9 @@ export function nativeRecordedModeEvidence(
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
-    suspiciousFoldPts ? (missingFoldSpan
+    suspiciousFoldPts ? (missingCheckpointAudit
+      ? "Проверка промежуточных кадров MP4 не завершена."
+      : missingFoldSpan
       ? "Временные метки кадров не удалось проверить возле каждого складывания."
       : "Обнаружен большой или недостоверный интервал видеометок возле складывания.") :
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
