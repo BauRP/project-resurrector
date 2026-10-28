@@ -379,7 +379,7 @@ export function NativeRecordingPanel(){
        Это только начало MP4, не проверка синхронности всего ролика.
      </p>}
    {status?.mp4TracksInspected&&<p role="status">
-     Выборочное декодирование MP4: середина {status.mp4MiddleMatched??0} из {status.mp4MiddleProbes??0},
+     Выборочная проверка MP4 (декодирование и временные метки до 250 мс): середина {status.mp4MiddleMatched??0} из {status.mp4MiddleProbes??0},
      около наблюдавшихся складываний {status.mp4FoldMatched??0} из {status.mp4FoldProbes??0}.
      Ноль проверок у складок означает отсутствие пригодных отмеченных точек, а не доказательство непрерывности.
      Даже успешные точки не доказывают сохранность каждого кадра.
