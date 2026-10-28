@@ -128,6 +128,9 @@ public class NativeCaptureService extends Service {
     // Separate evidence: a nearby video sample does not rule out a large
     // presentation timestamp gap STRADDLING the actual fold observation.
     private static int mp4FoldPtsSpanChecks=0, mp4FoldPtsLargeGaps=0;
+    // Must not certify a saved recording if the bounded MP4 checkpoint
+    // parser stopped before finishing. Zero probes is not proof of success.
+    private static boolean mp4CheckpointAuditCompleted = false;
     private static long mp4MaxFoldPtsGapMs=0L;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
@@ -852,6 +855,9 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4FoldProbes",0):mp4FoldProbes);
             out.put("mp4FoldMatched",runningInstance==null
                 ? previous.getInt("mp4FoldMatched",0):mp4FoldMatched);
+            out.put("mp4CheckpointAuditCompleted",runningInstance==null
+                ? previous.getBoolean("mp4CheckpointAuditCompleted",false)
+                : mp4CheckpointAuditCompleted);
             out.put("mp4FoldPtsSpanChecks",runningInstance==null
                 ? previous.getInt("mp4FoldPtsSpanChecks",0):mp4FoldPtsSpanChecks);
             out.put("mp4FoldPtsLargeGaps",runningInstance==null
@@ -906,6 +912,7 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4MiddleMatched",mp4MiddleMatched)
                 .putInt("mp4FoldProbes",mp4FoldProbes)
                 .putInt("mp4FoldMatched",mp4FoldMatched)
+                .putBoolean("mp4CheckpointAuditCompleted",mp4CheckpointAuditCompleted)
                 .putInt("mp4FoldPtsSpanChecks",mp4FoldPtsSpanChecks)
                 .putInt("mp4FoldPtsLargeGaps",mp4FoldPtsLargeGaps)
                 .putLong("mp4MaxFoldPtsGapMs",mp4MaxFoldPtsGapMs)
@@ -1057,6 +1064,7 @@ public class NativeCaptureService extends Service {
             recordingFoldPointsMs="";
             mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
             mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;mp4MaxFoldPtsGapMs=0L;
+            mp4CheckpointAuditCompleted=false;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1788,7 +1796,10 @@ public class NativeCaptureService extends Service {
         mp4FoldProbes=0;mp4FoldMatched=0;
         mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;
         mp4MaxFoldPtsGapMs=0L;
-        if(durationMs<=2000L || file==null||!file.isFile())return;
+        mp4CheckpointAuditCompleted=false;
+        if(file==null||!file.isFile()||durationMs<=0L)return;
+        // No intermediate positions are meaningful in a <=2 s clip.
+        if(durationMs<=2000L){mp4CheckpointAuditCompleted=true;return;}
         MediaExtractor extractor=new MediaExtractor();
         try {
             extractor.setDataSource(file.getAbsolutePath());
@@ -1808,7 +1819,10 @@ public class NativeCaptureService extends Service {
                 if(hasNearVideoSample(extractor,at*1000L) &&
                    decodeMp4FrameAt(file,at*1000L))mp4MiddleMatched++;
             }
-            if(recordingFoldPointsMs.isEmpty())return;
+            if(recordingFoldPointsMs.isEmpty()){
+                mp4CheckpointAuditCompleted=true;
+                return;
+            }
             for(String point:recordingFoldPointsMs.split(",")){
                 if(mp4FoldProbes>=8)break;
                 try {
@@ -1827,6 +1841,7 @@ public class NativeCaptureService extends Service {
                     }
                 }catch(NumberFormatException ignored){}
             }
+            mp4CheckpointAuditCompleted=true;
         }catch(Exception ignored){
             // Unknown, never claim success when the MediaExtractor fails.
         }finally {
@@ -1935,7 +1950,7 @@ public class NativeCaptureService extends Service {
             // file duration are both available, not when metadata is unknown.
             boolean tailIssue = audit != null && audit.durationMs > 0L &&
                 audit.tailSamples > 0 && !audit.tailNearEnd;
-            boolean checkpointIssue =
+            boolean checkpointIssue = !mp4CheckpointAuditCompleted ||
                 (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
                 mp4FoldPtsLargeGaps>0;
@@ -1951,7 +1966,9 @@ public class NativeCaptureService extends Service {
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
-            String message = checkpointIssue
+            String message = !mp4CheckpointAuditCompleted
+                ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
+                : checkpointIssue
                 ? "MP4 сохранён, но не все проверенные промежуточные/складные кадры декодировались"
                 : interruptedByCamera
                 ? "Камера была потеряна; непрерывность записи не подтверждена"
