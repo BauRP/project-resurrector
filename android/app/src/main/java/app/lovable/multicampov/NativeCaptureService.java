@@ -116,8 +116,11 @@ public class NativeCaptureService extends Service {
     // monitoring when an Activity is absent, or of unbroken MP4 frames.
     private static int recordingFoldObservations = 0;
     private static int recordingPostureChanges = 0;
+    private static int recordingFoldGeometryOnlyChanges = 0;
     private static long recordingLastFoldAt = 0L;
-    private static String recordingLastFoldSignature = "";
+    private static String recordingLastFoldPostureSignature = "";
+    private static String recordingLastFoldGeometrySignature = "";
+    private static boolean recordingFoldBaselineObserved = false;
     private static volatile long recordingLastFoldElapsedMs = -1L;
     private static volatile int foldNearbyCameraCallbackGaps = 0;
     private static volatile long maxFoldNearbyCallbackGapMs = 0L;
@@ -185,34 +188,45 @@ public class NativeCaptureService extends Service {
         }
     }
 
-    public static void observeFoldDuringRecording(int hingeCount,String signature) {
-        if (signature==null||signature.length()>400||hingeCount<0||hingeCount>16)return;
+    public static void observeFoldDuringRecording(
+        int hingeCount,String postureSignature,String geometrySignature) {
+        if (postureSignature==null||geometrySignature==null||
+            postureSignature.length()>1000||geometrySignature.length()>1600||
+            hingeCount<0||hingeCount>16)return;
         synchronized(STATE_LOCK){
             NativeCaptureService service=runningInstance;
             if(service==null||!("recording".equals(state)||"paused".equals(state)))return;
             recordingFoldObservations++;
-            if(!recordingLastFoldSignature.isEmpty() &&
-                !signature.equals(recordingLastFoldSignature)){
-                recordingPostureChanges++;
-                recordingLastFoldAt=System.currentTimeMillis();
-                recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
-                if("recording".equals(state) && recordingStartedAt>0L &&
-                    (recordingFoldPointsMs.isEmpty() ||
-                        recordingFoldPointsMs.split(",").length<8)){
-                    // Paused duration is excluded. These wall-clock positions
-                    // are approximate encoder-time checkpoints, not proof.
-                    long activeMs=recordingStartedElapsedMs>=0L
-                        ?Math.max(0L,recordingLastFoldElapsedMs-
-                            recordingStartedElapsedMs-totalPausedElapsedMs)
-                        :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
-                    recordingFoldPointsMs +=
-                        (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+            if(recordingFoldBaselineObserved){
+                if(!postureSignature.equals(recordingLastFoldPostureSignature)){
+                    recordingPostureChanges++;
+                    recordingLastFoldAt=System.currentTimeMillis();
+                    recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
+                    if("recording".equals(state) && recordingStartedAt>0L &&
+                        (recordingFoldPointsMs.isEmpty() ||
+                            recordingFoldPointsMs.split(",").length<8)){
+                        // This is an approximate MP4 timeline checkpoint,
+                        // never proof that the exact frame was encoded.
+                        long activeMs=recordingStartedElapsedMs>=0L
+                            ?Math.max(0L,recordingLastFoldElapsedMs-
+                                recordingStartedElapsedMs-totalPausedElapsedMs)
+                            :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
+                        recordingFoldPointsMs +=
+                            (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+                    }
+                }else if(!geometrySignature.equals(recordingLastFoldGeometrySignature)){
+                    recordingFoldGeometryOnlyChanges++;
                 }
             }
-            recordingLastFoldSignature=signature;
+            // A genuine first observation can have zero folding features.
+            // Do not discard that baseline or fabricate a first fold.
+            recordingFoldBaselineObserved=true;
+            recordingLastFoldPostureSignature=postureSignature;
+            recordingLastFoldGeometrySignature=geometrySignature;
             service.getSharedPreferences(STORE,MODE_PRIVATE).edit()
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
+                .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
@@ -841,6 +855,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("foldObservations",0):recordingFoldObservations);
             out.put("foldPostureChanges", runningInstance==null
                 ? previous.getInt("foldPostureChanges",0):recordingPostureChanges);
+            out.put("foldGeometryOnlyChanges",runningInstance==null
+                ? previous.getInt("foldGeometryOnlyChanges",0):recordingFoldGeometryOnlyChanges);
             out.put("lastFoldAt", runningInstance==null
                 ? previous.getLong("lastFoldAt",0L):recordingLastFoldAt);
             out.put("foldNearbyCallbackGaps",runningInstance==null
@@ -922,6 +938,7 @@ public class NativeCaptureService extends Service {
                 .putBoolean("mp4TailFrameDecodable",mp4TailFrameDecodable)
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
+                .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
@@ -1058,7 +1075,11 @@ public class NativeCaptureService extends Service {
             mp4FirstFrameDecodable = false;mp4TailFrameDecodable=false;
             mp4AvStartOffsetMs = 0L;mp4AvStartMeasured = false;
             recordingFoldObservations=0;recordingPostureChanges=0;
-            recordingLastFoldAt=0L;recordingLastFoldSignature="";
+            recordingFoldGeometryOnlyChanges=0;
+            recordingLastFoldAt=0L;
+            recordingLastFoldPostureSignature="";
+            recordingLastFoldGeometrySignature="";
+            recordingFoldBaselineObserved=false;
             recordingLastFoldElapsedMs=-1L;foldNearbyCameraCallbackGaps=0;
             maxFoldNearbyCallbackGapMs=0L;lastCaptureCallbackElapsedMs=-1L;
             recordingFoldPointsMs="";
