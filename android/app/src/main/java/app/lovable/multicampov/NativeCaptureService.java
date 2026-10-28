@@ -116,6 +116,10 @@ public class NativeCaptureService extends Service {
     private static volatile long recordingLastFoldElapsedMs = -1L;
     private static volatile int foldNearbyCameraCallbackGaps = 0;
     private static volatile long maxFoldNearbyCallbackGapMs = 0L;
+    // Observed fold locations on the active recording timeline, capped to 8.
+    private static String recordingFoldPointsMs = "";
+    private static int mp4MiddleProbes = 0, mp4MiddleMatched = 0;
+    private static int mp4FoldProbes = 0, mp4FoldMatched = 0;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     public static void observeFoldDuringRecording(int hingeCount,String signature) {
@@ -129,6 +133,16 @@ public class NativeCaptureService extends Service {
                 recordingPostureChanges++;
                 recordingLastFoldAt=System.currentTimeMillis();
                 recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
+                if("recording".equals(state) && recordingStartedAt>0L &&
+                    (recordingFoldPointsMs.isEmpty() ||
+                        recordingFoldPointsMs.split(",").length<8)){
+                    // Paused duration is excluded. These wall-clock positions
+                    // are approximate encoder-time checkpoints, not proof.
+                    long activeMs=Math.max(0L,recordingLastFoldAt-
+                        recordingStartedAt-totalPausedMs);
+                    recordingFoldPointsMs +=
+                        (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+                }
             }
             recordingLastFoldSignature=signature;
             service.getSharedPreferences(STORE,MODE_PRIVATE).edit()
@@ -136,7 +150,8 @@ public class NativeCaptureService extends Service {
                 .putInt("foldPostureChanges",recordingPostureChanges)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
-                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs).apply();
+                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
+                .putString("foldPointsMs",recordingFoldPointsMs).apply();
         }
     }
 
@@ -752,6 +767,14 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("foldNearbyCallbackGaps",0):foldNearbyCameraCallbackGaps);
             out.put("maxFoldNearbyCallbackGapMs",runningInstance==null
                 ? previous.getLong("maxFoldNearbyCallbackGapMs",0L):maxFoldNearbyCallbackGapMs);
+            out.put("mp4MiddleProbes",runningInstance==null
+                ? previous.getInt("mp4MiddleProbes",0):mp4MiddleProbes);
+            out.put("mp4MiddleMatched",runningInstance==null
+                ? previous.getInt("mp4MiddleMatched",0):mp4MiddleMatched);
+            out.put("mp4FoldProbes",runningInstance==null
+                ? previous.getInt("mp4FoldProbes",0):mp4FoldProbes);
+            out.put("mp4FoldMatched",runningInstance==null
+                ? previous.getInt("mp4FoldMatched",0):mp4FoldMatched);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -795,6 +818,10 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
                 .putFloat("mp4TailSampledFps", mp4TailSampledFps)
                 .putBoolean("mp4TailNearEnd", mp4TailNearEnd)
+                .putInt("mp4MiddleProbes",mp4MiddleProbes)
+                .putInt("mp4MiddleMatched",mp4MiddleMatched)
+                .putInt("mp4FoldProbes",mp4FoldProbes)
+                .putInt("mp4FoldMatched",mp4FoldMatched)
                 .putLong("mp4AvStartOffsetMs",mp4AvStartOffsetMs)
                 .putBoolean("mp4AvStartMeasured",mp4AvStartMeasured)
                 .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable)
@@ -803,7 +830,8 @@ public class NativeCaptureService extends Service {
                 .putInt("foldPostureChanges",recordingPostureChanges)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
-                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs).apply();
+                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
+                .putString("foldPointsMs",recordingFoldPointsMs).apply();
         }
     }
     @Override public void onCreate() {
@@ -916,6 +944,8 @@ public class NativeCaptureService extends Service {
             recordingLastFoldAt=0L;recordingLastFoldSignature="";
             recordingLastFoldElapsedMs=-1L;foldNearbyCameraCallbackGaps=0;
             maxFoldNearbyCallbackGapMs=0L;lastCaptureCallbackElapsedMs=-1L;
+            recordingFoldPointsMs="";
+            mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
