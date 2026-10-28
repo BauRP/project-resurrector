@@ -116,6 +116,24 @@ public class DisplayTopologyPlugin extends Plugin {
                             activeOwners.isEmpty()) return;
                     latest = info;
                     revision++;
+                    int foldCount=0;
+                    StringBuilder nativeSignature=new StringBuilder();
+                    for(DisplayFeature feature:info.getDisplayFeatures()){
+                        if(!(feature instanceof FoldingFeature))continue;
+                        FoldingFeature fold=(FoldingFeature)feature;
+                        foldCount++;
+                        Rect bounds=fold.getBounds();
+                        nativeSignature.append('|').append(fold.getState())
+                            .append(':').append(fold.getOrientation())
+                            .append(':').append(bounds.left).append(',')
+                            .append(bounds.top).append(',')
+                            .append(bounds.right).append(',')
+                            .append(bounds.bottom);
+                    }
+                    // Observe actual WindowManager events, never infer physical
+                    // fold from a CSS resize. No camera reopen or file change.
+                    NativeCaptureService.observeFoldDuringRecording(
+                        foldCount,nativeSignature.toString());
                     notifyListeners("topologyChanged", snapshot());
                 }
             };
