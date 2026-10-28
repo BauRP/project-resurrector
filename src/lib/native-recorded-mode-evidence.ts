@@ -69,7 +69,7 @@ export function nativeRecordedModeEvidence(
   const missingFoldSpan = foldTotal > 0 && ptsChecks < foldTotal;
   const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
   const suspiciousFoldPts = invalidFoldPts || invalidSkipped || skippedPoints>0 ||
-    ptsLarge>0 || missingFoldSpan || missingCheckpointAudit || invalidOmitted || omitted>0;
+    ptsLarge>0 || missingFoldSpan || missingCheckpointAudit || invalidOmitted || omitted>0 || observerGap;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -100,7 +100,9 @@ export function nativeRecordedModeEvidence(
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     missingTailSamples ? "Не подтверждены видеосэмплы возле конца MP4." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
-    suspiciousFoldPts ? (omitted>0
+    suspiciousFoldPts ? (observerGap
+      ? "Наблюдение за складыванием прерывалось; непрерывность MP4 неизвестна."
+      : omitted>0
       ? "Не все изменения положения проверены: журнал MP4 ограничен восемью точками."
       : skippedPoints>0
       ? "Часть отмеченных складываний MP4 была пропущена как непригодная для проверки."
