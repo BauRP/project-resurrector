@@ -29,3 +29,18 @@ export interface NativeCaptureBridge {
 export const nativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
 export const nativeRecorderOwnsCamera=(state:string):boolean=>
  ["starting","previewing","recording","paused","stopping"].includes(state);
+
+/** Native MP4 headers are read only after MediaRecorder finalizes.
+ * An unavailable parser must never become false proof of no audio.
+ */
+export function nativeMp4TrackStatus(
+ status:Pick<NativeCaptureStatus,"audioRequested"|"mp4TracksInspected"|"mp4HasVideoTrack"|"mp4HasAudioTrack"|"mp4VideoWidth"|"mp4VideoHeight"|"width"|"height">,
+): "unknown"|"complete"|"missing-video"|"missing-audio"|"size-mismatch" {
+ if(!status.mp4TracksInspected)return "unknown";
+ if(!status.mp4HasVideoTrack)return "missing-video";
+ if(status.audioRequested&&!status.mp4HasAudioTrack)return "missing-audio";
+ if(status.width&&status.height&&status.mp4VideoWidth&&status.mp4VideoHeight&&
+   (status.width!==status.mp4VideoWidth||status.height!==status.mp4VideoHeight))
+   return "size-mismatch";
+ return "complete";
+}
