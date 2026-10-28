@@ -384,9 +384,9 @@ export function NativeRecordingPanel(){
    {status?.mp4TracksInspected&&<p role="status">
      Выборочная проверка MP4 (декодирование и временные метки до 250 мс): середина {status.mp4MiddleMatched??0} из {status.mp4MiddleProbes??0},
      около наблюдавшихся складываний {status.mp4FoldMatched??0} из {status.mp4FoldProbes??0}.
-     Интервалы временных меток MP4 возле складок: ${status.mp4FoldPtsSpanChecks??0} проверок,
-     больших разрывов (>250 мс): ${status.mp4FoldPtsLargeGaps??0},
-     максимальный разрыв: ${status.mp4MaxFoldPtsGapMs??0} мс.
+     Интервалы временных меток MP4 возле складок: {status.mp4FoldPtsSpanChecks??0} проверок,
+     больших разрывов (>250 мс): {status.mp4FoldPtsLargeGaps??0},
+     максимальный разрыв: {status.mp4MaxFoldPtsGapMs??0} мс.
      Ноль проверок у складок означает отсутствие пригодных отмеченных точек, а не доказательство непрерывности.
      Даже успешные точки не доказывают сохранность каждого кадра.
    </p>}
