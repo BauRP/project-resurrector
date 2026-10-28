@@ -22,6 +22,8 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 import java.util.concurrent.Executor;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -117,23 +119,32 @@ public class DisplayTopologyPlugin extends Plugin {
                     latest = info;
                     revision++;
                     int foldCount=0;
-                    StringBuilder nativeSignature=new StringBuilder();
+                    ArrayList<String> postureFeatures=new ArrayList<>();
+                    ArrayList<String> geometryFeatures=new ArrayList<>();
                     for(DisplayFeature feature:info.getDisplayFeatures()){
                         if(!(feature instanceof FoldingFeature))continue;
                         FoldingFeature fold=(FoldingFeature)feature;
                         foldCount++;
                         Rect bounds=fold.getBounds();
-                        nativeSignature.append('|').append(fold.getState())
-                            .append(':').append(fold.getOrientation())
-                            .append(':').append(bounds.left).append(',')
-                            .append(bounds.top).append(',')
-                            .append(bounds.right).append(',')
-                            .append(bounds.bottom);
+                        // Hinge state and topology are independent of coordinates.
+                        // Reordered WindowManager features must not count as a fold.
+                        String posture=fold.getState()+":"+fold.getOrientation()+":"+
+                            fold.getOcclusionType()+":"+fold.isSeparating();
+                        postureFeatures.add(posture);
+                        geometryFeatures.add(posture+":"+bounds.left+","+bounds.top+","+
+                            bounds.right+","+bounds.bottom);
                     }
-                    // Observe actual WindowManager events, never infer physical
-                    // fold from a CSS resize. No camera reopen or file change.
+                    Collections.sort(postureFeatures);
+                    Collections.sort(geometryFeatures);
+                    // Android minSdk 24: use TextUtils.join, not String.join (API 26).
+                    String postureSignature=foldCount+"|"+
+                        android.text.TextUtils.join("|",postureFeatures);
+                    String geometrySignature=foldCount+"|"+
+                        android.text.TextUtils.join("|",geometryFeatures);
+                    // A changing hinge rectangle is NOT proof of a changed
+                    // folding posture. Geometry-only updates have their own counter.
                     NativeCaptureService.observeFoldDuringRecording(
-                        foldCount,nativeSignature.toString());
+                        foldCount,postureSignature,geometrySignature);
                     notifyListeners("topologyChanged", snapshot());
                 }
             };
