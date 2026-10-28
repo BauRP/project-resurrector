@@ -378,6 +378,12 @@ export function NativeRecordingPanel(){
           : " начало звука и видео не удалось сопоставить."}
        Это только начало MP4, не проверка синхронности всего ролика.
      </p>}
+   {status?.mp4TracksInspected&&<p role="status">
+     Выборочное декодирование MP4: середина {status.mp4MiddleMatched??0} из {status.mp4MiddleProbes??0},
+     около наблюдавшихся складываний {status.mp4FoldMatched??0} из {status.mp4FoldProbes??0}.
+     Ноль проверок у складок означает отсутствие пригодных отмеченных точек, а не доказательство непрерывности.
+     Даже успешные точки не доказывают сохранность каждого кадра.
+   </p>}
    {status?.mp4TracksInspected&&<p role="status">Проверка сохранённого MP4: видеодорожка {status.mp4HasVideoTrack?"обнаружена":"не обнаружена"}, звуковая дорожка {status.mp4HasAudioTrack?"обнаружена":"не обнаружена"}. {status.mp4VideoWidth&&status.mp4VideoHeight?`Размер видеофайла: ${status.mp4VideoWidth}×${status.mp4VideoHeight}.`:""} Это проверка дорожек, а не каждого кадра или качества звука.</p>}
    {status?.mp4TracksInspected&&<p role="status">
      Выборочная проверка сэмплов MP4: видео {status.mp4VideoSamples??0}, звук {status.mp4AudioSamples??0};
