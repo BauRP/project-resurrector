@@ -4,6 +4,8 @@ export interface NativeCaptureStatus {
  stabilizationCaptureResultObserved:boolean;savedBytes:number;
  savedUri:string;videoOnly:boolean;orientationDegrees?:number;
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
+ audioRequested?:boolean;mp4TracksInspected?:boolean;mp4HasVideoTrack?:boolean;mp4HasAudioTrack?:boolean;
+ mp4VideoWidth?:number;mp4VideoHeight?:number;
  zoom?:number;maxZoom?:number;exposureIndex?:number;exposureMin?:number;exposureMax?:number;exposureStep?:number;
  torchAvailable?:boolean;torchEnabled?:boolean;
  tapAfSupported?:boolean;tapAeSupported?:boolean;tapX?:number;tapY?:number;tapSubmitted?:boolean;
