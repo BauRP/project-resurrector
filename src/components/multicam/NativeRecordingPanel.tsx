@@ -1,5 +1,6 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
+import { validNativeSelection } from "@/lib/native-mode-selection";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
 import { useEffect, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
@@ -113,15 +114,8 @@ export function NativeRecordingPanel(){
  if(!isNative())return null;
  const current=cameras.find(x=>x.cameraId===camera);
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
- const selectedOutput=current?.videoOutputSizes?.find(x=>`${x.width}x${x.height}`===resolution);
- const maxSensorFps=selectedOutput?.theoreticalMaxFps;
- const fpsChoices=[24,25,30,60].filter(value=>
-   (maxSensorFps===undefined||!Number.isFinite(maxSensorFps)||value<=maxSensorFps+0.5) &&
-   (!current?.fpsRanges?.length||current.fpsRanges.some(range=>{
-     const [low,high]=range.split("-").map(Number);
-     return Number.isFinite(low)&&Number.isFinite(high)&&value>=low!&&value<=high!;
-   })));
- const availableFps=fpsChoices.length?fpsChoices:[fps];
+ const mode=validNativeSelection(current,resolution,fps);
+ const availableFps=mode.choices;
  const openPreview=async()=>{
   if(busy || !camera)return;
   setBusy(true);setError("");
@@ -140,7 +134,7 @@ export function NativeRecordingPanel(){
    if(!window.confirm("Запустить отдельную нативную запись Camera2? Обычный предпросмотр WebView должен быть закрыт. Запись продолжается при пересоздании интерфейса, но не гарантирована при гибели процесса Android."))return;
    const [width = 0,height = 0]=resolution.split("x").map(Number);
    if(!sizes.includes(resolution))throw Error("Это разрешение не объявлено выбранной камерой.");
-   if(!fpsChoices.includes(fps))throw Error("Разрешение и FPS не совместимы по опубликованным ограничениям Camera2. Выберите доступную комбинацию.");
+   if(mode.size!==resolution||!mode.choices.includes(fps))throw Error("Разрешение и FPS не совместимы по опубликованным ограничениям Camera2. Выберите доступную комбинацию.");
    setStatus(await bridge.start({cameraId:camera,width,height,fps,audio}));
   }catch(e){setError(String(e));}
   finally{setBusy(false);}
@@ -176,15 +170,16 @@ export function NativeRecordingPanel(){
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
    <div className="grid gap-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
     <label>Камера<select className="w-full bg-background p-2" value={camera} disabled={active}
-      onChange={e=>{setCamera(e.target.value);setResolution("1920x1080");}}>
+      onChange={e=>{const next=e.target.value;const selected=validNativeSelection(cameras.find(x=>x.cameraId===next),resolution,fps);setCamera(next);setResolution(selected.size);setFps(selected.fps);}}>
        {cameras.map(x=><option key={x.cameraId} value={x.cameraId}>{x.cameraId} · {x.facing}</option>)}
      </select></label>
     <label>Разрешение<select className="w-full bg-background p-2" value={resolution} disabled={active}
-      onChange={e=>setResolution(e.target.value)}>
+      onChange={e=>{const next=e.target.value;const selected=validNativeSelection(current,next,fps);setResolution(selected.size);setFps(selected.fps);}}>
        {(sizes.length?sizes:[resolution]).map(x=><option key={x} value={x}>{x}</option>)}
      </select></label>
-    <label>FPS<select className="w-full bg-background p-2" value={fps} disabled={active}
+    <label>FPS<select className="w-full bg-background p-2" value={availableFps.includes(fps)?fps:0} disabled={active||!availableFps.length}
      onChange={e=>setFps(Number(e.target.value))}>
+      {!availableFps.includes(fps)&&<option value={0}>Выберите поддерживаемый FPS</option>}
       {availableFps.map(x=><option key={x} value={x}>{x}</option>)}
      </select></label>
     <label className="flex items-center gap-2"><input type="checkbox" checked={audio} disabled={active}
@@ -232,7 +227,7 @@ export function NativeRecordingPanel(){
    {error&&<p role="alert" className="text-destructive">{error}</p>}
    <div className="flex flex-wrap gap-2">
     <Button variant="outline" disabled={busy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
-    <Button disabled={busy||!camera||(active && status?.state!=="previewing")} onClick={()=>void start()}>Начать нативную запись</Button>
+    <Button disabled={busy||!camera||!mode.size||!mode.choices.includes(fps)||(active && status?.state!=="previewing")} onClick={()=>void start()}>Начать нативную запись</Button>
     <Button disabled={busy||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
     <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>{status?.state==="previewing"?"Закрыть камеру":"Остановить"}</Button>
    </div>
