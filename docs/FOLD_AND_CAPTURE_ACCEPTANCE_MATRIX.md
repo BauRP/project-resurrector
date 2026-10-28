@@ -83,3 +83,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Abandoned recordings now explicitly carry `mp4CheckpointAuditCompleted=false` and `savedBytes=0` with `state=interrupted`; historical posture/geometry counters are retained, but stale or orphaned media are not certified.
 - Added a source-level regression contract test to check Android native service/history fields against the anonymized TypeScript reporting layer. This guards against accidental future omission; it does NOT replace an Android instrumented test.
 - **Acceptance state remains open:** GitHub source changes committed, but current CI results and a successful APK/AAB build were not independently confirmed, and no real foldable device was tested. Do not equate 98%/99% indicative software-readiness estimates with hardware certification.
+
+## Bounded eight-point fold audit and recorder pause — 29 October 2026
+- A native recording may encounter more than eight true observed hinge-posture changes. Extra **active recording** changes now increment `foldCheckpointsOmitted` instead of vanishing. These unexamined transitions force `saved_interrupted` at native finalization and `unknown` in the Camera2 per-mode passport; video bytes are preserved.
+- Hinge-posture changes during `MediaRecorder.pause()` increment a **separate** `foldChangesWhilePaused` counter rather than creating fictitious PTS samples or consuming one of eight MP4 checkpoints. Resume clears fold-adjacent callback timing reference.
+- Both counters flow through persisted Android history, Capacitor bridge, on-screen diagnostics and privacy-safe exported audit. Regression tests cover exceeded checkpoint counts and paused changes in the report.
+- A status downgrade is a limitation of **the bounded verification**, not proof of damaged video or dropped encoded frames. Current hardware acceptance and new build/test outcomes remain unverified.
