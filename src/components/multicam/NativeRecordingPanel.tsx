@@ -309,6 +309,11 @@ export function NativeRecordingPanel(){
        : <span> Камера не сообщает совместимый режим записи.</span>}
    </div>}
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
+   {status&&["saved","saved_interrupted"].includes(status.state)&&<p role="status">
+     Декодирование реального кадра MP4: {status.mp4FirstFrameDecodable
+       ?"первый кадр успешно прочитан"
+       :"не подтверждено"}. Это не проверка всего видеоролика.
+   </p>}
    {status?.mp4TracksInspected&&<p role="status">Проверка сохранённого MP4: видеодорожка {status.mp4HasVideoTrack?"обнаружена":"не обнаружена"}, звуковая дорожка {status.mp4HasAudioTrack?"обнаружена":"не обнаружена"}. {status.mp4VideoWidth&&status.mp4VideoHeight?`Размер видеофайла: ${status.mp4VideoWidth}×${status.mp4VideoHeight}.`:""} Это проверка дорожек, а не каждого кадра или качества звука.</p>}
    {status?.mp4TracksInspected&&<p role="status">
      Выборочная проверка сэмплов MP4: видео {status.mp4VideoSamples??0}, звук {status.mp4AudioSamples??0};
