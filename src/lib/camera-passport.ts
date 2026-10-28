@@ -91,7 +91,12 @@ export function recordModeEvidence(evidence: ModeEvidence): void {
     // A fresh verification in the new environment always supersedes stale
     // older-context evidence, regardless of unrelated wall-clock timestamps.
     if (current?.context === context && current.checkedAt > evidence.checkedAt) return;
-    if (current?.context === context && current.state === "verified" && evidence.state === "unknown") return;
+    // A failed, timed-out or interrupted *later* attempt cannot erase a
+    // previously confirmed recording for the same lens/mode in this context.
+    // The interrupted attempt remains available in the native session
+    // diagnostics; the passport retains its strongest successful evidence.
+    if (current?.context === context && evidence.state === "unknown" &&
+        ["applied","recorded","verified"].includes(current.state)) return;
     const prior = stored.filter(row => identity(row) !== key);
     const next: ModeEvidence = { ...evidence, context };
     localStorage.setItem(KEY, JSON.stringify([...prior.slice(-199), next]));
