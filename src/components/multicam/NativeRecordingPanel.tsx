@@ -50,6 +50,12 @@ export function NativeRecordingPanel(){
  },[status]);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
+ const [auditHistory,setAuditHistory]=useState<{entries:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}|null>(null);
+ const [auditError,setAuditError]=useState("");
+ const readAudit=async()=>{
+   try{const result=await bridge.auditHistory();setAuditHistory(result);setAuditError("");}
+   catch(error){setAuditError("Не удалось прочитать журнал: "+String(error));}
+ };
  // Keep the interface responsive to hardware reconnects while never dropping
  // the selected camera or interrupting an active Android recording session.
  const [preview,setPreview]=useState("");
@@ -450,6 +456,22 @@ export function NativeRecordingPanel(){
      onClick={()=>void bridge.setTorch({enabled:!status.torchEnabled}).then(setStatus).catch(e=>setError(String(e)))}>
       {status.torchEnabled?"Выключить фонарик":"Включить фонарик"}
     </Button>}
+   <div className="space-y-2 rounded-lg border border-border p-3">
+     <Button variant="outline" onClick={()=>void readAudit()}>Показать историю нативных записей и складываний</Button>
+     {auditError&&<p role="alert" className="text-destructive">{auditError}</p>}
+     {auditHistory&&<div className="space-y-2">
+       <p>Последние {auditHistory.entries.length} записей (максимум {auditHistory.maxEntries}).
+          Удалено старых записей из журнала: {auditHistory.omittedEarlier}.
+          Это результаты проверок, а не подтверждение полного аппаратного тестирования.</p>
+       {auditHistory.entries.slice().reverse().map((item,i)=><div key={String(item["captureId"]??i)}
+          className="rounded border border-border p-2 text-sm">
+         <p>Камера {String(item["cameraId"]??"неизвестно")} • {String(item["width"]??"?")}×{String(item["height"]??"?")} • {String(item["fps"]??"?")} FPS</p>
+         <p>Результат: {String(item["state"]??"unknown")}; MP4: {String(item["savedBytes"]??0)} байт;
+            наблюдений складывания: {String(item["foldPostureChanges"]??0)};
+            точек возле складывания: {String(item["mp4FoldMatched"]??0)}/{String(item["mp4FoldProbes"]??0)}</p>
+       </div>)}
+     </div>}
+   </div>
    {error&&<p role="alert" className="text-destructive">{error}</p>}
    <div className="flex flex-wrap gap-2">
     <Button variant="outline" disabled={busy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
