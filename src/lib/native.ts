@@ -47,8 +47,8 @@ interface MultiCamNativePlugin {
   getCapabilities(): Promise<NativeCapabilities>;
   inspectVideoFile(options: { path: string }): Promise<NativeMp4Inspection>;
   getEncoderSupport(options: { width: number; height: number; fps: number }): Promise<NativeEncoderSupport>;
-  startCameraAvailability(): Promise<void>;
-  stopCameraAvailability(): Promise<void>;
+  startCameraAvailability(options:{ownerId:string}): Promise<void>;
+  stopCameraAvailability(options:{ownerId:string}): Promise<void>;
   addListener(eventName: "cameraAvailabilityChanged", listener: (event: { cameraId: string; available: boolean }) => void): Promise<PluginListenerHandle>;
   getThermalStatus(): Promise<NativeThermal>;
   listAudioInputs(): Promise<{ inputs: NativeAudioInput[] }>;
