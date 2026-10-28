@@ -128,6 +128,9 @@ public class NativeCaptureService extends Service {
     private static String recordingFoldPointsMs = "";
     private static int mp4MiddleProbes = 0, mp4MiddleMatched = 0;
     private static int mp4FoldProbes = 0, mp4FoldMatched = 0;
+    // Fold observations too close to either MP4 edge cannot support a
+    // bracketing decoder/PTS checkpoint; keep their omission explicit.
+    private static int mp4FoldPointsSkipped = 0;
     // Separate evidence: a nearby video sample does not rule out a large
     // presentation timestamp gap STRADDLING the actual fold observation.
     private static int mp4FoldPtsSpanChecks=0, mp4FoldPtsLargeGaps=0;
@@ -871,6 +874,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4FoldProbes",0):mp4FoldProbes);
             out.put("mp4FoldMatched",runningInstance==null
                 ? previous.getInt("mp4FoldMatched",0):mp4FoldMatched);
+            out.put("mp4FoldPointsSkipped",runningInstance==null
+                ? previous.getInt("mp4FoldPointsSkipped",0):mp4FoldPointsSkipped);
             out.put("mp4CheckpointAuditCompleted",runningInstance==null
                 ? previous.getBoolean("mp4CheckpointAuditCompleted",false)
                 : mp4CheckpointAuditCompleted);
@@ -928,6 +933,7 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4MiddleMatched",mp4MiddleMatched)
                 .putInt("mp4FoldProbes",mp4FoldProbes)
                 .putInt("mp4FoldMatched",mp4FoldMatched)
+                .putInt("mp4FoldPointsSkipped",mp4FoldPointsSkipped)
                 .putBoolean("mp4CheckpointAuditCompleted",mp4CheckpointAuditCompleted)
                 .putInt("mp4FoldPtsSpanChecks",mp4FoldPtsSpanChecks)
                 .putInt("mp4FoldPtsLargeGaps",mp4FoldPtsLargeGaps)
@@ -1084,6 +1090,7 @@ public class NativeCaptureService extends Service {
             maxFoldNearbyCallbackGapMs=0L;lastCaptureCallbackElapsedMs=-1L;
             recordingFoldPointsMs="";
             mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
+            mp4FoldPointsSkipped=0;
             mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;mp4MaxFoldPtsGapMs=0L;
             mp4CheckpointAuditCompleted=false;
         }
@@ -1814,13 +1821,19 @@ public class NativeCaptureService extends Service {
      */
     private void inspectMp4Checkpoints(File file,long durationMs) {
         mp4MiddleProbes=0;mp4MiddleMatched=0;
-        mp4FoldProbes=0;mp4FoldMatched=0;
+        mp4FoldProbes=0;mp4FoldMatched=0;mp4FoldPointsSkipped=0;
         mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;
         mp4MaxFoldPtsGapMs=0L;
         mp4CheckpointAuditCompleted=false;
         if(file==null||!file.isFile()||durationMs<=0L)return;
         // No intermediate positions are meaningful in a <=2 s clip.
-        if(durationMs<=2000L){mp4CheckpointAuditCompleted=true;return;}
+        // Short files with an observed fold cannot claim that fold was checked.
+        if(durationMs<=2000L){
+            if(!recordingFoldPointsMs.isEmpty())
+                mp4FoldPointsSkipped=recordingFoldPointsMs.split(",").length;
+            mp4CheckpointAuditCompleted=true;
+            return;
+        }
         MediaExtractor extractor=new MediaExtractor();
         try {
             extractor.setDataSource(file.getAbsolutePath());
@@ -1848,7 +1861,10 @@ public class NativeCaptureService extends Service {
                 if(mp4FoldProbes>=8)break;
                 try {
                     long at=Long.parseLong(point);
-                    if(at<500L||at>=durationMs-500L)continue;
+                    if(at<500L||at>=durationMs-500L){
+                        mp4FoldPointsSkipped++;
+                        continue;
+                    }
                     mp4FoldProbes++;
                     if(hasNearVideoSample(extractor,at*1000L) &&
                        decodeMp4FrameAt(file,at*1000L))mp4FoldMatched++;
@@ -1860,7 +1876,9 @@ public class NativeCaptureService extends Service {
                         // 15-60FPS. It signals suspicion, not definitive loss.
                         if(span>250L)mp4FoldPtsLargeGaps++;
                     }
-                }catch(NumberFormatException ignored){}
+                }catch(NumberFormatException ignored){
+                    mp4FoldPointsSkipped++;
+                }
             }
             mp4CheckpointAuditCompleted=true;
         }catch(Exception ignored){
@@ -1974,7 +1992,8 @@ public class NativeCaptureService extends Service {
             boolean checkpointIssue = !mp4CheckpointAuditCompleted ||
                 (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
-                mp4FoldPtsLargeGaps>0;
+                mp4FoldPtsSpanChecks<mp4FoldProbes ||
+                mp4FoldPointsSkipped>0 || mp4FoldPtsLargeGaps>0;
             // A nominally saved MP4 must not be marked clean when its
             // decoder or actual video-track audit cannot confirm the result.
             // This is independent of later WebView passport validation.
@@ -1989,6 +2008,10 @@ public class NativeCaptureService extends Service {
             savedUri = gallery == null ? "" : gallery;
             String message = !mp4CheckpointAuditCompleted
                 ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
+                : mp4FoldPointsSkipped>0
+                ? "MP4 сохранён, но часть отмеченных складываний слишком близко к краю видео для проверки"
+                : mp4FoldPtsSpanChecks<mp4FoldProbes
+                ? "MP4 сохранён, но временные метки вокруг некоторых складываний не удалось сопоставить"
                 : checkpointIssue
                 ? "MP4 сохранён, но не все проверенные промежуточные/складные кадры декодировались"
                 : interruptedByCamera
