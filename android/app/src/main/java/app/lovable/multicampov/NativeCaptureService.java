@@ -884,8 +884,8 @@ public class NativeCaptureService extends Service {
             }
             encoder.setVideoSize(width,height);
             encoder.setVideoFrameRate(fps);
-            encoder.setVideoEncodingBitRate(Math.min(16000000, Math.max(1500000,
-                width * height * fps / 9)));
+            encoder.setVideoEncodingBitRate((int)Math.min(16000000L, Math.max(1500000L,
+                (long)width * (long)height * (long)fps / 9L)));
             encoder.setOutputFile(media.getAbsolutePath());
             encoder.prepare();
             final Surface surface = encoder.getSurface();
