@@ -1,6 +1,6 @@
 import {registerPlugin} from "@capacitor/core";
 export interface NativeCaptureStatus {
- state:string;message:string;startedAt:number;stabilization:string;
+ state:string;message:string;startedAt:number;stabilization:string;directPreviewActive?:boolean;
  stabilizationCaptureResultObserved:boolean;savedBytes:number;
  savedUri:string;videoOnly:boolean;orientationDegrees?:number;
  cameraId?:string;width?:number;height?:number;fps?:number;recordedDurationMs?:number;
@@ -22,6 +22,7 @@ export interface NativeCaptureBridge {
  resume():Promise<NativeCaptureStatus>;
  status():Promise<NativeCaptureStatus>;
  previewFrame():Promise<{jpeg:string;frameAt?:number}>;
+ setDirectPreview(options:{ownerId:string;visible:boolean;left?:number;top?:number;width?:number;height?:number;viewportWidth?:number}):Promise<void>;
  setControls(options:{zoom:number;exposureIndex:number}):Promise<NativeCaptureStatus>;
  setTorch(options:{enabled:boolean}):Promise<NativeCaptureStatus>;
  setFocus(options:{manual:boolean;diopters:number}):Promise<NativeCaptureStatus>;
