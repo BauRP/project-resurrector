@@ -3,8 +3,9 @@
 Evidence rule: **NOT VERIFIED** means this full scenario has not been proven on a physical device.
 "CODE ...; APK CI PASSED" records only that an implementation exists and the main Android CI pipeline passed (run #521, 28 October); it is NOT a claim that the complete physical scenario passed.
 This matrix deliberately separates code/CI progress from device acceptance.
-At this checkpoint: 36 scenarios; 6 with code/CI evidence; 0 fully device-verified.
-Code/CI evidence coverage = 6/36 = 16.7%; physical acceptance = 0/36 = 0%.
+At this checkpoint: 36 scenarios; 7 with code/CI evidence; 0 fully device-verified.
+Code/CI evidence coverage = 7/36 = 19.4%; physical acceptance = 0/36 = 0%.
+Scenario 26 now has PARTIAL code/CI evidence: bounded MP4 video-frame PTS checkpoint audit, duration metadata, and persisted per-recording fold evidence history (CI #617). Hardware continuity is NOT VERIFIED.
 Scenario 05 has PARTIAL source/CI evidence: WindowManager fold observations and Camera2 callback-gap telemetry during a real native recorder session (CI #580); this cannot prove preserved MP4 frames.
 Scenario 04 has a Camera2 TextureView output rebind implementation that passed Android CI (#546); the scenario's actual fold behavior and preview FPS remain NOT VERIFIED on physical hardware.
 These are auditable per-scenario counts, NOT overall application completeness.
@@ -36,7 +37,7 @@ These are auditable per-scenario counts, NOT overall application completeness.
 | 23 | Large system font | No unreachable recording or navigation controls | NOT VERIFIED |
 | 24 | TalkBack/large accessibility settings | Navigable controls with meaningful labels | NOT VERIFIED |
 | 25 | Touch-to-focus after resize | Correct crop, mirror and coordinate transform | NOT VERIFIED |
-| 26 | Capture duration through fold | No false continuation; check saved segments | NOT VERIFIED |
+| 26 | Capture duration through fold | No false continuation; check saved segments | PARTIAL CODE; APK CI PASSED (#617); PHYSICAL NOT VERIFIED |
 | 27 | Narrow windows | No horizontal overflow | NOT VERIFIED |
 | 28 | Hinge / system insets | No unreachable or occluded primary controls | NOT VERIFIED |
 | 29 | Editor/control tapping | No unexpected scroll-to-top | NOT VERIFIED |
