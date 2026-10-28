@@ -35,6 +35,11 @@ export function nativeRecordedModeEvidence(
   // tail decoder field remain historical evidence, not invented failures.
   const tailDecodeFailure = (status.mp4DurationMs ?? -1)>1500 &&
     status.mp4TailFrameDecodable === false;
+  const checkpointMismatch =
+    (typeof status.mp4MiddleProbes==="number" && status.mp4MiddleProbes>0 &&
+      (status.mp4MiddleMatched??0)<status.mp4MiddleProbes) ||
+    (typeof status.mp4FoldProbes==="number" && status.mp4FoldProbes>0 &&
+      (status.mp4FoldMatched??0)<status.mp4FoldProbes);
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -49,7 +54,7 @@ export function nativeRecordedModeEvidence(
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
     videoSamples > 0 && dimensionsMatch && !anomalies && !audioIncomplete &&
-    !measuredFpsMismatch && !tailDecodeFailure;
+    !measuredFpsMismatch && !tailDecodeFailure && !checkpointMismatch;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -61,6 +66,7 @@ export function nativeRecordedModeEvidence(
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
+    checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
   const prefix = status.state === "saved_interrupted" || status.state === "interrupted"
     ? "При записи было прерывание или неполное подтверждение. " : "";
