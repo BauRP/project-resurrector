@@ -260,6 +260,13 @@ export function NativeRecordingPanel(){
      Экспериментальный прямой видоискатель Android (до записи)
    </label>
    {directNotice&&<p role="status">{directNotice}</p>}
+   {status&&nativeRecorderOwnsCamera(status.state)&&
+     <p role="status">Сенсор Camera2: {status.cameraSensorFrames??0} подтверждённых кадров,
+       {status.cameraSensorFps!==undefined&&status.cameraSensorFps>0
+         ?` оценка частоты сенсора ${status.cameraSensorFps.toFixed(1)} FPS.`
+         :" частота пока неизвестна."}
+       Это измерение сенсора, не FPS готового MP4.
+     </p>}
    {directEnabled&&status?.state==="previewing"&&
      <p role="status">{status.directPreviewActive
        ?"Camera2 передаёт изображение напрямую в Android TextureView. Реальная частота кадров пока не измерена."
