@@ -1,4 +1,5 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
+import { nativePreviewPlacement, samePreviewPlacement, type PreviewRect } from "@/lib/native-preview-placement";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection } from "@/lib/native-mode-selection";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
@@ -66,14 +67,25 @@ export function NativeRecordingPanel(){
    if(!directEnabled||!isNative())return;
    let live=true;
    const ownerId=directLease.current;
+   let lastPosition:PreviewRect|null=null;
+   let lastVisible=false;
+   const hide=async()=>{
+     if(!lastVisible)return;
+     lastVisible=false;lastPosition=null;
+     await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
+   };
    const sync=async()=>{
-     if(!live||document.hidden)return;
+     if(!live)return;
+     const viewport={width:document.documentElement.clientWidth,height:window.innerHeight};
      const rect=directTarget.current?.getBoundingClientRect();
-     if(!rect||rect.width<80||rect.height<80)return;
+     const safe=nativePreviewPlacement(rect,viewport);
+     if(document.hidden||!safe){await hide();return;}
+     if(lastVisible&&samePreviewPlacement(safe,lastPosition))return;
      try {
-       await bridge.setDirectPreview({ownerId,visible:true,left:rect.left,top:rect.top,
-         width:rect.width,height:rect.height,viewportWidth:document.documentElement.clientWidth});
-       if(live)setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
+       await bridge.setDirectPreview({ownerId,visible:true,...safe,viewportWidth:viewport.width});
+       if(!live){await hide();return;}
+       lastVisible=true;lastPosition=safe;
+       setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
      }catch{
        if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
      }
@@ -81,12 +93,14 @@ export function NativeRecordingPanel(){
    const observer=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>void sync()):null;
    if(directTarget.current)observer?.observe(directTarget.current);
    const resized=()=>void sync();
-   const visibility=()=>{if(document.hidden)void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
-     else void sync();};
+   const visibility=()=>void sync();
+   const scrolling=()=>void sync();
    window.addEventListener("resize",resized);
+   window.addEventListener("scroll",scrolling,true);
    document.addEventListener("visibilitychange",visibility);
    void sync();
    return ()=>{live=false;observer?.disconnect();window.removeEventListener("resize",resized);
+     window.removeEventListener("scroll",scrolling,true);
      document.removeEventListener("visibilitychange",visibility);
      void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);};
  },[directEnabled]);
