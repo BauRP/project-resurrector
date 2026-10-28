@@ -44,6 +44,7 @@ function entrySummary(item:Record<string,unknown>) {
       geometryOnlyChanges:count(item["foldGeometryOnlyChanges"]),
       checkpointLimitOmissions:count(item["foldCheckpointsOmitted"]),
       postureChangesWhilePaused:count(item["foldChangesWhilePaused"]),
+      observerGap:flag(item["foldObserverGap"]),
       callbackGaps:count(item["foldNearbyCallbackGaps"]),
       checkpointAuditCompleted:flag(item["mp4CheckpointAuditCompleted"]),
       skippedCheckpoints:count(item["mp4FoldPointsSkipped"],8),
