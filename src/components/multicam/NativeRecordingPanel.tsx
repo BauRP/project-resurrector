@@ -240,6 +240,16 @@ export function NativeRecordingPanel(){
    </div>}
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status?.mp4TracksInspected&&<p role="status">Проверка сохранённого MP4: видеодорожка {status.mp4HasVideoTrack?"обнаружена":"не обнаружена"}, звуковая дорожка {status.mp4HasAudioTrack?"обнаружена":"не обнаружена"}. {status.mp4VideoWidth&&status.mp4VideoHeight?`Размер видеофайла: ${status.mp4VideoWidth}×${status.mp4VideoHeight}.`:""} Это проверка дорожек, а не каждого кадра или качества звука.</p>}
+   {status?.mp4TracksInspected&&<p role="status">
+     Выборочная проверка сэмплов MP4: видео {status.mp4VideoSamples??0}, звук {status.mp4AudioSamples??0};
+     {status.mp4SampledFps!==undefined&&status.mp4SampledFps>0
+       ? ` оценка FPS ${status.mp4SampledFps.toFixed(1)} (только проверенная часть файла);`
+       : " FPS не подтверждён;"}
+     {((status.mp4VideoTimestampRollbacks??0)>0||(status.mp4VideoTimestampDuplicates??0)>0)
+       ? ` обнаружены откаты меток ${status.mp4VideoTimestampRollbacks??0} и повторы ${status.mp4VideoTimestampDuplicates??0}.`
+       : " откатов/повторов меток в проверенной части не обнаружено."}
+     {status.mp4VideoSampleLimitReached&&" Остальная часть файла не проверена."}
+   </p>}
    {status&&["saved","saved_interrupted"].includes(status.state)&&!status.mp4TracksInspected&&<p role="status">Проверка видеодорожек недоступна: их наличие не подтверждено.</p>}
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {active&&status&&<div className="grid gap-3 rounded-lg border border-border p-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
