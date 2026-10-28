@@ -100,6 +100,20 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(failure?.message).toContain("не завершена");
   expect(nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:true},12345)?.state).toBe("recorded");
  });
+ it("rejects transposed encoded dimensions: orientation metadata is not track size",()=>{
+  const result=nativeRecordedModeEvidence({...base,mp4VideoWidth:1080,mp4VideoHeight:1920},12345);
+  expect(result?.state).toBe("unknown");
+  expect(result?.message).toContain("разрешение");
+ });
+ it("does not certify long MP4 with missing tail samples even if a keyframe decodes",()=>{
+  const missing=nativeRecordedModeEvidence({...base,mp4DurationMs:12000,
+    mp4TailFrameDecodable:true,mp4TailVideoSamples:0,mp4TailNearEnd:false},12345);
+  expect(missing?.state).toBe("unknown");
+  expect(missing?.message).toContain("возле конца");
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:12000,
+    mp4TailFrameDecodable:true,mp4TailVideoSamples:90,mp4TailNearEnd:true},12345)?.state)
+    .toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
