@@ -49,6 +49,8 @@ export function nativeRecordedModeEvidence(
     !validCount(foldPassed,foldTotal,8) ||
     (middleTotal>0 && middlePassed<middleTotal) ||
     (foldTotal>0 && foldPassed<foldTotal);
+  const skippedPoints=status.mp4FoldPointsSkipped??0;
+  const invalidSkipped=!Number.isSafeInteger(skippedPoints)||skippedPoints<0||skippedPoints>8;
   const ptsChecks=status.mp4FoldPtsSpanChecks??0;
   const ptsLarge=status.mp4FoldPtsLargeGaps??0;
   const ptsMax=status.mp4MaxFoldPtsGapMs??0;
@@ -59,7 +61,8 @@ export function nativeRecordedModeEvidence(
   // cannot establish local continuity. Keep it unknown rather than recorded.
   const missingFoldSpan = foldTotal > 0 && ptsChecks < foldTotal;
   const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
-  const suspiciousFoldPts = invalidFoldPts || ptsLarge>0 || missingFoldSpan || missingCheckpointAudit;
+  const suspiciousFoldPts = invalidFoldPts || invalidSkipped || skippedPoints>0 ||
+    ptsLarge>0 || missingFoldSpan || missingCheckpointAudit;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -88,7 +91,9 @@ export function nativeRecordedModeEvidence(
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
-    suspiciousFoldPts ? (missingCheckpointAudit
+    suspiciousFoldPts ? (skippedPoints>0
+      ? "Часть отмеченных складываний MP4 была пропущена как непригодная для проверки."
+      : missingCheckpointAudit
       ? "Проверка промежуточных кадров MP4 не завершена."
       : missingFoldSpan
       ? "Временные метки кадров не удалось проверить возле каждого складывания."
