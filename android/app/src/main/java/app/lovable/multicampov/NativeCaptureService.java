@@ -1604,6 +1604,30 @@ public class NativeCaptureService extends Service {
         long frameUs=Math.max(0L,(durationMs-1000L)*1000L);
         return decodeMp4FrameAt(file,frameUs);
     }
+    /** Bounded decode checkpoints across the MP4, including positions
+     * observed during actual WindowManager fold callbacks. A successful
+     * keyframe decode does not certify intervening frames or audio sync.
+     */
+    private void inspectMp4Checkpoints(File file,long durationMs) {
+        mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
+        if(durationMs<=2000L || file==null)return;
+        for(int i=1;i<=3;i++){
+            long at=durationMs*i/4L;
+            if(at<500L||at>=durationMs-500L)continue;
+            mp4MiddleProbes++;
+            if(decodeMp4FrameAt(file,at*1000L))mp4MiddleMatched++;
+        }
+        if(recordingFoldPointsMs.isEmpty())return;
+        for(String point:recordingFoldPointsMs.split(",")){
+            if(mp4FoldProbes>=8)break;
+            try{
+                long at=Long.parseLong(point);
+                if(at<500L||at>=durationMs-500L)continue;
+                mp4FoldProbes++;
+                if(decodeMp4FrameAt(file,at*1000L))mp4FoldMatched++;
+            }catch(NumberFormatException ignored){}
+        }
+    }
     private boolean savedMp4HasVideo(File candidate) {
         if (candidate == null || !candidate.isFile() || candidate.length() < 1024) return false;
         MediaMetadataRetriever reader = new MediaMetadataRetriever();
@@ -1682,6 +1706,7 @@ public class NativeCaptureService extends Service {
             mp4TailNearEnd = audit != null && audit.tailNearEnd;
             mp4FirstFrameDecodable=decodeMp4FirstFrame(media);
             mp4TailFrameDecodable=decodeMp4TailFrame(media,mp4DurationMs);
+            inspectMp4Checkpoints(media,mp4DurationMs);
             mp4AvStartOffsetMs = audit == null ? 0L : audit.avStartOffsetMs;
             mp4AvStartMeasured = audit != null && audit.avStartMeasured;
             // A missing audio track is not a clean video+audio recording.
@@ -1698,13 +1723,18 @@ public class NativeCaptureService extends Service {
             // file duration are both available, not when metadata is unknown.
             boolean tailIssue = audit != null && audit.durationMs > 0L &&
                 audit.tailSamples > 0 && !audit.tailNearEnd;
-            boolean incomplete = interruptedByCamera || audioNotConfirmed ||
+            boolean checkpointIssue =
+                (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
+                (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes);
+            boolean incomplete = checkpointIssue || interruptedByCamera || audioNotConfirmed ||
                 videoMismatch || sampleIssue || tailIssue || (audit != null && !audit.video) ||
                 !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
-            String message = interruptedByCamera
+            String message = checkpointIssue
+                ? "MP4 сохранён, но не все проверенные промежуточные/складные кадры декодировались"
+                : interruptedByCamera
                 ? "Камера была потеряна; непрерывность записи не подтверждена"
                 : !mp4FirstFrameDecodable
                     ? "MP4 сохранён, но декодирование первого кадра не подтверждено"
