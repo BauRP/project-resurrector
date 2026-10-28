@@ -257,7 +257,7 @@ export function NativeRecordingPanel(){
    {directEnabled&&status?.state==="previewing"&&
      <p role="status">{status.directPreviewActive
        ?"Camera2 передаёт изображение напрямую в Android TextureView. Реальная частота кадров пока не измерена."
-       :"Прямой вывод не подтверждён: Camera2 использует запасной режим или ожидает поверхность."}</p>}}
+       :"Прямой вывод не подтверждён: Camera2 использует запасной режим или ожидает поверхность."}</p>}
    {(status?.tapAfSupported||status?.tapAeSupported)&&<p className="text-muted-foreground">Коснитесь изображения, чтобы выбрать точку {status.tapAfSupported?"автофокуса и ":""}экспозамера. Чёрные поля неактивны. Подтверждение команды не означает успешное наведение.</p>}
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
