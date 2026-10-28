@@ -35,11 +35,20 @@ export function nativeRecordedModeEvidence(
   // tail decoder field remain historical evidence, not invented failures.
   const tailDecodeFailure = (status.mp4DurationMs ?? -1)>1500 &&
     status.mp4TailFrameDecodable === false;
+  // Native counters are untrusted until they form a possible bounded
+  // result. Reject negative/overflowed values and "more passed than tested".
+  const middleTotal=status.mp4MiddleProbes??0;
+  const middlePassed=status.mp4MiddleMatched??0;
+  const foldTotal=status.mp4FoldProbes??0;
+  const foldPassed=status.mp4FoldMatched??0;
+  const validCount=(passed:number,total:number,maximum:number)=>
+    Number.isSafeInteger(passed)&&Number.isSafeInteger(total)&&
+    total>=0&&total<=maximum&&passed>=0&&passed<=total;
   const checkpointMismatch =
-    (typeof status.mp4MiddleProbes==="number" && status.mp4MiddleProbes>0 &&
-      (status.mp4MiddleMatched??0)<status.mp4MiddleProbes) ||
-    (typeof status.mp4FoldProbes==="number" && status.mp4FoldProbes>0 &&
-      (status.mp4FoldMatched??0)<status.mp4FoldProbes);
+    !validCount(middlePassed,middleTotal,3) ||
+    !validCount(foldPassed,foldTotal,8) ||
+    (middleTotal>0 && middlePassed<middleTotal) ||
+    (foldTotal>0 && foldPassed<foldTotal);
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
