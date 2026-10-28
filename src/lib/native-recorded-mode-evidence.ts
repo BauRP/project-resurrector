@@ -64,6 +64,14 @@ export function nativeRecordedModeEvidence(
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
   const prefix = status.state === "saved_interrupted" || status.state === "interrupted"
     ? "При записи было прерывание или неполное подтверждение. " : "";
+  const stabilizationNotes = [
+    status.recordingEisFrames ?? 0,status.recordingOisFrames ?? 0,
+    status.recordingStabilizationOffFrames ?? 0,status.recordingStabilizationUnknownFrames ?? 0,
+  ];
+  const stabilizationEvidence = stabilizationNotes.some(value=>value>0)
+    ? " Во время записи наблюдались состояния стабилизации (EIS/OIS/OFF/UNKNOWN): "
+      + stabilizationNotes.join("/") + "."
+    : " Состояние стабилизации именно во время записи неизвестно.";
   return {
     api:"camera2",cameraId,
     requested:{width:width!,height:height!,fps:fps!},
@@ -74,6 +82,7 @@ export function nativeRecordedModeEvidence(
     state,
     checkedAt,
     message:prefix + reason +
-      " Достоверная FPS/стабилизация всего файла и непрерывность при складывании не подтверждены.",
+      stabilizationEvidence +
+      " Реальная эффективность стабилизации всего MP4 и непрерывность при складывании не подтверждены.",
   };
 }
