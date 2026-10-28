@@ -1608,24 +1608,74 @@ public class NativeCaptureService extends Service {
      * observed during actual WindowManager fold callbacks. A successful
      * keyframe decode does not certify intervening frames or audio sync.
      */
+    private static final long MP4_CHECKPOINT_TOLERANCE_US = 250000L;
+    /** A decoded closest keyframe alone can be many seconds away from a
+     * requested fold time. Require an actual video sample timestamp within
+     * 250ms as INDEPENDENT evidence before accepting a checkpoint.
+     * Bounded to avoid scanning long files on the UI/camera service.
+     */
+    private boolean hasNearVideoSample(MediaExtractor extractor,long targetUs) {
+        try {
+            extractor.seekTo(Math.max(0L,targetUs),
+                MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+            long nearest=Long.MAX_VALUE;
+            long last=-1L;
+            boolean badOrder=false;
+            for(int samples=0;samples<1536;samples++){
+                long at=extractor.getSampleTime();
+                if(at<0L)break;
+                if(last>=0L && at<last)badOrder=true;
+                last=at;
+                long delta=Math.abs(at-targetUs);
+                nearest=Math.min(nearest,delta);
+                if(at>targetUs+MP4_CHECKPOINT_TOLERANCE_US)break;
+                if(!extractor.advance())break;
+            }
+            return !badOrder&&nearest<=MP4_CHECKPOINT_TOLERANCE_US;
+        }catch(Exception ignored){return false;}
+    }
+    /** This audit samples middle and REAL observed fold positions.
+     * Presence of one nearby sample plus a decoded keyframe is limited
+     * evidence, not full video continuity or exact frame-at-fold proof.
+     */
     private void inspectMp4Checkpoints(File file,long durationMs) {
-        mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
-        if(durationMs<=2000L || file==null)return;
-        for(int i=1;i<=3;i++){
-            long at=durationMs*i/4L;
-            if(at<500L||at>=durationMs-500L)continue;
-            mp4MiddleProbes++;
-            if(decodeMp4FrameAt(file,at*1000L))mp4MiddleMatched++;
-        }
-        if(recordingFoldPointsMs.isEmpty())return;
-        for(String point:recordingFoldPointsMs.split(",")){
-            if(mp4FoldProbes>=8)break;
-            try{
-                long at=Long.parseLong(point);
+        mp4MiddleProbes=0;mp4MiddleMatched=0;
+        mp4FoldProbes=0;mp4FoldMatched=0;
+        if(durationMs<=2000L || file==null||!file.isFile())return;
+        MediaExtractor extractor=new MediaExtractor();
+        try {
+            extractor.setDataSource(file.getAbsolutePath());
+            int videoTrack=-1;
+            for(int i=0;i<extractor.getTrackCount();i++){
+                MediaFormat format=extractor.getTrackFormat(i);
+                String mime=format.containsKey(MediaFormat.KEY_MIME)
+                    ?format.getString(MediaFormat.KEY_MIME):null;
+                if(mime!=null && mime.startsWith("video/")){videoTrack=i;break;}
+            }
+            if(videoTrack<0)return;
+            extractor.selectTrack(videoTrack);
+            for(int i=1;i<=3;i++){
+                long at=durationMs*i/4L;
                 if(at<500L||at>=durationMs-500L)continue;
-                mp4FoldProbes++;
-                if(decodeMp4FrameAt(file,at*1000L))mp4FoldMatched++;
-            }catch(NumberFormatException ignored){}
+                mp4MiddleProbes++;
+                if(hasNearVideoSample(extractor,at*1000L) &&
+                   decodeMp4FrameAt(file,at*1000L))mp4MiddleMatched++;
+            }
+            if(recordingFoldPointsMs.isEmpty())return;
+            for(String point:recordingFoldPointsMs.split(",")){
+                if(mp4FoldProbes>=8)break;
+                try {
+                    long at=Long.parseLong(point);
+                    if(at<500L||at>=durationMs-500L)continue;
+                    mp4FoldProbes++;
+                    if(hasNearVideoSample(extractor,at*1000L) &&
+                       decodeMp4FrameAt(file,at*1000L))mp4FoldMatched++;
+                }catch(NumberFormatException ignored){}
+            }
+        }catch(Exception ignored){
+            // Unknown, never claim success when the MediaExtractor fails.
+        }finally {
+            try{extractor.release();}catch(Exception ignored){}
         }
     }
     private boolean savedMp4HasVideo(File candidate) {
