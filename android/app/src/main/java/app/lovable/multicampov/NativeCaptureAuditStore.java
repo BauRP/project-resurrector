@@ -57,7 +57,7 @@ public final class NativeCaptureAuditStore {
                 for(String k:integers)item.put(k,status.optInt(k,0));
                 String[] booleans={"audioRequested","mp4TracksInspected","mp4HasVideoTrack",
                     "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable",
-                    "mp4CheckpointAuditCompleted"};
+                    "mp4CheckpointAuditCompleted","foldObserverGap"};
                 for(String k:booleans)item.put(k,status.optBoolean(k,false));
                 item.put("savedAt",System.currentTimeMillis());
             }catch(Exception ignored){return;}
