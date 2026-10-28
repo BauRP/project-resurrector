@@ -111,31 +111,35 @@ public class NativeCaptureService extends Service {
     private MediaRecorder encoder;
     private volatile ImageReader previewReader;
     private Surface activeDirectPreviewSurface;
+    private int previewSessionRevision = 0;
     private volatile boolean previewConsumerVisible;
     /** An Activity contributes only a surface, not a second Camera2 owner.
      * Unmounting its surface cannot terminate a MediaRecorder session.
      */
     public static void setDirectPreviewTexture(String ownerId, SurfaceTexture texture) {
         if (ownerId == null || ownerId.isEmpty()) return;
+        NativeCaptureService service = null;
         synchronized (STATE_LOCK) {
             if (texture != null) {
+                // Old Activity destruction cannot detach a new Activity owner.
+                if (ownerId.equals(directPreviewOwnerId) &&
+                    directPreviewTexture == texture) return;
                 directPreviewOwnerId = ownerId;
                 directPreviewTexture = texture;
             } else if (ownerId.equals(directPreviewOwnerId)) {
                 directPreviewOwnerId = null;
                 directPreviewTexture = null;
-                NativeCaptureService service = runningInstance;
-                if (service != null && directPreviewActive &&
-                    "previewing".equals(state) && service.encoder == null &&
-                    service.worker != null) {
-                    // A detached SurfaceTexture is unusable. Only preview-only
-                    // sessions stop; actual video recording is never stopped.
-                    service.worker.post(() -> {
-                        if ("previewing".equals(state) && service.encoder == null)
-                            service.finish();
-                    });
-                }
-            }
+            } else return;
+            if (runningInstance != null && runningInstance.camera != null &&
+                runningInstance.encoder == null &&
+                "previewing".equals(state)) service = runningInstance;
+        }
+        if (service != null && service.worker != null) {
+            final NativeCaptureService active = service;
+            // No new openCamera() call on folding. Rebuild only the output
+            // session on the same CameraDevice, falling back to JPEG if the
+            // direct TextureView went away.
+            active.worker.post(active::rebindPreviewOutput);
         }
     }
     public static void setPreviewConsumerVisible(boolean visible, String ownerId) {
@@ -846,6 +850,40 @@ public class NativeCaptureService extends Service {
             }catch(Exception error){fail(error);}
         });
     }
+    private void rebindPreviewOutput() {
+        if (stopRequested || camera == null || encoder != null ||
+            !"previewing".equals(state)) return;
+        int token = generation;
+        try {
+            // Make callbacks from the old session obsolete before closing it.
+            previewSessionRevision++;
+            if (capture != null) {
+                try {capture.stopRepeating();}catch(Exception ignored){}
+                try {capture.close();}catch(Exception ignored){}
+                capture = null;
+            }
+            liveRequest = null; liveCallback = null;
+            directPreviewActive = false;
+            if (activeDirectPreviewSurface != null) {
+                try {activeDirectPreviewSurface.release();}catch(Exception ignored){}
+                activeDirectPreviewSurface = null;
+            }
+            if (previewReader != null) {
+                try {previewReader.close();}catch(Exception ignored){}
+                previewReader = null;
+            }
+            CameraManager manager = (CameraManager)getSystemService(Context.CAMERA_SERVICE);
+            CameraCharacteristics info=manager.getCameraCharacteristics(camera.getId());
+            StreamConfigurationMap config=info.get(
+                CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+            configurePreviewOnlySession(camera,token,config,true);
+        } catch (Exception error) {
+            // Fail only this preview: do not touch an unrelated MP4 recorder.
+            fail(new IllegalStateException("Не удалось переключить поверхность предпросмотра: "+
+                error.getMessage(),error));
+        }
+    }
+
     private void configurePreviewOnlySession(CameraDevice opened, int token,
         StreamConfigurationMap config, boolean tryDirect) throws Exception {
         Surface target = null;
@@ -900,6 +938,7 @@ public class NativeCaptureService extends Service {
         }
         final Surface output = target;
         final boolean direct = usingDirect;
+        final int revision = ++previewSessionRevision;
         CaptureRequest.Builder request=opened.createCaptureRequest(
             CameraDevice.TEMPLATE_PREVIEW);
         request.addTarget(output);
@@ -909,7 +948,8 @@ public class NativeCaptureService extends Service {
         opened.createCaptureSession(Arrays.asList(output),
             new CameraCaptureSession.StateCallback(){
                 @Override public void onConfigured(CameraCaptureSession ready){
-                    if(token!=generation || stopRequested){ready.close();return;}
+                    if(token!=generation || stopRequested ||
+                        revision!=previewSessionRevision){ready.close();return;}
                     capture=ready;
                     try {
                         capture.setRepeatingRequest(request.build(),liveCallback,worker);
@@ -924,7 +964,9 @@ public class NativeCaptureService extends Service {
                 }
                 @Override public void onConfigureFailed(CameraCaptureSession broken){
                     broken.close();
-                    if (direct && token==generation && !stopRequested) {
+                    if (revision != previewSessionRevision || token != generation ||
+                        stopRequested) return;
+                    if (direct) {
                         // OEM camera may reject TextureView output. Retry the
                         // legacy YUV path without creating a second camera.
                         directPreviewActive=false;
@@ -1183,6 +1225,7 @@ public class NativeCaptureService extends Service {
         finish();
     }
     private void releaseCamera() {
+        previewSessionRevision++;
         liveRequest=null;
         liveCallback=null;
         latestPreviewJpeg = null; latestPreviewAt = 0; lastPreviewAttemptAt = 0;
