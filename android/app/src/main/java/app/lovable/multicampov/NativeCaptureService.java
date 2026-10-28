@@ -195,9 +195,24 @@ public class NativeCaptureService extends Service {
             // Journal first: if interrupted during recovery, the next call
             // can safely retry the same captureId without duplicating it.
             NativeCaptureAuditStore.append(context,recovered);
+            // A dead MediaRecorder cannot provide trustworthy finalized MP4
+            // evidence. Clear any stale media path/track claims in persistent
+            // status, but keep the interrupted attempt in the audit journal.
             preferences.edit().putString("state","interrupted")
                 .putString("message",reason)
+                .putString("path","")
                 .putString("uri","")
+                .putBoolean("mp4TracksInspected",false)
+                .putBoolean("mp4HasVideoTrack",false)
+                .putBoolean("mp4HasAudioTrack",false)
+                .putBoolean("mp4FirstFrameDecodable",false)
+                .putBoolean("mp4TailFrameDecodable",false)
+                .putBoolean("mp4CheckpointAuditCompleted",false)
+                .putInt("mp4VideoSamples",0)
+                .putInt("mp4AudioSamples",0)
+                .putInt("mp4TailVideoSamples",0)
+                .putLong("mp4DurationMs",-1L)
+                .putBoolean("mp4TailNearEnd",false)
                 .commit();
         }
     }
@@ -2009,9 +2024,19 @@ public class NativeCaptureService extends Service {
             // A missing parser result is UNKNOWN rather than "audio absent".
             boolean audioNotConfirmed = wantAudio &&
                 (audit == null || !audit.audio || audit.audioSamples == 0);
+            // Actual encoded dimensions cannot be inferred from orientation.
+            // Missing width/height is unknown, not an accepted selected mode.
             boolean videoMismatch = audit != null && audit.video &&
-                audit.width > 0 && audit.height > 0 &&
                 (audit.width != selectedWidth || audit.height != selectedHeight);
+            // Native saved state must agree with the per-mode passport: an
+            // observed mismatch in bounded prefix/tail FPS is not proof that
+            // the requested encoder mode was applied throughout the file.
+            float fpsTolerance=Math.max(2f,selectedFps*0.1f);
+            boolean fpsMismatch = audit != null &&
+                ((Float.isFinite(audit.sampledFps) && audit.sampledFps>0f &&
+                    Math.abs(audit.sampledFps-selectedFps)>fpsTolerance) ||
+                 (Float.isFinite(audit.tailSampledFps) && audit.tailSampledFps>0f &&
+                    Math.abs(audit.tailSampledFps-selectedFps)>fpsTolerance));
             boolean sampleIssue = audit != null &&
                 (audit.videoSamples == 0 || audit.timestampRollbacks > 0 ||
                  audit.timestampDuplicates > 0);
@@ -2035,7 +2060,7 @@ public class NativeCaptureService extends Service {
             boolean inspectionUnknown = audit == null || !mp4HasVideoTrack ||
                 mp4VideoSamples <= 0;
             boolean incomplete = checkpointIssue || interruptedByCamera || audioNotConfirmed ||
-                videoMismatch || sampleIssue || tailIssue || inspectionUnknown ||
+                videoMismatch || fpsMismatch || sampleIssue || tailIssue || inspectionUnknown ||
                 tailDecodeIssue || !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
@@ -2062,6 +2087,8 @@ public class NativeCaptureService extends Service {
                     ? "MP4 сохранён, но конец видеодорожки не подтверждён"
                 : audioNotConfirmed
                     ? "MP4 сохранён, но звуковые данные не подтверждены"
+                    : fpsMismatch
+                        ? "MP4 сохранён, но измеренный FPS не совпадает с выбранным режимом"
                     : sampleIssue
                         ? "MP4 сохранён, но обнаружена проблема видеокадров или меток времени"
                     : videoMismatch
