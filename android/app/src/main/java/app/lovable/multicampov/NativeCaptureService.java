@@ -659,6 +659,12 @@ public class NativeCaptureService extends Service {
                 value = "idle";
                 message = "Предпросмотр остановлен при закрытии Android-процесса";
             }
+            // The persisted state was written before the service could be
+            // terminated. Never report a dead recorder as alive after restart.
+            if (runningInstance == null &&
+                ("interrupted".equals(value) || "error".equals(value))) {
+                message = message == null ? "Нативная запись не подтверждена" : message;
+            }
             out.put("directPreviewActive", runningInstance != null &&
                 directPreviewActive && "previewing".equals(value));
             out.put("cameraSensorFrames",runningInstance==null?0L:runningInstance.sensorFramesSeen);
