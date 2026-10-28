@@ -64,6 +64,10 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4VideoSamples:0.5},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4VideoSamples:0},12345)?.state).toBe("unknown");
  });
+ it("downgrades real MP4 fold PTS gaps without claiming all frames lost",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:1,mp4MaxFoldPtsGapMs:500},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:0,mp4MaxFoldPtsGapMs:40},12345)?.state).toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
