@@ -69,35 +69,62 @@ public class MultiCamNativePlugin extends Plugin {
     private HandlerThread thread;
     private Handler handler;
     private CameraManager.AvailabilityCallback availabilityWatcher;
+    // A folding Activity may create a new React listener before the old
+    // WebView tears down. Track every owner so old cleanup cannot stop the
+    // current availability observer.
+    private final Set<String> availabilityOwners = new LinkedHashSet<>();
     private final Handler availabilityMainHandler = new Handler(Looper.getMainLooper());
 
     @PluginMethod
     public void startCameraAvailability(PluginCall call) {
+        String ownerId = call.getString("ownerId");
+        if (ownerId == null || ownerId.isEmpty() || ownerId.length() > 128) {
+            call.reject("Camera availability requires an ownerId"); return;
+        }
         try {
-            if (availabilityWatcher == null) {
-                availabilityWatcher = new CameraManager.AvailabilityCallback() {
-                    @Override public void onCameraAvailable(String cameraId) {
-                        JSObject ev = new JSObject(); ev.put("cameraId", cameraId);
-                        ev.put("available", true);
-                        notifyListeners("cameraAvailabilityChanged", ev);
-                    }
-                    @Override public void onCameraUnavailable(String cameraId) {
-                        JSObject ev = new JSObject(); ev.put("cameraId", cameraId);
-                        ev.put("available", false);
-                        notifyListeners("cameraAvailabilityChanged", ev);
-                    }
-                };
-                cameras().registerAvailabilityCallback(availabilityWatcher, availabilityMainHandler);
+            synchronized (availabilityOwners) {
+                if (availabilityWatcher == null) {
+                    CameraManager.AvailabilityCallback watcher = new CameraManager.AvailabilityCallback() {
+                        @Override public void onCameraAvailable(String cameraId) {
+                            JSObject ev = new JSObject(); ev.put("cameraId", cameraId);
+                            ev.put("available", true);
+                            notifyListeners("cameraAvailabilityChanged", ev);
+                        }
+                        @Override public void onCameraUnavailable(String cameraId) {
+                            JSObject ev = new JSObject(); ev.put("cameraId", cameraId);
+                            ev.put("available", false);
+                            notifyListeners("cameraAvailabilityChanged", ev);
+                        }
+                    };
+                    // Assign only after successful registration so an OEM
+                    // exception never leaves a nonfunctional watcher installed.
+                    cameras().registerAvailabilityCallback(watcher, availabilityMainHandler);
+                    availabilityWatcher = watcher;
+                }
+                availabilityOwners.add(ownerId);
             }
             call.resolve();
         } catch (Exception e) { call.reject("Camera availability unavailable: " + e.getMessage()); }
     }
     @PluginMethod
-    public void stopCameraAvailability(PluginCall call) { stopAvailability(); call.resolve(); }
+    public void stopCameraAvailability(PluginCall call) {
+        String ownerId = call.getString("ownerId");
+        if (ownerId == null || ownerId.isEmpty()) {
+            call.reject("Camera availability requires an ownerId"); return;
+        }
+        synchronized (availabilityOwners) {
+            availabilityOwners.remove(ownerId);
+            if (availabilityOwners.isEmpty()) stopAvailability();
+        }
+        call.resolve();
+    }
     private void stopAvailability() {
-        if (availabilityWatcher == null) return;
-        cameras().unregisterAvailabilityCallback(availabilityWatcher);
-        availabilityWatcher = null;
+        synchronized (availabilityOwners) {
+            availabilityOwners.clear();
+            if (availabilityWatcher == null) return;
+            cameras().unregisterAvailabilityCallback(availabilityWatcher);
+            availabilityWatcher = null;
+        }
     }
     @Override protected void handleOnDestroy() {
         stopAvailability(); cleanup(); super.handleOnDestroy();
