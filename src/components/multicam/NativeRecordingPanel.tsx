@@ -4,7 +4,7 @@ import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection } from "@/lib/native-mode-selection";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
 import { recordModeEvidence } from "@/lib/camera-passport";
-import { nativeAuditExportText } from "@/lib/native-audit-export";
+import { nativeAnonymizedAuditReport } from "@/lib/native-audit-report";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
@@ -461,7 +461,7 @@ export function NativeRecordingPanel(){
      <Button variant="outline" onClick={()=>void readAudit()}>Показать историю нативных записей и складываний</Button>
      {auditError&&<p role="alert" className="text-destructive">{auditError}</p>}
      {auditHistory&&<Button variant="outline" onClick={()=>{
-       const text=nativeAuditExportText(auditHistory);
+       const text=nativeAnonymizedAuditReport(auditHistory);
        void navigator.clipboard.writeText(text).then(()=>setAuditError("Обезличенный отчёт скопирован.")).catch(()=>setAuditError("Буфер обмена недоступен; отчёт не скопирован."));
      }}>Скопировать обезличенный отчёт о записи и складывании</Button>}
      {auditHistory&&<div className="space-y-2">
