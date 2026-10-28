@@ -28,9 +28,13 @@ let activeFoldSnapshot: { owner: symbol; observed: FoldTransitionEvidence } | nu
 export function rememberActiveFoldSnapshot(owner: symbol, value: unknown, observedAtMs: number): boolean {
   const evidence = normalizeFoldTransition(value, observedAtMs);
   if (!evidence) return false;
-  if (activeFoldSnapshot?.owner === owner &&
-      (evidence.revision < activeFoldSnapshot.observed.revision ||
-       observedAtMs < activeFoldSnapshot.observed.observedAtMs)) return false;
+  // An asynchronously delivered event from an older Activity must not
+  // replace the more recent owner's snapshot. Native revisions can reset
+  // across Activity recreation, so compare time across different owners.
+  if (activeFoldSnapshot &&
+      (observedAtMs < activeFoldSnapshot.observed.observedAtMs ||
+       (activeFoldSnapshot.owner === owner &&
+        evidence.revision < activeFoldSnapshot.observed.revision))) return false;
   activeFoldSnapshot = { owner, observed: evidence };
   return true;
 }
@@ -93,6 +97,17 @@ export function normalizeFoldTransition(value: unknown, observedAtMs: number): F
     ...(event["baseline"] === true ? {baseline:true as const} : {}),
   };
 }
+/** A posture change and a mere window resize are distinct observations. */
+function foldChangeKind(
+  before: FoldTransitionEvidence, after: FoldTransitionEvidence,
+): "posture" | "geometry" | "none" {
+  if (before.hingeCount !== after.hingeCount ||
+      before.posture !== after.posture || before.layout !== after.layout)
+    return "posture";
+  if (before.regionGeometry !== after.regionGeometry ||
+      before.usableRegions !== after.usableRegions) return "geometry";
+  return "none";
+}
 /** Avoid duplicate initial native topology callbacks or unbounded metadata. */
 export function appendFoldTransition(
   events: readonly FoldTransitionEvidence[], value: FoldTransitionEvidence,
@@ -121,21 +136,23 @@ export function appendFoldTransition(
     ? [next[0]!, ...next.slice(-119)]
     : next.slice(-120);
   const previouslyOmitted = events[0]?.omittedEarlierEvents ?? 0;
-  // Account for transitions that become invisible after truncation. With a
-  // preserved baseline the first retained tail node changes at each append.
-  const droppedBefore = baseline ? next[1] : next[0];
-  const droppedAfter = baseline ? next[2] : next[1];
-  const postureChange = !!droppedBefore && !!droppedAfter &&
-    (droppedBefore.hingeCount !== droppedAfter.hingeCount ||
-      droppedBefore.posture !== droppedAfter.posture ||
-      droppedBefore.layout !== droppedAfter.layout);
-  const previouslyPosture = events[0]?.omittedPostureChanges ?? 0;
-  const previouslyGeometry = events[0]?.omittedGeometryOnlyChanges ?? 0;
+  // If the baseline is retained, dropping an interior node replaces TWO
+  // old edges (baseline -> removed -> retained) with ONE new edge.
+  // Count their exact difference. Merely classifying removed -> retained
+  // loses a real open-close cycle when the first and third postures match.
+  const lostKinds = baseline
+    ? [foldChangeKind(next[0]!, next[1]!), foldChangeKind(next[1]!, next[2]!)]
+    : [foldChangeKind(next[0]!, next[1]!)];
+  const replacementKind = baseline
+    ? foldChangeKind(next[0]!, next[2]!) : "none";
+  const delta = (kind: "posture" | "geometry") =>
+    lostKinds.filter(value => value === kind).length -
+    (replacementKind === kind ? 1 : 0);
   trimmed[0] = {
     ...trimmed[0]!,
     omittedEarlierEvents: previouslyOmitted + (next.length - 120),
-    omittedPostureChanges: previouslyPosture + (postureChange ? 1 : 0),
-    omittedGeometryOnlyChanges: previouslyGeometry + (postureChange ? 0 : 1),
+    omittedPostureChanges: (events[0]?.omittedPostureChanges ?? 0) + delta("posture"),
+    omittedGeometryOnlyChanges: (events[0]?.omittedGeometryOnlyChanges ?? 0) + delta("geometry"),
   };
   return trimmed;
 }
@@ -150,12 +167,9 @@ export function foldContinuitySummary(events: readonly FoldTransitionEvidence[])
   let geometryOnlyChanges = events[0]?.omittedGeometryOnlyChanges ?? 0;
   for (let i = 1; i < events.length; i++) {
     const before = events[i - 1]!, after = events[i]!;
-    if (before.hingeCount !== after.hingeCount ||
-        before.posture !== after.posture || before.layout !== after.layout)
-      postureChanges++;
-    else if (before.regionGeometry !== after.regionGeometry ||
-             before.usableRegions !== after.usableRegions)
-      geometryOnlyChanges++;
+    const kind = foldChangeKind(before, after);
+    if (kind === "posture") postureChanges++;
+    else if (kind === "geometry") geometryOnlyChanges++;
   }
   const uncertain = events[0]?.baseline !== true;
   const prefix = uncertain ? "Начальная геометрия на момент старта отсутствует; число изменений частично неизвестно. " : "";
