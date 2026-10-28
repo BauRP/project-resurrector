@@ -98,6 +98,7 @@ public class NativeCaptureService extends Service {
     private static int mp4TailVideoSamples = 0;
     private static float mp4TailSampledFps = -1f;
     private static boolean mp4TailNearEnd = false;
+    private static boolean mp4FirstFrameDecodable = false;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     private HandlerThread workerThread;
@@ -662,6 +663,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getFloat("mp4TailSampledFps", -1f) : mp4TailSampledFps);
             out.put("mp4TailNearEnd", runningInstance == null
                 ? previous.getBoolean("mp4TailNearEnd", false) : mp4TailNearEnd);
+            out.put("mp4FirstFrameDecodable", runningInstance == null
+                ? previous.getBoolean("mp4FirstFrameDecodable", false) : mp4FirstFrameDecodable);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -700,7 +703,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4DurationMs", mp4DurationMs)
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
                 .putFloat("mp4TailSampledFps", mp4TailSampledFps)
-                .putBoolean("mp4TailNearEnd", mp4TailNearEnd).apply();
+                .putBoolean("mp4TailNearEnd", mp4TailNearEnd)
+                .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable).apply();
         }
     }
     @Override public void onCreate() {
@@ -805,6 +809,7 @@ public class NativeCaptureService extends Service {
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
             mp4TailSampledFps = -1f; mp4TailNearEnd = false;
+            mp4FirstFrameDecodable = false;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1416,6 +1421,25 @@ public class NativeCaptureService extends Service {
             try { extractor.release(); } catch (Exception ignored) {}
         }
     }
+    /** One small actual decoded frame is stronger evidence than MP4 headers,
+     * but it is NOT a full video playback/decoder endurance test.
+     */
+    private boolean decodeMp4FirstFrame(File file) {
+        if (file == null || !file.isFile() || file.length() < 1024L) return false;
+        MediaMetadataRetriever retriever=new MediaMetadataRetriever();
+        android.graphics.Bitmap frame=null;
+        try {
+            retriever.setDataSource(file.getAbsolutePath());
+            frame=retriever.getScaledFrameAtTime(0L,
+                MediaMetadataRetriever.OPTION_CLOSEST_SYNC,320,180);
+            return frame!=null && frame.getWidth()>0 && frame.getHeight()>0;
+        } catch (Exception error) {
+            return false;
+        } finally {
+            if (frame!=null)try{frame.recycle();}catch(Exception ignored){}
+            try{retriever.release();}catch(Exception ignored){}
+        }
+    }
     private boolean savedMp4HasVideo(File candidate) {
         if (candidate == null || !candidate.isFile() || candidate.length() < 1024) return false;
         MediaMetadataRetriever reader = new MediaMetadataRetriever();
@@ -1492,6 +1516,7 @@ public class NativeCaptureService extends Service {
             mp4TailVideoSamples = audit == null ? 0 : audit.tailSamples;
             mp4TailSampledFps = audit == null ? -1f : audit.tailSampledFps;
             mp4TailNearEnd = audit != null && audit.tailNearEnd;
+            mp4FirstFrameDecodable=decodeMp4FirstFrame(media);
             // A missing audio track is not a clean video+audio recording.
             // A missing parser result is UNKNOWN rather than "audio absent".
             boolean audioNotConfirmed = wantAudio &&
@@ -1507,12 +1532,15 @@ public class NativeCaptureService extends Service {
             boolean tailIssue = audit != null && audit.durationMs > 0L &&
                 audit.tailSamples > 0 && !audit.tailNearEnd;
             boolean incomplete = interruptedByCamera || audioNotConfirmed ||
-                videoMismatch || sampleIssue || tailIssue || (audit != null && !audit.video);
+                videoMismatch || sampleIssue || tailIssue || (audit != null && !audit.video) ||
+                !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
             String message = interruptedByCamera
                 ? "Камера была потеряна; непрерывность записи не подтверждена"
+                : !mp4FirstFrameDecodable
+                    ? "MP4 сохранён, но декодирование первого кадра не подтверждено"
                 : tailIssue
                     ? "MP4 сохранён, но конец видеодорожки не подтверждён"
                 : audioNotConfirmed
