@@ -55,7 +55,10 @@ export function nativeRecordedModeEvidence(
   const invalidFoldPts = !Number.isSafeInteger(ptsChecks) || ptsChecks<0 ||
     ptsChecks>8 || !Number.isSafeInteger(ptsLarge) || ptsLarge<0 ||
     ptsLarge>ptsChecks || !Number.isSafeInteger(ptsMax) || ptsMax<0;
-  const suspiciousFoldPts = invalidFoldPts || ptsLarge>0;
+  // A checkpoint that was decoded but had no bracketing video timestamps
+  // cannot establish local continuity. Keep it unknown rather than recorded.
+  const missingFoldSpan = foldTotal > 0 && ptsChecks < foldTotal;
+  const suspiciousFoldPts = invalidFoldPts || ptsLarge>0 || missingFoldSpan;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -84,7 +87,9 @@ export function nativeRecordedModeEvidence(
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
-    suspiciousFoldPts ? "Обнаружен большой интервал видеометок возле складывания." :
+    suspiciousFoldPts ? (missingFoldSpan
+      ? "Временные метки кадров не удалось проверить возле каждого складывания."
+      : "Обнаружен большой или недостоверный интервал видеометок возле складывания.") :
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
   const prefix = status.state === "saved_interrupted" || status.state === "interrupted"
     ? "При записи было прерывание или неполное подтверждение. " : "";
