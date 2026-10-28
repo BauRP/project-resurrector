@@ -86,6 +86,7 @@ public class NativeCaptureService extends Service {
     private static volatile int recordingStabilizationOffFrames = 0;
     private static volatile int recordingStabilizationUnknownFrames = 0;
     private static long recordingStartedAt = 0L;
+    private static long currentCaptureId = 0L;
     private static int recordedOrientation = -1;
     private static String selectedCameraId = "";
     private static int selectedWidth = 0, selectedHeight = 0, selectedFps = 0;
@@ -665,6 +666,8 @@ public class NativeCaptureService extends Service {
             out.put("state", value);
             out.put("message", message);
             out.put("startedAt", started);
+            out.put("captureId",runningInstance==null
+                ? context.getSharedPreferences(STORE,MODE_PRIVATE).getLong("captureId",0L):currentCaptureId);
             out.put("cameraId", chosenCamera);
             out.put("width", width);
             out.put("height", height);
@@ -793,6 +796,7 @@ public class NativeCaptureService extends Service {
                 .putInt("recordingOisFrames",recordingOisFrames)
                 .putInt("recordingStabilizationOffFrames",recordingStabilizationOffFrames)
                 .putInt("recordingStabilizationUnknownFrames",recordingStabilizationUnknownFrames)
+                .putLong("captureId",currentCaptureId)
                 .putLong("started", recordingStartedAt)
                 .putString("cameraId", selectedCameraId)
                 .putInt("width", selectedWidth)
@@ -926,6 +930,7 @@ public class NativeCaptureService extends Service {
         interruptedByCamera = false;
         synchronized (STATE_LOCK) {
             savedPath = ""; savedUri = ""; chosenStabilization = "unknown";
+            currentCaptureId=Math.max(System.currentTimeMillis(),currentCaptureId+1L);
             stabilizationResultSeen = false; recordingStartedAt = 0L;
             recordingEisFrames=0;recordingOisFrames=0;
             recordingStabilizationOffFrames=0;recordingStabilizationUnknownFrames=0;
@@ -1805,6 +1810,7 @@ public class NativeCaptureService extends Service {
         } else if (!"error".equals(state)) {
             publish("interrupted", "Нативная запись не создала подтверждённый MP4.");
         }
+        NativeCaptureAuditStore.append(this,status(this));
         stopForeground(true);
         stopSelf();
     }
