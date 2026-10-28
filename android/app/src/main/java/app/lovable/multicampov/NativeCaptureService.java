@@ -90,6 +90,10 @@ public class NativeCaptureService extends Service {
     private static int mp4VideoTimestampRollbacks = 0, mp4VideoTimestampDuplicates = 0;
     private static boolean mp4VideoSampleLimitReached = false;
     private static float mp4SampledFps = -1f;
+    private static long mp4DurationMs = -1L;
+    private static int mp4TailVideoSamples = 0;
+    private static float mp4TailSampledFps = -1f;
+    private static boolean mp4TailNearEnd = false;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     private HandlerThread workerThread;
@@ -583,6 +587,14 @@ public class NativeCaptureService extends Service {
                 ? previous.getBoolean("mp4VideoSampleLimitReached", false) : mp4VideoSampleLimitReached);
             out.put("mp4SampledFps", runningInstance == null
                 ? previous.getFloat("mp4SampledFps", -1f) : mp4SampledFps);
+            out.put("mp4DurationMs", runningInstance == null
+                ? previous.getLong("mp4DurationMs", -1L) : mp4DurationMs);
+            out.put("mp4TailVideoSamples", runningInstance == null
+                ? previous.getInt("mp4TailVideoSamples", 0) : mp4TailVideoSamples);
+            out.put("mp4TailSampledFps", runningInstance == null
+                ? previous.getFloat("mp4TailSampledFps", -1f) : mp4TailSampledFps);
+            out.put("mp4TailNearEnd", runningInstance == null
+                ? previous.getBoolean("mp4TailNearEnd", false) : mp4TailNearEnd);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -617,7 +629,11 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4VideoTimestampRollbacks", mp4VideoTimestampRollbacks)
                 .putInt("mp4VideoTimestampDuplicates", mp4VideoTimestampDuplicates)
                 .putBoolean("mp4VideoSampleLimitReached", mp4VideoSampleLimitReached)
-                .putFloat("mp4SampledFps", mp4SampledFps).apply();
+                .putFloat("mp4SampledFps", mp4SampledFps)
+                .putLong("mp4DurationMs", mp4DurationMs)
+                .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
+                .putFloat("mp4TailSampledFps", mp4TailSampledFps)
+                .putBoolean("mp4TailNearEnd", mp4TailNearEnd).apply();
         }
     }
     @Override public void onCreate() {
@@ -720,6 +736,8 @@ public class NativeCaptureService extends Service {
             mp4VideoSamples = 0; mp4AudioSamples = 0;
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
+            mp4DurationMs = -1L; mp4TailVideoSamples = 0;
+            mp4TailSampledFps = -1f; mp4TailNearEnd = false;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1090,6 +1108,10 @@ public class NativeCaptureService extends Service {
         int timestampRollbacks, timestampDuplicates;
         boolean sampleLimitReached;
         float sampledFps = -1f;
+        long durationMs = -1L;
+        int tailSamples;
+        float tailSampledFps = -1f;
+        boolean tailNearEnd;
     }
     private void scanMp4Track(MediaExtractor extractor, int track, boolean video,
         Mp4TrackAudit audit) {
@@ -1125,6 +1147,59 @@ public class NativeCaptureService extends Service {
         }
     }
 
+    /** A second bounded scan starts at the last few seconds of the video.
+     * The extractor seeks to a preceding key frame, so the scanned range is
+     * approximate. This cannot establish that all middle frames are intact.
+     */
+    private void scanMp4Tail(MediaExtractor extractor, int track, Mp4TrackAudit audit) {
+        if (audit.durationMs <= 0L) return;
+        extractor.selectTrack(track);
+        try {
+            long endUs = audit.durationMs * 1000L;
+            extractor.seekTo(Math.max(0L, endUs - 3000000L),
+                MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
+            long first = -1L, last = -1L;
+            int samples = 0, rollbacks = 0, duplicates = 0;
+            while (samples < MP4_SCAN_SAMPLES_PER_TRACK) {
+                long pts = extractor.getSampleTime();
+                if (pts < 0L) break;
+                if (last >= 0L) {
+                    if (pts < last) rollbacks++;
+                    if (pts == last) duplicates++;
+                }
+                if (first < 0L) first = pts;
+                last = pts;
+                samples++;
+                if (!extractor.advance()) break;
+            }
+            audit.tailSamples = samples;
+            audit.timestampRollbacks += rollbacks;
+            audit.timestampDuplicates += duplicates;
+            if (samples >= 3 && last > first && rollbacks == 0 && duplicates == 0)
+                audit.tailSampledFps = (float)((samples - 1) * 1000000.0 / (last - first));
+            // A final sample may precede the nominal media duration by a
+            // frame or an interleaving delay; never require exact equality.
+            audit.tailNearEnd = last >= 0L && last <= endUs + 1000000L &&
+                endUs - last <= 2000000L;
+        } finally {
+            extractor.unselectTrack(track);
+        }
+    }
+    private long readMp4DurationMs(File file) {
+        MediaMetadataRetriever retriever = new MediaMetadataRetriever();
+        try {
+            retriever.setDataSource(file.getAbsolutePath());
+            String value = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION);
+            if (value == null) return -1L;
+            long duration = Long.parseLong(value);
+            return duration > 0L ? duration : -1L;
+        } catch (Exception ignored) {
+            return -1L;
+        } finally {
+            try { retriever.release(); } catch (Exception ignored) {}
+        }
+    }
+
     /** MediaExtractor reads the finalized MP4 track headers. This does NOT
      * prove every encoded frame, audio fidelity, or uninterrupted fold capture.
      * If the parser fails, keep the outcome UNKNOWN rather than say no audio.
@@ -1136,6 +1211,7 @@ public class NativeCaptureService extends Service {
         try {
             extractor.setDataSource(candidate.getAbsolutePath());
             Mp4TrackAudit result = new Mp4TrackAudit();
+            result.durationMs = readMp4DurationMs(candidate);
             int videoTrack = -1, audioTrack = -1;
             for (int i = 0; i < extractor.getTrackCount(); i++) {
                 MediaFormat format = extractor.getTrackFormat(i);
@@ -1154,7 +1230,10 @@ public class NativeCaptureService extends Service {
                     if (audioTrack < 0) audioTrack = i;
                 }
             }
-            if (videoTrack >= 0) scanMp4Track(extractor, videoTrack, true, result);
+            if (videoTrack >= 0) {
+                scanMp4Track(extractor, videoTrack, true, result);
+                scanMp4Tail(extractor, videoTrack, result);
+            }
             if (audioTrack >= 0) scanMp4Track(extractor, audioTrack, false, result);
             return result;
         } catch (Exception ignored) {
@@ -1235,6 +1314,10 @@ public class NativeCaptureService extends Service {
             mp4VideoTimestampDuplicates = audit == null ? 0 : audit.timestampDuplicates;
             mp4VideoSampleLimitReached = audit != null && audit.sampleLimitReached;
             mp4SampledFps = audit == null ? -1f : audit.sampledFps;
+            mp4DurationMs = audit == null ? -1L : audit.durationMs;
+            mp4TailVideoSamples = audit == null ? 0 : audit.tailSamples;
+            mp4TailSampledFps = audit == null ? -1f : audit.tailSampledFps;
+            mp4TailNearEnd = audit != null && audit.tailNearEnd;
             // A missing audio track is not a clean video+audio recording.
             // A missing parser result is UNKNOWN rather than "audio absent".
             boolean audioNotConfirmed = wantAudio &&
@@ -1245,13 +1328,19 @@ public class NativeCaptureService extends Service {
             boolean sampleIssue = audit != null &&
                 (audit.videoSamples == 0 || audit.timestampRollbacks > 0 ||
                  audit.timestampDuplicates > 0);
+            // A truncated tail is a warning only when a bounded scan and
+            // file duration are both available, not when metadata is unknown.
+            boolean tailIssue = audit != null && audit.durationMs > 0L &&
+                audit.tailSamples > 0 && !audit.tailNearEnd;
             boolean incomplete = interruptedByCamera || audioNotConfirmed ||
-                videoMismatch || sampleIssue || (audit != null && !audit.video);
+                videoMismatch || sampleIssue || tailIssue || (audit != null && !audit.video);
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
             String message = interruptedByCamera
                 ? "Камера была потеряна; непрерывность записи не подтверждена"
+                : tailIssue
+                    ? "MP4 сохранён, но конец видеодорожки не подтверждён"
                 : audioNotConfirmed
                     ? "MP4 сохранён, но звуковые данные не подтверждены"
                     : sampleIssue
