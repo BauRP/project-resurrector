@@ -2,7 +2,7 @@ import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection } from "@/lib/native-mode-selection";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
 import { Button } from "@/components/ui/button";
 
@@ -38,6 +38,38 @@ export function NativeRecordingPanel(){
  // Keep the interface responsive to hardware reconnects while never dropping
  // the selected camera or interrupting an active Android recording session.
  const [preview,setPreview]=useState("");
+ const [directEnabled,setDirectEnabled]=useState(false);
+ const [directNotice,setDirectNotice]=useState("");
+ const directTarget=useRef<HTMLDivElement|null>(null);
+ const directLease=useRef("native-direct-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2));
+ useEffect(()=>{
+   if(!directEnabled||!isNative())return;
+   let live=true;
+   const ownerId=directLease.current;
+   const sync=async()=>{
+     if(!live||document.hidden)return;
+     const rect=directTarget.current?.getBoundingClientRect();
+     if(!rect||rect.width<80||rect.height<80)return;
+     try {
+       await bridge.setDirectPreview({ownerId,visible:true,left:rect.left,top:rect.top,
+         width:rect.width,height:rect.height,viewportWidth:document.documentElement.clientWidth});
+       if(live)setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
+     }catch{
+       if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
+     }
+   };
+   const observer=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>void sync()):null;
+   if(directTarget.current)observer?.observe(directTarget.current);
+   const resized=()=>void sync();
+   const visibility=()=>{if(document.hidden)void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
+     else void sync();};
+   window.addEventListener("resize",resized);
+   document.addEventListener("visibilitychange",visibility);
+   void sync();
+   return ()=>{live=false;observer?.disconnect();window.removeEventListener("resize",resized);
+     document.removeEventListener("visibilitychange",visibility);
+     void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);};
+ },[directEnabled]);
  const tapPreview=async(e:MouseEvent<HTMLImageElement>)=>{
   if(!status?.tapAfSupported&&!status?.tapAeSupported)return;
   const image=e.currentTarget;
@@ -178,6 +210,10 @@ export function NativeRecordingPanel(){
    if(result["camera"]!=="granted"||(audio&&result["microphone"]!=="granted"))
     throw Error("Android не предоставил разрешение на камеру/микрофон.");
    if(!window.confirm("Запустить отдельную нативную запись Camera2? Обычный предпросмотр WebView должен быть закрыт. Запись продолжается при пересоздании интерфейса, но не гарантирована при гибели процесса Android."))return;
+   if(directEnabled){
+     await bridge.setDirectPreview({ownerId:directLease.current,visible:false}).catch(()=>undefined);
+     setDirectEnabled(false);
+   }
    const [width = 0,height = 0]=resolution.split("x").map(Number);
    if(!sizes.includes(resolution))throw Error("Это разрешение не объявлено выбранной камерой.");
    if(mode.size!==resolution||!mode.choices.includes(fps))throw Error("Разрешение и FPS не совместимы по опубликованным ограничениям Camera2. Выберите доступную комбинацию.");
@@ -204,13 +240,20 @@ export function NativeRecordingPanel(){
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
-   <div className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
-    {preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} /> :
+   <div ref={directTarget} className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
+    {directEnabled ? <p className="px-3 text-center text-white/80">Прямой Android-видоискатель. Если кадр не появился, выключите этот режим.</p> :
+     preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} /> :
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
         "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
         "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
     {nativeRecorderOwnsCamera(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
    </div>
+   <label className="flex items-center gap-2"><input type="checkbox" checked={directEnabled}
+     disabled={busy||["recording","paused","starting","stopping"].includes(status?.state??"")}
+     onChange={e=>{setDirectEnabled(e.target.checked);setDirectNotice("");}}/>
+     Экспериментальный прямой видоискатель Android (до записи)
+   </label>
+   {directNotice&&<p role="status">{directNotice}</p>}
    {(status?.tapAfSupported||status?.tapAeSupported)&&<p className="text-muted-foreground">Коснитесь изображения, чтобы выбрать точку {status.tapAfSupported?"автофокуса и ":""}экспозамера. Чёрные поля неактивны. Подтверждение команды не означает успешное наведение.</p>}
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
