@@ -491,7 +491,7 @@ public class NativeCaptureService extends Service {
               !("previewing".equals(state)||"recording".equals(state)||"paused".equals(state)))
                 return false;
             if(!Float.isFinite(x)||!Float.isFinite(y)||x<0f||x>1f||y<0f||y>1f
-                ||owner.previewReader==null||
+                ||(owner.previewReader==null && !directPreviewActive)||
                 !(owner.maxAfRegions>0&&owner.autoFocusSupported ||
                   owner.maxAeRegions>0))return false;
             return owner.worker.post(()->completed.accept(owner.applyTapToMeter(x,y)));
@@ -499,7 +499,7 @@ public class NativeCaptureService extends Service {
     }
     private boolean applyTapToMeter(float x,float y){
         if(liveRequest==null||capture==null||camera==null||stopRequested||
-           previewReader==null)return false;
+           (previewReader==null && !directPreviewActive))return false;
         float oldX=focusTapX,oldY=focusTapY;
         boolean wasManual=manualFocus, oldAf=focusTapAf,oldAe=focusTapAe;
         focusTapX=x;focusTapY=y;
