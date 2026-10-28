@@ -2,6 +2,11 @@ package app.lovable.multicampov;
 
 import android.Manifest;
 import android.content.Intent;
+import android.graphics.SurfaceTexture;
+import android.view.TextureView;
+import android.view.ViewGroup;
+import android.widget.FrameLayout;
+import android.webkit.WebView;
 import android.content.pm.PackageManager;
 import androidx.core.content.ContextCompat;
 import com.getcapacitor.Plugin;
@@ -15,6 +20,84 @@ import com.getcapacitor.annotation.Permission;
  @Permission(alias="microphone",strings={Manifest.permission.RECORD_AUDIO})
 })
 public class NativeCapturePlugin extends Plugin {
+ private TextureView directView;
+ private String directOwner;
+ private void detachDirectView() {
+   String old=directOwner;
+   directOwner=null;
+   if(old!=null)NativeCaptureService.setDirectPreviewTexture(old,null);
+   if(directView!=null){
+     ViewGroup parent=(ViewGroup)directView.getParent();
+     if(parent!=null)parent.removeView(directView);
+     directView=null;
+   }
+ }
+ @PluginMethod public void setDirectPreview(PluginCall call) {
+   String owner=call.getString("ownerId");
+   Boolean enabled=call.getBoolean("visible",false);
+   if(owner==null||owner.isEmpty()||owner.length()>128){call.reject("Invalid native preview owner");return;}
+   getActivity().runOnUiThread(()->{
+     if(!Boolean.TRUE.equals(enabled)){
+       if(owner.equals(directOwner))detachDirectView();
+       call.resolve();return;
+     }
+     if(NativeCaptureService.isRunning() &&
+         !"previewing".equals(NativeCaptureService.status(getContext()).getString("state"))){
+       call.reject("Direct preview cannot overlay active video recording");return;
+     }
+     Double x=call.getDouble("left"),y=call.getDouble("top"),
+       w=call.getDouble("width"),h=call.getDouble("height");
+     if(x==null||y==null||w==null||h==null||
+       !Double.isFinite(x)||!Double.isFinite(y)||!Double.isFinite(w)||!Double.isFinite(h)||
+       w<80||h<80||w>5000||h>5000||x<0||y<0){
+       call.reject("Invalid preview viewport");return;
+     }
+     WebView web=getBridge().getWebView();
+     if(web==null){call.reject("WebView not available");return;}
+     float scale=web.getWidth()/(float)Math.max(1,web.getResources().getDisplayMetrics().widthPixels);
+     // CSS visualViewport values are supplied as absolute WebView CSS pixels.
+     // Capacitor WebView may resize inside a fold; use measured dimensions.
+     float cssScale=web.getWidth()/(float)Math.max(1,call.getDouble("viewportWidth",1.0).floatValue());
+     if(!Float.isFinite(cssScale)||cssScale<=0){call.reject("Invalid WebView scale");return;}
+     int px=Math.round(x.floatValue()*cssScale)+web.getLeft();
+     int py=Math.round(y.floatValue()*cssScale)+web.getTop();
+     int pw=Math.round(w.floatValue()*cssScale),ph=Math.round(h.floatValue()*cssScale);
+     if(pw<1||ph<1||px+pw>web.getRight()+2||py+ph>web.getBottom()+2){
+       call.reject("Native preview outside WebView bounds");return;
+     }
+     if(directView!=null&&!owner.equals(directOwner))detachDirectView();
+     FrameLayout root=(FrameLayout)getActivity().findViewById(android.R.id.content);
+     if(root==null){call.reject("Root view unavailable");return;}
+     if(directView==null){
+       directOwner=owner;
+       directView=new TextureView(getContext());
+       directView.setOpaque(true);
+       directView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){
+         @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
+           if(owner.equals(directOwner))NativeCaptureService.setDirectPreviewTexture(owner,texture);
+         }
+         @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){}
+         @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
+           NativeCaptureService.setDirectPreviewTexture(owner,null);
+           return true;
+         }
+         @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){}
+       });
+       FrameLayout.LayoutParams lp=new FrameLayout.LayoutParams(pw,ph);
+       lp.leftMargin=px;lp.topMargin=py;
+       root.addView(directView,lp);
+     }else{
+       FrameLayout.LayoutParams lp=(FrameLayout.LayoutParams)directView.getLayoutParams();
+       lp.width=pw;lp.height=ph;lp.leftMargin=px;lp.topMargin=py;
+       directView.setLayoutParams(lp);
+     }
+     call.resolve();
+   });
+ }
+ @Override protected void handleOnDestroy(){
+   getActivity().runOnUiThread(this::detachDirectView);
+   super.handleOnDestroy();
+ }
  @PluginMethod public void setPreviewVisible(PluginCall call) {
   String ownerId=call.getString("ownerId");
   if(ownerId==null || ownerId.isEmpty()){
