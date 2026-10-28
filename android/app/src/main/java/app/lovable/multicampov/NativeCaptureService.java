@@ -451,7 +451,11 @@ public class NativeCaptureService extends Service {
                 Long sensorTime=result.get(CaptureResult.SENSOR_TIMESTAMP);
                 if(sensorTime!=null&&sensorTime>0L){
                     sensorFramesSeen++;
-                    if(lastSensorNs>0L && sensorTime<=lastSensorNs){
+                    // A fold, background suspension or camera driver restart
+                    // can leave a long gap despite monotonically increasing PTS.
+                    // Reset the FPS window rather than average across that gap.
+                    if(lastSensorNs>0L &&
+                        (sensorTime<=lastSensorNs || sensorTime-lastSensorNs>1000000000L)){
                         sensorWindowFrames=0;sensorWindowFirstNs=0L;
                         recentSensorFps=-1f;
                     }
