@@ -58,12 +58,17 @@ function entrySummary(item:Record<string,unknown>) {
   };
 }
 export function nativeAnonymizedAuditReport(history:NativeAuditHistory):string {
-  const entries=Array.isArray(history.entries)?history.entries.slice(-24):[];
+  // Android or a restored history can contain malformed entries. Ignore
+  // invalid records instead of crashing the diagnostics UI on export.
+  const entries=Array.isArray(history?.entries)
+    ? history.entries.filter((item):item is Record<string,unknown> =>
+        item!==null && typeof item==="object" && !Array.isArray(item)).slice(-24)
+    : [];
   return JSON.stringify({
     format:"multi-cam-pov-native-audit-v1",
     privacy:"No camera identifiers, exact dates, paths, URLs or media.",
     limitations:"CI and sampled MP4 checks are not physical fold acceptance, full-frame continuity or measured visual stabilization.",
-    omittedEarlier:count(history.omittedEarlier)??0,
+    omittedEarlier:count(history?.omittedEarlier)??0,
     entries:entries.map(item=>entrySummary(item)),
   },null,2);
 }
