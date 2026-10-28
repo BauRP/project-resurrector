@@ -181,9 +181,11 @@ public class NativeCapturePlugin extends Plugin {
   }
  }
  @PluginMethod public void auditHistory(PluginCall call){
+   NativeCaptureService.recoverAbandonedRecording(getContext());
    call.resolve(NativeCaptureAuditStore.history(getContext()));
  }
  @PluginMethod public void status(PluginCall call){
+   NativeCaptureService.recoverAbandonedRecording(getContext());
   call.resolve(NativeCaptureService.status(getContext()));
  }
  @PluginMethod public void startPreview(PluginCall call) {
