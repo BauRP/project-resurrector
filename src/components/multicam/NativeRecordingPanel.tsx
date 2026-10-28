@@ -1,5 +1,6 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { nativePreviewPlacement, samePreviewPlacement, type PreviewRect } from "@/lib/native-preview-placement";
+import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection } from "@/lib/native-mode-selection";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
@@ -76,13 +77,8 @@ export function NativeRecordingPanel(){
    const ownerId=directLease.current;
    let lastPosition:PreviewRect|null=null;
    let lastVisible=false;
-   let updateChain=Promise.resolve();
-   // Serialize visibility/position operations: a late native 'show' must
-   // never resurrect an Activity overlay after hide or unmount.
-   const enqueue=(operation:()=>Promise<void>)=>{
-     updateChain=updateChain.then(operation,operation).catch(()=>undefined);
-     return updateChain;
-   };
+   // Keep errors visible to callers without poisoning later cleanup.
+   const enqueue=createSerializedAsyncActions();
    const hide=()=>enqueue(async()=>{
      if(!lastVisible)return;
      lastVisible=false;lastPosition=null;
