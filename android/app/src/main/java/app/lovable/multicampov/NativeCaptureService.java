@@ -86,6 +86,11 @@ public class NativeCaptureService extends Service {
     private static boolean mp4HasAudioTrack = false;
     private static boolean mp4HasVideoTrack = false;
     private static int mp4VideoWidth = 0, mp4VideoHeight = 0;
+    private static int mp4VideoSamples = 0, mp4AudioSamples = 0;
+    private static int mp4VideoTimestampRollbacks = 0, mp4VideoTimestampDuplicates = 0;
+    private static boolean mp4VideoSampleLimitReached = false;
+    private static float mp4SampledFps = -1f;
+    private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     private HandlerThread workerThread;
     private Handler worker;
@@ -566,6 +571,18 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4VideoWidth", 0) : mp4VideoWidth);
             out.put("mp4VideoHeight", runningInstance == null
                 ? previous.getInt("mp4VideoHeight", 0) : mp4VideoHeight);
+            out.put("mp4VideoSamples", runningInstance == null
+                ? previous.getInt("mp4VideoSamples", 0) : mp4VideoSamples);
+            out.put("mp4AudioSamples", runningInstance == null
+                ? previous.getInt("mp4AudioSamples", 0) : mp4AudioSamples);
+            out.put("mp4VideoTimestampRollbacks", runningInstance == null
+                ? previous.getInt("mp4VideoTimestampRollbacks", 0) : mp4VideoTimestampRollbacks);
+            out.put("mp4VideoTimestampDuplicates", runningInstance == null
+                ? previous.getInt("mp4VideoTimestampDuplicates", 0) : mp4VideoTimestampDuplicates);
+            out.put("mp4VideoSampleLimitReached", runningInstance == null
+                ? previous.getBoolean("mp4VideoSampleLimitReached", false) : mp4VideoSampleLimitReached);
+            out.put("mp4SampledFps", runningInstance == null
+                ? previous.getFloat("mp4SampledFps", -1f) : mp4SampledFps);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -594,7 +611,13 @@ public class NativeCaptureService extends Service {
                 .putBoolean("mp4HasVideoTrack", mp4HasVideoTrack)
                 .putBoolean("mp4HasAudioTrack", mp4HasAudioTrack)
                 .putInt("mp4VideoWidth", mp4VideoWidth)
-                .putInt("mp4VideoHeight", mp4VideoHeight).apply();
+                .putInt("mp4VideoHeight", mp4VideoHeight)
+                .putInt("mp4VideoSamples", mp4VideoSamples)
+                .putInt("mp4AudioSamples", mp4AudioSamples)
+                .putInt("mp4VideoTimestampRollbacks", mp4VideoTimestampRollbacks)
+                .putInt("mp4VideoTimestampDuplicates", mp4VideoTimestampDuplicates)
+                .putBoolean("mp4VideoSampleLimitReached", mp4VideoSampleLimitReached)
+                .putFloat("mp4SampledFps", mp4SampledFps).apply();
         }
     }
     @Override public void onCreate() {
@@ -694,6 +717,9 @@ public class NativeCaptureService extends Service {
             pausedAtMs = 0L; totalPausedMs = 0L; finishedDurationMs = 0L;
             mp4TracksInspected = false; mp4HasVideoTrack = false;
             mp4HasAudioTrack = false; mp4VideoWidth = 0; mp4VideoHeight = 0;
+            mp4VideoSamples = 0; mp4AudioSamples = 0;
+            mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
+            mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1060,7 +1086,43 @@ public class NativeCaptureService extends Service {
     }
     private static final class Mp4TrackAudit {
         boolean video, audio;
-        int width, height;
+        int width, height, videoSamples, audioSamples;
+        int timestampRollbacks, timestampDuplicates;
+        boolean sampleLimitReached;
+        float sampledFps = -1f;
+    }
+    private void scanMp4Track(MediaExtractor extractor, int track, boolean video,
+        Mp4TrackAudit audit) {
+        extractor.selectTrack(track);
+        try {
+            long first = -1L, last = -1L;
+            int samples = 0;
+            int rollbacks = 0, duplicates = 0;
+            // Only a bounded prefix. Never claim whole-file integrity.
+            while (samples < MP4_SCAN_SAMPLES_PER_TRACK) {
+                long pts = extractor.getSampleTime();
+                if (pts < 0L) break;
+                if (last >= 0L) {
+                    if (pts < last) rollbacks++;
+                    if (pts == last) duplicates++;
+                }
+                if (first < 0L) first = pts;
+                last = pts;
+                samples++;
+                if (!extractor.advance()) break;
+            }
+            if (video) {
+                audit.videoSamples = samples;
+                audit.timestampRollbacks = rollbacks;
+                audit.timestampDuplicates = duplicates;
+                audit.sampleLimitReached = samples == MP4_SCAN_SAMPLES_PER_TRACK
+                    && extractor.getSampleTime() >= 0L;
+                if (samples >= 3 && last > first && rollbacks == 0 && duplicates == 0)
+                    audit.sampledFps = (float)((samples - 1) * 1000000.0 / (last - first));
+            } else audit.audioSamples = samples;
+        } finally {
+            extractor.unselectTrack(track);
+        }
     }
 
     /** MediaExtractor reads the finalized MP4 track headers. This does NOT
@@ -1074,6 +1136,7 @@ public class NativeCaptureService extends Service {
         try {
             extractor.setDataSource(candidate.getAbsolutePath());
             Mp4TrackAudit result = new Mp4TrackAudit();
+            int videoTrack = -1, audioTrack = -1;
             for (int i = 0; i < extractor.getTrackCount(); i++) {
                 MediaFormat format = extractor.getTrackFormat(i);
                 String mime = format.containsKey(MediaFormat.KEY_MIME)
@@ -1081,12 +1144,18 @@ public class NativeCaptureService extends Service {
                 if (mime == null) continue;
                 if (mime.startsWith("video/")) {
                     result.video = true;
+                    if (videoTrack < 0) videoTrack = i;
                     if (format.containsKey(MediaFormat.KEY_WIDTH))
                         result.width = format.getInteger(MediaFormat.KEY_WIDTH);
                     if (format.containsKey(MediaFormat.KEY_HEIGHT))
                         result.height = format.getInteger(MediaFormat.KEY_HEIGHT);
-                } else if (mime.startsWith("audio/")) result.audio = true;
+                } else if (mime.startsWith("audio/")) {
+                    result.audio = true;
+                    if (audioTrack < 0) audioTrack = i;
+                }
             }
+            if (videoTrack >= 0) scanMp4Track(extractor, videoTrack, true, result);
+            if (audioTrack >= 0) scanMp4Track(extractor, audioTrack, false, result);
             return result;
         } catch (Exception ignored) {
             return null;
@@ -1160,20 +1229,33 @@ public class NativeCaptureService extends Service {
             mp4HasAudioTrack = audit != null && audit.audio;
             mp4VideoWidth = audit == null ? 0 : audit.width;
             mp4VideoHeight = audit == null ? 0 : audit.height;
+            mp4VideoSamples = audit == null ? 0 : audit.videoSamples;
+            mp4AudioSamples = audit == null ? 0 : audit.audioSamples;
+            mp4VideoTimestampRollbacks = audit == null ? 0 : audit.timestampRollbacks;
+            mp4VideoTimestampDuplicates = audit == null ? 0 : audit.timestampDuplicates;
+            mp4VideoSampleLimitReached = audit != null && audit.sampleLimitReached;
+            mp4SampledFps = audit == null ? -1f : audit.sampledFps;
             // A missing audio track is not a clean video+audio recording.
             // A missing parser result is UNKNOWN rather than "audio absent".
-            boolean audioNotConfirmed = wantAudio && (audit == null || !audit.audio);
+            boolean audioNotConfirmed = wantAudio &&
+                (audit == null || !audit.audio || audit.audioSamples == 0);
             boolean videoMismatch = audit != null && audit.video &&
+                audit.width > 0 && audit.height > 0 &&
                 (audit.width != selectedWidth || audit.height != selectedHeight);
+            boolean sampleIssue = audit != null &&
+                (audit.videoSamples == 0 || audit.timestampRollbacks > 0 ||
+                 audit.timestampDuplicates > 0);
             boolean incomplete = interruptedByCamera || audioNotConfirmed ||
-                videoMismatch || (audit != null && !audit.video);
+                videoMismatch || sampleIssue || (audit != null && !audit.video);
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
             String message = interruptedByCamera
                 ? "Камера была потеряна; непрерывность записи не подтверждена"
                 : audioNotConfirmed
-                    ? "MP4 сохранён, но звуковая дорожка не подтверждена"
+                    ? "MP4 сохранён, но звуковые данные не подтверждены"
+                    : sampleIssue
+                        ? "MP4 сохранён, но обнаружена проблема видеокадров или меток времени"
                     : videoMismatch
                         ? "MP4 сохранён, но разрешение отличается от выбранного"
                         : audit != null && !audit.video
