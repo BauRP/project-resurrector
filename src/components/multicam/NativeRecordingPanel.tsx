@@ -352,9 +352,13 @@ export function NativeRecordingPanel(){
    </div>}
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status&&["saved","saved_interrupted"].includes(status.state)&&<p role="status">
-     Декодирование реального кадра MP4: {status.mp4FirstFrameDecodable
-       ?"первый кадр успешно прочитан"
-       :"не подтверждено"}. Это не проверка всего видеоролика.
+     Декодирование MP4: {status.mp4FirstFrameDecodable
+       ?"начальный кадр успешно прочитан"
+       :"начальный кадр не подтверждён"};
+     {status.mp4DurationMs!==undefined&&status.mp4DurationMs>1500
+       ?(status.mp4TailFrameDecodable?" кадр возле конца также успешно прочитан.":" кадр возле конца не подтверждён.")
+       :" проверка кадра в конце недоступна для короткого файла."}
+     Это две выборочные проверки, а не проверка всего видеоролика.
    </p>}
    {status&&["recording","paused","saved","saved_interrupted"].includes(status.state)&&
      <p role="status">Нативные наблюдения складного экрана во время записи:
