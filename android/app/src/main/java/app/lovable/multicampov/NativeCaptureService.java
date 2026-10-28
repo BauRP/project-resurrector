@@ -146,6 +146,7 @@ public class NativeCaptureService extends Service {
     private volatile ImageReader previewReader;
     private Surface activeDirectPreviewSurface;
     private int previewSessionRevision = 0;
+    private final Runnable previewRebindTask = this::rebindPreviewOutput;
     private volatile long sensorFramesSeen = 0L;
     private volatile float recentSensorFps = -1f;
     private long sensorWindowFirstNs = 0L;
@@ -176,10 +177,11 @@ public class NativeCaptureService extends Service {
         }
         if (service != null && service.worker != null) {
             final NativeCaptureService active = service;
-            // No new openCamera() call on folding. Rebuild only the output
-            // session on the same CameraDevice, falling back to JPEG if the
-            // direct TextureView went away.
-            active.worker.post(active::rebindPreviewOutput);
+            // Coalesce rapid surface destruction/creation during a fold:
+            // consume the CURRENT owner at execution time rather than
+            // rebuilding a stale session for each intermediate surface.
+            active.worker.removeCallbacks(active.previewRebindTask);
+            active.worker.postDelayed(active.previewRebindTask, 80L);
         }
     }
     public static void setPreviewConsumerVisible(boolean visible, String ownerId) {
@@ -1335,6 +1337,7 @@ public class NativeCaptureService extends Service {
         finish();
     }
     private void releaseCamera() {
+        if(worker!=null)worker.removeCallbacks(previewRebindTask);
         previewSessionRevision++;
         recentSensorFps=-1f;sensorWindowFrames=0;
         sensorWindowFirstNs=0L;lastSensorNs=0L;
