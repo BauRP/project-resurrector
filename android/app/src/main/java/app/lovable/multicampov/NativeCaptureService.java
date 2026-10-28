@@ -117,6 +117,9 @@ public class NativeCaptureService extends Service {
     private static int recordingFoldObservations = 0;
     private static int recordingPostureChanges = 0;
     private static int recordingFoldGeometryOnlyChanges = 0;
+    // Evidence is intentionally bounded to eight real MP4 fold positions.
+    private static int recordingFoldCheckpointsOmitted = 0;
+    private static int recordingFoldChangesWhilePaused = 0;
     private static long recordingLastFoldAt = 0L;
     private static String recordingLastFoldPostureSignature = "";
     private static String recordingLastFoldGeometrySignature = "";
@@ -178,6 +181,10 @@ public class NativeCaptureService extends Service {
             recovered.put("foldPostureChanges",preferences.getInt("foldPostureChanges",0));
             recovered.put("foldGeometryOnlyChanges",
                 preferences.getInt("foldGeometryOnlyChanges",0));
+            recovered.put("foldCheckpointsOmitted",
+                preferences.getInt("foldCheckpointsOmitted",0));
+            recovered.put("foldChangesWhilePaused",
+                preferences.getInt("foldChangesWhilePaused",0));
             recovered.put("mp4CheckpointAuditCompleted",false);
             recovered.put("mp4FoldPointsSkipped",preferences.getInt("mp4FoldPointsSkipped",0));
             recovered.put("lastFoldAt",preferences.getLong("lastFoldAt",0L));
@@ -208,18 +215,25 @@ public class NativeCaptureService extends Service {
                 if(!postureSignature.equals(recordingLastFoldPostureSignature)){
                     recordingPostureChanges++;
                     recordingLastFoldAt=System.currentTimeMillis();
-                    recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
-                    if("recording".equals(state) && recordingStartedAt>0L &&
-                        (recordingFoldPointsMs.isEmpty() ||
-                            recordingFoldPointsMs.split(",").length<8)){
-                        // This is an approximate MP4 timeline checkpoint,
-                        // never proof that the exact frame was encoded.
-                        long activeMs=recordingStartedElapsedMs>=0L
-                            ?Math.max(0L,recordingLastFoldElapsedMs-
-                                recordingStartedElapsedMs-totalPausedElapsedMs)
-                            :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
-                        recordingFoldPointsMs +=
-                            (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+                    if("paused".equals(state)){
+                        // No video PTS is expected during MediaRecorder.pause().
+                        if(recordingFoldChangesWhilePaused<Integer.MAX_VALUE)
+                            recordingFoldChangesWhilePaused++;
+                    }else if("recording".equals(state) && recordingStartedAt>0L){
+                        recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
+                        if(recordingFoldPointsMs.isEmpty() ||
+                            recordingFoldPointsMs.split(",").length<8){
+                            // Approximate MP4 position; not a frame guarantee.
+                            long activeMs=recordingStartedElapsedMs>=0L
+                                ?Math.max(0L,recordingLastFoldElapsedMs-
+                                    recordingStartedElapsedMs-totalPausedElapsedMs)
+                                :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
+                            recordingFoldPointsMs +=
+                                (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+                        }else if(recordingFoldCheckpointsOmitted<Integer.MAX_VALUE){
+                            // Never silently call a >8-transition capture clean.
+                            recordingFoldCheckpointsOmitted++;
+                        }
                     }
                 }else if(!geometrySignature.equals(recordingLastFoldGeometrySignature)){
                     recordingFoldGeometryOnlyChanges++;
@@ -234,6 +248,8 @@ public class NativeCaptureService extends Service {
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
                 .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
+                .putInt("foldCheckpointsOmitted",recordingFoldCheckpointsOmitted)
+                .putInt("foldChangesWhilePaused",recordingFoldChangesWhilePaused)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
@@ -864,6 +880,10 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("foldPostureChanges",0):recordingPostureChanges);
             out.put("foldGeometryOnlyChanges",runningInstance==null
                 ? previous.getInt("foldGeometryOnlyChanges",0):recordingFoldGeometryOnlyChanges);
+            out.put("foldCheckpointsOmitted",runningInstance==null
+                ? previous.getInt("foldCheckpointsOmitted",0):recordingFoldCheckpointsOmitted);
+            out.put("foldChangesWhilePaused",runningInstance==null
+                ? previous.getInt("foldChangesWhilePaused",0):recordingFoldChangesWhilePaused);
             out.put("lastFoldAt", runningInstance==null
                 ? previous.getLong("lastFoldAt",0L):recordingLastFoldAt);
             out.put("foldNearbyCallbackGaps",runningInstance==null
@@ -949,6 +969,8 @@ public class NativeCaptureService extends Service {
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
                 .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
+                .putInt("foldCheckpointsOmitted",recordingFoldCheckpointsOmitted)
+                .putInt("foldChangesWhilePaused",recordingFoldChangesWhilePaused)
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
@@ -1008,6 +1030,7 @@ public class NativeCaptureService extends Service {
             encoderPaused = true;
             pausedAtMs = System.currentTimeMillis();
             pausedAtElapsedMs=android.os.SystemClock.elapsedRealtime();
+            recordingLastFoldElapsedMs=-1L;
             publish("paused", "Нативная запись на паузе, Camera2 остаётся открытой");
         } catch (RuntimeException error) {
             publish("recording", "Пауза не поддерживается кодировщиком: " + error.getMessage());
@@ -1024,6 +1047,8 @@ public class NativeCaptureService extends Service {
             pausedAtElapsedMs=-1L;
             pausedAtMs = 0L;
             encoderPaused = false;
+            recordingLastFoldElapsedMs=-1L;
+            lastCaptureCallbackElapsedMs=-1L;
             publish("recording", "Нативная запись возобновлена в тот же MP4");
         } catch (RuntimeException error) {
             publish("paused", "Не удалось возобновить запись: " + error.getMessage());
@@ -1086,6 +1111,7 @@ public class NativeCaptureService extends Service {
             mp4AvStartOffsetMs = 0L;mp4AvStartMeasured = false;
             recordingFoldObservations=0;recordingPostureChanges=0;
             recordingFoldGeometryOnlyChanges=0;
+            recordingFoldCheckpointsOmitted=0;recordingFoldChangesWhilePaused=0;
             recordingLastFoldAt=0L;
             recordingLastFoldPostureSignature="";
             recordingLastFoldGeometrySignature="";
@@ -1997,7 +2023,8 @@ public class NativeCaptureService extends Service {
                 (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
                 mp4FoldPtsSpanChecks<mp4FoldProbes ||
-                mp4FoldPointsSkipped>0 || mp4FoldPtsLargeGaps>0;
+                mp4FoldPointsSkipped>0 || mp4FoldPtsLargeGaps>0 ||
+                recordingFoldCheckpointsOmitted>0;
             // A nominally saved MP4 must not be marked clean when its
             // decoder or actual video-track audit cannot confirm the result.
             // This is independent of later WebView passport validation.
@@ -2012,6 +2039,8 @@ public class NativeCaptureService extends Service {
             savedUri = gallery == null ? "" : gallery;
             String message = !mp4CheckpointAuditCompleted
                 ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
+                : recordingFoldCheckpointsOmitted>0
+                ? "MP4 сохранён, но проверка не охватила более восьми складываний"
                 : mp4FoldPointsSkipped>0
                 ? "MP4 сохранён, но часть отмеченных складываний слишком близко к краю видео для проверки"
                 : mp4FoldPtsSpanChecks<mp4FoldProbes
