@@ -42,6 +42,7 @@ import android.provider.MediaStore;
 import android.util.Range;
 import android.util.Size;
 import android.view.Surface;
+import android.graphics.SurfaceTexture;
 import android.view.WindowManager;
 import androidx.core.app.NotificationCompat;
 import java.io.File;
@@ -70,6 +71,9 @@ public class NativeCaptureService extends Service {
     // A preview consumer can mount before the foreground service is created.
     // A stale WebView teardown must not hide a newer camera view.
     private static String previewOwnerId;
+    private static String directPreviewOwnerId;
+    private static SurfaceTexture directPreviewTexture;
+    private static boolean directPreviewActive = false;
     private static String state = "idle";
     private static String lastMessage = "Нативная запись не запускалась";
     private static String savedPath = "";
@@ -106,7 +110,34 @@ public class NativeCaptureService extends Service {
     private CameraCaptureSession capture;
     private MediaRecorder encoder;
     private volatile ImageReader previewReader;
+    private Surface activeDirectPreviewSurface;
     private volatile boolean previewConsumerVisible;
+    /** An Activity contributes only a surface, not a second Camera2 owner.
+     * Unmounting its surface cannot terminate a MediaRecorder session.
+     */
+    public static void setDirectPreviewTexture(String ownerId, SurfaceTexture texture) {
+        if (ownerId == null || ownerId.isEmpty()) return;
+        synchronized (STATE_LOCK) {
+            if (texture != null) {
+                directPreviewOwnerId = ownerId;
+                directPreviewTexture = texture;
+            } else if (ownerId.equals(directPreviewOwnerId)) {
+                directPreviewOwnerId = null;
+                directPreviewTexture = null;
+                NativeCaptureService service = runningInstance;
+                if (service != null && directPreviewActive &&
+                    "previewing".equals(state) && service.encoder == null &&
+                    service.worker != null) {
+                    // A detached SurfaceTexture is unusable. Only preview-only
+                    // sessions stop; actual video recording is never stopped.
+                    service.worker.post(() -> {
+                        if ("previewing".equals(state) && service.encoder == null)
+                            service.finish();
+                    });
+                }
+            }
+        }
+    }
     public static void setPreviewConsumerVisible(boolean visible, String ownerId) {
         if (ownerId == null || ownerId.isEmpty()) return;
         synchronized (STATE_LOCK) {
@@ -518,6 +549,8 @@ public class NativeCaptureService extends Service {
                 value = "idle";
                 message = "Предпросмотр остановлен при закрытии Android-процесса";
             }
+            out.put("directPreviewActive", runningInstance != null &&
+                directPreviewActive && "previewing".equals(value));
             out.put("state", value);
             out.put("message", message);
             out.put("startedAt", started);
@@ -790,49 +823,16 @@ public class NativeCaptureService extends Service {
                 configureControlLimits(characteristics);
                 StreamConfigurationMap config=characteristics.get(
                     CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
-                Size[] sizes=config==null?null:config.getOutputSizes(ImageFormat.YUV_420_888);
-                Size best=null;
-                if(sizes!=null)for(Size candidate:sizes)
-                    if(candidate.getWidth()>=160 && candidate.getHeight()>=120 &&
-                        candidate.getWidth()<=640 && candidate.getHeight()<=480 &&
-                        candidate.getWidth()%2==0 && candidate.getHeight()%2==0 &&
-                        (best==null || candidate.getWidth()*candidate.getHeight()>
-                          best.getWidth()*best.getHeight()))best=candidate;
-                if(best==null)throw new IllegalStateException("YUV предпросмотр недоступен");
-                previewReader=ImageReader.newInstance(best.getWidth(),best.getHeight(),
-                    ImageFormat.YUV_420_888,2);
-                previewReader.setOnImageAvailableListener(this::onPreviewImage,previewHandler);
                 manager.openCamera(id,new CameraDevice.StateCallback(){
                     @Override public void onOpened(CameraDevice opened){
                         if(token!=generation || stopRequested){opened.close();return;}
                         camera=opened;
-                        try {
-                            CaptureRequest.Builder request=opened.createCaptureRequest(
-                                CameraDevice.TEMPLATE_PREVIEW);
-                            request.addTarget(previewReader.getSurface());
-                            setRequestControls(request);
-                            liveRequest=request;
-                            liveCallback=captureFeedback();
-                            opened.createCaptureSession(Arrays.asList(previewReader.getSurface()),
-                                new CameraCaptureSession.StateCallback(){
-                                    @Override public void onConfigured(CameraCaptureSession ready){
-                                        if(token!=generation||stopRequested){ready.close();return;}
-                                        capture=ready;
-                                        try{
-                                            capture.setRepeatingRequest(request.build(),liveCallback,worker);
-                                            if(openingTimeout!=null){worker.removeCallbacks(openingTimeout);openingTimeout=null;}
-                                            publish("previewing","Камера готова к записи MP4");
-                                        }catch(Exception error){fail(error);}
-                                    }
-                                    @Override public void onConfigureFailed(CameraCaptureSession broken){
-                                        broken.close();fail(new IllegalStateException("Сессия предпросмотра не поддерживается"));
-                                    }
-                                },worker);
-                        }catch(Exception error){fail(error);}
+                        try {configurePreviewOnlySession(opened,token,config,true);}
+                        catch(Exception error){fail(error);}
                     }
                     @Override public void onDisconnected(CameraDevice disconnected){
                         disconnected.close();
-                        if(token!=generation)return; // stale preview after MP4 handoff
+                        if(token!=generation)return;
                         if(camera==disconnected)camera=null;
                         fail(new IllegalStateException("Камера предпросмотра отключилась"));
                     }
@@ -845,6 +845,98 @@ public class NativeCaptureService extends Service {
                 },worker);
             }catch(Exception error){fail(error);}
         });
+    }
+    private void configurePreviewOnlySession(CameraDevice opened, int token,
+        StreamConfigurationMap config, boolean tryDirect) throws Exception {
+        Surface target = null;
+        boolean usingDirect = false;
+        SurfaceTexture texture = null;
+        synchronized (STATE_LOCK) {
+            if (tryDirect && directPreviewOwnerId != null)
+                texture = directPreviewTexture;
+        }
+        if (texture != null && config != null) {
+            try {
+                Size[] sizes = config.getOutputSizes(SurfaceTexture.class);
+                Size selected = null;
+                if (sizes != null) for (Size candidate : sizes) {
+                    if (candidate.getWidth() < 320 || candidate.getHeight() < 240 ||
+                        candidate.getWidth() > 1920 || candidate.getHeight() > 1080) continue;
+                    if (selected == null || candidate.getWidth() * candidate.getHeight() >
+                        selected.getWidth() * selected.getHeight()) selected = candidate;
+                }
+                if (selected != null) {
+                    texture.setDefaultBufferSize(selected.getWidth(),selected.getHeight());
+                    Surface surface = new Surface(texture);
+                    if (surface.isValid()) {
+                        activeDirectPreviewSurface = surface;
+                        target = surface;
+                        usingDirect = true;
+                    } else surface.release();
+                }
+            } catch(Exception ignored) {
+                if (activeDirectPreviewSurface != null) {
+                    try {activeDirectPreviewSurface.release();}catch(Exception ignoredAgain){}
+                    activeDirectPreviewSurface = null;
+                }
+            }
+        }
+        if (target == null) {
+            Size[] sizes = config == null ? null :
+                config.getOutputSizes(ImageFormat.YUV_420_888);
+            Size best = null;
+            if (sizes != null) for (Size candidate : sizes)
+                if (candidate.getWidth() >= 160 && candidate.getHeight() >= 120 &&
+                    candidate.getWidth() <= 640 && candidate.getHeight() <= 480 &&
+                    candidate.getWidth() % 2 == 0 && candidate.getHeight() % 2 == 0 &&
+                    (best == null || candidate.getWidth() * candidate.getHeight() >
+                        best.getWidth() * best.getHeight())) best = candidate;
+            if (best == null)
+                throw new IllegalStateException("Нативный предпросмотр не поддерживается");
+            previewReader = ImageReader.newInstance(best.getWidth(),best.getHeight(),
+                ImageFormat.YUV_420_888,2);
+            previewReader.setOnImageAvailableListener(this::onPreviewImage,previewHandler);
+            target = previewReader.getSurface();
+        }
+        final Surface output = target;
+        final boolean direct = usingDirect;
+        CaptureRequest.Builder request=opened.createCaptureRequest(
+            CameraDevice.TEMPLATE_PREVIEW);
+        request.addTarget(output);
+        setRequestControls(request);
+        liveRequest=request;
+        liveCallback=captureFeedback();
+        opened.createCaptureSession(Arrays.asList(output),
+            new CameraCaptureSession.StateCallback(){
+                @Override public void onConfigured(CameraCaptureSession ready){
+                    if(token!=generation || stopRequested){ready.close();return;}
+                    capture=ready;
+                    try {
+                        capture.setRepeatingRequest(request.build(),liveCallback,worker);
+                        directPreviewActive=direct;
+                        if(openingTimeout!=null){
+                            worker.removeCallbacks(openingTimeout);openingTimeout=null;
+                        }
+                        publish("previewing",direct?
+                            "Прямой Camera2 TextureView предпросмотр активен; FPS на устройстве не измерен":
+                            "JPEG предпросмотр готов; запись MP4 доступна");
+                    }catch(Exception error){fail(error);}
+                }
+                @Override public void onConfigureFailed(CameraCaptureSession broken){
+                    broken.close();
+                    if (direct && token==generation && !stopRequested) {
+                        // OEM camera may reject TextureView output. Retry the
+                        // legacy YUV path without creating a second camera.
+                        directPreviewActive=false;
+                        if(activeDirectPreviewSurface!=null){
+                            try{activeDirectPreviewSurface.release();}catch(Exception ignored){}
+                            activeDirectPreviewSurface=null;
+                        }
+                        try{configurePreviewOnlySession(opened,token,config,false);}
+                        catch(Exception error){fail(error);}
+                    } else fail(new IllegalStateException("Сессия предпросмотра не поддерживается"));
+                }
+            },worker);
     }
     private boolean isRecordingState() {
         return "recording".equals(state) || "paused".equals(state) || "stopping".equals(state);
@@ -1094,6 +1186,11 @@ public class NativeCaptureService extends Service {
         liveRequest=null;
         liveCallback=null;
         latestPreviewJpeg = null; latestPreviewAt = 0; lastPreviewAttemptAt = 0;
+        directPreviewActive = false;
+        if(activeDirectPreviewSurface!=null) {
+            try {activeDirectPreviewSurface.release();}catch(Exception ignored){}
+            activeDirectPreviewSurface=null;
+        }
         if(previewReader!=null){try{previewReader.close();}catch(Exception ignored){}previewReader=null;}
         if (capture != null) {
             try { capture.stopRepeating();capture.abortCaptures(); } catch(Exception ignored) {}
