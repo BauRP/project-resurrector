@@ -49,7 +49,13 @@ export function nativeRecordedModeEvidence(
     !validCount(foldPassed,foldTotal,8) ||
     (middleTotal>0 && middlePassed<middleTotal) ||
     (foldTotal>0 && foldPassed<foldTotal);
-  const suspiciousFoldPts = (status.mp4FoldPtsLargeGaps ?? 0)>0;
+  const ptsChecks=status.mp4FoldPtsSpanChecks??0;
+  const ptsLarge=status.mp4FoldPtsLargeGaps??0;
+  const ptsMax=status.mp4MaxFoldPtsGapMs??0;
+  const invalidFoldPts = !Number.isSafeInteger(ptsChecks) || ptsChecks<0 ||
+    ptsChecks>8 || !Number.isSafeInteger(ptsLarge) || ptsLarge<0 ||
+    ptsLarge>ptsChecks || !Number.isSafeInteger(ptsMax) || ptsMax<0;
+  const suspiciousFoldPts = invalidFoldPts || ptsLarge>0;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
