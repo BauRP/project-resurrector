@@ -79,6 +79,12 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(r?.state).toBe("unknown");
   expect(r?.message).toContain("не удалось проверить");
  });
+ it("cannot confirm a recording when native checkpoint scanning aborted",()=>{
+  const failure=nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:false},12345);
+  expect(failure?.state).toBe("unknown");
+  expect(failure?.message).toContain("не завершена");
+  expect(nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:true},12345)?.state).toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
