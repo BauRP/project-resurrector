@@ -63,15 +63,26 @@ public class NativeCapturePlugin extends Plugin {
      }
      float cssScale=web.getWidth()/viewportWidth.floatValue();
      if(!Float.isFinite(cssScale)||cssScale<=0){call.reject("Invalid WebView scale");return;}
-     int px=Math.round(x.floatValue()*cssScale)+web.getLeft();
-     int py=Math.round(y.floatValue()*cssScale)+web.getTop();
-     int pw=Math.round(w.floatValue()*cssScale),ph=Math.round(h.floatValue()*cssScale);
-     if(pw<1||ph<1||px+pw>web.getRight()+2||py+ph>web.getBottom()+2){
-       call.reject("Native preview outside WebView bounds");return;
-     }
-     if(directView!=null&&!owner.equals(directOwner))detachDirectView();
      FrameLayout root=(FrameLayout)getActivity().findViewById(android.R.id.content);
      if(root==null){call.reject("Root view unavailable");return;}
+     // getLeft()/getTop() are relative to the *immediate* parent, which may
+     // not be the Activity root in a foldable/resizable Capacitor layout.
+     // Both locations must use the SAME window coordinate system.
+     int[] webLocation=new int[2],rootLocation=new int[2];
+     web.getLocationInWindow(webLocation);
+     root.getLocationInWindow(rootLocation);
+     int webX=webLocation[0]-rootLocation[0];
+     int webY=webLocation[1]-rootLocation[1];
+     int px=Math.round(x.floatValue()*cssScale)+webX;
+     int py=Math.round(y.floatValue()*cssScale)+webY;
+     int pw=Math.round(w.floatValue()*cssScale),ph=Math.round(h.floatValue()*cssScale);
+     if(pw<1||ph<1||px<webX||py<webY||
+        px+pw>webX+web.getWidth()+2||
+        py+ph>webY+web.getHeight()+2||
+        px<0||py<0||px+pw>root.getWidth()+2||py+ph>root.getHeight()+2){
+       call.reject("Native preview outside measured WebView/Activity bounds");return;
+     }
+     if(directView!=null&&!owner.equals(directOwner))detachDirectView();
      if(directView==null){
        directOwner=owner;
        directView=new TextureView(getContext());
