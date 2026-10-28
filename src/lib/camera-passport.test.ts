@@ -22,6 +22,19 @@ describe("persisted camera passport validation",()=>{
     expect(loadModeEvidence()[0]?.state).toBe("verified");
     expect(loadModeEvidence()[0]?.checkedAt).toBe(200);
   });
+  it("preserves a confirmed native recording when a later fold interrupts another attempt",()=>{
+    const recorded={...evidence,api:"camera2" as const,checkedAt:100,state:"recorded" as const};
+    recordModeEvidence(recorded);
+    recordModeEvidence({...recorded,checkedAt:200,state:"unknown"});
+    expect(loadModeEvidence()[0]?.state).toBe("recorded");
+    expect(loadModeEvidence()[0]?.checkedAt).toBe(100);
+  });
+  it("accepts a successful native retry after an unknown earlier result",()=>{
+    const unknown={...evidence,api:"camera2" as const,checkedAt:100,state:"unknown" as const};
+    recordModeEvidence(unknown);
+    recordModeEvidence({...unknown,checkedAt:200,state:"recorded"});
+    expect(loadModeEvidence()[0]?.state).toBe("recorded");
+  });
   it("separates each camera and FPS result",()=>{
     recordModeEvidence(evidence);
     recordModeEvidence({...evidence,cameraId:"front",state:"rejected"});
