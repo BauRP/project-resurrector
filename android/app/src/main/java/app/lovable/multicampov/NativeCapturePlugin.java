@@ -180,6 +180,9 @@ public class NativeCapturePlugin extends Plugin {
     call.reject("Фокусировка или экспозамер по касанию недоступны для текущей камеры");
   }
  }
+ @PluginMethod public void auditHistory(PluginCall call){
+   call.resolve(NativeCaptureAuditStore.history(getContext()));
+ }
  @PluginMethod public void status(PluginCall call){
   call.resolve(NativeCaptureService.status(getContext()));
  }
