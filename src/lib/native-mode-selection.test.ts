@@ -14,4 +14,17 @@ describe("native per-lens candidate selection",()=>{
  it("restores a safe candidate after changing physical lens",()=>{
   expect(validNativeSelection(camera,"3840x2160",60)).toEqual({size:"1920x1080",fps:30,choices:[24,25,30]});
  });
+ it("falls back to a declared size that has an actual FPS range",()=>{
+  const profile={...camera,sizes:["3840x2160","1280x720"],videoOutputSizes:[
+    {width:3840,height:2160,theoreticalMaxFps:12},
+    {width:1280,height:720,theoreticalMaxFps:60},
+  ]};
+  expect(validNativeSelection(profile,"3840x2160",30)).toEqual({
+    size:"1280x720",fps:30,choices:[24,25,30,60],
+  });
+ });
+ it("does not invent a recordable size when every sensor option is unknown",()=>{
+  const profile={...camera,fpsRanges:[]};
+  expect(validNativeSelection(profile,"1920x1080",30)).toEqual({size:"",fps:0,choices:[]});
+ });
 });
