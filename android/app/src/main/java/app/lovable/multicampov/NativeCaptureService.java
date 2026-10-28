@@ -1894,9 +1894,15 @@ public class NativeCaptureService extends Service {
             boolean checkpointIssue =
                 (mp4MiddleProbes>0 && mp4MiddleMatched<mp4MiddleProbes) ||
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes);
+            // A nominally saved MP4 must not be marked clean when its
+            // decoder or actual video-track audit cannot confirm the result.
+            // This is independent of later WebView passport validation.
+            boolean tailDecodeIssue = mp4DurationMs > 1500L && !mp4TailFrameDecodable;
+            boolean inspectionUnknown = audit == null || !mp4HasVideoTrack ||
+                mp4VideoSamples <= 0;
             boolean incomplete = checkpointIssue || interruptedByCamera || audioNotConfirmed ||
-                videoMismatch || sampleIssue || tailIssue || (audit != null && !audit.video) ||
-                !mp4FirstFrameDecodable;
+                videoMismatch || sampleIssue || tailIssue || inspectionUnknown ||
+                tailDecodeIssue || !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
@@ -1906,6 +1912,10 @@ public class NativeCaptureService extends Service {
                 ? "Камера была потеряна; непрерывность записи не подтверждена"
                 : !mp4FirstFrameDecodable
                     ? "MP4 сохранён, но декодирование первого кадра не подтверждено"
+                : tailDecodeIssue
+                    ? "MP4 сохранён, но декодирование кадра возле конца не подтверждено"
+                : inspectionUnknown
+                    ? "MP4 сохранён, но видеодорожка или реальные кадры не подтверждены"
                 : tailIssue
                     ? "MP4 сохранён, но конец видеодорожки не подтверждён"
                 : audioNotConfirmed
