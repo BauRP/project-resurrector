@@ -99,6 +99,7 @@ public class NativeCaptureService extends Service {
     private static float mp4TailSampledFps = -1f;
     private static boolean mp4TailNearEnd = false;
     private static boolean mp4FirstFrameDecodable = false;
+    private static boolean mp4TailFrameDecodable = false;
     private static long mp4AvStartOffsetMs = 0L;
     private static boolean mp4AvStartMeasured = false;
     // Passive native WindowManager samples: not a claim of continuous fold
@@ -716,6 +717,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getLong("mp4AvStartOffsetMs", 0L) : mp4AvStartOffsetMs);
             out.put("mp4AvStartMeasured", runningInstance == null
                 ? previous.getBoolean("mp4AvStartMeasured", false) : mp4AvStartMeasured);
+            out.put("mp4TailFrameDecodable",runningInstance==null
+                ? previous.getBoolean("mp4TailFrameDecodable",false):mp4TailFrameDecodable);
             out.put("mp4FirstFrameDecodable", runningInstance == null
                 ? previous.getBoolean("mp4FirstFrameDecodable", false) : mp4FirstFrameDecodable);
             out.put("foldObservations", runningInstance==null
@@ -770,6 +773,7 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AvStartOffsetMs",mp4AvStartOffsetMs)
                 .putBoolean("mp4AvStartMeasured",mp4AvStartMeasured)
                 .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable)
+                .putBoolean("mp4TailFrameDecodable",mp4TailFrameDecodable)
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
                 .putLong("lastFoldAt",recordingLastFoldAt)
@@ -879,7 +883,7 @@ public class NativeCaptureService extends Service {
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
             mp4TailSampledFps = -1f; mp4TailNearEnd = false;
-            mp4FirstFrameDecodable = false;
+            mp4FirstFrameDecodable = false;mp4TailFrameDecodable=false;
             mp4AvStartOffsetMs = 0L;mp4AvStartMeasured = false;
             recordingFoldObservations=0;recordingPostureChanges=0;
             recordingLastFoldAt=0L;recordingLastFoldSignature="";
@@ -1513,7 +1517,7 @@ public class NativeCaptureService extends Service {
     /** One small actual decoded frame is stronger evidence than MP4 headers,
      * but it is NOT a full video playback/decoder endurance test.
      */
-    private boolean decodeMp4FirstFrame(File file) {
+    private boolean decodeMp4FrameAt(File file, long frameTimeUs) {
         if (file == null || !file.isFile() || file.length() < 1024L) return false;
         MediaMetadataRetriever retriever=new MediaMetadataRetriever();
         android.graphics.Bitmap frame=null;
@@ -1523,9 +1527,9 @@ public class NativeCaptureService extends Service {
             // Use the older decoder entry point on those devices rather than
             // crashing a completed MP4 finalization with NoSuchMethodError.
             if (Build.VERSION.SDK_INT >= 27)
-                frame=retriever.getScaledFrameAtTime(0L,
+                frame=retriever.getScaledFrameAtTime(frameTimeUs,
                     MediaMetadataRetriever.OPTION_CLOSEST_SYNC,320,180);
-            else frame=retriever.getFrameAtTime(0L,
+            else frame=retriever.getFrameAtTime(frameTimeUs,
                     MediaMetadataRetriever.OPTION_CLOSEST_SYNC);
             return frame!=null && frame.getWidth()>0 && frame.getHeight()>0;
         } catch (Exception error) {
@@ -1534,6 +1538,14 @@ public class NativeCaptureService extends Service {
             if (frame!=null)try{frame.recycle();}catch(Exception ignored){}
             try{retriever.release();}catch(Exception ignored){}
         }
+    }
+    private boolean decodeMp4FirstFrame(File file) {
+        return decodeMp4FrameAt(file,0L);
+    }
+    private boolean decodeMp4TailFrame(File file,long durationMs) {
+        if(durationMs<=1500L) return false;
+        long frameUs=Math.max(0L,(durationMs-1000L)*1000L);
+        return decodeMp4FrameAt(file,frameUs);
     }
     private boolean savedMp4HasVideo(File candidate) {
         if (candidate == null || !candidate.isFile() || candidate.length() < 1024) return false;
@@ -1612,6 +1624,7 @@ public class NativeCaptureService extends Service {
             mp4TailSampledFps = audit == null ? -1f : audit.tailSampledFps;
             mp4TailNearEnd = audit != null && audit.tailNearEnd;
             mp4FirstFrameDecodable=decodeMp4FirstFrame(media);
+            mp4TailFrameDecodable=decodeMp4TailFrame(media,mp4DurationMs);
             mp4AvStartOffsetMs = audit == null ? 0L : audit.avStartOffsetMs;
             mp4AvStartMeasured = audit != null && audit.avStartMeasured;
             // A missing audio track is not a clean video+audio recording.
