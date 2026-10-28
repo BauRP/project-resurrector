@@ -50,6 +50,7 @@ public final class NativeCaptureAuditStore {
                     "mp4VideoSamples","mp4AudioSamples","mp4MiddleProbes","mp4MiddleMatched",
                     "mp4FoldProbes","mp4FoldMatched","mp4FoldPointsSkipped",
                     "foldObservations","foldPostureChanges","foldGeometryOnlyChanges",
+                    "foldCheckpointsOmitted","foldChangesWhilePaused",
                     "foldNearbyCallbackGaps","mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",
                     "recordingEisFrames","recordingOisFrames",
                     "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames"};
