@@ -21,12 +21,32 @@ describe("fold events attached to capture", () => {
     expect(again).toHaveLength(1);
     const opened = appendFoldTransition(again,{...first,revision:2,posture:"FLAT",observedAtMs:220});
     expect(opened).toHaveLength(2);
-    expect(foldContinuitySummary(opened)).toContain("Зафиксировано изменений геометрии: 2");
+    expect(foldContinuitySummary(opened)).toContain("Зафиксировано изменений геометрии: 1");
     expect(foldContinuitySummary(opened)).toContain("частично неизвестно");
     expect(foldContinuitySummary([])).toContain("не подтверждена");
   });
 });
 
+describe("duplicate fold callbacks and delayed geometry",()=>{
+  it("keeps original baseline time while advancing the last observation watermark",()=>{
+    const initial=normalizeFoldTransition({...sample,revision:8,
+      regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
+    const baseline={...initial,baseline:true as const};
+    const newer=normalizeFoldTransition({...sample,revision:9,
+      regionGeometry:"0,0,280,400;285,0,280,400"},200)!;
+    const journal=appendFoldTransition([baseline],newer);
+    expect(journal).toHaveLength(1);
+    expect(journal[0]?.observedAtMs).toBe(100);
+    expect(journal[0]?.latestObservedAtMs).toBe(200);
+    const delayed=normalizeFoldTransition({...sample,revision:9,
+      posture:"FLAT",regionGeometry:"0,0,300,400;305,0,300,400"},150)!;
+    expect(appendFoldTransition(journal,delayed)).toEqual(journal);
+    const next=normalizeFoldTransition({...sample,revision:10,
+      posture:"FLAT",regionGeometry:"0,0,300,400;305,0,300,400"},220)!;
+    expect(foldContinuitySummary(appendFoldTransition(journal,next)))
+      .toContain("Зафиксировано изменений геометрии: 1");
+  });
+});
 describe("measured fold geometry validation", () => {
   it("accepts measured pane rectangles while rejecting corrupted or impossible values", () => {
     expect(validFoldRegionGeometry("0,0,280,400;285,0,280,400")).toBe(true);
