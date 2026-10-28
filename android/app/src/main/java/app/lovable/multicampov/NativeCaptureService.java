@@ -107,9 +107,9 @@ public class NativeCaptureService extends Service {
     private static int recordingPostureChanges = 0;
     private static long recordingLastFoldAt = 0L;
     private static String recordingLastFoldSignature = "";
-    private static long recordingLastFoldElapsedMs = -1L;
-    private static int foldNearbyCameraCallbackGaps = 0;
-    private static long maxFoldNearbyCallbackGapMs = 0L;
+    private static volatile long recordingLastFoldElapsedMs = -1L;
+    private static volatile int foldNearbyCameraCallbackGaps = 0;
+    private static volatile long maxFoldNearbyCallbackGapMs = 0L;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     public static void observeFoldDuringRecording(int hingeCount,String signature) {
