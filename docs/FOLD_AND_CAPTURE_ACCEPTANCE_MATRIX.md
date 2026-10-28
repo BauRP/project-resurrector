@@ -52,3 +52,9 @@ These are auditable per-scenario counts, NOT overall application completeness.
 Tracking rule: a scenario becomes PHYSICAL VERIFIED only with a device, APK version, observed result, and saved evidence. Adding source code or passing the CI pipeline must never upgrade it to PHYSICAL VERIFIED.
 
 See source requirements: `СДелать Раскладушки(2).txt`, scenarios 1–30, and `MULTI-CAM-POV_Обнаружение камер и проверка(3).txt`, camera/video acceptance. A passing unit test cannot replace a physical-device observation.
+
+## Source-level audit improvement — 29 October 2026 (pending CI and device acceptance)
+- Scenario 26: Native Camera2 MP4 passport now retains **unknown** when a fold checkpoint was decoded but the corresponding before/after encoded PTS span was not measurable. Missing span evidence must not be mistaken for continuous frames. A measured gap above 250 ms remains suspicious, not a conclusive lost-frame count.
+- Scenarios 03/05/26: When more than 120 fold/window events arrive, baseline-preserving journal truncation now accounts for the exact lost posture/geometry edges, including an open-close cycle that returns to its starting posture. It also refuses delayed snapshots from an older Activity when a newer Activity owns current topology.
+- Added regression tests for alternating postures, old-Activity callbacks and missing MP4 PTS measurements.
+- **Validation status for this new change:** source changes committed; CI outcome not yet independently confirmed. No physical folding, EIS/OIS effectiveness or hardware recording continuity tested here. Do not increase the 0/36 physical acceptance count or claim full scenario completion.
