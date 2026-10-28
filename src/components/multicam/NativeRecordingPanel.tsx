@@ -250,6 +250,16 @@ export function NativeRecordingPanel(){
        : " откатов/повторов меток в проверенной части не обнаружено."}
      {status.mp4VideoSampleLimitReached&&" Остальная часть файла не проверена."}
    </p>}
+   {status?.mp4TracksInspected&&<p role="status">
+     Проверка конца MP4: {status.mp4TailVideoSamples??0} видеосэмплов;
+     {status.mp4TailSampledFps!==undefined&&status.mp4TailSampledFps>0
+       ? ` оценка FPS в конце ${status.mp4TailSampledFps.toFixed(1)};`
+       : " FPS конца не подтверждён;"}
+     {status.mp4DurationMs&&status.mp4DurationMs>0 ? ` длительность MP4 ${(status.mp4DurationMs/1000).toFixed(1)} с;` : " длительность неизвестна;"}
+     {status.mp4TailNearEnd ? " конец видеодорожки близок к заявленной длительности." :
+       " совпадение последнего кадра с длительностью не подтверждено."}
+     Проверены только ограниченные участки, не вся запись.
+   </p>}
    {status&&["saved","saved_interrupted"].includes(status.state)&&!status.mp4TracksInspected&&<p role="status">Проверка видеодорожек недоступна: их наличие не подтверждено.</p>}
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {active&&status&&<div className="grid gap-3 rounded-lg border border-border p-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
