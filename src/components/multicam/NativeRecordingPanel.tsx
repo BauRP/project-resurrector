@@ -70,6 +70,7 @@ export function NativeRecordingPanel(){
  useEffect(()=>{
   if(!isNative())return;
   let live=true;
+  const availabilityOwner="native-availability-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
   let listener: {remove:()=>Promise<void>}|undefined;
   let token=0;
   const refresh=async()=>{
@@ -92,12 +93,12 @@ export function NativeRecordingPanel(){
   void MultiCamNative.addListener("cameraAvailabilityChanged",()=>void refresh()).then(handle=>{
     if(!live)void handle.remove();else listener=handle;
   }).catch(()=>undefined);
-  void MultiCamNative.startCameraAvailability().catch(()=>undefined);
+  void MultiCamNative.startCameraAvailability({ownerId:availabilityOwner}).catch(()=>undefined);
   return ()=>{
     live=false;token++;
     document.removeEventListener("visibilitychange",onVisibility);
     void listener?.remove();
-    void MultiCamNative.stopCameraAvailability().catch(()=>undefined);
+    void MultiCamNative.stopCameraAvailability({ownerId:availabilityOwner}).catch(()=>undefined);
   };
  },[]);
  useEffect(()=>{
