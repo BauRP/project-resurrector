@@ -64,3 +64,10 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Foldable document, scenarios 05 and 26: the status is exported to the Camera2 mode passport and a bounded anonymized technical report. A decoder result near one fold is not treated as proof of continuous recording; unresolved before/after encoded timestamps stay unverified.
 - Regression test: a saved MP4 with a failed checkpoint scan must remain `unknown` in the passport even if basic track metadata decodes. A completed scan may still only qualify as `recorded`, **never** as fully device-verified.
 - Validation: these source changes are committed to the isolated branch. Full CI / release APK and physical-device results were **not yet independently confirmed for this batch**. Leave the 0/36 physically verified figure unchanged.
+
+## Native fold posture versus geometry classification — 29 October 2026
+- Android WindowManager features are now sorted into canonical signatures so callback ordering alone cannot generate false fold events.
+- Device hinge posture (state/orientation/occlusion/separation) is counted separately from mere updates to hinge bounds. The very first observation, even one with zero reported hinges, is treated as a baseline rather than as a fold transition.
+- Approximate MP4 checkpoints are created for posture transitions only; geometry-only window updates no longer fabricate a physical folding checkpoint. Existing Camera2 recording remains owned by its foreground service; this observer change does not restart the recorder.
+- Native bridge, screen diagnostics and anonymized audit output now expose separate posture/geometry counts. A regression test checks this separation in the exported audit.
+- Validation: changes committed to isolated branch; these code changes do **not** establish physical device continuity, actual fold acceptance, new APK success or visual EIS/OIS performance. Hardware acceptance remains unverified.
