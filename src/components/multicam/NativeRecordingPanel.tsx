@@ -69,6 +69,39 @@ export function NativeRecordingPanel(){
  },[]);
  useEffect(()=>{
   if(!isNative())return;
+  let live=true;
+  let listener: {remove:()=>Promise<void>}|undefined;
+  let token=0;
+  const refresh=async()=>{
+    const current=++token;
+    try{
+      const result=await MultiCamNative.getCapabilities();
+      if(!live||current!==token)return;
+      setCameras(result.cameras);
+      // A camera that vanished must not be substituted while Android records.
+      // The service itself remains authoritative about active recording.
+      const capture=await bridge.status().catch(()=>null);
+      if(!live||current!==token)return;
+      if(capture&&nativeRecorderOwnsCamera(capture.state))return;
+      setCamera(previous=>result.cameras.some(c=>c.cameraId===previous)
+        ?previous:result.cameras[0]?.cameraId??"");
+    }catch{ /* Missing native availability is unknown, not zero cameras. */ }
+  };
+  const onVisibility=()=>{if(!document.hidden)void refresh();};
+  document.addEventListener("visibilitychange",onVisibility);
+  void MultiCamNative.addListener("cameraAvailabilityChanged",()=>void refresh()).then(handle=>{
+    if(!live)void handle.remove();else listener=handle;
+  }).catch(()=>undefined);
+  void MultiCamNative.startCameraAvailability().catch(()=>undefined);
+  return ()=>{
+    live=false;token++;
+    document.removeEventListener("visibilitychange",onVisibility);
+    void listener?.remove();
+    void MultiCamNative.stopCameraAvailability().catch(()=>undefined);
+  };
+ },[]);
+ useEffect(()=>{
+  if(!isNative())return;
   let live=true,inFlight=false,visible=!document.hidden,latestFrameAt=0;
   // Each mounted viewer owns its Android preview lease. A late cleanup from
   // an old fold/Activity view cannot hide the new viewer.
