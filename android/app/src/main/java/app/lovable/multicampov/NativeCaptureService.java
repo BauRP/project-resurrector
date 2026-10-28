@@ -82,10 +82,14 @@ public class NativeCaptureService extends Service {
 
     private HandlerThread workerThread;
     private Handler worker;
+    // JPEG conversion is optional and expensive. Never run it on the Camera2
+    // control/capture-callback thread that also owns MP4 recording state.
+    private HandlerThread previewThread;
+    private Handler previewHandler;
     private CameraDevice camera;
     private CameraCaptureSession capture;
     private MediaRecorder encoder;
-    private ImageReader previewReader;
+    private volatile ImageReader previewReader;
     private volatile boolean previewConsumerVisible;
     public static void setPreviewConsumerVisible(boolean visible, String ownerId) {
         if (ownerId == null || ownerId.isEmpty()) return;
@@ -104,6 +108,30 @@ public class NativeCaptureService extends Service {
     }
     private volatile String latestPreviewJpeg;
     private volatile long latestPreviewAt;
+    private volatile long lastPreviewAttemptAt;
+    private void onPreviewImage(ImageReader reader) {
+        Image frame = null;
+        try {
+            // acquireLatestImage drops buffered older frames rather than
+            // building a JPEG conversion backlog while the phone folds.
+            frame = reader.acquireLatestImage();
+            if (frame == null || reader != previewReader || !previewConsumerVisible) return;
+            long now = System.currentTimeMillis();
+            if (now - lastPreviewAttemptAt < 240) return;
+            lastPreviewAttemptAt = now;
+            String jpeg = NativePreviewFrames.compressYuv420(frame);
+            // The old session may have been closed or the viewer unmounted
+            // while a slow OEM YUV conversion was running.
+            if (jpeg != null && previewConsumerVisible && reader == previewReader) {
+                latestPreviewJpeg = jpeg;
+                latestPreviewAt = System.currentTimeMillis();
+            }
+        } catch (Exception ignored) {
+            // Optional preview must never fail an otherwise valid MP4.
+        } finally {
+            if (frame != null) try { frame.close(); } catch (Exception ignored) {}
+        }
+    }
     private File media;
     private boolean encoderStarted;
     private boolean encoderPaused;
@@ -548,6 +576,9 @@ public class NativeCaptureService extends Service {
         workerThread = new HandlerThread("Native-Camera2-Record");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
+        previewThread = new HandlerThread("Native-Camera2-JPEG-Preview");
+        previewThread.start();
+        previewHandler = new Handler(previewThread.getLooper());
         synchronized (STATE_LOCK) {
             runningInstance = this;
             previewConsumerVisible = previewOwnerId != null;
@@ -698,17 +729,7 @@ public class NativeCaptureService extends Service {
                 if(best==null)throw new IllegalStateException("YUV предпросмотр недоступен");
                 previewReader=ImageReader.newInstance(best.getWidth(),best.getHeight(),
                     ImageFormat.YUV_420_888,2);
-                previewReader.setOnImageAvailableListener(reader->{
-                    Image frame=null;
-                    try{
-                        frame=reader.acquireLatestImage();
-                        if(frame!=null && previewConsumerVisible &&
-                            System.currentTimeMillis()-latestPreviewAt>=240){
-                            String jpeg=NativePreviewFrames.compressYuv420(frame);
-                            if(jpeg!=null){latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();}
-                        }
-                    }catch(Exception ignored){}finally{if(frame!=null)frame.close();}
-                },worker);
+                previewReader.setOnImageAvailableListener(this::onPreviewImage,previewHandler);
                 manager.openCamera(id,new CameraDevice.StateCallback(){
                     @Override public void onOpened(CameraDevice opened){
                         if(token!=generation || stopRequested){opened.close();return;}
@@ -839,20 +860,7 @@ public class NativeCaptureService extends Service {
                 if (small != null) {
                     previewReader = ImageReader.newInstance(small.getWidth(),small.getHeight(),
                         ImageFormat.YUV_420_888,2);
-                    previewReader.setOnImageAvailableListener(reader -> {
-                        Image frame = null;
-                        try {
-                            frame = reader.acquireLatestImage();
-                            if (frame != null && previewConsumerVisible &&
-                                System.currentTimeMillis()-latestPreviewAt>=240) {
-                                String jpeg = NativePreviewFrames.compressYuv420(frame);
-                                if (jpeg != null) {
-                                    latestPreviewJpeg=jpeg;latestPreviewAt=System.currentTimeMillis();
-                                }
-                            }
-                        } catch(Exception ignored) {}
-                        finally {if(frame!=null)frame.close();}
-                    },worker);
+                    previewReader.setOnImageAvailableListener(this::onPreviewImage,previewHandler);
                     outputs.add(previewReader.getSurface());
                 }
             } catch(Exception ignored) {
@@ -998,7 +1006,7 @@ public class NativeCaptureService extends Service {
     private void releaseCamera() {
         liveRequest=null;
         liveCallback=null;
-        latestPreviewJpeg = null; latestPreviewAt = 0;
+        latestPreviewJpeg = null; latestPreviewAt = 0; lastPreviewAttemptAt = 0;
         if(previewReader!=null){try{previewReader.close();}catch(Exception ignored){}previewReader=null;}
         if (capture != null) {
             try { capture.stopRepeating();capture.abortCaptures(); } catch(Exception ignored) {}
@@ -1121,6 +1129,7 @@ public class NativeCaptureService extends Service {
         }
         synchronized (STATE_LOCK) { if (runningInstance == this) runningInstance = null; }
         if (workerThread != null) workerThread.quitSafely();
+        if (previewThread != null) previewThread.quitSafely();
         super.onDestroy();
     }
     @Override public IBinder onBind(Intent intent) { return null; }
