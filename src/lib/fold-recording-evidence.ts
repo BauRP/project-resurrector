@@ -6,6 +6,8 @@
 export interface FoldTransitionEvidence {
   revision: number;
   observedAtMs: number;
+  /** Latest same-geometry callback time; original baseline stays untouched. */
+  latestObservedAtMs?: number;
   posture: string;
   hingeCount: number;
   usableRegions: number;
@@ -116,16 +118,23 @@ export function appendFoldTransition(
   // Ignore delayed/stale events before deciding whether they are duplicates.
   // A newer native revision with the same observed physical geometry is NOT
   // another fold. Keep its revision as the chronology watermark.
+  const lastWatermarkMs = last?.latestObservedAtMs ?? last?.observedAtMs;
   if (last && (value.revision < last.revision ||
-      value.observedAtMs < last.observedAtMs)) return [...events];
+      (lastWatermarkMs !== undefined && value.observedAtMs < lastWatermarkMs)))
+    return [...events];
   if (last &&
       last.posture === value.posture &&
       last.hingeCount === value.hingeCount &&
       last.usableRegions === value.usableRegions &&
       last.layout === value.layout &&
       last.regionGeometry === value.regionGeometry)
-    return value.revision === last.revision ? [...events] :
-      [...events.slice(0,-1), { ...last, revision:value.revision }];
+    return value.revision === last.revision &&
+      value.observedAtMs === lastWatermarkMs ? [...events] :
+      // Preserve the original baseline observedAtMs, but retain the true
+      // newest callback time so an older queued geometry never masquerades
+      // as a new fold merely because its revision is unchanged.
+      [...events.slice(0,-1), { ...last, revision:value.revision,
+        latestObservedAtMs:value.observedAtMs }];
   const next = [...events, value];
   if (next.length <= 120) return next;
   // Keep the ORIGINAL measured starting posture for the entire recording.
@@ -159,7 +168,9 @@ export function appendFoldTransition(
 export function foldContinuitySummary(events: readonly FoldTransitionEvidence[]): string {
   if (!events.length) return "Во время записи данные о складках недоступны: непрерывность не подтверждена.";
   const omitted = events[0]?.omittedEarlierEvents ?? 0;
-  const changes = Math.max(0, events.length - (events[0]?.baseline === true ? 1 : 0)) + omitted;
+  // Without a pre-capture baseline the first sample is only an observed
+  // state, not a proved transition. Only adjacent edges count as changes.
+  const changes = Math.max(0, events.length - 1) + omitted;
   // Geometry changes can be ordinary WebView resizing or window-manager
   // adjustments. Count observed hinge/posture changes separately, never
   // infer a real physical fold just from a resized app window.
