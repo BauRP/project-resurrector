@@ -30,6 +30,8 @@ import android.graphics.ImageFormat;
 import android.graphics.Rect;
 import java.util.ArrayList;
 import android.media.MediaMetadataRetriever;
+import android.media.MediaExtractor;
+import android.media.MediaFormat;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Environment;
@@ -79,6 +81,11 @@ public class NativeCaptureService extends Service {
     private static String selectedCameraId = "";
     private static int selectedWidth = 0, selectedHeight = 0, selectedFps = 0;
     private static long pausedAtMs = 0L, totalPausedMs = 0L, finishedDurationMs = 0L;
+    // Post-encoder MP4 inspection, not requested Camera2 or preview settings.
+    private static boolean mp4TracksInspected = false;
+    private static boolean mp4HasAudioTrack = false;
+    private static boolean mp4HasVideoTrack = false;
+    private static int mp4VideoWidth = 0, mp4VideoHeight = 0;
 
     private HandlerThread workerThread;
     private Handler worker;
@@ -545,8 +552,22 @@ public class NativeCaptureService extends Service {
             out.put("savedBytes", !path.isEmpty() && new File(path).isFile()
                 ? new File(path).length() : 0L);
             out.put("savedUri", uri);
-            out.put("videoOnly", !context.getSharedPreferences(STORE, MODE_PRIVATE)
-                .getBoolean("recordAudio", false));
+            android.content.SharedPreferences previous =
+                context.getSharedPreferences(STORE, MODE_PRIVATE);
+            out.put("audioRequested", runningInstance == null
+                ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio);
+            out.put("mp4TracksInspected", runningInstance == null
+                ? previous.getBoolean("mp4TracksInspected", false) : mp4TracksInspected);
+            out.put("mp4HasVideoTrack", runningInstance == null
+                ? previous.getBoolean("mp4HasVideoTrack", false) : mp4HasVideoTrack);
+            out.put("mp4HasAudioTrack", runningInstance == null
+                ? previous.getBoolean("mp4HasAudioTrack", false) : mp4HasAudioTrack);
+            out.put("mp4VideoWidth", runningInstance == null
+                ? previous.getInt("mp4VideoWidth", 0) : mp4VideoWidth);
+            out.put("mp4VideoHeight", runningInstance == null
+                ? previous.getInt("mp4VideoHeight", 0) : mp4VideoHeight);
+            out.put("videoOnly", !(runningInstance == null
+                ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
         return out;
     }
@@ -568,7 +589,12 @@ public class NativeCaptureService extends Service {
                 .putLong("totalPaused", totalPausedMs)
                 .putLong("finishedDuration", finishedDurationMs)
                 .putInt("orientation", recordedOrientation)
-                .putBoolean("recordAudio", wantAudio).apply();
+                .putBoolean("recordAudio", wantAudio)
+                .putBoolean("mp4TracksInspected", mp4TracksInspected)
+                .putBoolean("mp4HasVideoTrack", mp4HasVideoTrack)
+                .putBoolean("mp4HasAudioTrack", mp4HasAudioTrack)
+                .putInt("mp4VideoWidth", mp4VideoWidth)
+                .putInt("mp4VideoHeight", mp4VideoHeight).apply();
         }
     }
     @Override public void onCreate() {
@@ -666,6 +692,8 @@ public class NativeCaptureService extends Service {
             stabilizationResultSeen = false; recordingStartedAt = 0L;
             recordedOrientation = -1;
             pausedAtMs = 0L; totalPausedMs = 0L; finishedDurationMs = 0L;
+            mp4TracksInspected = false; mp4HasVideoTrack = false;
+            mp4HasAudioTrack = false; mp4VideoWidth = 0; mp4VideoHeight = 0;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1030,6 +1058,42 @@ public class NativeCaptureService extends Service {
         }
         if (camera != null) { try {camera.close();}catch(Exception ignored){}camera=null; }
     }
+    private static final class Mp4TrackAudit {
+        boolean video, audio;
+        int width, height;
+    }
+
+    /** MediaExtractor reads the finalized MP4 track headers. This does NOT
+     * prove every encoded frame, audio fidelity, or uninterrupted fold capture.
+     * If the parser fails, keep the outcome UNKNOWN rather than say no audio.
+     */
+    private Mp4TrackAudit inspectMp4Tracks(File candidate) {
+        if (candidate == null || !candidate.isFile() || candidate.length() < 1024)
+            return null;
+        MediaExtractor extractor = new MediaExtractor();
+        try {
+            extractor.setDataSource(candidate.getAbsolutePath());
+            Mp4TrackAudit result = new Mp4TrackAudit();
+            for (int i = 0; i < extractor.getTrackCount(); i++) {
+                MediaFormat format = extractor.getTrackFormat(i);
+                String mime = format.containsKey(MediaFormat.KEY_MIME)
+                    ? format.getString(MediaFormat.KEY_MIME) : null;
+                if (mime == null) continue;
+                if (mime.startsWith("video/")) {
+                    result.video = true;
+                    if (format.containsKey(MediaFormat.KEY_WIDTH))
+                        result.width = format.getInteger(MediaFormat.KEY_WIDTH);
+                    if (format.containsKey(MediaFormat.KEY_HEIGHT))
+                        result.height = format.getInteger(MediaFormat.KEY_HEIGHT);
+                } else if (mime.startsWith("audio/")) result.audio = true;
+            }
+            return result;
+        } catch (Exception ignored) {
+            return null;
+        } finally {
+            try { extractor.release(); } catch (Exception ignored) {}
+        }
+    }
     private boolean savedMp4HasVideo(File candidate) {
         if (candidate == null || !candidate.isFile() || candidate.length() < 1024) return false;
         MediaMetadataRetriever reader = new MediaMetadataRetriever();
@@ -1090,13 +1154,34 @@ public class NativeCaptureService extends Service {
             encoderPaused = false;
         }
         if (valid && media != null) {
+            Mp4TrackAudit audit = inspectMp4Tracks(media);
+            mp4TracksInspected = audit != null;
+            mp4HasVideoTrack = audit != null && audit.video;
+            mp4HasAudioTrack = audit != null && audit.audio;
+            mp4VideoWidth = audit == null ? 0 : audit.width;
+            mp4VideoHeight = audit == null ? 0 : audit.height;
+            // A missing audio track is not a clean video+audio recording.
+            // A missing parser result is UNKNOWN rather than "audio absent".
+            boolean audioNotConfirmed = wantAudio && (audit == null || !audit.audio);
+            boolean videoMismatch = audit != null && audit.video &&
+                (audit.width != selectedWidth || audit.height != selectedHeight);
+            boolean incomplete = interruptedByCamera || audioNotConfirmed ||
+                videoMismatch || (audit != null && !audit.video);
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
-            publish(interruptedByCamera ? "saved_interrupted" : "saved",
-                interruptedByCamera ? "Камера была потеряна: сохранён только завершённый сегмент MP4; непрерывность не подтверждена" :
-                gallery == null ? "MP4 записан в защищённое хранилище приложения; публикация в Галерее не удалась"
-                : "Настоящий MP4 сохранён в Галерее");
+            String message = interruptedByCamera
+                ? "Камера была потеряна; непрерывность записи не подтверждена"
+                : audioNotConfirmed
+                    ? "MP4 сохранён, но звуковая дорожка не подтверждена"
+                    : videoMismatch
+                        ? "MP4 сохранён, но разрешение отличается от выбранного"
+                        : audit != null && !audit.video
+                            ? "MP4 сохранён, но видеодорожка не подтверждена"
+                            : gallery == null
+                                ? "MP4 в хранилище приложения; публикация в Галерее не удалась"
+                                : "MP4 с видеодорожкой сохранён в Галерее";
+            publish(incomplete ? "saved_interrupted" : "saved", message);
         } else if (!"error".equals(state)) {
             publish("interrupted", "Нативная запись не создала подтверждённый MP4.");
         }
