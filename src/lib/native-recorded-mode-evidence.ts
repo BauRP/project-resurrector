@@ -53,6 +53,7 @@ export function nativeRecordedModeEvidence(
     !validCount(foldPassed,foldTotal,8) ||
     (middleTotal>0 && middlePassed<middleTotal) ||
     (foldTotal>0 && foldPassed<foldTotal);
+  const observerGap=status.foldObserverGap===true;
   const omitted=status.foldCheckpointsOmitted??0;
   const invalidOmitted=!Number.isSafeInteger(omitted)||omitted<0;
   const skippedPoints=status.mp4FoldPointsSkipped??0;
