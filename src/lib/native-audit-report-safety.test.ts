@@ -27,6 +27,15 @@ describe("recovered native fold and camera report safety",()=>{
     }));
     expect(parsed.entries[0].fold.skippedCheckpoints).toBe(2);
   });
+  it("reports fold overflow and paused changes separately",()=>{
+    const parsed=JSON.parse(nativeAnonymizedAuditReport({
+      entries:[{state:"saved_interrupted",foldCheckpointsOmitted:2,
+        foldChangesWhilePaused:4}],
+      omittedEarlier:0,maxEntries:24,
+    }));
+    expect(parsed.entries[0].fold.checkpointLimitOmissions).toBe(2);
+    expect(parsed.entries[0].fold.postureChangesWhilePaused).toBe(4);
+  });
   it("separates real hinge posture from coordinate-only changes",()=>{
     const parsed=JSON.parse(nativeAnonymizedAuditReport({
       entries:[{state:"saved",foldPostureChanges:2,foldGeometryOnlyChanges:19}],
