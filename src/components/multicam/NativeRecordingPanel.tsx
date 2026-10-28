@@ -154,6 +154,14 @@ export function NativeRecordingPanel(){
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
  const mode=validNativeSelection(current,resolution,fps);
  const availableFps=mode.choices;
+ // The restored UI mode may belong to an old lens. Offer the real
+ // compatible fallback explicitly, never silently change capture settings.
+ const canRestoreMode=!!mode.size && (mode.size!==resolution||mode.fps!==fps);
+ const applyCompatibleMode=()=>{
+   if(busy||nativeRecorderOwnsCamera(status?.state??""))return;
+   setResolution(mode.size);
+   setFps(mode.fps);
+ };
  const openPreview=async()=>{
   if(busy || !camera)return;
   setBusy(true);setError("");
@@ -223,6 +231,13 @@ export function NativeRecordingPanel(){
     <label className="flex items-center gap-2"><input type="checkbox" checked={audio} disabled={active}
      onChange={e=>setAudio(e.target.checked)}/>Записать звук</label>
    </div>
+   {canRestoreMode&&<div role="status" className="rounded-md border border-border bg-secondary p-2">
+     После смены камеры или пересоздания экрана прежний режим не подтверждён.
+     {mode.choices.length>0 ? <Button type="button" size="sm" variant="outline" className="ml-2"
+       disabled={busy||nativeRecorderOwnsCamera(status?.state??"")}
+       onClick={applyCompatibleMode}>Выбрать доступный {mode.size} / {mode.fps} FPS</Button>
+       : <span> Камера не сообщает совместимый режим записи.</span>}
+   </div>}
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {active&&status&&<div className="grid gap-3 rounded-lg border border-border p-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
