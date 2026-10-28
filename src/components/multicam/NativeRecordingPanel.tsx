@@ -14,6 +14,8 @@ export function NativeRecordingPanel(){
  const [status,setStatus]=useState<Status|null>(null);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
+ // Keep the interface responsive to hardware reconnects while never dropping
+ // the selected camera or interrupting an active Android recording session.
  const [preview,setPreview]=useState("");
  const tapPreview=async(e:MouseEvent<HTMLImageElement>)=>{
   if(!status?.tapAfSupported&&!status?.tapAeSupported)return;
@@ -90,6 +92,15 @@ export function NativeRecordingPanel(){
  if(!isNative())return null;
  const current=cameras.find(x=>x.cameraId===camera);
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
+ const selectedOutput=current?.videoOutputSizes?.find(x=>`${x.width}x${x.height}`===resolution);
+ const maxSensorFps=selectedOutput?.theoreticalMaxFps;
+ const fpsChoices=[24,25,30,60].filter(value=>
+   (maxSensorFps===undefined||!Number.isFinite(maxSensorFps)||value<=maxSensorFps+0.5) &&
+   (!current?.fpsRanges?.length||current.fpsRanges.some(range=>{
+     const [low,high]=range.split("-").map(Number);
+     return Number.isFinite(low)&&Number.isFinite(high)&&value>=low!&&value<=high!;
+   })));
+ const availableFps=fpsChoices.length?fpsChoices:[fps];
  const openPreview=async()=>{
   if(busy || !camera)return;
   setBusy(true);setError("");
@@ -107,6 +118,8 @@ export function NativeRecordingPanel(){
     throw Error("Android не предоставил разрешение на камеру/микрофон.");
    if(!window.confirm("Запустить отдельную нативную запись Camera2? Обычный предпросмотр WebView должен быть закрыт. Запись продолжается при пересоздании интерфейса, но не гарантирована при гибели процесса Android."))return;
    const [width = 0,height = 0]=resolution.split("x").map(Number);
+   if(!sizes.includes(resolution))throw Error("Это разрешение не объявлено выбранной камерой.");
+   if(!fpsChoices.includes(fps))throw Error("Разрешение и FPS не совместимы по опубликованным ограничениям Camera2. Выберите доступную комбинацию.");
    setStatus(await bridge.start({cameraId:camera,width,height,fps,audio}));
   }catch(e){setError(String(e));}
   finally{setBusy(false);}
@@ -151,7 +164,7 @@ export function NativeRecordingPanel(){
      </select></label>
     <label>FPS<select className="w-full bg-background p-2" value={fps} disabled={active}
      onChange={e=>setFps(Number(e.target.value))}>
-      {[24,25,30,60].map(x=><option key={x} value={x}>{x}</option>)}
+      {availableFps.map(x=><option key={x} value={x}>{x}</option>)}
      </select></label>
     <label className="flex items-center gap-2"><input type="checkbox" checked={audio} disabled={active}
      onChange={e=>setAudio(e.target.checked)}/>Записать звук</label>
