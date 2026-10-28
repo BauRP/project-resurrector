@@ -855,7 +855,7 @@ public class NativeCaptureService extends Service {
             if (tryDirect && directPreviewOwnerId != null)
                 texture = directPreviewTexture;
         }
-        if (texture != null && config != null) {
+        if (texture != null && config != null && !stopRequested && token == generation) {
             try {
                 Size[] sizes = config.getOutputSizes(SurfaceTexture.class);
                 Size selected = null;
