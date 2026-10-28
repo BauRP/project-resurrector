@@ -80,6 +80,11 @@ public class NativeCaptureService extends Service {
     private static String savedUri = "";
     private static String chosenStabilization = "unknown";
     private static boolean stabilizationResultSeen = false;
+    // Preview results are not evidence for the actual encoded recording.
+    private static volatile int recordingEisFrames = 0;
+    private static volatile int recordingOisFrames = 0;
+    private static volatile int recordingStabilizationOffFrames = 0;
+    private static volatile int recordingStabilizationUnknownFrames = 0;
     private static long recordingStartedAt = 0L;
     private static int recordedOrientation = -1;
     private static String selectedCameraId = "";
@@ -519,17 +524,23 @@ public class NativeCaptureService extends Service {
                         sensorWindowFrames=0;
                     }
                 }
-                if(stabilizationResultSeen)return;
+                if(!"recording".equals(state))return;
                 Integer eis=result.get(CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE);
                 Integer ois=result.get(CaptureResult.LENS_OPTICAL_STABILIZATION_MODE);
-                if(eis!=null||ois!=null){
+                if(eis==null&&ois==null){
+                    recordingStabilizationUnknownFrames++;
+                }else if(eis!=null&&eis==CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE_ON){
                     stabilizationResultSeen=true;
-                    chosenStabilization=eis!=null &&
-                        eis==CaptureResult.CONTROL_VIDEO_STABILIZATION_MODE_ON
-                        ? "EIS CaptureResult ON" :
-                        ois!=null && ois==CaptureResult.LENS_OPTICAL_STABILIZATION_MODE_ON
-                        ? "OIS CaptureResult ON":"CaptureResult stabilization OFF";
-                    publish(state,lastMessage);
+                    recordingEisFrames++;
+                    chosenStabilization="EIS CaptureResult ON during recording";
+                }else if(ois!=null&&ois==CaptureResult.LENS_OPTICAL_STABILIZATION_MODE_ON){
+                    stabilizationResultSeen=true;
+                    recordingOisFrames++;
+                    chosenStabilization="OIS CaptureResult ON during recording";
+                }else{
+                    stabilizationResultSeen=true;
+                    recordingStabilizationOffFrames++;
+                    chosenStabilization="CaptureResult stabilization OFF during recording";
                 }
             }
         };
@@ -676,6 +687,16 @@ public class NativeCaptureService extends Service {
                 : recordedOrientation);
             out.put("stabilization", stab);
             out.put("stabilizationCaptureResultObserved", observed);
+            android.content.SharedPreferences stabilizationPrefs =
+                context.getSharedPreferences(STORE,MODE_PRIVATE);
+            out.put("recordingEisFrames",runningInstance==null
+                ? stabilizationPrefs.getInt("recordingEisFrames",0):recordingEisFrames);
+            out.put("recordingOisFrames",runningInstance==null
+                ? stabilizationPrefs.getInt("recordingOisFrames",0):recordingOisFrames);
+            out.put("recordingStabilizationOffFrames",runningInstance==null
+                ? stabilizationPrefs.getInt("recordingStabilizationOffFrames",0):recordingStabilizationOffFrames);
+            out.put("recordingStabilizationUnknownFrames",runningInstance==null
+                ? stabilizationPrefs.getInt("recordingStabilizationUnknownFrames",0):recordingStabilizationUnknownFrames);
             out.put("savedBytes", !path.isEmpty() && new File(path).isFile()
                 ? new File(path).length() : 0L);
             out.put("savedUri", uri);
@@ -745,6 +766,10 @@ public class NativeCaptureService extends Service {
                 .putString("path", savedPath).putString("uri", savedUri)
                 .putString("stabilization", chosenStabilization)
                 .putBoolean("stabilizationObserved", stabilizationResultSeen)
+                .putInt("recordingEisFrames",recordingEisFrames)
+                .putInt("recordingOisFrames",recordingOisFrames)
+                .putInt("recordingStabilizationOffFrames",recordingStabilizationOffFrames)
+                .putInt("recordingStabilizationUnknownFrames",recordingStabilizationUnknownFrames)
                 .putLong("started", recordingStartedAt)
                 .putString("cameraId", selectedCameraId)
                 .putInt("width", selectedWidth)
@@ -874,6 +899,8 @@ public class NativeCaptureService extends Service {
         synchronized (STATE_LOCK) {
             savedPath = ""; savedUri = ""; chosenStabilization = "unknown";
             stabilizationResultSeen = false; recordingStartedAt = 0L;
+            recordingEisFrames=0;recordingOisFrames=0;
+            recordingStabilizationOffFrames=0;recordingStabilizationUnknownFrames=0;
             recordedOrientation = -1;
             pausedAtMs = 0L; totalPausedMs = 0L; finishedDurationMs = 0L;
             mp4TracksInspected = false; mp4HasVideoTrack = false;
