@@ -25,6 +25,6 @@ describe("native Camera2 per-mode recorded evidence",()=>{
  it("marks interrupted recording with truthful warning",()=>{
   const r=nativeRecordedModeEvidence({...base,state:"saved_interrupted"},12345);
   expect(r?.message).toContain("прерывание");
-  expect(r?.state).toBe("recorded");
+  expect(r?.state).toBe("unknown");
  });
 });
