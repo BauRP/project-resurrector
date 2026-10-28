@@ -400,6 +400,12 @@ export function NativeRecordingPanel(){
      Проверены только ограниченные участки, не вся запись.
    </p>}
    {status&&["saved","saved_interrupted"].includes(status.state)&&!status.mp4TracksInspected&&<p role="status">Проверка видеодорожек недоступна: их наличие не подтверждено.</p>}
+   {status&&["recording","paused","saved","saved_interrupted"].includes(status.state)&&<p role="status">
+     Наблюдения стабилизации в ходе записи: EIS — {status.recordingEisFrames??0} кадров,
+     OIS — {status.recordingOisFrames??0}, выключена — {status.recordingStabilizationOffFrames??0},
+     неизвестно — {status.recordingStabilizationUnknownFrames??0}.
+     Это данные CaptureResult, а не оценка визуальной плавности готового MP4.
+   </p>}
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {active&&status&&<div className="grid gap-3 rounded-lg border border-border p-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
       <label className="space-y-1">Увеличение: {(status.zoom??1).toFixed(1)}×
