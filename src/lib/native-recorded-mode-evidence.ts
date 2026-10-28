@@ -49,6 +49,8 @@ export function nativeRecordedModeEvidence(
     !validCount(foldPassed,foldTotal,8) ||
     (middleTotal>0 && middlePassed<middleTotal) ||
     (foldTotal>0 && foldPassed<foldTotal);
+  const omitted=status.foldCheckpointsOmitted??0;
+  const invalidOmitted=!Number.isSafeInteger(omitted)||omitted<0;
   const skippedPoints=status.mp4FoldPointsSkipped??0;
   const invalidSkipped=!Number.isSafeInteger(skippedPoints)||skippedPoints<0||skippedPoints>8;
   const ptsChecks=status.mp4FoldPtsSpanChecks??0;
@@ -62,7 +64,7 @@ export function nativeRecordedModeEvidence(
   const missingFoldSpan = foldTotal > 0 && ptsChecks < foldTotal;
   const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
   const suspiciousFoldPts = invalidFoldPts || invalidSkipped || skippedPoints>0 ||
-    ptsLarge>0 || missingFoldSpan || missingCheckpointAudit;
+    ptsLarge>0 || missingFoldSpan || missingCheckpointAudit || invalidOmitted || omitted>0;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -91,7 +93,9 @@ export function nativeRecordedModeEvidence(
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
-    suspiciousFoldPts ? (skippedPoints>0
+    suspiciousFoldPts ? (omitted>0
+      ? "Не все изменения положения проверены: журнал MP4 ограничен восемью точками."
+      : skippedPoints>0
       ? "Часть отмеченных складываний MP4 была пропущена как непригодная для проверки."
       : missingCheckpointAudit
       ? "Проверка промежуточных кадров MP4 не завершена."
