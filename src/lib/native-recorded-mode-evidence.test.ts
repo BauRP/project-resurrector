@@ -25,6 +25,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,fps:30,mp4SampledFps:-1,mp4TailSampledFps:-1},12345)?.state)
     .toBe("recorded");
  });
+ it("does not certify a long MP4 if its tail cannot decode",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:10000,mp4TailFrameDecodable:false},12345)?.state)
+    .toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:10000,mp4TailFrameDecodable:true},12345)?.state)
+    .toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:1000,mp4TailFrameDecodable:false},12345)?.state)
+    .toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
