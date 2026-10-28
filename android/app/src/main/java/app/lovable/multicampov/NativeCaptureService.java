@@ -799,6 +799,21 @@ public class NativeCaptureService extends Service {
                     if (size.getWidth() == width && size.getHeight() == height)
                         supported = true;
             if (!supported) throw new IllegalArgumentException("Камера не поддерживает это разрешение");
+            // A reported MediaRecorder resolution and a separate AE FPS range
+            // do NOT prove that this exact sensor output can reach that FPS.
+            // Reject combinations contradicted by the advertised minimum frame duration.
+            // This is a conservative preflight; final MP4 still needs verification.
+            try {
+                long minimumNs = map.getOutputMinFrameDuration(MediaRecorder.class,
+                    new Size(width, height));
+                if (minimumNs > 0L && (double) minimumNs * fps > 1_020_000_000.0)
+                    throw new IllegalArgumentException("Выбранный FPS превышает скорость сенсора для "
+                        + width + "×" + height + "; требуется другой режим");
+            } catch (IllegalArgumentException error) {
+                if (error.getMessage() != null &&
+                    error.getMessage().startsWith("Выбранный FPS")) throw error;
+                // OEM may omit the optional duration: leave availability unknown.
+            }
             Range<Integer>[] ranges = info.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
             Range<Integer> selected = null;
             if (ranges != null) for (Range<Integer> range : ranges)
@@ -1108,12 +1123,21 @@ public class NativeCaptureService extends Service {
                 if (output == null) throw new IllegalStateException("MediaStore write failed");
                 byte[] buf = new byte[65536];
                 int size;
-                while ((size = input.read(buf)) != -1) output.write(buf,0,size);
+                long copied = 0L;
+                while ((size = input.read(buf)) != -1) {
+                    output.write(buf,0,size);
+                    copied += size;
+                }
+                output.flush();
+                // A partial copy is never a successful Gallery publication.
+                if (copied != source.length() || copied < 1024)
+                    throw new IllegalStateException("MediaStore: неполное копирование MP4");
             }
             if (Build.VERSION.SDK_INT >= 29) {
                 ContentValues pending = new ContentValues();
                 pending.put(MediaStore.Video.Media.IS_PENDING, 0);
-                getContentResolver().update(dest,pending,null,null);
+                if (getContentResolver().update(dest,pending,null,null) <= 0)
+                    throw new IllegalStateException("MediaStore не подтвердил публикацию");
             }
             return dest.toString();
         } catch(Exception error) {
