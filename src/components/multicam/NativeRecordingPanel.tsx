@@ -366,7 +366,7 @@ export function NativeRecordingPanel(){
    {status&&["recording","paused","saved","saved_interrupted"].includes(status.state)&&
      <p role="status">Нативные наблюдения складного экрана во время записи:
        {status.foldObservations??0} событий WindowManager;
-       {status.foldPostureChanges??0} изменений наблюдаемой геометрии/положения.
+       {status.foldPostureChanges??0} изменений положения шарниров; {status.foldGeometryOnlyChanges??0} изменений только координат шарниров.
        {status.lastFoldAt? ` Последнее изменение: ${new Date(status.lastFoldAt).toLocaleTimeString()}.`:""}
        {status.foldPostureChanges!==undefined&&status.foldPostureChanges>0&&
          ` После изменений положения обнаружено ${status.foldNearbyCallbackGaps??0} задержек callback Camera2 более 250 мс за первые 3 секунды; максимальная ${status.maxFoldNearbyCallbackGapMs??0} мс.`}
