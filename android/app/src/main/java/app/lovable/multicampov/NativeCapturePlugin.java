@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.view.TextureView;
+import android.view.MotionEvent;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import android.webkit.WebView;
@@ -75,6 +76,18 @@ public class NativeCapturePlugin extends Plugin {
        directOwner=owner;
        directView=new TextureView(getContext());
        directView.setOpaque(true);
+       // TextureView lives ABOVE the WebView; JS clicks below it never arrive.
+       // Route touches from the real Android surface to the same Camera2
+       // controller used by JPEG preview, never opening another camera.
+       directView.setOnTouchListener((view,event)->{
+         if(event.getActionMasked()!=MotionEvent.ACTION_UP)return true;
+         if(view.getWidth()<=0||view.getHeight()<=0)return true;
+         final float nx=event.getX()/view.getWidth();
+         final float ny=event.getY()/view.getHeight();
+         if(Float.isFinite(nx)&&Float.isFinite(ny)&&nx>=0f&&nx<=1f&&ny>=0f&&ny<=1f)
+           NativeCaptureService.tapToMeter(nx,ny,accepted->{});
+         return true;
+       });
        directView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){
          @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
            if(owner.equals(directOwner))NativeCaptureService.setDirectPreviewTexture(owner,texture);
