@@ -127,6 +127,57 @@ public class NativeCaptureService extends Service {
     private static int mp4FoldProbes = 0, mp4FoldMatched = 0;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
+    /** Recover an attempt that belonged to a dead Android process.
+     * Never reattach a stale MediaRecorder or mark an orphan MP4 playable.
+     * This can also run before the camera Service is started, when opening
+     * the evidence history from the WebView. Repeated calls are idempotent.
+     */
+    public static void recoverAbandonedRecording(Context context) {
+        synchronized (STATE_LOCK) {
+            if (runningInstance != null) return;
+            android.content.SharedPreferences preferences =
+                context.getSharedPreferences(STORE, MODE_PRIVATE);
+            String previous = preferences.getString("state", "idle");
+            if ("previewing".equals(previous)) {
+                preferences.edit().putString("state","idle")
+                    .putString("message","Предпросмотр завершён вместе с процессом Android")
+                    .commit();
+                return;
+            }
+            if (!("starting".equals(previous)||"recording".equals(previous)||
+                "paused".equals(previous)||"stopping".equals(previous))) return;
+            String reason="Android завершил процесс во время нативной записи ("+
+                previous+"). Файл и непрерывность кадров не проверены.";
+            com.getcapacitor.JSObject recovered = new com.getcapacitor.JSObject();
+            recovered.put("captureId",preferences.getLong("captureId",0L));
+            recovered.put("state","interrupted");
+            recovered.put("message",reason);
+            recovered.put("cameraId",preferences.getString("cameraId",""));
+            recovered.put("width",preferences.getInt("width",0));
+            recovered.put("height",preferences.getInt("height",0));
+            recovered.put("fps",preferences.getInt("fps",0));
+            recovered.put("startedAt",preferences.getLong("started",0L));
+            recovered.put("recordedDurationMs",0L); // Unknown after crash.
+            recovered.put("savedBytes",0L); // Do not certify an orphan file.
+            recovered.put("savedUri","");
+            recovered.put("audioRequested",preferences.getBoolean("recordAudio",false));
+            recovered.put("foldObservations",preferences.getInt("foldObservations",0));
+            recovered.put("foldPostureChanges",preferences.getInt("foldPostureChanges",0));
+            recovered.put("lastFoldAt",preferences.getLong("lastFoldAt",0L));
+            recovered.put("foldNearbyCallbackGaps",
+                preferences.getInt("foldNearbyCallbackGaps",0));
+            recovered.put("maxFoldNearbyCallbackGapMs",
+                preferences.getLong("maxFoldNearbyCallbackGapMs",0L));
+            // Journal first: if interrupted during recovery, the next call
+            // can safely retry the same captureId without duplicating it.
+            NativeCaptureAuditStore.append(context,recovered);
+            preferences.edit().putString("state","interrupted")
+                .putString("message",reason)
+                .putString("uri","")
+                .commit();
+        }
+    }
+
     public static void observeFoldDuringRecording(int hingeCount,String signature) {
         if (signature==null||signature.length()>400||hingeCount<0||hingeCount>16)return;
         synchronized(STATE_LOCK){
@@ -859,6 +910,21 @@ public class NativeCaptureService extends Service {
     }
     @Override public void onCreate() {
         super.onCreate();
+        recoverAbandonedRecording(this);
+        android.content.SharedPreferences persisted=getSharedPreferences(STORE,MODE_PRIVATE);
+        synchronized (STATE_LOCK) {
+            currentCaptureId=Math.max(currentCaptureId,persisted.getLong("captureId",0L));
+            if("idle".equals(state) &&
+                "interrupted".equals(persisted.getString("state","idle"))) {
+                state="interrupted";
+                lastMessage=persisted.getString("message","Запись прервана");
+                selectedCameraId=persisted.getString("cameraId","");
+                selectedWidth=persisted.getInt("width",0);
+                selectedHeight=persisted.getInt("height",0);
+                selectedFps=persisted.getInt("fps",0);
+                recordingStartedAt=persisted.getLong("started",0L);
+            }
+        }
         workerThread = new HandlerThread("Native-Camera2-Record");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
