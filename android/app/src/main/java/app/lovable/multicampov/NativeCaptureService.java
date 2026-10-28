@@ -107,6 +107,9 @@ public class NativeCaptureService extends Service {
     private static int recordingPostureChanges = 0;
     private static long recordingLastFoldAt = 0L;
     private static String recordingLastFoldSignature = "";
+    private static long recordingLastFoldElapsedMs = -1L;
+    private static int foldNearbyCameraCallbackGaps = 0;
+    private static long maxFoldNearbyCallbackGapMs = 0L;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
 
     public static void observeFoldDuringRecording(int hingeCount,String signature) {
@@ -119,12 +122,15 @@ public class NativeCaptureService extends Service {
                 !signature.equals(recordingLastFoldSignature)){
                 recordingPostureChanges++;
                 recordingLastFoldAt=System.currentTimeMillis();
+                recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
             }
             recordingLastFoldSignature=signature;
             service.getSharedPreferences(STORE,MODE_PRIVATE).edit()
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
-                .putLong("lastFoldAt",recordingLastFoldAt).apply();
+                .putLong("lastFoldAt",recordingLastFoldAt)
+                .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
+                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs).apply();
         }
     }
 
@@ -145,6 +151,7 @@ public class NativeCaptureService extends Service {
     private long sensorWindowFirstNs = 0L;
     private int sensorWindowFrames = 0;
     private long lastSensorNs = 0L;
+    private long lastCaptureCallbackElapsedMs = -1L;
     private volatile boolean previewConsumerVisible;
     /** An Activity contributes only a surface, not a second Camera2 owner.
      * Unmounting its surface cannot terminate a MediaRecorder session.
@@ -476,6 +483,19 @@ public class NativeCaptureService extends Service {
                 // These are SENSOR capture timestamps, NOT encoded MP4 FPS.
                 // Keep a sliding bounded window and report unknown until
                 // multiple valid sensor timestamps were observed.
+                // Callback gaps near a fold are independent of encoded MP4 continuity.
+                long callbackAt=android.os.SystemClock.elapsedRealtime();
+                if("recording".equals(state)&&lastCaptureCallbackElapsedMs>0 &&
+                    recordingLastFoldElapsedMs>0 &&
+                    callbackAt>=recordingLastFoldElapsedMs &&
+                    callbackAt-recordingLastFoldElapsedMs<=3000L){
+                    long gap=callbackAt-lastCaptureCallbackElapsedMs;
+                    if(gap>250L&&gap<60000L){
+                        foldNearbyCameraCallbackGaps++;
+                        maxFoldNearbyCallbackGapMs=Math.max(maxFoldNearbyCallbackGapMs,gap);
+                    }
+                }
+                lastCaptureCallbackElapsedMs=callbackAt;
                 Long sensorTime=result.get(CaptureResult.SENSOR_TIMESTAMP);
                 if(sensorTime!=null&&sensorTime>0L){
                     sensorFramesSeen++;
@@ -702,6 +722,10 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("foldPostureChanges",0):recordingPostureChanges);
             out.put("lastFoldAt", runningInstance==null
                 ? previous.getLong("lastFoldAt",0L):recordingLastFoldAt);
+            out.put("foldNearbyCallbackGaps",runningInstance==null
+                ? previous.getInt("foldNearbyCallbackGaps",0):foldNearbyCameraCallbackGaps);
+            out.put("maxFoldNearbyCallbackGapMs",runningInstance==null
+                ? previous.getLong("maxFoldNearbyCallbackGapMs",0L):maxFoldNearbyCallbackGapMs);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -746,7 +770,9 @@ public class NativeCaptureService extends Service {
                 .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable)
                 .putInt("foldObservations",recordingFoldObservations)
                 .putInt("foldPostureChanges",recordingPostureChanges)
-                .putLong("lastFoldAt",recordingLastFoldAt).apply();
+                .putLong("lastFoldAt",recordingLastFoldAt)
+                .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
+                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs).apply();
         }
     }
     @Override public void onCreate() {
@@ -855,6 +881,8 @@ public class NativeCaptureService extends Service {
             mp4AvStartOffsetMs = 0L;mp4AvStartMeasured = false;
             recordingFoldObservations=0;recordingPostureChanges=0;
             recordingLastFoldAt=0L;recordingLastFoldSignature="";
+            recordingLastFoldElapsedMs=-1L;foldNearbyCameraCallbackGaps=0;
+            maxFoldNearbyCallbackGapMs=0L;lastCaptureCallbackElapsedMs=-1L;
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
@@ -1310,6 +1338,7 @@ public class NativeCaptureService extends Service {
         previewSessionRevision++;
         recentSensorFps=-1f;sensorWindowFrames=0;
         sensorWindowFirstNs=0L;lastSensorNs=0L;
+        lastCaptureCallbackElapsedMs=-1L;
         liveRequest=null;
         liveCallback=null;
         latestPreviewJpeg = null; latestPreviewAt = 0; lastPreviewAttemptAt = 0;
