@@ -91,6 +91,10 @@ public class NativeCaptureService extends Service {
     private static String selectedCameraId = "";
     private static int selectedWidth = 0, selectedHeight = 0, selectedFps = 0;
     private static long pausedAtMs = 0L, totalPausedMs = 0L, finishedDurationMs = 0L;
+    // Monotonic clock: wall time and network synchronization cannot change
+    // a recording duration or the position of a fold checkpoint.
+    private static long recordingStartedElapsedMs=-1L;
+    private static long pausedAtElapsedMs=-1L, totalPausedElapsedMs=0L;
     // Post-encoder MP4 inspection, not requested Camera2 or preview settings.
     private static boolean mp4TracksInspected = false;
     private static boolean mp4HasAudioTrack = false;
@@ -139,8 +143,10 @@ public class NativeCaptureService extends Service {
                         recordingFoldPointsMs.split(",").length<8)){
                     // Paused duration is excluded. These wall-clock positions
                     // are approximate encoder-time checkpoints, not proof.
-                    long activeMs=Math.max(0L,recordingLastFoldAt-
-                        recordingStartedAt-totalPausedMs);
+                    long activeMs=recordingStartedElapsedMs>=0L
+                        ?Math.max(0L,recordingLastFoldElapsedMs-
+                            recordingStartedElapsedMs-totalPausedElapsedMs)
+                        :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
                     recordingFoldPointsMs +=
                         (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
                 }
@@ -681,6 +687,13 @@ public class NativeCaptureService extends Service {
             long end = "recording".equals(value) ? System.currentTimeMillis() :
                 "paused".equals(value) ? pausedAt : started + finished + excluded;
             long elapsed = started > 0 ? Math.max(0L, end - started - excluded) : 0L;
+            if(runningInstance!=null && recordingStartedElapsedMs>=0L &&
+                ("recording".equals(value)||"paused".equals(value))){
+                long nowElapsed="paused".equals(value)&&pausedAtElapsedMs>=0L
+                    ?pausedAtElapsedMs:android.os.SystemClock.elapsedRealtime();
+                elapsed=Math.max(0L,nowElapsed-recordingStartedElapsedMs-
+                    totalPausedElapsedMs);
+            }
             out.put("recordedDurationMs", "recording".equals(value) || "paused".equals(value)
                 ? elapsed : finished);
             out.put("tapAfSupported",runningInstance!=null && runningInstance.maxAfRegions>0 &&
@@ -881,6 +894,7 @@ public class NativeCaptureService extends Service {
             encoder.pause();
             encoderPaused = true;
             pausedAtMs = System.currentTimeMillis();
+            pausedAtElapsedMs=android.os.SystemClock.elapsedRealtime();
             publish("paused", "Нативная запись на паузе, Camera2 остаётся открытой");
         } catch (RuntimeException error) {
             publish("recording", "Пауза не поддерживается кодировщиком: " + error.getMessage());
@@ -891,6 +905,10 @@ public class NativeCaptureService extends Service {
         try {
             encoder.resume();
             totalPausedMs += Math.max(0L, System.currentTimeMillis() - pausedAtMs);
+            if(pausedAtElapsedMs>=0L)
+                totalPausedElapsedMs+=Math.max(0L,
+                    android.os.SystemClock.elapsedRealtime()-pausedAtElapsedMs);
+            pausedAtElapsedMs=-1L;
             pausedAtMs = 0L;
             encoderPaused = false;
             publish("recording", "Нативная запись возобновлена в тот же MP4");
@@ -942,6 +960,8 @@ public class NativeCaptureService extends Service {
             recordingStabilizationOffFrames=0;recordingStabilizationUnknownFrames=0;
             recordedOrientation = -1;
             pausedAtMs = 0L; totalPausedMs = 0L; finishedDurationMs = 0L;
+            recordingStartedElapsedMs=-1L;pausedAtElapsedMs=-1L;
+            totalPausedElapsedMs=0L;
             mp4TracksInspected = false; mp4HasVideoTrack = false;
             mp4HasAudioTrack = false; mp4VideoWidth = 0; mp4VideoHeight = 0;
             mp4VideoSamples = 0; mp4AudioSamples = 0;
@@ -1334,6 +1354,7 @@ public class NativeCaptureService extends Service {
                                         encoderStarted = true;
                                         encoderPaused = false;
                                         recordingStartedAt = System.currentTimeMillis();
+                                        recordingStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
                                         publish("recording",
                                             "Нативная Camera2 запись запущена. Контроль через уведомление.");
                                     } catch(Exception error) { fail(error); }
@@ -1383,6 +1404,7 @@ public class NativeCaptureService extends Service {
                                                         }
                                                         encoder.start();encoderStarted=true;encoderPaused=false;
                                                         recordingStartedAt=System.currentTimeMillis();
+                                        recordingStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
                                                         publish("recording",
                                                             "MP4 записывается; параллельный предпросмотр камерой не поддержан");
                                                     } catch(Exception error){fail(error);}
@@ -1742,8 +1764,15 @@ public class NativeCaptureService extends Service {
         }
         boolean previouslyRecording = encoderStarted;
         long endedAt = encoderPaused ? pausedAtMs : System.currentTimeMillis();
-        finishedDurationMs = recordingStartedAt > 0L
-            ? Math.max(0L, endedAt - recordingStartedAt - totalPausedMs) : 0L;
+        if(recordingStartedElapsedMs>=0L){
+            long endElapsed=encoderPaused&&pausedAtElapsedMs>=0L
+                ?pausedAtElapsedMs:android.os.SystemClock.elapsedRealtime();
+            finishedDurationMs=Math.max(0L,endElapsed-recordingStartedElapsedMs-
+                totalPausedElapsedMs);
+        }else{
+            finishedDurationMs=recordingStartedAt>0L
+                ?Math.max(0L,endedAt-recordingStartedAt-totalPausedMs):0L;
+        }
         if (!"error".equals(state)) publish("stopping", "Закрываю и сохраняю MP4");
         releaseCamera();
         boolean valid = false;
