@@ -42,6 +42,16 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4DurationMs:1000,mp4TailFrameDecodable:false},12345)?.state)
     .toBe("recorded");
  });
+ it("does not certify failed middle or real fold checkpoints",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:2},12345)?.state)
+    .toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:3,
+    mp4FoldProbes:2,mp4FoldMatched:1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:3,
+    mp4FoldProbes:2,mp4FoldMatched:2},12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:0,mp4FoldMatched:0},12345)?.message)
+    .toContain("не подтверждены");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
