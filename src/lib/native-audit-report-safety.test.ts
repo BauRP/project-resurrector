@@ -36,6 +36,13 @@ describe("recovered native fold and camera report safety",()=>{
     expect(parsed.entries[0].fold.checkpointLimitOmissions).toBe(2);
     expect(parsed.entries[0].fold.postureChangesWhilePaused).toBe(4);
   });
+  it("preserves unknown observer continuity without leaking Android identifiers",()=>{
+    const result=JSON.parse(nativeAnonymizedAuditReport({
+      entries:[{state:"saved_interrupted",foldObserverGap:true}],
+      omittedEarlier:0,maxEntries:24,
+    }));
+    expect(result.entries[0].fold.observerGap).toBe(true);
+  });
   it("separates real hinge posture from coordinate-only changes",()=>{
     const parsed=JSON.parse(nativeAnonymizedAuditReport({
       entries:[{state:"saved",foldPostureChanges:2,foldGeometryOnlyChanges:19}],
