@@ -23,6 +23,17 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain('recovered.put("savedBytes",0L)');
   expect(service).toContain('recovered.put("state","interrupted")');
  });
+ it("clears stale MP4 claims after recovery of an abandoned recorder",()=>{
+  for(const token of [
+    '.putString("path","")','.putString("uri","")',
+    '.putBoolean("mp4TracksInspected",false)',
+    '.putBoolean("mp4HasVideoTrack",false)',
+    '.putBoolean("mp4CheckpointAuditCompleted",false)',
+    '.putInt("mp4VideoSamples",0)',
+    '.putLong("mp4DurationMs",-1L)']){
+    expect(service).toContain(token);
+  }
+ });
  it("exports only explicit bounded counters without raw media identifiers",()=>{
   expect(report).toContain('item["foldGeometryOnlyChanges"]');
   expect(report).toContain('item["mp4FoldPointsSkipped"]');
