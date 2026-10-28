@@ -69,11 +69,18 @@ export function NativeRecordingPanel(){
    const ownerId=directLease.current;
    let lastPosition:PreviewRect|null=null;
    let lastVisible=false;
-   const hide=async()=>{
+   let updateChain=Promise.resolve();
+   // Serialize visibility/position operations: a late native 'show' must
+   // never resurrect an Activity overlay after hide or unmount.
+   const enqueue=(operation:()=>Promise<void>)=>{
+     updateChain=updateChain.then(operation,operation).catch(()=>undefined);
+     return updateChain;
+   };
+   const hide=()=>enqueue(async()=>{
      if(!lastVisible)return;
      lastVisible=false;lastPosition=null;
      await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
-   };
+   });
    const sync=async()=>{
      if(!live)return;
      const viewport={width:document.documentElement.clientWidth,height:window.innerHeight};
@@ -82,9 +89,12 @@ export function NativeRecordingPanel(){
      if(document.hidden||!safe){await hide();return;}
      if(lastVisible&&samePreviewPlacement(safe,lastPosition))return;
      try {
-       await bridge.setDirectPreview({ownerId,visible:true,...safe,viewportWidth:viewport.width});
-       if(!live){await hide();return;}
-       lastVisible=true;lastPosition=safe;
+       await enqueue(async()=>{
+         if(!live||document.hidden)return;
+         await bridge.setDirectPreview({ownerId,visible:true,...safe,viewportWidth:viewport.width});
+         lastVisible=true;lastPosition=safe;
+       });
+       if(!live)return;
        setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
      }catch{
        if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
@@ -102,7 +112,11 @@ export function NativeRecordingPanel(){
    return ()=>{live=false;observer?.disconnect();window.removeEventListener("resize",resized);
      window.removeEventListener("scroll",scrolling,true);
      document.removeEventListener("visibilitychange",visibility);
-     void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);};
+     // Always queue a final hide, even when the first show is pending.
+     void enqueue(async()=>{
+       lastVisible=false;lastPosition=null;
+       await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
+     });};
  },[directEnabled]);
  const tapDirect=async(e:MouseEvent<HTMLDivElement>)=>{
    if(!directEnabled||!status?.directPreviewActive||
