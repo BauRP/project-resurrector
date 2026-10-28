@@ -79,6 +79,13 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(r?.state).toBe("unknown");
   expect(r?.message).toContain("не удалось проверить");
  });
+ it("never certifies MP4 with fold checkpoints skipped at file boundaries",()=>{
+  const result=nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:true,
+    mp4FoldPointsSkipped:1,mp4FoldProbes:0,mp4FoldPtsSpanChecks:0},12345);
+  expect(result?.state).toBe("unknown");
+  expect(result?.message).toContain("пропущена");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldPointsSkipped:-1},12345)?.state).toBe("unknown");
+ });
  it("cannot confirm a recording when native checkpoint scanning aborted",()=>{
   const failure=nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:false},12345);
   expect(failure?.state).toBe("unknown");
