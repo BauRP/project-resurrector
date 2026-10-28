@@ -17,7 +17,7 @@ export function nativeRecordedModeEvidence(
       !Number.isFinite(checkedAt) || checkedAt <= 0) return null;
   const bytes = status.savedBytes;
   const filePresent = Number.isSafeInteger(bytes) && bytes >= 1024;
-  const track = status.mp4TracksInspected && status.mp4HasVideoTrack;
+  const track = status.mp4TracksInspected === true && status.mp4HasVideoTrack === true;
   const decoded = status.mp4FirstFrameDecodable === true;
   const videoSamples = status.mp4VideoSamples ?? 0;
   const audioSamples = status.mp4AudioSamples ?? 0;
@@ -62,7 +62,8 @@ export function nativeRecordedModeEvidence(
   // A video file with confirmed decoding, dimensions and samples is RECORDED,
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
-    videoSamples > 0 && dimensionsMatch && !anomalies && !audioIncomplete &&
+    Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
+    dimensionsMatch && !anomalies && !audioIncomplete &&
     !measuredFpsMismatch && !tailDecodeFailure && !checkpointMismatch;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
