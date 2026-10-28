@@ -7,6 +7,7 @@ export interface NativeCaptureStatus {
  audioRequested?:boolean;mp4TracksInspected?:boolean;mp4HasVideoTrack?:boolean;mp4HasAudioTrack?:boolean;
  mp4VideoWidth?:number;mp4VideoHeight?:number;
  mp4VideoSamples?:number;mp4AudioSamples?:number;mp4VideoTimestampRollbacks?:number;
+ mp4DurationMs?:number;mp4TailVideoSamples?:number;mp4TailSampledFps?:number;mp4TailNearEnd?:boolean;
  mp4VideoTimestampDuplicates?:number;mp4VideoSampleLimitReached?:boolean;mp4SampledFps?:number;
  zoom?:number;maxZoom?:number;exposureIndex?:number;exposureMin?:number;exposureMax?:number;exposureStep?:number;
  torchAvailable?:boolean;torchEnabled?:boolean;
