@@ -239,6 +239,8 @@ export function NativeRecordingPanel(){
        : <span> Камера не сообщает совместимый режим записи.</span>}
    </div>}
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
+   {status?.mp4TracksInspected&&<p role="status">Проверка сохранённого MP4: видеодорожка {status.mp4HasVideoTrack?"обнаружена":"не обнаружена"}, звуковая дорожка {status.mp4HasAudioTrack?"обнаружена":"не обнаружена"}. {status.mp4VideoWidth&&status.mp4VideoHeight?`Размер видеофайла: ${status.mp4VideoWidth}×${status.mp4VideoHeight}.`:""} Это проверка дорожек, а не каждого кадра или качества звука.</p>}
+   {status&&["saved","saved_interrupted"].includes(status.state)&&!status.mp4TracksInspected&&<p role="status">Проверка видеодорожек недоступна: их наличие не подтверждено.</p>}
    {status&&<p>Ориентация MP4: {status.orientationDegrees ?? "неизвестно"}°. Стабилизация: {status.stabilization} {status.stabilizationCaptureResultObserved?"(CaptureResult получен)":"(не подтверждена)"}. Записано: {status.savedBytes} байт</p>}
    {active&&status&&<div className="grid gap-3 rounded-lg border border-border p-2" style={{gridTemplateColumns:"repeat(auto-fit,minmax(min(100%,14rem),1fr))"}}>
       <label className="space-y-1">Увеличение: {(status.zoom??1).toFixed(1)}×
