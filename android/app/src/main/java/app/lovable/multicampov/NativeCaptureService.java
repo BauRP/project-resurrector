@@ -176,6 +176,10 @@ public class NativeCaptureService extends Service {
             recovered.put("audioRequested",preferences.getBoolean("recordAudio",false));
             recovered.put("foldObservations",preferences.getInt("foldObservations",0));
             recovered.put("foldPostureChanges",preferences.getInt("foldPostureChanges",0));
+            recovered.put("foldGeometryOnlyChanges",
+                preferences.getInt("foldGeometryOnlyChanges",0));
+            recovered.put("mp4CheckpointAuditCompleted",false);
+            recovered.put("mp4FoldPointsSkipped",preferences.getInt("mp4FoldPointsSkipped",0));
             recovered.put("lastFoldAt",preferences.getLong("lastFoldAt",0L));
             recovered.put("foldNearbyCallbackGaps",
                 preferences.getInt("foldNearbyCallbackGaps",0));
