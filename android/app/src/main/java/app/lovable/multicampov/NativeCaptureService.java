@@ -99,7 +99,32 @@ public class NativeCaptureService extends Service {
     private static float mp4TailSampledFps = -1f;
     private static boolean mp4TailNearEnd = false;
     private static boolean mp4FirstFrameDecodable = false;
+    // Passive native WindowManager samples: not a claim of continuous fold
+    // monitoring when an Activity is absent, or of unbroken MP4 frames.
+    private static int recordingFoldObservations = 0;
+    private static int recordingPostureChanges = 0;
+    private static long recordingLastFoldAt = 0L;
+    private static String recordingLastFoldSignature = "";
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
+
+    public static void observeFoldDuringRecording(int hingeCount,String signature) {
+        if (signature==null||signature.length()>400||hingeCount<0||hingeCount>16)return;
+        synchronized(STATE_LOCK){
+            NativeCaptureService service=runningInstance;
+            if(service==null||!("recording".equals(state)||"paused".equals(state)))return;
+            recordingFoldObservations++;
+            if(!recordingLastFoldSignature.isEmpty() &&
+                !signature.equals(recordingLastFoldSignature)){
+                recordingPostureChanges++;
+                recordingLastFoldAt=System.currentTimeMillis();
+            }
+            recordingLastFoldSignature=signature;
+            service.getSharedPreferences(STORE,MODE_PRIVATE).edit()
+                .putInt("foldObservations",recordingFoldObservations)
+                .putInt("foldPostureChanges",recordingPostureChanges)
+                .putLong("lastFoldAt",recordingLastFoldAt).apply();
+        }
+    }
 
     private HandlerThread workerThread;
     private Handler worker;
@@ -665,6 +690,12 @@ public class NativeCaptureService extends Service {
                 ? previous.getBoolean("mp4TailNearEnd", false) : mp4TailNearEnd);
             out.put("mp4FirstFrameDecodable", runningInstance == null
                 ? previous.getBoolean("mp4FirstFrameDecodable", false) : mp4FirstFrameDecodable);
+            out.put("foldObservations", runningInstance==null
+                ? previous.getInt("foldObservations",0):recordingFoldObservations);
+            out.put("foldPostureChanges", runningInstance==null
+                ? previous.getInt("foldPostureChanges",0):recordingPostureChanges);
+            out.put("lastFoldAt", runningInstance==null
+                ? previous.getLong("lastFoldAt",0L):recordingLastFoldAt);
             out.put("videoOnly", !(runningInstance == null
                 ? previous.getBoolean("recordAudio", false) : runningInstance.wantAudio));
         }
@@ -704,7 +735,10 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
                 .putFloat("mp4TailSampledFps", mp4TailSampledFps)
                 .putBoolean("mp4TailNearEnd", mp4TailNearEnd)
-                .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable).apply();
+                .putBoolean("mp4FirstFrameDecodable",mp4FirstFrameDecodable)
+                .putInt("foldObservations",recordingFoldObservations)
+                .putInt("foldPostureChanges",recordingPostureChanges)
+                .putLong("lastFoldAt",recordingLastFoldAt).apply();
         }
     }
     @Override public void onCreate() {
@@ -810,6 +844,8 @@ public class NativeCaptureService extends Service {
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
             mp4TailSampledFps = -1f; mp4TailNearEnd = false;
             mp4FirstFrameDecodable = false;
+            recordingFoldObservations=0;recordingPostureChanges=0;
+            recordingLastFoldAt=0L;recordingLastFoldSignature="";
         }
         final int session = ++generation;
         final String id = intent.getStringExtra("cameraId");
