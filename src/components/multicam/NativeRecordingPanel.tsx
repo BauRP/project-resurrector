@@ -336,6 +336,14 @@ export function NativeRecordingPanel(){
        События не доказывают отсутствие потерянных кадров и могут отсутствовать,
        если экран приложения не наблюдался.
      </p>}
+   {status?.mp4TracksInspected&&status.audioRequested&&
+     <p role="status">Синхронизация звука и видео (первые временные метки):
+       {status.mp4AvStartOffsetMs!==undefined&&
+          Number.isFinite(status.mp4AvStartOffsetMs)&&status.mp4AvStartOffsetMs!==-9223372036854776000
+          ? ` звук начинается на ${status.mp4AvStartOffsetMs} мс относительно первого видеообразца.`
+          : " начало звука и видео не удалось сопоставить."}
+       Это только начало MP4, не проверка синхронности всего ролика.
+     </p>}
    {status?.mp4TracksInspected&&<p role="status">Проверка сохранённого MP4: видеодорожка {status.mp4HasVideoTrack?"обнаружена":"не обнаружена"}, звуковая дорожка {status.mp4HasAudioTrack?"обнаружена":"не обнаружена"}. {status.mp4VideoWidth&&status.mp4VideoHeight?`Размер видеофайла: ${status.mp4VideoWidth}×${status.mp4VideoHeight}.`:""} Это проверка дорожек, а не каждого кадра или качества звука.</p>}
    {status?.mp4TracksInspected&&<p role="status">
      Выборочная проверка сэмплов MP4: видео {status.mp4VideoSamples??0}, звук {status.mp4AudioSamples??0};
