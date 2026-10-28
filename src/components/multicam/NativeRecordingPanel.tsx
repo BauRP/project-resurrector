@@ -338,8 +338,8 @@ export function NativeRecordingPanel(){
      </p>}
    {status?.mp4TracksInspected&&status.audioRequested&&
      <p role="status">Синхронизация звука и видео (первые временные метки):
-       {status.mp4AvStartOffsetMs!==undefined&&
-          Number.isFinite(status.mp4AvStartOffsetMs)&&status.mp4AvStartOffsetMs!==-9223372036854776000
+       {status.mp4AvStartMeasured===true&&
+          status.mp4AvStartOffsetMs!==undefined&&Number.isFinite(status.mp4AvStartOffsetMs)
           ? ` звук начинается на ${status.mp4AvStartOffsetMs} мс относительно первого видеообразца.`
           : " начало звука и видео не удалось сопоставить."}
        Это только начало MP4, не проверка синхронности всего ролика.
