@@ -48,12 +48,15 @@ public final class NativeCaptureAuditStore {
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
                     "mp4VideoSamples","mp4AudioSamples","mp4MiddleProbes","mp4MiddleMatched",
-                    "mp4FoldProbes","mp4FoldMatched","foldObservations","foldPostureChanges",
-                    "foldNearbyCallbackGaps","mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps","recordingEisFrames","recordingOisFrames",
+                    "mp4FoldProbes","mp4FoldMatched","mp4FoldPointsSkipped",
+                    "foldObservations","foldPostureChanges","foldGeometryOnlyChanges",
+                    "foldNearbyCallbackGaps","mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",
+                    "recordingEisFrames","recordingOisFrames",
                     "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
                 String[] booleans={"audioRequested","mp4TracksInspected","mp4HasVideoTrack",
-                    "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable"};
+                    "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable",
+                    "mp4CheckpointAuditCompleted"};
                 for(String k:booleans)item.put(k,status.optBoolean(k,false));
                 item.put("savedAt",System.currentTimeMillis());
             }catch(Exception ignored){return;}
