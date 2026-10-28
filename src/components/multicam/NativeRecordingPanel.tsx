@@ -1,6 +1,8 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection } from "@/lib/native-mode-selection";
+import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
+import { recordModeEvidence } from "@/lib/camera-passport";
 import { nativeCapture as bridge, nativeRecorderOwnsCamera, type NativeCaptureStatus as Status } from "@/lib/native-capture";
 import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
@@ -33,6 +35,18 @@ export function NativeRecordingPanel(){
      localStorage.setItem("multicam-native-last-fps-v1",String(fps));}catch{}
  },[resolution,fps]);
  const [status,setStatus]=useState<Status|null>(null);
+ const savedModeKey=useRef("");
+ useEffect(()=>{
+   if(!status||!["saved","saved_interrupted","interrupted","error"].includes(status.state))return;
+   const evidence=nativeRecordedModeEvidence(status,Date.now());
+   if(!evidence)return;
+   // Polling must not repeatedly overwrite the same camera passport entry.
+   // Include recording start and saved size so a subsequent new MP4 is fresh.
+   const key=[status.cameraId,status.startedAt,status.savedBytes,status.state].join("|");
+   if(savedModeKey.current===key)return;
+   savedModeKey.current=key;
+   recordModeEvidence(evidence);
+ },[status]);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
  // Keep the interface responsive to hardware reconnects while never dropping
