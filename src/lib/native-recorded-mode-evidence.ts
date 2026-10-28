@@ -30,6 +30,11 @@ export function nativeRecordedModeEvidence(
     (dimensions.width === height && dimensions.height === width));
   const anomalies = (status.mp4VideoTimestampRollbacks ?? 0) > 0 ||
     (status.mp4VideoTimestampDuplicates ?? 0) > 0;
+  // On an explicitly audited MP4 longer than 1.5 seconds, a failed tail
+  // decode cannot certify the recorded mode. Older results lacking the
+  // tail decoder field remain historical evidence, not invented failures.
+  const tailDecodeFailure = (status.mp4DurationMs ?? -1)>1500 &&
+    status.mp4TailFrameDecodable === false;
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -44,7 +49,7 @@ export function nativeRecordedModeEvidence(
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
     videoSamples > 0 && dimensionsMatch && !anomalies && !audioIncomplete &&
-    !measuredFpsMismatch;
+    !measuredFpsMismatch && !tailDecodeFailure;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -55,6 +60,7 @@ export function nativeRecordedModeEvidence(
     anomalies ? "В проверенном участке обнаружены нарушения времени кадров." :
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
+    tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     "Файл записан; подтверждены видеодорожка, декодируемый кадр и выборка кадров.";
   const prefix = status.state === "saved_interrupted" || status.state === "interrupted"
     ? "При записи было прерывание или неполное подтверждение. " : "";
