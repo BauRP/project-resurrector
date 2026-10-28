@@ -76,6 +76,16 @@ export function NativeRecordingPanel(){
      document.removeEventListener("visibilitychange",visibility);
      void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);};
  },[directEnabled]);
+ const tapDirect=async(e:MouseEvent<HTMLDivElement>)=>{
+   if(!directEnabled||!status?.directPreviewActive||
+      (!status.tapAfSupported&&!status.tapAeSupported))return;
+   const rect=e.currentTarget.getBoundingClientRect();
+   const x=(e.clientX-rect.left)/rect.width;
+   const y=(e.clientY-rect.top)/rect.height;
+   if(!Number.isFinite(x)||!Number.isFinite(y)||x<0||x>1||y<0||y>1)return;
+   try{setStatus(await bridge.tapToMeter({x,y}));setError("");}
+   catch(error){setError(String(error));}
+ };
  const tapPreview=async(e:MouseEvent<HTMLImageElement>)=>{
   if(!status?.tapAfSupported&&!status?.tapAeSupported)return;
   const image=e.currentTarget;
@@ -246,7 +256,7 @@ export function NativeRecordingPanel(){
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
-   <div ref={directTarget} className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
+   <div ref={directTarget} onClick={e=>void tapDirect(e)} className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
     {directEnabled ? <p className="px-3 text-center text-white/80">Прямой Android-видоискатель. Если кадр не появился, выключите этот режим.</p> :
      preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} /> :
       <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
