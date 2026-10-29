@@ -53,6 +53,7 @@ export function nativeMp4TrackStatus(
 ): "unknown"|"complete"|"missing-video"|"missing-audio"|"size-mismatch" {
  if(!status.mp4TracksInspected)return "unknown";
  if(!status.mp4HasVideoTrack)return "missing-video";
+ if(status.width&&status.height&&(!status.mp4VideoWidth||!status.mp4VideoHeight))return "unknown";
  if(status.audioRequested&&!status.mp4HasAudioTrack)return "missing-audio";
  if(status.width&&status.height&&status.mp4VideoWidth&&status.mp4VideoHeight&&
    (status.width!==status.mp4VideoWidth||status.height!==status.mp4VideoHeight))
