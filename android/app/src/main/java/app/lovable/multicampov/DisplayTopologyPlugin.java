@@ -65,6 +65,8 @@ public class DisplayTopologyPlugin extends Plugin {
             }
             surfaceTopologyObserved=true;
         }
+        // Native overlays can become unsafe even without another JS request.
+        NativeCapturePlugin.onFoldGeometryChanged();
     }
     static boolean isUnsafeDirectPreviewWindowRect(Rect rect){
         synchronized(SURFACE_LOCK){
