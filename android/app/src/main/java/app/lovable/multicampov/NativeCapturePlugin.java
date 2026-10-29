@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.graphics.Rect;
+import java.lang.ref.WeakReference;
 import android.view.TextureView;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
@@ -24,9 +25,35 @@ import com.getcapacitor.annotation.Permission;
 public class NativeCapturePlugin extends Plugin {
  private TextureView directView;
  private String directOwner;
+ // Weak owner prevents a destroyed Activity from retaining a camera overlay.
+ private static volatile WeakReference<NativeCapturePlugin> visiblePreview =
+     new WeakReference<>(null);
+ static void onFoldGeometryChanged() {
+   NativeCapturePlugin plugin=visiblePreview.get();
+   if(plugin==null||plugin.getActivity()==null)return;
+   plugin.getActivity().runOnUiThread(plugin::hidePreviewCrossingCurrentFold);
+ }
+ private void hidePreviewCrossingCurrentFold() {
+   TextureView view=directView;
+   if(view==null||view.getParent()==null)return;
+   android.view.View decor=getActivity().getWindow().getDecorView();
+   int[] origin=new int[2],decorOrigin=new int[2];
+   view.getLocationInWindow(origin);
+   decor.getLocationInWindow(decorOrigin);
+   int width=view.getWidth(),height=view.getHeight();
+   if(width<=0||height<=0){
+     FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)view.getLayoutParams();
+     width=params.width;height=params.height;
+   }
+   if(width<=0||height<=0 || DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(
+       new Rect(origin[0]-decorOrigin[0],origin[1]-decorOrigin[1],
+         origin[0]-decorOrigin[0]+width,origin[1]-decorOrigin[1]+height)))
+     detachDirectView();
+ }
  private void detachDirectView() {
    String old=directOwner;
    directOwner=null;
+   if(visiblePreview.get()==this)visiblePreview.clear();
    if(old!=null)NativeCaptureService.setDirectPreviewTexture(old,null);
    if(directView!=null){
      ViewGroup parent=(ViewGroup)directView.getParent();
@@ -139,6 +166,10 @@ public class NativeCapturePlugin extends Plugin {
        lp.width=pw;lp.height=ph;lp.leftMargin=px;lp.topMargin=py;
        directView.setLayoutParams(lp);
      }
+     // The overlay is a native Activity view: a fold can move across it
+     // without any new JS show request. Recheck on EVERY native fold event.
+     visiblePreview=new WeakReference<>(this);
+     hidePreviewCrossingCurrentFold();
      call.resolve();
    });
  }
