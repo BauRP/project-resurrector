@@ -58,11 +58,21 @@ public class NativeCapturePlugin extends Plugin {
      // Client coordinates are relative to the actual measured WebView,
      // rather than full device pixels on a foldable or split-screen window.
      Double viewportWidth=call.getDouble("viewportWidth");
-     if(viewportWidth==null||!Double.isFinite(viewportWidth)||viewportWidth<=0){
-       call.reject("Invalid viewport width");return;
+     Double viewportHeight=call.getDouble("viewportHeight");
+     if(viewportWidth==null||viewportHeight==null||
+        !Double.isFinite(viewportWidth)||!Double.isFinite(viewportHeight)||
+        viewportWidth<=0||viewportHeight<=0){
+       call.reject("Invalid WebView viewport size");return;
      }
-     float cssScale=web.getWidth()/viewportWidth.floatValue();
-     if(!Float.isFinite(cssScale)||cssScale<=0){call.reject("Invalid WebView scale");return;}
+     // WebView CSS X/Y are independent scales in multi-window, rotated
+     // foldable, keyboard and letterboxed layouts. Scaling Y with the X
+     // ratio can position the native TextureView over controls or a hinge.
+     float cssScaleX=web.getWidth()/viewportWidth.floatValue();
+     float cssScaleY=web.getHeight()/viewportHeight.floatValue();
+     if(!Float.isFinite(cssScaleX)||!Float.isFinite(cssScaleY)||
+         cssScaleX<=0||cssScaleY<=0){
+       call.reject("Invalid WebView viewport scale");return;
+     }
      FrameLayout root=(FrameLayout)getActivity().findViewById(android.R.id.content);
      if(root==null){call.reject("Root view unavailable");return;}
      // getLeft()/getTop() are relative to the *immediate* parent, which may
@@ -73,9 +83,9 @@ public class NativeCapturePlugin extends Plugin {
      root.getLocationInWindow(rootLocation);
      int webX=webLocation[0]-rootLocation[0];
      int webY=webLocation[1]-rootLocation[1];
-     int px=Math.round(x.floatValue()*cssScale)+webX;
-     int py=Math.round(y.floatValue()*cssScale)+webY;
-     int pw=Math.round(w.floatValue()*cssScale),ph=Math.round(h.floatValue()*cssScale);
+     int px=Math.round(x.floatValue()*cssScaleX)+webX;
+     int py=Math.round(y.floatValue()*cssScaleY)+webY;
+     int pw=Math.round(w.floatValue()*cssScaleX),ph=Math.round(h.floatValue()*cssScaleY);
      if(pw<1||ph<1||px<webX||py<webY||
         px+pw>webX+web.getWidth()+2||
         py+ph>webY+web.getHeight()+2||
