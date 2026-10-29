@@ -50,6 +50,15 @@ describe("recovered native fold and camera report safety",()=>{
     }));
     expect(parsed.entries[0].media.audioPtsAnomalies).toBe(3);
   });
+  it("includes bounded audio fold checks without raw media",()=>{
+    const output=JSON.parse(nativeAnonymizedAuditReport({
+      entries:[{state:"saved_interrupted",mp4FoldAudioPtsSpanChecks:2,
+        mp4FoldAudioPtsLargeGaps:1,mp4MaxFoldAudioPtsGapMs:550}],
+      omittedEarlier:0,maxEntries:24,
+    }));
+    expect(output.entries[0].fold.audioPtsChecks).toBe(2);
+    expect(output.entries[0].fold.audioPtsLargeGaps).toBe(1);
+  });
   it("separates real hinge posture from coordinate-only changes",()=>{
     const parsed=JSON.parse(nativeAnonymizedAuditReport({
       entries:[{state:"saved",foldPostureChanges:2,foldGeometryOnlyChanges:19}],
