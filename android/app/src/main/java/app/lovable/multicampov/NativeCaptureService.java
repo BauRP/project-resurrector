@@ -151,6 +151,10 @@ public class NativeCaptureService extends Service {
     // Separate evidence: a nearby video sample does not rule out a large
     // presentation timestamp gap STRADDLING the actual fold observation.
     private static int mp4FoldPtsSpanChecks=0, mp4FoldPtsLargeGaps=0;
+    // Independent audio PTS checks at measured fold instants. Missing
+    // samples are UNKNOWN, not evidence that audio survived a fold.
+    private static int mp4FoldAudioPtsSpanChecks=0, mp4FoldAudioPtsLargeGaps=0;
+    private static long mp4MaxFoldAudioPtsGapMs=0L;
     // Must not certify a saved recording if the bounded MP4 checkpoint
     // parser stopped before finishing. Zero probes is not proof of success.
     private static boolean mp4CheckpointAuditCompleted = false;
@@ -228,6 +232,9 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4TailVideoSamples",0)
                 .putInt("mp4TailAudioSamples",0)
                 .putInt("mp4AudioPtsAnomalies",0)
+                .putInt("mp4FoldAudioPtsSpanChecks",0)
+                .putInt("mp4FoldAudioPtsLargeGaps",0)
+                .putLong("mp4MaxFoldAudioPtsGapMs",0L)
                 .putBoolean("mp4TailAudioNearEnd",false)
                 .putBoolean("mp4AvTailOffsetMeasured",false)
                 .putLong("mp4AvTailOffsetMs",0L)
@@ -1011,6 +1018,12 @@ public class NativeCaptureService extends Service {
                 : mp4CheckpointAuditCompleted);
             out.put("mp4FoldPtsSpanChecks",runningInstance==null
                 ? previous.getInt("mp4FoldPtsSpanChecks",0):mp4FoldPtsSpanChecks);
+            out.put("mp4FoldAudioPtsSpanChecks",runningInstance==null
+                ? previous.getInt("mp4FoldAudioPtsSpanChecks",0):mp4FoldAudioPtsSpanChecks);
+            out.put("mp4FoldAudioPtsLargeGaps",runningInstance==null
+                ? previous.getInt("mp4FoldAudioPtsLargeGaps",0):mp4FoldAudioPtsLargeGaps);
+            out.put("mp4MaxFoldAudioPtsGapMs",runningInstance==null
+                ? previous.getLong("mp4MaxFoldAudioPtsGapMs",0L):mp4MaxFoldAudioPtsGapMs);
             out.put("mp4FoldPtsLargeGaps",runningInstance==null
                 ? previous.getInt("mp4FoldPtsLargeGaps",0):mp4FoldPtsLargeGaps);
             out.put("mp4MaxFoldPtsGapMs",runningInstance==null
@@ -1071,6 +1084,9 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4FoldPointsSkipped",mp4FoldPointsSkipped)
                 .putBoolean("mp4CheckpointAuditCompleted",mp4CheckpointAuditCompleted)
                 .putInt("mp4FoldPtsSpanChecks",mp4FoldPtsSpanChecks)
+                .putInt("mp4FoldAudioPtsSpanChecks",mp4FoldAudioPtsSpanChecks)
+                .putInt("mp4FoldAudioPtsLargeGaps",mp4FoldAudioPtsLargeGaps)
+                .putLong("mp4MaxFoldAudioPtsGapMs",mp4MaxFoldAudioPtsGapMs)
                 .putInt("mp4FoldPtsLargeGaps",mp4FoldPtsLargeGaps)
                 .putLong("mp4MaxFoldPtsGapMs",mp4MaxFoldPtsGapMs)
                 .putLong("mp4AvStartOffsetMs",mp4AvStartOffsetMs)
@@ -1237,6 +1253,8 @@ public class NativeCaptureService extends Service {
             mp4MiddleProbes=0;mp4MiddleMatched=0;mp4FoldProbes=0;mp4FoldMatched=0;
             mp4FoldPointsSkipped=0;
             mp4FoldPtsSpanChecks=0;mp4FoldPtsLargeGaps=0;mp4MaxFoldPtsGapMs=0L;
+            mp4FoldAudioPtsSpanChecks=0;mp4FoldAudioPtsLargeGaps=0;
+            mp4MaxFoldAudioPtsGapMs=0L;
             mp4CheckpointAuditCompleted=false;
         }
         final int session = ++generation;
@@ -2083,6 +2101,52 @@ public class NativeCaptureService extends Service {
             try{extractor.release();}catch(Exception ignored){}
         }
     }
+    /** Check real audio samples on BOTH sides of each actual captured fold
+     * checkpoint, independently of video MediaExtractor cursor state.
+     * Deliberately bounded to eight points; not an all-sample inspection.
+     */
+    private void inspectMp4FoldAudioSpans(File file,long durationMs){
+        mp4FoldAudioPtsSpanChecks=0;mp4FoldAudioPtsLargeGaps=0;
+        mp4MaxFoldAudioPtsGapMs=0L;
+        if(!wantAudio || file==null || !file.isFile() || durationMs<=2000L ||
+            recordingFoldPointsMs.isEmpty())return;
+        MediaExtractor audioExtractor=new MediaExtractor();
+        try{
+            audioExtractor.setDataSource(file.getAbsolutePath());
+            int track=-1;
+            for(int i=0;i<audioExtractor.getTrackCount();i++){
+                MediaFormat format=audioExtractor.getTrackFormat(i);
+                String mime=format.containsKey(MediaFormat.KEY_MIME)
+                    ?format.getString(MediaFormat.KEY_MIME):null;
+                if(mime!=null && mime.startsWith("audio/")){track=i;break;}
+            }
+            if(track<0)return;
+            audioExtractor.selectTrack(track);
+            int checkedPoints=0;
+            for(String point:recordingFoldPointsMs.split(",")){
+                if(checkedPoints>=8)break;
+                try{
+                    long at=Long.parseLong(point);
+                    if(at<500L || at>=durationMs-500L)continue;
+                    checkedPoints++;
+                    long span=foldPtsSpanMs(audioExtractor,at*1000L);
+                    if(span<0L)continue;
+                    mp4FoldAudioPtsSpanChecks++;
+                    mp4MaxFoldAudioPtsGapMs=Math.max(mp4MaxFoldAudioPtsGapMs,span);
+                    // A 500ms audio gap around an observed posture change
+                    // warrants review; it does NOT prove audible silence.
+                    if(span>500L)mp4FoldAudioPtsLargeGaps++;
+                }catch(NumberFormatException ignored){
+                    // The video checkpoint audit independently records bad
+                    // or missing positions as unverified.
+                }
+            }
+        }catch(Exception ignored){
+            // Missing audio PTS spans are reported as unknown below.
+        }finally{
+            try{audioExtractor.release();}catch(Exception ignored){}
+        }
+    }
     private boolean savedMp4HasVideo(File candidate) {
         if (candidate == null || !candidate.isFile() || candidate.length() < 1024) return false;
         MediaMetadataRetriever reader = new MediaMetadataRetriever();
@@ -2174,6 +2238,7 @@ public class NativeCaptureService extends Service {
             mp4FirstFrameDecodable=decodeMp4FirstFrame(media);
             mp4TailFrameDecodable=decodeMp4TailFrame(media,mp4DurationMs);
             inspectMp4Checkpoints(media,mp4DurationMs);
+            inspectMp4FoldAudioSpans(media,mp4DurationMs);
             mp4AvStartOffsetMs = audit == null ? 0L : audit.avStartOffsetMs;
             mp4AvStartMeasured = audit != null && audit.avStartMeasured;
             // A missing audio track is not a clean video+audio recording.
@@ -2214,7 +2279,9 @@ public class NativeCaptureService extends Service {
                 (mp4FoldProbes>0 && mp4FoldMatched<mp4FoldProbes) ||
                 mp4FoldPtsSpanChecks<mp4FoldProbes ||
                 mp4FoldPointsSkipped>0 || mp4FoldPtsLargeGaps>0 ||
-                recordingFoldCheckpointsOmitted>0 || recordingFoldObserverGap;
+                recordingFoldCheckpointsOmitted>0 || recordingFoldObserverGap ||
+                (wantAudio && (mp4FoldAudioPtsSpanChecks<mp4FoldProbes ||
+                    mp4FoldAudioPtsLargeGaps>0));
             // A nominally saved MP4 must not be marked clean when its
             // decoder or actual video-track audit cannot confirm the result.
             // This is independent of later WebView passport validation.
@@ -2229,6 +2296,9 @@ public class NativeCaptureService extends Service {
             savedUri = gallery == null ? "" : gallery;
             String message = !mp4CheckpointAuditCompleted
                 ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
+                : wantAudio && (mp4FoldAudioPtsSpanChecks<mp4FoldProbes ||
+                    mp4FoldAudioPtsLargeGaps>0)
+                ? "MP4 сохранён, но аудиометки возле складывания отсутствуют или имеют большой интервал"
                 : recordingFoldObserverGap
                 ? "MP4 сохранён, но наблюдение за складным экраном прерывалось"
                 : recordingFoldCheckpointsOmitted>0
