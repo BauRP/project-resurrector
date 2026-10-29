@@ -119,6 +119,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(r?.state).toBe("unknown");
   expect(r?.message).toContain("Наблюдение за складыванием прерывалось");
  });
+ it("requires explicit measured MP4 tail evidence on long videos",()=>{
+  const baseLong={...base,mp4DurationMs:12000,mp4TailFrameDecodable:true};
+  expect(nativeRecordedModeEvidence(baseLong,12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...baseLong,mp4TailVideoSamples:90},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...baseLong,mp4TailNearEnd:true},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...baseLong,mp4TailVideoSamples:90,
+    mp4TailNearEnd:true},12345)?.state).toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
