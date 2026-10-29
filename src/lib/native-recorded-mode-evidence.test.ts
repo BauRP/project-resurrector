@@ -3,7 +3,8 @@ import {nativeRecordedModeEvidence} from "./native-recorded-mode-evidence";
 const base={state:"saved",message:"",startedAt:1,stabilization:"unknown",stabilizationCaptureResultObserved:false,
  savedBytes:100000,savedUri:"",videoOnly:false,cameraId:"rear-0",width:1920,height:1080,fps:30,
  mp4TracksInspected:true,mp4HasVideoTrack:true,mp4HasAudioTrack:true,mp4FirstFrameDecodable:true,
- mp4VideoWidth:1920,mp4VideoHeight:1080,mp4VideoSamples:140,mp4AudioSamples:120,audioRequested:true};
+ mp4VideoWidth:1920,mp4VideoHeight:1080,mp4VideoSamples:140,mp4AudioSamples:120,audioRequested:true,
+ mp4TailAudioSamples:120,mp4TailAudioNearEnd:true,mp4AvTailOffsetMeasured:true,mp4AvTailOffsetMs:50};
 describe("native Camera2 per-mode recorded evidence",()=>{
  it("records valid native MP4 evidence but does not claim full verification",()=>{
   const r=nativeRecordedModeEvidence(base,12345);
@@ -126,6 +127,16 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...baseLong,mp4TailNearEnd:true},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...baseLong,mp4TailVideoSamples:90,
     mp4TailNearEnd:true},12345)?.state).toBe("recorded");
+ });
+ it("rejects long MP4 with sound only at its beginning",()=>{
+  const good={...base,mp4DurationMs:12000,mp4TailFrameDecodable:true,
+    mp4TailVideoSamples:90,mp4TailNearEnd:true};
+  expect(nativeRecordedModeEvidence({...good,mp4TailAudioSamples:0},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...good,mp4TailAudioNearEnd:false},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...good,mp4AvTailOffsetMeasured:false},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...good,mp4AvTailOffsetMs:2400},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...good,audioRequested:false},12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence(good,12345)?.state).toBe("recorded");
  });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
