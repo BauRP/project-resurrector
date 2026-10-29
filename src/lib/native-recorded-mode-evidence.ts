@@ -73,6 +73,12 @@ export function nativeRecordedModeEvidence(
   const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
   const suspiciousFoldPts = invalidFoldPts || invalidSkipped || skippedPoints>0 ||
     ptsLarge>0 || missingFoldSpan || missingCheckpointAudit || invalidOmitted || omitted>0 || observerGap;
+  const audioFoldChecks=status.mp4FoldAudioPtsSpanChecks??0;
+  const audioFoldLarge=status.mp4FoldAudioPtsLargeGaps??0;
+  const audioFoldInvalid=!Number.isSafeInteger(audioFoldChecks)||audioFoldChecks<0||audioFoldChecks>8||
+    !Number.isSafeInteger(audioFoldLarge)||audioFoldLarge<0||audioFoldLarge>audioFoldChecks;
+  const audioFoldUnknown=status.audioRequested===true && (audioFoldInvalid||audioFoldLarge>0||
+    (foldTotal>0 && audioFoldChecks<foldTotal));
   const audioPtsBad=status.audioRequested===true &&
     status.mp4AudioPtsAnomalies!==undefined &&
     (!Number.isSafeInteger(status.mp4AudioPtsAnomalies) || status.mp4AudioPtsAnomalies>0);
@@ -94,7 +100,7 @@ export function nativeRecordedModeEvidence(
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
-    dimensionsMatch && !anomalies && !audioIncomplete && !audioPtsBad && !audioTailMissing &&
+    dimensionsMatch && !anomalies && !audioIncomplete && !audioPtsBad && !audioTailMissing && !audioFoldUnknown &&
     !measuredFpsMismatch && !tailDecodeFailure && !missingTailSamples &&
     !checkpointMismatch && !suspiciousFoldPts;
   const state: ModeEvidence["state"] = recordingConfirmed &&
@@ -107,6 +113,7 @@ export function nativeRecordedModeEvidence(
     anomalies ? "В проверенном участке обнаружены нарушения времени кадров." :
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
     audioPtsBad ? "Обнаружены нарушения временных меток аудиодорожки." :
+    audioFoldUnknown ? "Временные метки аудио возле складывания не подтверждены." :
     audioTailMissing ? "Конец аудиодорожки MP4 или её временное согласование с видео не подтверждены." :
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
