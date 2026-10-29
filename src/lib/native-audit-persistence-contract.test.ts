@@ -14,7 +14,8 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   for(const key of ["mp4CheckpointAuditCompleted","mp4FoldPointsSkipped",
     "mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",
     "foldPostureChanges","foldGeometryOnlyChanges",
-    "foldCheckpointsOmitted","foldChangesWhilePaused","foldObserverGap"]){
+    "foldCheckpointsOmitted","foldChangesWhilePaused","foldObserverGap",
+    "mp4TailAudioSamples","mp4TailAudioNearEnd","mp4AvTailOffsetMeasured","mp4AvTailOffsetMs"]){
    expect(store, "native history omitted "+key).toContain('"'+key+'"');
    expect(service, "service missing "+key).toContain('"'+key+'"');
   }
