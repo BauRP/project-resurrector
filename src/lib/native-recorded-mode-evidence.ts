@@ -36,9 +36,12 @@ export function nativeRecordedModeEvidence(
   // tail decoder field remain historical evidence, not invented failures.
   const tailDecodeFailure = (status.mp4DurationMs ?? -1)>1500 &&
     status.mp4TailFrameDecodable === false;
+  // When the native service has measured a long MP4, both the tail
+  // sample count and proximity must be explicitly confirmed. An absent
+  // tail field is UNKNOWN, never implicit success for a newly audited file.
   const missingTailSamples = (status.mp4DurationMs ?? -1)>2000 &&
-    (status.mp4TailVideoSamples !== undefined && status.mp4TailVideoSamples<=0 ||
-     status.mp4TailNearEnd === false);
+    (!(Number.isSafeInteger(status.mp4TailVideoSamples) &&
+       status.mp4TailVideoSamples!>0) || status.mp4TailNearEnd !== true);
   // Native counters are untrusted until they form a possible bounded
   // result. Reject negative/overflowed values and "more passed than tested".
   const middleTotal=status.mp4MiddleProbes??0;
