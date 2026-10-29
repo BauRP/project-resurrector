@@ -36,6 +36,7 @@ function entrySummary(item:Record<string,unknown>) {
       videoTrack:flag(item["mp4HasVideoTrack"]),
       audioTrack:flag(item["mp4HasAudioTrack"]),
       tailAudioSamples:count(item["mp4TailAudioSamples"],512),
+      audioPtsAnomalies:count(item["mp4AudioPtsAnomalies"],1024),
       tailAudioNearEnd:flag(item["mp4TailAudioNearEnd"]),
       avTailOffsetMeasured:flag(item["mp4AvTailOffsetMeasured"]),
       avTailOffsetMs:typeof item["mp4AvTailOffsetMs"]==="number" && Number.isSafeInteger(item["mp4AvTailOffsetMs"]) && Math.abs(item["mp4AvTailOffsetMs"])<=600000 ? item["mp4AvTailOffsetMs"]:null,
