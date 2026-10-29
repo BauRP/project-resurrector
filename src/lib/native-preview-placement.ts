@@ -17,7 +17,7 @@ export function previewFitsFoldRegion(rect:PreviewRect, regionGeometry:string|un
    return false;
  return regions.some(region=>{
    const [x,y,w,h]=region.split(",").map(Number);
-   if(![x,y,w,h].every(Number.isSafeInteger)||w<=0||h<=0)return false;
+   if(![x,y,w,h].every(Number.isSafeInteger)||w===undefined||h===undefined||w<=0||h<=0)return false;
    // The region coordinates were rounded to whole CSS px in the adapter.
    const epsilon=1;
    return rect.left>=x!-epsilon && rect.top>=y!-epsilon &&
