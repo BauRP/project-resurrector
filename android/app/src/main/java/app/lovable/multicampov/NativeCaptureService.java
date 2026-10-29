@@ -47,6 +47,7 @@ import android.view.WindowManager;
 import androidx.core.app.NotificationCompat;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.Arrays;
 
@@ -2377,6 +2378,15 @@ public class NativeCaptureService extends Service {
                 pending.put(MediaStore.Video.Media.IS_PENDING, 0);
                 if (getContentResolver().update(dest,pending,null,null) <= 0)
                     throw new IllegalStateException("MediaStore не подтвердил публикацию");
+            }
+            // A successful OutputStream.flush() alone does not prove the
+            // MediaStore item remains readable. Reopen its Uri after the
+            // pending state was finalized; a broken provider must not be
+            // reported as a published Gallery clip. The original private
+            // MP4 stays untouched and can be recovered by the app.
+            try (InputStream saved = getContentResolver().openInputStream(dest)) {
+                if (saved == null || saved.read() < 0)
+                    throw new IllegalStateException("MediaStore: итоговый файл недоступен");
             }
             return dest.toString();
         } catch(Exception error) {
