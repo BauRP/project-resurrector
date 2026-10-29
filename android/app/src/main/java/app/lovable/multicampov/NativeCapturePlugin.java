@@ -3,6 +3,7 @@ package app.lovable.multicampov;
 import android.Manifest;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
+import android.graphics.Rect;
 import android.view.TextureView;
 import android.view.MotionEvent;
 import android.view.ViewGroup;
@@ -91,6 +92,16 @@ public class NativeCapturePlugin extends Plugin {
         py+ph>webY+web.getHeight()+2||
         px<0||py<0||px+pw>root.getWidth()+2||py+ph>root.getHeight()+2){
        call.reject("Native preview outside measured WebView/Activity bounds");return;
+     }
+     int[] decorLocation=new int[2];
+     getActivity().getWindow().getDecorView().getLocationInWindow(decorLocation);
+     int originX=rootLocation[0]-decorLocation[0],originY=rootLocation[1]-decorLocation[1];
+     Rect requestedWindowRect=new Rect(px+originX,py+originY,
+       px+originX+pw,py+originY+ph);
+     if(DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(requestedWindowRect)){
+       if(owner.equals(directOwner))detachDirectView();
+       call.reject("Direct preview crosses physical hinge or topology is pending");
+       return;
      }
      if(directView!=null&&!owner.equals(directOwner))detachDirectView();
      if(directView==null){
