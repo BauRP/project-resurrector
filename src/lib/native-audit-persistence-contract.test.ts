@@ -71,6 +71,12 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(capturePlugin).toContain("DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect");
   expect(capturePlugin).toContain("if(owner.equals(directOwner))detachDirectView()");
  });
+ it("checks an already visible native overlay after a real hinge moves",()=>{
+   expect(foldObserver).toContain("NativeCapturePlugin.onFoldGeometryChanged()");
+   expect(capturePlugin).toContain("hidePreviewCrossingCurrentFold()");
+   expect(capturePlugin).toContain("DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(");
+   expect(capturePlugin).toContain("if(visiblePreview.get()==this)visiblePreview.clear()");
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
