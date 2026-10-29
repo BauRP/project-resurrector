@@ -15,7 +15,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
     "mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",
     "foldPostureChanges","foldGeometryOnlyChanges",
     "foldCheckpointsOmitted","foldChangesWhilePaused","foldObserverGap",
-    "mp4TailAudioSamples","mp4TailAudioNearEnd","mp4AvTailOffsetMeasured","mp4AvTailOffsetMs"]){
+    "mp4AudioPtsAnomalies","mp4TailAudioSamples","mp4TailAudioNearEnd","mp4AvTailOffsetMeasured","mp4AvTailOffsetMs"]){
    expect(store, "native history omitted "+key).toContain('"'+key+'"');
    expect(service, "service missing "+key).toContain('"'+key+'"');
   }
@@ -32,6 +32,14 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   const startCalls=service.match(/armRecordingFoldBaseline\(\);/g)??[];
   expect(startCalls).toHaveLength(2);
   expect(service).toContain("recordingFoldObserverGap=true;");
+ });
+ it("resets MediaExtractor before scanning each track and binds size to sampled track",()=>{
+  const start=service.indexOf("private void scanMp4Track(");
+  const end=service.indexOf("private void scanMp4Tail(",start);
+  const block=service.slice(start,end);
+  expect(block).toContain("extractor.seekTo(0L,MediaExtractor.SEEK_TO_PREVIOUS_SYNC)");
+  expect(service).toContain("if(videoTrack < 0){");
+  expect(service).toContain("audit.audioPtsAnomalies += rollbacks + duplicates;");
  });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
