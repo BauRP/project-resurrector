@@ -9,6 +9,9 @@ export interface DisplayTopology {
   density: number; revision: number; posture: "reported" | "unknown";
   source: string; foldingFeatures: FoldFeature[];
   systemInsetsPx?: { left: number; top: number; right: number; bottom: number };
+  /** Measured WebView rectangle in DecorView-relative WINDOW px. Hinges
+   * use the same coordinate system. Not dp or CSS pixels. */
+  webViewBoundsPx?: { left: number; top: number; right: number; bottom: number };
 }
 interface NativeBridge {
   getState(): Promise<DisplayTopology>;
@@ -51,10 +54,26 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
       topology.heightPx <= 0 || !Array.isArray(topology.foldingFeatures)) {
     return { regions: [], split: "none", occluded: false, hinges: [] };
   }
-  const sx = cssWidth / topology.widthPx;
-  const sy = cssHeight / Math.max(1, topology.heightPx);
+  // WindowManager reports folding bounds in WINDOW pixels; the browser's
+  // CSS origin is instead the top-left of the embedded WebView. The latter
+  // can be inset from the DecorView on cover displays or in multi-window.
+  // Treat an explicitly corrupted WebView rectangle as unknown geometry,
+  // not as permission to place controls over a guessed physical hinge.
+  const fullWindow = {left:0,top:0,right:topology.widthPx,bottom:topology.heightPx};
+  const reported = topology.webViewBoundsPx;
+  const validWebView = !reported || (
+    [reported.left,reported.top,reported.right,reported.bottom].every(Number.isFinite) &&
+    reported.left >= 0 && reported.top >= 0 &&
+    reported.right <= topology.widthPx && reported.bottom <= topology.heightPx &&
+    reported.right > reported.left && reported.bottom > reported.top
+  );
+  if (!validWebView)
+    return {regions:[{left:0,top:0,width:cssWidth,height:cssHeight}],
+      split:"none",occluded:false,hinges:[]};
+  const viewport = reported ?? fullWindow;
+  const sx = cssWidth / (viewport.right - viewport.left);
+  const sy = cssHeight / (viewport.bottom - viewport.top);
   // Refuse malformed native values that would produce infinite CSS positions.
-  // Unsupported geometry falls back to an ordinary viewport, not fake hinges.
   if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0)
     return { regions: [{left:0,top:0,width:cssWidth,height:cssHeight}], split:"none", occluded:false, hinges:[] };
   let regions: Region[] = [{ left: 0, top: 0, width: cssWidth, height: cssHeight }];
@@ -78,10 +97,13 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
     a.leftPx - b.leftPx || a.topPx - b.topPx ||
     a.rightPx - b.rightPx || a.bottomPx - b.bottomPx);
   for (const f of hinges) {
-    const left = clamp(f.leftPx * sx, 0, cssWidth);
-    const right = clamp(f.rightPx * sx, 0, cssWidth);
-    const top = clamp(f.topPx * sy, 0, cssHeight);
-    const bottom = clamp(f.bottomPx * sy, 0, cssHeight);
+    // Clip a *reported* physical fold to the portion actually occupied by
+    // WebView; do not assume it starts at Android window coordinate (0,0).
+    // Clamping also handles a full-width hinge partly outside a split window.
+    const left = clamp((f.leftPx - viewport.left) * sx, 0, cssWidth);
+    const right = clamp((f.rightPx - viewport.left) * sx, 0, cssWidth);
+    const top = clamp((f.topPx - viewport.top) * sy, 0, cssHeight);
+    const bottom = clamp((f.bottomPx - viewport.top) * sy, 0, cssHeight);
     const vertical = f.orientation.toUpperCase().includes("VERTICAL");
     const full = f.occlusion.toUpperCase().includes("FULL");
     // A fold crease without physical occlusion is not a black line.
