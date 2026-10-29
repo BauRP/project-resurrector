@@ -8,6 +8,7 @@ const nativeDir="android/app/src/main/java/app/lovable/multicampov/";
 const store=readFileSync(nativeDir+"NativeCaptureAuditStore.java","utf8");
 const service=readFileSync(nativeDir+"NativeCaptureService.java","utf8");
 const foldObserver=readFileSync(nativeDir+"DisplayTopologyPlugin.java","utf8");
+const capturePlugin=readFileSync(nativeDir+"NativeCapturePlugin.java","utf8");
 const report=readFileSync("src/lib/native-audit-report.ts","utf8");
 describe("native Camera2 and fold audit persistence contract",()=>{
  it("persists all essential late-stage fold and MP4 audit fields",()=>{
@@ -54,6 +55,13 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("boolean incomplete = captureFailed || checkpointIssue");
   expect(service).toContain('String message = captureFailed');
   expect(service).toContain('NativeCaptureAuditStore.append(this,status(this))');
+ });
+ it("uses both CSS axes when placing native TextureView in a foldable",()=>{
+  expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
+  expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
+  expect(capturePlugin).toContain("cssScaleY=web.getHeight()");
+  expect(capturePlugin).toContain("y.floatValue()*cssScaleY");
+  expect(capturePlugin).toContain("h.floatValue()*cssScaleY");
  });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
