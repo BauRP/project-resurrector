@@ -89,13 +89,22 @@ export function NativeRecordingPanel(){
      if(!live)return;
      const viewport={width:document.documentElement.clientWidth,height:window.innerHeight};
      const rect=directTarget.current?.getBoundingClientRect();
-     const safe=nativePreviewPlacement(rect,viewport);
+     const fold=getActiveFoldBaseline();
+     const safe=nativePreviewPlacement(rect,viewport,fold?.regionGeometry);
      if(document.hidden||!safe){await hide();return;}
      if(lastVisible&&samePreviewPlacement(safe,lastPosition))return;
      try {
        await enqueue(async()=>{
          if(!live||document.hidden)return;
-         await bridge.setDirectPreview({ownerId,visible:true,...safe,viewportWidth:viewport.width});
+         // Re-evaluate at execution time: a queued show may outlive a fold.
+         const current=directTarget.current?.getBoundingClientRect();
+         const latest=nativePreviewPlacement(current,viewport,getActiveFoldBaseline()?.regionGeometry);
+         if(!latest||!samePreviewPlacement(safe,latest)){
+           lastVisible=false;lastPosition=null;
+           await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
+           return;
+         }
+         await bridge.setDirectPreview({ownerId,visible:true,...safe,viewportWidth:viewport.width,viewportHeight:viewport.height});
          lastVisible=true;lastPosition=safe;
        });
        if(!live)return;
@@ -109,12 +118,15 @@ export function NativeRecordingPanel(){
    const resized=()=>void sync();
    const visibility=()=>void sync();
    const scrolling=()=>void sync();
+   const folding=()=>void sync();
    window.addEventListener("resize",resized);
    window.addEventListener("scroll",scrolling,true);
+   window.addEventListener("multicam-fold-topology",folding);
    document.addEventListener("visibilitychange",visibility);
    void sync();
    return ()=>{live=false;observer?.disconnect();window.removeEventListener("resize",resized);
      window.removeEventListener("scroll",scrolling,true);
+     window.removeEventListener("multicam-fold-topology",folding);
      document.removeEventListener("visibilitychange",visibility);
      // Always queue a final hide, even when the first show is pending.
      void enqueue(async()=>{
