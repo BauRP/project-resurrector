@@ -2178,6 +2178,11 @@ public class NativeCaptureService extends Service {
             releaseCamera();
             if ("starting".equals(state) || "previewing".equals(state))
                 publish("idle","Открытие камеры остановлено без MP4");
+            // A camera/encoder failure before MediaRecorder.start() is still
+            // a failed capture ATTEMPT, even when no file can be recovered.
+            // Otherwise the session vanishes from the durable history.
+            if ("error".equals(state))
+                NativeCaptureAuditStore.append(this,status(this));
             stopForeground(true);
             stopSelf();
             return;
@@ -2188,6 +2193,11 @@ public class NativeCaptureService extends Service {
             openingTimeout = null;
         }
         boolean previouslyRecording = encoderStarted;
+        // Camera2 or MediaRecorder may fail AFTER producing a readable MP4.
+        // Preserve the salvageable file, but never overwrite this failure
+        // with an unqualified "saved" result.
+        final boolean captureFailed = "error".equals(state);
+        final String captureFailureReason = captureFailed ? lastMessage : "";
         long endedAt = encoderPaused ? pausedAtMs : System.currentTimeMillis();
         if(recordingStartedElapsedMs>=0L){
             long endElapsed=encoderPaused&&pausedAtElapsedMs>=0L
@@ -2289,13 +2299,17 @@ public class NativeCaptureService extends Service {
             boolean tailDecodeIssue = mp4DurationMs > 1500L && !mp4TailFrameDecodable;
             boolean inspectionUnknown = audit == null || !mp4HasVideoTrack ||
                 mp4VideoSamples <= 0;
-            boolean incomplete = checkpointIssue || interruptedByCamera || audioNotConfirmed ||
-                videoMismatch || fpsMismatch || sampleIssue || tailIssue || audioTailIssue || inspectionUnknown ||
-                tailDecodeIssue || !mp4FirstFrameDecodable;
+            boolean incomplete = captureFailed || checkpointIssue ||
+                interruptedByCamera || audioNotConfirmed || videoMismatch ||
+                fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
+                inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(media);
             savedUri = gallery == null ? "" : gallery;
-            String message = !mp4CheckpointAuditCompleted
+            String message = captureFailed
+                ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
+                  "; непрерывность не подтверждена"
+                : !mp4CheckpointAuditCompleted
                 ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
                 : wantAudio && (mp4FoldAudioPtsSpanChecks<mp4FoldProbes ||
                     mp4FoldAudioPtsLargeGaps>0)
