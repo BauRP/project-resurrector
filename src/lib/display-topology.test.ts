@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, fourPaneCameraLayout, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -171,6 +171,22 @@ describe("native window pixels to an inset WebView viewport",()=>{
     const r=calculateDisplayRegions(state,600,450);
     expect(r.regions).toHaveLength(1);
     expect(r.hinges).toHaveLength(0);
+  });
+});
+describe("camera view below persistent header in a two-axis fold",()=>{
+  it("clips upper viewfinder to the actual camera screen before placing controls",()=>{
+    const original={left:0,top:0,width:295,height:220};
+    expect(clipFoldPaneToCamera(original,{left:0,top:60,width:600,height:390}))
+      .toEqual({left:0,top:60,width:295,height:160});
+    // Do not stretch 220px across the actual hinge at y=220.
+    expect(clipFoldPaneToCamera(original,{left:0,top:60,width:600,height:390})!.top+
+      clipFoldPaneToCamera(original,{left:0,top:60,width:600,height:390})!.height).toBe(220);
+  });
+  it("rejects panes wholly outside or invalid within the camera container",()=>{
+    expect(clipFoldPaneToCamera({left:0,top:0,width:295,height:100},
+      {left:0,top:150,width:600,height:300})).toBeNull();
+    expect(clipFoldPaneToCamera({left:0,top:0,width:Number.NaN,height:200},
+      {left:0,top:0,width:600,height:450})).toBeNull();
   });
 });
 describe("real dual-axis four-pane camera workstation",()=>{
