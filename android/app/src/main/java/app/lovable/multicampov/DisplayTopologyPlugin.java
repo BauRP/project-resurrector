@@ -33,6 +33,55 @@ import java.util.Set;
  */
 @CapacitorPlugin(name = "DisplayTopology")
 public class DisplayTopologyPlugin extends Plugin {
+    // Independent native safety gate for the TextureView overlay. JavaScript
+    // may have an outdated layout when a queued show command executes.
+    // Store only real WindowManager separating features, never fake hinges.
+    private static final Object SURFACE_LOCK=new Object();
+    private static String surfaceLease="";
+    private static boolean surfaceTopologyObserved=false;
+    private static final ArrayList<Rect> surfaceHinges=new ArrayList<>();
+
+    private static void armSurfaceLease(String lease){
+        synchronized(SURFACE_LOCK){
+            surfaceLease=lease;
+            surfaceTopologyObserved=false;
+            surfaceHinges.clear();
+        }
+    }
+    private static void updateSurfaceHinges(String lease,WindowLayoutInfo layout){
+        synchronized(SURFACE_LOCK){
+            if(!lease.equals(surfaceLease))return;
+            surfaceHinges.clear();
+            for(DisplayFeature feature:layout.getDisplayFeatures()){
+                if(!(feature instanceof FoldingFeature))continue;
+                FoldingFeature fold=(FoldingFeature)feature;
+                if(!fold.isSeparating())continue;
+                Rect hinge=new Rect(fold.getBounds());
+                // A flat, separating hinge can be a zero-width/height line.
+                // Give such a line two pixels of protective clearance.
+                if(hinge.width()==0){hinge.left-=2;hinge.right+=2;}
+                if(hinge.height()==0){hinge.top-=2;hinge.bottom+=2;}
+                surfaceHinges.add(hinge);
+            }
+            surfaceTopologyObserved=true;
+        }
+    }
+    static boolean isUnsafeDirectPreviewWindowRect(Rect rect){
+        synchronized(SURFACE_LOCK){
+            if(!surfaceLease.isEmpty()&&!surfaceTopologyObserved)return true;
+            for(Rect hinge:surfaceHinges)
+                if(Rect.intersects(rect,hinge))return true;
+            return false;
+        }
+    }
+    private static void disarmSurfaceLease(String lease){
+        synchronized(SURFACE_LOCK){
+            if(!lease.equals(surfaceLease))return;
+            surfaceLease="";
+            surfaceTopologyObserved=false;
+            surfaceHinges.clear();
+        }
+    }
     private WindowInfoTrackerCallbackAdapter adapter;
     private Consumer<WindowLayoutInfo> listener;
     private WindowLayoutInfo latest;
@@ -145,6 +194,7 @@ public class DisplayTopologyPlugin extends Plugin {
                             activeOwners.isEmpty()) return;
                     latest = info;
                     revision++;
+                    updateSurfaceHinges(lease,info);
                     int foldCount=0;
                     ArrayList<String> postureFeatures=new ArrayList<>();
                     ArrayList<String> geometryFeatures=new ArrayList<>();
@@ -180,6 +230,7 @@ public class DisplayTopologyPlugin extends Plugin {
             // Register the native lease BEFORE connecting the callback, or
             // its first (possibly only) posture can be discarded as stale.
             NativeCaptureService.observeFoldObserverActive(lease);
+            armSurfaceLease(lease);
             adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
@@ -206,6 +257,7 @@ public class DisplayTopologyPlugin extends Plugin {
         // matching lease may report an observation gap to the recorder.
         if(observerLease!=null){
             NativeCaptureService.observeFoldObserverStopped(observerLease);
+            disarmSurfaceLease(observerLease);
             observerLease=null;
         }
         if (listener != null && adapter != null) {
