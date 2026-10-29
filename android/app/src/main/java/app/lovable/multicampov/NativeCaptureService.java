@@ -100,6 +100,9 @@ public class NativeCaptureService extends Service {
     private static boolean mp4HasAudioTrack = false;
     private static boolean mp4HasVideoTrack = false;
     private static int mp4TailAudioSamples=0;
+    // Includes duplicate/rollback timestamps at the beginning and tail.
+    // Audio is checked independently of Camera2 video CaptureResult timing.
+    private static int mp4AudioPtsAnomalies=0;
     private static boolean mp4TailAudioNearEnd=false;
     private static boolean mp4AvTailOffsetMeasured=false;
     private static long mp4AvTailOffsetMs=0L;
@@ -224,6 +227,7 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4AudioSamples",0)
                 .putInt("mp4TailVideoSamples",0)
                 .putInt("mp4TailAudioSamples",0)
+                .putInt("mp4AudioPtsAnomalies",0)
                 .putBoolean("mp4TailAudioNearEnd",false)
                 .putBoolean("mp4AvTailOffsetMeasured",false)
                 .putLong("mp4AvTailOffsetMs",0L)
@@ -954,6 +958,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4TailVideoSamples", 0) : mp4TailVideoSamples);
             out.put("mp4TailAudioSamples",runningInstance==null
                 ? previous.getInt("mp4TailAudioSamples",0):mp4TailAudioSamples);
+            out.put("mp4AudioPtsAnomalies",runningInstance==null
+                ? previous.getInt("mp4AudioPtsAnomalies",0):mp4AudioPtsAnomalies);
             out.put("mp4TailAudioNearEnd",runningInstance==null
                 ? previous.getBoolean("mp4TailAudioNearEnd",false):mp4TailAudioNearEnd);
             out.put("mp4AvTailOffsetMeasured",runningInstance==null
@@ -1052,6 +1058,7 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4DurationMs", mp4DurationMs)
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
                 .putInt("mp4TailAudioSamples",mp4TailAudioSamples)
+                .putInt("mp4AudioPtsAnomalies",mp4AudioPtsAnomalies)
                 .putBoolean("mp4TailAudioNearEnd",mp4TailAudioNearEnd)
                 .putBoolean("mp4AvTailOffsetMeasured",mp4AvTailOffsetMeasured)
                 .putLong("mp4AvTailOffsetMs",mp4AvTailOffsetMs)
@@ -1211,7 +1218,7 @@ public class NativeCaptureService extends Service {
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
-            mp4TailAudioSamples=0;mp4TailAudioNearEnd=false;
+            mp4TailAudioSamples=0;mp4AudioPtsAnomalies=0;mp4TailAudioNearEnd=false;
             mp4AvTailOffsetMeasured=false;mp4AvTailOffsetMs=0L;
             mp4TailSampledFps = -1f; mp4TailNearEnd = false;
             mp4FirstFrameDecodable = false;mp4TailFrameDecodable=false;
@@ -1726,7 +1733,7 @@ public class NativeCaptureService extends Service {
         long avStartOffsetMs = 0L;
         boolean avStartMeasured;
         int width, height, videoSamples, audioSamples;
-        int timestampRollbacks, timestampDuplicates;
+        int timestampRollbacks, timestampDuplicates, audioPtsAnomalies;
         boolean sampleLimitReached;
         float sampledFps = -1f;
         long durationMs = -1L;
@@ -1741,6 +1748,10 @@ public class NativeCaptureService extends Service {
         Mp4TrackAudit audit) {
         extractor.selectTrack(track);
         try {
+            // The previous video tail scan leaves the shared extractor near
+            // EOF. Explicitly rewind each newly selected track, especially
+            // the audio prefix, before inspecting its first timestamps.
+            extractor.seekTo(0L,MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
             long first = -1L, last = -1L;
             int samples = 0;
             int rollbacks = 0, duplicates = 0;
@@ -1769,6 +1780,7 @@ public class NativeCaptureService extends Service {
             } else {
                 audit.firstAudioPtsUs = first;
                 audit.audioSamples = samples;
+                audit.audioPtsAnomalies += rollbacks + duplicates;
             }
         } finally {
             extractor.unselectTrack(track);
@@ -1830,7 +1842,7 @@ public class NativeCaptureService extends Service {
             while(samples<MP4_SCAN_SAMPLES_PER_TRACK){
                 long pts=extractor.getSampleTime();
                 if(pts<0L)break;
-                if(last>=0L && pts<=last)break;
+                if(last>=0L && pts<=last)audit.audioPtsAnomalies++;
                 last=pts;
                 samples++;
                 if(!extractor.advance())break;
@@ -1878,11 +1890,15 @@ public class NativeCaptureService extends Service {
                 if (mime == null) continue;
                 if (mime.startsWith("video/")) {
                     result.video = true;
-                    if (videoTrack < 0) videoTrack = i;
-                    if (format.containsKey(MediaFormat.KEY_WIDTH))
-                        result.width = format.getInteger(MediaFormat.KEY_WIDTH);
-                    if (format.containsKey(MediaFormat.KEY_HEIGHT))
-                        result.height = format.getInteger(MediaFormat.KEY_HEIGHT);
+                    // Keep dimensions tied to the exact track being sampled:
+                    // a second video track must not overwrite its metadata.
+                    if(videoTrack < 0){
+                        videoTrack=i;
+                        if(format.containsKey(MediaFormat.KEY_WIDTH))
+                            result.width=format.getInteger(MediaFormat.KEY_WIDTH);
+                        if(format.containsKey(MediaFormat.KEY_HEIGHT))
+                            result.height=format.getInteger(MediaFormat.KEY_HEIGHT);
+                    }
                 } else if (mime.startsWith("audio/")) {
                     result.audio = true;
                     if (audioTrack < 0) audioTrack = i;
@@ -2149,6 +2165,7 @@ public class NativeCaptureService extends Service {
             mp4DurationMs = audit == null ? -1L : audit.durationMs;
             mp4TailVideoSamples = audit == null ? 0 : audit.tailSamples;
             mp4TailAudioSamples = audit == null ? 0 : audit.tailAudioSamples;
+            mp4AudioPtsAnomalies = audit == null ? 0 : audit.audioPtsAnomalies;
             mp4TailAudioNearEnd = audit != null && audit.tailAudioNearEnd;
             mp4AvTailOffsetMeasured = audit != null && audit.avTailOffsetMeasured;
             mp4AvTailOffsetMs = audit == null ? 0L : audit.avTailOffsetMs;
@@ -2162,7 +2179,8 @@ public class NativeCaptureService extends Service {
             // A missing audio track is not a clean video+audio recording.
             // A missing parser result is UNKNOWN rather than "audio absent".
             boolean audioNotConfirmed = wantAudio &&
-                (audit == null || !audit.audio || audit.audioSamples == 0);
+                (audit == null || !audit.audio || audit.audioSamples == 0 ||
+                 audit.audioPtsAnomalies > 0);
             // Actual encoded dimensions cannot be inferred from orientation.
             // Missing width/height is unknown, not an accepted selected mode.
             boolean videoMismatch = audit != null && audit.video &&
