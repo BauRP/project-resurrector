@@ -141,3 +141,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Requested audio plus absent audio PTS measurement or a sampled span over 500 ms marks recording evidence incomplete (`saved_interrupted` native, `unknown` in Camera2 mode passport). Video-only capture is not required to contain an audio track.
 - Audio fold-check counts, suspected gaps and maximum measured gap are exported to Capacitor status, the 24-entry persistent native journal, anonymized technical report and on-screen diagnostics; regression tests cover positive/negative cases.
 - These findings are **bounded timing indicators**, not proof of decoded audible samples, perfect synchronization, zero dropped frames, working stabilization or physical fold-device acceptance. CI and a new APK have not been confirmed by these source changes.
+
+## Strict persisted MP4 evidence validation — 29 October 2026
+- Camera specification: impossible negative, fractional or otherwise invalid decoded-video timestamp counters are no longer treated as clean MP4 evidence in the Camera2 passport.
+- Foldable specification: recorded fold audio and video PTS span counts must exactly match their sampled fold checkpoints, and invalid maximum audio gap metrics cause an `unknown` rather than `recorded` verdict.
+- Invalid or fractional long-MP4 audio tail sample counts or tail A/V offset values are also not considered verified evidence. Regression tests cover all of these contradictions.
+- These validations operate on reported MP4 metadata. They do not establish whole-video integrity, visual stabilization effectiveness or physical-device fold acceptance.
