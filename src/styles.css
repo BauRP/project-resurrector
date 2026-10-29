@@ -598,3 +598,50 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 [data-camera-tabletop="true"] .camera-settings-sheet {
   max-height: calc(100% - var(--camera-lower-top));
 }
+
+
+/* Actual two-axis WindowManager hinge layout: four verified usable panes.
+   Never infer a 2x2 screen from manufacturer names, resolution or CSS alone. */
+[data-camera-split="quad"] .camera-live-view {
+  inset: auto !important;
+  left: var(--camera-quad-preview-left) !important;
+  top: var(--camera-quad-preview-top) !important;
+  width: var(--camera-quad-preview-width) !important;
+  height: var(--camera-quad-preview-height) !important;
+  border: 1px solid var(--border);
+}
+[data-camera-split="quad"] .camera-hud {
+  inset: auto !important;
+  left: var(--camera-quad-hud-left) !important;
+  top: var(--camera-quad-hud-top) !important;
+  width: var(--camera-quad-hud-width) !important;
+  max-height: var(--camera-quad-hud-height);
+  overflow-y: auto;
+}
+[data-camera-split="quad"] .camera-settings-sheet {
+  inset: auto !important;
+  left: var(--camera-quad-settings-left) !important;
+  top: var(--camera-quad-settings-top) !important;
+  width: var(--camera-quad-settings-width) !important;
+  height: var(--camera-quad-settings-height) !important;
+  overflow-y: auto;
+}
+[data-camera-split="quad"] .camera-record-dock {
+  inset: auto !important;
+  left: var(--camera-quad-controls-left) !important;
+  top: var(--camera-quad-controls-top) !important;
+  width: var(--camera-quad-controls-width) !important;
+  height: var(--camera-quad-controls-height) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: .5rem;
+}
+[data-camera-split="quad"] .camera-record-dock > div {
+  width: 100%;
+  max-width: 100%;
+}
+[data-camera-split="quad"] .app-shell:has(.camera-screen) > .bottom-nav {
+  left: var(--camera-quad-controls-left) !important;
+  width: var(--camera-quad-controls-width) !important;
+}
