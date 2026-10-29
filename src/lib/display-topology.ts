@@ -161,6 +161,32 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
   };
 }
 
+/** True four-pane camera workstation only with four actual usable regions
+ * forming a 2x2 grid. No synthetic sections or device-name heuristics.
+ */
+export function fourPaneCameraLayout(regions: Region[]): {
+  preview: Region; hud: Region; settings: Region; controls: Region;
+} | null {
+  if(regions.length!==4 || regions.some(r=>![r.left,r.top,r.width,r.height]
+    .every(Number.isFinite) || r.width<220 || r.height<170))return null;
+  const byRow=[...regions].sort((a,b)=>a.top-b.top||a.left-b.left);
+  const [topLeft,topRight,bottomLeft,bottomRight]=byRow;
+  if(!topLeft||!topRight||!bottomLeft||!bottomRight)return null;
+  const near=(x:number,y:number)=>Math.abs(x-y)<4;
+  const ordered=topLeft.left<topRight.left && bottomLeft.left<bottomRight.left &&
+    topLeft.top<bottomLeft.top && topRight.top<bottomRight.top;
+  if(!ordered ||
+     !near(topLeft.top,topRight.top) ||
+     !near(bottomLeft.top,bottomRight.top) ||
+     !near(topLeft.left,bottomLeft.left) ||
+     !near(topRight.left,bottomRight.left) ||
+     !near(topLeft.width,bottomLeft.width) ||
+     !near(topRight.width,bottomRight.width) ||
+     topLeft.top+topLeft.height>bottomLeft.top+4 ||
+     topRight.top+topRight.height>bottomRight.top+4) return null;
+  return {preview:topLeft,hud:topRight,settings:bottomLeft,controls:bottomRight};
+}
+
 /** Emits when something OBSERVABLE changed or a newer native revision must
  * advance the recording journal's chronology watermark. Purely repeating the
  * same revision and pane layout is not a new event.
@@ -267,7 +293,9 @@ export function startDisplayAdaptation(): () => void {
       thirdPane.height >= 260 && panes[1]!.height >= 260;
     // In a verified three-region window: primary viewfinder | HUD/tools |
     // record controls. Never synthesize a third region from device branding.
-    root.dataset["cameraSplit"] = eligibleThree ? "tri" : eligible ? "side" : "none";
+    const quad=geometry.hinges.length>=2 ? fourPaneCameraLayout(geometry.regions) : null;
+    root.dataset["cameraSplit"] = quad ? "quad" :
+      eligibleThree ? "tri" : eligible ? "side" : "none";
     const leftPane = panes[0], rightPane = panes[1];
     const controlPane = eligibleThree ? thirdPane : rightPane;
     const cameraRect = document.querySelector(".camera-screen")?.getBoundingClientRect();
@@ -278,6 +306,39 @@ export function startDisplayAdaptation(): () => void {
     root.style.setProperty("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
     root.style.setProperty("--camera-control-pane-left", Math.max(0, (controlPane?.left ?? width()) - cameraLeft) + "px");
     root.style.setProperty("--camera-control-pane-width", Math.max(0, controlPane?.width ?? 0) + "px");
+    // Layout coordinates must be relative to the actual camera container,
+    // not the full Android display or the page's top-left origin.
+    const quadVars: Record<string, number> = quad ? {
+      "--camera-quad-preview-left":quad.preview.left-cameraLeft,
+      "--camera-quad-preview-top":quad.preview.top-cameraTop,
+      "--camera-quad-preview-width":quad.preview.width,
+      "--camera-quad-preview-height":quad.preview.height,
+      "--camera-quad-hud-left":quad.hud.left-cameraLeft,
+      "--camera-quad-hud-top":quad.hud.top-cameraTop,
+      "--camera-quad-hud-width":quad.hud.width,
+      "--camera-quad-hud-height":quad.hud.height,
+      "--camera-quad-settings-left":quad.settings.left-cameraLeft,
+      "--camera-quad-settings-top":quad.settings.top-cameraTop,
+      "--camera-quad-settings-width":quad.settings.width,
+      "--camera-quad-settings-height":quad.settings.height,
+      "--camera-quad-controls-left":quad.controls.left-cameraLeft,
+      "--camera-quad-controls-top":quad.controls.top-cameraTop,
+      "--camera-quad-controls-width":quad.controls.width,
+      "--camera-quad-controls-height":quad.controls.height,
+    }: {};
+    for(const name of [
+      "--camera-quad-preview-left","--camera-quad-preview-top",
+      "--camera-quad-preview-width","--camera-quad-preview-height",
+      "--camera-quad-hud-left","--camera-quad-hud-top",
+      "--camera-quad-hud-width","--camera-quad-hud-height",
+      "--camera-quad-settings-left","--camera-quad-settings-top",
+      "--camera-quad-settings-width","--camera-quad-settings-height",
+      "--camera-quad-controls-left","--camera-quad-controls-top",
+      "--camera-quad-controls-width","--camera-quad-controls-height",
+    ]) {
+      if(quad) root.style.setProperty(name,Math.max(0,quadVars[name]??0)+"px");
+      else root.style.removeProperty(name);
+    }
     // A tablet-like tabletop layout requires two full-width, vertically
     // stacked usable regions. Mixed perpendicular hinges create four panes
     // and must never trigger this two-zone mode.
@@ -372,7 +433,7 @@ export function startDisplayAdaptation(): () => void {
     if (activeAdaptation === token) {
       activeAdaptation = null;
       ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-      ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top"].forEach(key => root.style.removeProperty(key));
+      ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
     }
   };
 }
