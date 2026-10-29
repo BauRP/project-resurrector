@@ -129,3 +129,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Tail audio sample count, proximity and A/V offset are carried through the Capacitor bridge, per-mode passport, 24-entry native audit history and anonymized report. The passport also remains `unknown` if the required tail observations are missing.
 - Added unit regression tests for absent audio tail, wrong PTS offset, unknown measurements and video-only capture. Source-level persistence guard expanded.
 - Actual Android CI/test results and physical foldable recording acceptance are not confirmed for this batch. Do not raise either readiness percentage from code changes alone.
+
+## Correct track isolation in Camera2 MP4 diagnostics — 29 October 2026
+- Camera/recording requirement: each bounded MediaExtractor prefix scan now seeks explicitly to the start of its selected track. Otherwise examining the video tail could leave the shared extractor positioned at EOF and falsely classify the audio prefix as missing or unreadable.
+- Actual video width/height now come from the **same first video track** chosen for sample inspection; metadata from additional video tracks cannot overwrite the selected track dimensions.
+- Requested audio is checked for duplicate/rollback presentation timestamps in the prefix and tail. A detected anomaly downgrades the native finalization/Camera2 passport instead of claiming a clean MP4. The bounded anomaly count is persisted and exported without media IDs or paths.
+- Regression tests cover the source-level seek and track-selection contract, audio timing anomalies, and privacy-safe reporting. The code audit does not certify uninterrupted fold capture, real-world sound quality, actual video stabilization, or the Android build.
