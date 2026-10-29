@@ -7,6 +7,7 @@ import {describe,expect,it} from "vitest";
 const nativeDir="android/app/src/main/java/app/lovable/multicampov/";
 const store=readFileSync(nativeDir+"NativeCaptureAuditStore.java","utf8");
 const service=readFileSync(nativeDir+"NativeCaptureService.java","utf8");
+const foldObserver=readFileSync(nativeDir+"DisplayTopologyPlugin.java","utf8");
 const report=readFileSync("src/lib/native-audit-report.ts","utf8");
 describe("native Camera2 and fold audit persistence contract",()=>{
  it("persists all essential late-stage fold and MP4 audit fields",()=>{
@@ -17,6 +18,12 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(store, "native history omitted "+key).toContain('"'+key+'"');
    expect(service, "service missing "+key).toContain('"'+key+'"');
   }
+ });
+ it("activates the fold observer lease before registering its first callback",()=>{
+  const before=foldObserver.indexOf("NativeCaptureService.observeFoldObserverActive(lease);");
+  const subscribe=foldObserver.indexOf("adapter.addWindowLayoutInfoListener(getActivity(), main, listener);");
+  expect(before).toBeGreaterThan(0);
+  expect(subscribe).toBeGreaterThan(before);
  });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
