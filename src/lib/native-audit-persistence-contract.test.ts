@@ -25,6 +25,13 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(before).toBeGreaterThan(0);
   expect(subscribe).toBeGreaterThan(before);
  });
+ it("arms real pre-capture fold baseline in both recorder session paths",()=>{
+  expect(service).toContain("latestObservedFoldPosture=postureSignature;");
+  expect(service).toContain("recordingFoldObserverLease.equals(latestObservedFoldLease)");
+  const startCalls=service.match(/armRecordingFoldBaseline\(\);/g)??[];
+  expect(startCalls).toHaveLength(2);
+  expect(service).toContain("recordingFoldObserverGap=true;");
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
