@@ -45,7 +45,7 @@ public final class NativeCaptureAuditStore {
                 for(String k:strings)item.put(k,status.optString(k,""));
                 String[] longs={"captureId","startedAt","recordedDurationMs","savedBytes",
                     "lastFoldAt","maxFoldNearbyCallbackGapMs","mp4DurationMs","mp4MaxFoldPtsGapMs",
-                    "mp4AvTailOffsetMs"};
+                    "mp4AvTailOffsetMs","mp4MaxFoldAudioPtsGapMs"};
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
                     "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4AudioPtsAnomalies","mp4MiddleProbes","mp4MiddleMatched",
@@ -53,6 +53,7 @@ public final class NativeCaptureAuditStore {
                     "foldObservations","foldPostureChanges","foldGeometryOnlyChanges",
                     "foldCheckpointsOmitted","foldChangesWhilePaused",
                     "foldNearbyCallbackGaps","mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",
+                    "mp4FoldAudioPtsSpanChecks","mp4FoldAudioPtsLargeGaps",
                     "recordingEisFrames","recordingOisFrames",
                     "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
