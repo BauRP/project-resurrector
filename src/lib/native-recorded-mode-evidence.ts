@@ -29,8 +29,13 @@ export function nativeRecordedModeEvidence(
   // orientation metadata. Swapping width/height changes the recorded mode.
   const dimensionsMatch = !!dimensions &&
     dimensions.width === width && dimensions.height === height;
-  const anomalies = (status.mp4VideoTimestampRollbacks ?? 0) > 0 ||
-    (status.mp4VideoTimestampDuplicates ?? 0) > 0;
+  // Corrupt negative, fractional or non-finite counters must not be treated
+  // as clean video PTS evidence, even if the decoded keyframe exists.
+  const videoTimestampCounters=[
+    status.mp4VideoTimestampRollbacks??0,status.mp4VideoTimestampDuplicates??0,
+  ];
+  const anomalies = videoTimestampCounters.some(value=>
+    !Number.isSafeInteger(value)||value!==0);
   // On an explicitly audited MP4 longer than 1.5 seconds, a failed tail
   // decode cannot certify the recorded mode. Older results lacking the
   // tail decoder field remain historical evidence, not invented failures.
@@ -69,23 +74,27 @@ export function nativeRecordedModeEvidence(
     ptsLarge>ptsChecks || !Number.isSafeInteger(ptsMax) || ptsMax<0;
   // A checkpoint that was decoded but had no bracketing video timestamps
   // cannot establish local continuity. Keep it unknown rather than recorded.
-  const missingFoldSpan = foldTotal > 0 && ptsChecks < foldTotal;
+  // One measured PTS bracket is required for each probed fold. More
+  // brackets than probes is also inconsistent evidence, not a success.
+  const missingFoldSpan = ptsChecks !== foldTotal;
   const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
   const suspiciousFoldPts = invalidFoldPts || invalidSkipped || skippedPoints>0 ||
     ptsLarge>0 || missingFoldSpan || missingCheckpointAudit || invalidOmitted || omitted>0 || observerGap;
   const audioFoldChecks=status.mp4FoldAudioPtsSpanChecks??0;
   const audioFoldLarge=status.mp4FoldAudioPtsLargeGaps??0;
+  const audioFoldMax=status.mp4MaxFoldAudioPtsGapMs??0;
   const audioFoldInvalid=!Number.isSafeInteger(audioFoldChecks)||audioFoldChecks<0||audioFoldChecks>8||
-    !Number.isSafeInteger(audioFoldLarge)||audioFoldLarge<0||audioFoldLarge>audioFoldChecks;
+    !Number.isSafeInteger(audioFoldLarge)||audioFoldLarge<0||audioFoldLarge>audioFoldChecks||
+    !Number.isSafeInteger(audioFoldMax)||audioFoldMax<0;
   const audioFoldUnknown=status.audioRequested===true && (audioFoldInvalid||audioFoldLarge>0||
-    (foldTotal>0 && audioFoldChecks<foldTotal));
+    audioFoldChecks!==foldTotal);
   const audioPtsBad=status.audioRequested===true &&
     status.mp4AudioPtsAnomalies!==undefined &&
     (!Number.isSafeInteger(status.mp4AudioPtsAnomalies) || status.mp4AudioPtsAnomalies!==0);
   const audioTailMissing=status.audioRequested===true && (status.mp4DurationMs??-1)>2000 &&
-    (status.mp4TailAudioSamples===undefined || status.mp4TailAudioSamples<=0 ||
+    (!Number.isSafeInteger(status.mp4TailAudioSamples) || status.mp4TailAudioSamples!<=0 ||
      status.mp4TailAudioNearEnd!==true || status.mp4AvTailOffsetMeasured!==true ||
-     !Number.isFinite(status.mp4AvTailOffsetMs) || Math.abs(status.mp4AvTailOffsetMs!)>1000);
+     !Number.isSafeInteger(status.mp4AvTailOffsetMs) || Math.abs(status.mp4AvTailOffsetMs!)>1000);
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
