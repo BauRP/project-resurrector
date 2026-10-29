@@ -135,3 +135,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Actual video width/height now come from the **same first video track** chosen for sample inspection; metadata from additional video tracks cannot overwrite the selected track dimensions.
 - Requested audio is checked for duplicate/rollback presentation timestamps in the prefix and tail. A detected anomaly downgrades the native finalization/Camera2 passport instead of claiming a clean MP4. The bounded anomaly count is persisted and exported without media IDs or paths.
 - Regression tests cover the source-level seek and track-selection contract, audio timing anomalies, and privacy-safe reporting. The code audit does not certify uninterrupted fold capture, real-world sound quality, actual video stabilization, or the Android build.
+
+## Fold-adjacent audio timestamps — 29 October 2026
+- Both requirements now share a bounded MP4 check for audio samples on both sides of actual recorded fold checkpoints (at most eight). Video and audio use independent extractor track selections; a missing audio PTS bracket cannot count as a verified fold-capture with sound.
+- Requested audio plus absent audio PTS measurement or a sampled span over 500 ms marks recording evidence incomplete (`saved_interrupted` native, `unknown` in Camera2 mode passport). Video-only capture is not required to contain an audio track.
+- Audio fold-check counts, suspected gaps and maximum measured gap are exported to Capacitor status, the 24-entry persistent native journal, anonymized technical report and on-screen diagnostics; regression tests cover positive/negative cases.
+- These findings are **bounded timing indicators**, not proof of decoded audible samples, perfect synchronization, zero dropped frames, working stabilization or physical fold-device acceptance. CI and a new APK have not been confirmed by these source changes.
