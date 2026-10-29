@@ -49,7 +49,7 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:3,
     mp4FoldProbes:2,mp4FoldMatched:1},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4MiddleProbes:3,mp4MiddleMatched:3,
-    mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2},12345)?.state).toBe("recorded");
+    mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2,mp4FoldAudioPtsSpanChecks:2},12345)?.state).toBe("recorded");
   expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:0,mp4FoldMatched:0},12345)?.message)
     .toContain("не подтверждены");
  });
@@ -67,7 +67,7 @@ describe("native Camera2 per-mode recorded evidence",()=>{
  });
  it("downgrades real MP4 fold PTS gaps without claiming all frames lost",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:1,mp4MaxFoldPtsGapMs:500},12345)?.state).toBe("unknown");
-  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:0,mp4MaxFoldPtsGapMs:40},12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2,mp4FoldAudioPtsSpanChecks:2,mp4FoldPtsLargeGaps:0,mp4MaxFoldPtsGapMs:40},12345)?.state).toBe("recorded");
  });
  it("rejects impossible or contradictory encoded fold PTS gap counts",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4FoldPtsSpanChecks:2,mp4FoldPtsLargeGaps:3},12345)?.state).toBe("unknown");
@@ -90,7 +90,7 @@ describe("native Camera2 per-mode recorded evidence",()=>{
  it("does not claim MP4 fold continuity when more than eight positions occurred",()=>{
   const report=nativeRecordedModeEvidence({...base,mp4CheckpointAuditCompleted:true,
     foldCheckpointsOmitted:3,mp4FoldProbes:8,mp4FoldMatched:8,
-    mp4FoldPtsSpanChecks:8},12345);
+    mp4FoldPtsSpanChecks:8,mp4FoldAudioPtsSpanChecks:8},12345);
   expect(report?.state).toBe("unknown");
   expect(report?.message).toContain("восемью точками");
   expect(nativeRecordedModeEvidence({...base,foldCheckpointsOmitted:-2},12345)?.state).toBe("unknown");
