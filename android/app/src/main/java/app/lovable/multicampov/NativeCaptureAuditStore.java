@@ -48,7 +48,7 @@ public final class NativeCaptureAuditStore {
                     "mp4AvTailOffsetMs"};
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
-                    "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4MiddleProbes","mp4MiddleMatched",
+                    "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4AudioPtsAnomalies","mp4MiddleProbes","mp4MiddleMatched",
                     "mp4FoldProbes","mp4FoldMatched","mp4FoldPointsSkipped",
                     "foldObservations","foldPostureChanges","foldGeometryOnlyChanges",
                     "foldCheckpointsOmitted","foldChangesWhilePaused",
