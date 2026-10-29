@@ -111,3 +111,8 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - A duplicate native callback now advances both the revision and most-recent observation-time watermarks without rewriting the original pre-recording baseline timestamp. This blocks queued older geometry observations with the same native revision from entering the capture log.
 - A journal lacking a verified pre-capture baseline counts only actual consecutive transitions, not its first observed screen as a fold. Status remains explicitly uncertain where baseline evidence was unavailable.
 - Added regression coverage for delayed same-revision callback, baseline timestamp preservation and the actual observed transition count. These are unit/source-level checks; they do not establish hardware acceptance.
+
+## Native observer first-callback race and long MP4 passport — 29 October 2026
+- Camera document: For MP4 tracks longer than two seconds the per-mode passport now requires an explicitly measured, positive number of tail samples **and** an affirmative near-end timestamp result. Missing fields no longer silently qualify as recording proof. Historical incomplete evidence remains unknown.
+- Foldable document: A new WindowManager listener lease is activated before connecting its callback so synchronous initial topology notifications cannot be discarded as stale. This is a native observer lifecycle correction, not a simulated hinge or a camera restart.
+- Added unit/source-contract tests for missing tail values and the lease-registration order. Android instrumentation, actual MP4 recording, and hardware fold/unfold acceptance are still outstanding; no percentages or device-certification counts should increase solely due to commits.
