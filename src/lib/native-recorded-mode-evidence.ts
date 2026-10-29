@@ -73,6 +73,10 @@ export function nativeRecordedModeEvidence(
   const missingCheckpointAudit = status.mp4CheckpointAuditCompleted === false;
   const suspiciousFoldPts = invalidFoldPts || invalidSkipped || skippedPoints>0 ||
     ptsLarge>0 || missingFoldSpan || missingCheckpointAudit || invalidOmitted || omitted>0 || observerGap;
+  const audioTailMissing=status.audioRequested===true && (status.mp4DurationMs??-1)>2000 &&
+    (status.mp4TailAudioSamples===undefined || status.mp4TailAudioSamples<=0 ||
+     status.mp4TailAudioNearEnd!==true || status.mp4AvTailOffsetMeasured!==true ||
+     !Number.isFinite(status.mp4AvTailOffsetMs) || Math.abs(status.mp4AvTailOffsetMs!)>1000);
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -87,7 +91,7 @@ export function nativeRecordedModeEvidence(
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
-    dimensionsMatch && !anomalies && !audioIncomplete &&
+    dimensionsMatch && !anomalies && !audioIncomplete && !audioTailMissing &&
     !measuredFpsMismatch && !tailDecodeFailure && !missingTailSamples &&
     !checkpointMismatch && !suspiciousFoldPts;
   const state: ModeEvidence["state"] = recordingConfirmed &&
@@ -99,6 +103,7 @@ export function nativeRecordedModeEvidence(
     videoSamples <= 0 ? "Наличие видеокадров не подтверждено." :
     anomalies ? "В проверенном участке обнаружены нарушения времени кадров." :
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
+    audioTailMissing ? "Конец аудиодорожки MP4 или её временное согласование с видео не подтверждены." :
     measuredFpsMismatch ? "Измеренный FPS части MP4 отличается от выбранного режима." :
     tailDecodeFailure ? "Кадр в конце MP4 не удалось декодировать." :
     missingTailSamples ? "Не подтверждены видеосэмплы возле конца MP4." :
