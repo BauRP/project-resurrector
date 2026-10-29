@@ -175,3 +175,8 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - The queued Android 'show preview' command revalidates the current target rectangle and pane before execution, to avoid displaying an obsolete overlay after a layout change.
 - Android now converts CSS X/width using measured WebView X scaling and Y/height using its independent Y scaling; it requires both reported viewport dimensions. A source-contract test checks that Y uses Y scaling.
 - CI and hardware verification are separate gates. Real fold, on-screen focus touch targets and uninterrupted recordings on device remain to be tested.
+
+## Native physical-hinge safety at overlay submission — 29 October 2026
+- The native WindowManager observer retains only actual separating hinge rectangles under its active lease. Before adding or moving the Android TextureView, the plugin checks the overlay window rectangle against the latest real hinge geometry **on the UI thread**. A crossing show request is rejected, and the same owner's old overlay is detached. This closes a safety gap when a JavaScript measurement becomes stale before native placement.
+- A real but still-unreported initial topology is treated as pending, not as a flat device. Zero-width and zero-height separating seams receive a small 2px safety margin. The guard does not create synthetic hinges or interrupt the MediaRecorder.
+- Source-contract regression coverage asserts lease reset, reported separating features and native crossing rejection. This is not real hardware validation; on-device rotated, tabletop and multi-window tests remain necessary.
