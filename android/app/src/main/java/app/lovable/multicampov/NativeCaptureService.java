@@ -126,6 +126,11 @@ public class NativeCaptureService extends Service {
     private static boolean recordingFoldBaselineObserved = false;
     private static String recordingFoldObserverLease = "";
     private static boolean recordingFoldObserverGap = false;
+    // Real WindowManager state observed before the capture is a source for
+    // initial posture, not proof of MP4 frame continuity or a synthetic fold.
+    private static String latestObservedFoldLease = "";
+    private static String latestObservedFoldPosture = "";
+    private static String latestObservedFoldGeometry = "";
     private static volatile long recordingLastFoldElapsedMs = -1L;
     private static volatile int foldNearbyCameraCallbackGaps = 0;
     private static volatile long maxFoldNearbyCallbackGapMs = 0L;
@@ -224,10 +229,16 @@ public class NativeCaptureService extends Service {
         if(lease==null||lease.isEmpty())return;
         synchronized(STATE_LOCK){
             if(!lease.equals(recordingFoldObserverLease)){
-                if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state)) &&
-                   !recordingFoldObserverLease.isEmpty())recordingFoldObserverGap=true;
+                if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state))){
+                    recordingFoldObserverGap=true;
+                    runningInstance.getSharedPreferences(STORE,MODE_PRIVATE).edit()
+                        .putBoolean("foldObserverGap",true).apply();
+                }
                 recordingFoldObserverLease=lease;
                 recordingFoldBaselineObserved=false;
+                latestObservedFoldLease="";
+                latestObservedFoldPosture="";
+                latestObservedFoldGeometry="";
             }
         }
     }
@@ -237,11 +248,32 @@ public class NativeCaptureService extends Service {
             if(!lease.equals(recordingFoldObserverLease))return;
             recordingFoldObserverLease="";
             recordingFoldBaselineObserved=false;
+            latestObservedFoldLease="";
+            latestObservedFoldPosture="";
+            latestObservedFoldGeometry="";
             recordingLastFoldElapsedMs=-1L;
             if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state))){
                 recordingFoldObserverGap=true;
                 runningInstance.getSharedPreferences(STORE,MODE_PRIVATE).edit()
                     .putBoolean("foldObserverGap",true).apply();
+            }
+        }
+    }
+    /** Called after MediaRecorder.start(), before recording status is published. */
+    private static void armRecordingFoldBaseline() {
+        synchronized(STATE_LOCK){
+            boolean observed=!recordingFoldObserverLease.isEmpty() &&
+                recordingFoldObserverLease.equals(latestObservedFoldLease) &&
+                !latestObservedFoldPosture.isEmpty() &&
+                !latestObservedFoldGeometry.isEmpty();
+            recordingFoldBaselineObserved=observed;
+            if(observed){
+                recordingLastFoldPostureSignature=latestObservedFoldPosture;
+                recordingLastFoldGeometrySignature=latestObservedFoldGeometry;
+            }else{
+                // A first callback after recording started is not evidence
+                // that all intervening folding events were observed.
+                recordingFoldObserverGap=true;
             }
         }
     }
@@ -251,9 +283,14 @@ public class NativeCaptureService extends Service {
             postureSignature.length()>1000||geometrySignature.length()>1600||
             hingeCount<0||hingeCount>16)return;
         synchronized(STATE_LOCK){
+            if(!lease.equals(recordingFoldObserverLease))return;
+            // Retain a genuine pre-capture state. It is invalidated when its
+            // owner listener stops or another Activity takes the lease.
+            latestObservedFoldLease=lease;
+            latestObservedFoldPosture=postureSignature;
+            latestObservedFoldGeometry=geometrySignature;
             NativeCaptureService service=runningInstance;
             if(service==null||!("recording".equals(state)||"paused".equals(state)))return;
-            if(!lease.equals(recordingFoldObserverLease))return;
             recordingFoldObservations++;
             if(recordingFoldBaselineObserved){
                 if(!postureSignature.equals(recordingLastFoldPostureSignature)){
@@ -1550,6 +1587,7 @@ public class NativeCaptureService extends Service {
                                         encoderPaused = false;
                                         recordingStartedAt = System.currentTimeMillis();
                                         recordingStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
+                                        armRecordingFoldBaseline();
                                         publish("recording",
                                             "Нативная Camera2 запись запущена. Контроль через уведомление.");
                                     } catch(Exception error) { fail(error); }
@@ -1600,6 +1638,7 @@ public class NativeCaptureService extends Service {
                                                         encoder.start();encoderStarted=true;encoderPaused=false;
                                                         recordingStartedAt=System.currentTimeMillis();
                                         recordingStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
+                                                        armRecordingFoldBaseline();
                                                         publish("recording",
                                                             "MP4 записывается; параллельный предпросмотр камерой не поддержан");
                                                     } catch(Exception error){fail(error);}
