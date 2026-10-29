@@ -153,6 +153,19 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...fold,mp4FoldAudioPtsLargeGaps:1},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...fold,audioRequested:false,mp4FoldAudioPtsSpanChecks:0},12345)?.state).toBe("recorded");
  });
+ it("rejects impossible media timestamps and contradictory fold counts",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4VideoTimestampRollbacks:-1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4VideoTimestampDuplicates:0.5},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:1,mp4FoldMatched:1,
+    mp4FoldPtsSpanChecks:2,mp4FoldAudioPtsSpanChecks:1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:1,mp4FoldMatched:1,
+    mp4FoldPtsSpanChecks:1,mp4FoldAudioPtsSpanChecks:2},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4FoldProbes:1,mp4FoldMatched:1,
+    mp4FoldPtsSpanChecks:1,mp4FoldAudioPtsSpanChecks:1,
+    mp4MaxFoldAudioPtsGapMs:-3},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:12000,
+    mp4TailAudioSamples:2.5},12345)?.state).toBe("unknown");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
