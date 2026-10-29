@@ -81,7 +81,7 @@ export function nativeRecordedModeEvidence(
     (foldTotal>0 && audioFoldChecks<foldTotal));
   const audioPtsBad=status.audioRequested===true &&
     status.mp4AudioPtsAnomalies!==undefined &&
-    (!Number.isSafeInteger(status.mp4AudioPtsAnomalies) || status.mp4AudioPtsAnomalies>0);
+    (!Number.isSafeInteger(status.mp4AudioPtsAnomalies) || status.mp4AudioPtsAnomalies!==0);
   const audioTailMissing=status.audioRequested===true && (status.mp4DurationMs??-1)>2000 &&
     (status.mp4TailAudioSamples===undefined || status.mp4TailAudioSamples<=0 ||
      status.mp4TailAudioNearEnd!==true || status.mp4AvTailOffsetMeasured!==true ||
