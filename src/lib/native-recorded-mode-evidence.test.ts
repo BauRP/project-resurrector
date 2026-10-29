@@ -38,7 +38,8 @@ describe("native Camera2 per-mode recorded evidence",()=>{
  it("does not certify a long MP4 if its tail cannot decode",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4DurationMs:10000,mp4TailFrameDecodable:false},12345)?.state)
     .toBe("unknown");
-  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:10000,mp4TailFrameDecodable:true},12345)?.state)
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:10000,mp4TailVideoSamples:90,
+    mp4TailNearEnd:true,mp4TailFrameDecodable:true},12345)?.state)
     .toBe("recorded");
   expect(nativeRecordedModeEvidence({...base,mp4DurationMs:1000,mp4TailFrameDecodable:false},12345)?.state)
     .toBe("recorded");
@@ -76,7 +77,7 @@ describe("native Camera2 per-mode recorded evidence",()=>{
  });
  it("does not call a fold recording confirmed when local MP4 bracketing PTS could not be read",()=>{
   const r=nativeRecordedModeEvidence({...base,mp4FoldProbes:2,mp4FoldMatched:2,
-    mp4FoldPtsSpanChecks:1,mp4FoldPtsLargeGaps:0},12345);
+    mp4FoldPtsSpanChecks:1,mp4FoldAudioPtsSpanChecks:2,mp4FoldPtsLargeGaps:0},12345);
   expect(r?.state).toBe("unknown");
   expect(r?.message).toContain("не удалось проверить");
  });
