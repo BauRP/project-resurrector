@@ -122,3 +122,10 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - On owner handoff/teardown the cached baseline is invalidated. If no live observer has supplied a real pre-capture state, `foldObserverGap` is set and continuity remains unverified; no simulated hinge is inserted and the video recorder is not restarted.
 - The TypeScript MP4 track summary now reports `unknown` when an otherwise inspected track has no measured encoded width/height for a requested video mode; actual dimensions must not be fabricated from the request.
 - Added source-contract and TypeScript regression checks. Device-tested fold continuity, complete MP4 decoding, stabilization effectiveness, and a successful new APK/AAB are **not** established by these commits.
+
+## Audio/video tail integrity during native Camera2 and fold capture — 29 October 2026
+- Before this change, the Android MP4 audit read audio only at the start, so a long recording could be described as saved even when audio ended significantly before its video track. Native MediaExtractor now performs a **bounded final audio sample scan** in addition to the existing video tail audit.
+- For requested audio in recordings longer than two seconds, finalization now requires real audio samples near the MP4 end and a measured last-audio/last-video PTS offset within one second. Failure downgrades the saved capture to `saved_interrupted`, preserving the actual media file. These are conservative diagnostic thresholds, not proof of audible quality or sample-accurate A/V sync.
+- Tail audio sample count, proximity and A/V offset are carried through the Capacitor bridge, per-mode passport, 24-entry native audit history and anonymized report. The passport also remains `unknown` if the required tail observations are missing.
+- Added unit regression tests for absent audio tail, wrong PTS offset, unknown measurements and video-only capture. Source-level persistence guard expanded.
+- Actual Android CI/test results and physical foldable recording acceptance are not confirmed for this batch. Do not raise either readiness percentage from code changes alone.
