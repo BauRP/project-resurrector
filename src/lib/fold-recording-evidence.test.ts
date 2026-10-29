@@ -156,7 +156,7 @@ describe("long fold recording evidence retention", () => {
   it("preserves the actual starting posture through over 120 different observations", () => {
     const start=normalizeFoldTransition({...sample,regionGeometry:"0,0,280,400;285,0,280,400"},100)!;
     let events: FoldTransitionEvidence[]=[{...start,baseline:true as const}];
-    for(let i=0;i<150;i++) {
+    for(let i=1;i<=150;i++) {
       const update=normalizeFoldTransition({...sample,revision:i+2,
         regionGeometry:`0,0,${280+i},400;${285+i},0,280,400`},101+i)!;
       events=appendFoldTransition(events,update);
