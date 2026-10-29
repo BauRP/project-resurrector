@@ -138,6 +138,12 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...good,audioRequested:false},12345)?.state).toBe("recorded");
   expect(nativeRecordedModeEvidence(good,12345)?.state).toBe("recorded");
  });
+ it("rejects invalid or duplicated audio timestamps in a requested sound track",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4AudioPtsAnomalies:2},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4AudioPtsAnomalies:-1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4AudioPtsAnomalies:0},12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,audioRequested:false,mp4AudioPtsAnomalies:2},12345)?.state).toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
