@@ -13,7 +13,7 @@ export function previewFitsFoldRegion(rect:PreviewRect, regionGeometry:string|un
  if(!regionGeometry)return true;
  const regions=regionGeometry.split(";");
  if(regions.length<2)return true;
- if(regions.length>16 || !regions.every(r=>/^\\d+,\\d+,\\d+,\\d+$/.test(r)))
+ if(regions.length>16 || !regions.every(r=>/^\d+,\d+,\d+,\d+$/.test(r)))
    return false;
  return regions.some(region=>{
    const [x,y,w,h]=region.split(",").map(Number);
