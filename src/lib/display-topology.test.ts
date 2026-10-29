@@ -144,6 +144,35 @@ describe("multi-hinge topology", () => {
 
 });
 
+describe("native window pixels to an inset WebView viewport",()=>{
+  it("moves a real book hinge into WebView CSS coordinates without guessing a fold",()=>{
+    const state={...topology([hinge(590,610)]),
+      webViewBoundsPx:{left:100,top:100,right:1100,bottom:800}};
+    const result=calculateDisplayRegions(state,500,350);
+    expect(result.regions).toHaveLength(2);
+    expect(result.regions[0]?.width).toBe(245);
+    expect(result.regions[1]?.left).toBe(255);
+  });
+  it("keeps two actual hinges in order on a WebView inset from the window",()=>{
+    const state={...topology([hinge(390,410),hinge(790,810)]),
+      webViewBoundsPx:{left:100,top:100,right:1100,bottom:800}};
+    const r=calculateDisplayRegions(state,500,350);
+    expect(r.regions).toHaveLength(3);
+    expect(r.regions.map(x=>Math.round(x.width))).toEqual([145,190,145]);
+  });
+  it("ignores a physical hinge entirely outside the embedded WebView",()=>{
+    const state={...topology([hinge(590,610)]),
+      webViewBoundsPx:{left:700,top:0,right:1200,bottom:900}};
+    expect(calculateDisplayRegions(state,500,900).regions).toHaveLength(1);
+  });
+  it("fails safe for impossible native WebView rectangles",()=>{
+    const state={...topology([hinge(590,610)]),
+      webViewBoundsPx:{left:200,top:10,right:150,bottom:900}};
+    const r=calculateDisplayRegions(state,600,450);
+    expect(r.regions).toHaveLength(1);
+    expect(r.hinges).toHaveLength(0);
+  });
+});
 describe("fold capture journal chronology", () => {
   it("advances on revision-only updates even when the measured panes do not move", () => {
     expect(shouldPublishFoldObservation("two-panes", 8, "two-panes", 9)).toBe(true);
