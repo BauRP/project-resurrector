@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, fourPaneCameraLayout, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -171,6 +171,30 @@ describe("native window pixels to an inset WebView viewport",()=>{
     const r=calculateDisplayRegions(state,600,450);
     expect(r.regions).toHaveLength(1);
     expect(r.hinges).toHaveLength(0);
+  });
+});
+describe("real dual-axis four-pane camera workstation",()=>{
+  it("maps two perpendicular physical hinges to four separate working panes",()=>{
+    const vertical=hinge(590,610);
+    const horizontal={leftPx:0,rightPx:1200,topPx:440,bottomPx:460,
+      orientation:"HORIZONTAL",state:"HALF_OPENED",occlusion:"FULL",separating:true};
+    const regions=calculateDisplayRegions(topology([vertical,horizontal]),600,450).regions;
+    const layout=fourPaneCameraLayout(regions);
+    expect(layout).not.toBeNull();
+    expect(layout?.preview.left).toBe(0);
+    expect(layout?.hud.left).toBeGreaterThan(layout!.preview.left);
+    expect(layout?.settings.top).toBeGreaterThan(layout!.preview.top);
+    expect(layout?.controls.top).toBeGreaterThan(layout!.hud.top);
+    expect(fourPaneCameraLayout([...regions].reverse())).toEqual(layout);
+  });
+  it("refuses four decorative or undersized panes",()=>{
+    expect(fourPaneCameraLayout([])).toBeNull();
+    expect(fourPaneCameraLayout([
+      {left:0,top:0,width:100,height:100},
+      {left:100,top:0,width:100,height:100},
+      {left:0,top:100,width:100,height:100},
+      {left:100,top:100,width:100,height:100}
+    ])).toBeNull();
   });
 });
 describe("fold capture journal chronology", () => {
