@@ -169,3 +169,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Previously the direct Camera2 TextureView overlay only checked whole-WebView bounds. After a physical fold, the Android overlay could cross a real separating hinge even though the HTML camera UI was pane-aware.
 - Direct preview placement now also checks that its entire measured CSS rectangle fits within one actually reported usable fold region. If not, the overlay is hidden without stopping the Camera2 recorder; after the layout becomes safe the preview may reposition. Fold topology updates trigger a fresh placement check.
 - Added regression tests for a valid left/right pane, a rectangle crossing an actual hinge, and malformed multi-pane metadata. This is functional safety gating, not a hardware claim; live testing of Android TextureView occlusion and physical folding remains outstanding.
+
+## Native preview after fold: real geometry, stale show requests and axis scaling — 29 October 2026
+- Camera and foldable requirements: UI now passes the active WindowManager-derived usable region geometry into direct Camera2 preview placement. A native TextureView that crosses a physical hinge is not shown; folding events recheck visibility without restarting the recorder.
+- The queued Android 'show preview' command revalidates the current target rectangle and pane before execution, to avoid displaying an obsolete overlay after a layout change.
+- Android now converts CSS X/width using measured WebView X scaling and Y/height using its independent Y scaling; it requires both reported viewport dimensions. A source-contract test checks that Y uses Y scaling.
+- CI and hardware verification are separate gates. Real fold, on-screen focus touch targets and uninterrupted recordings on device remain to be tested.
