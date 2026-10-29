@@ -158,3 +158,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - A **real** pair of perpendicular, separating WindowManager hinges can yield four measured usable regions. The adaptive camera now selects a 2×2 workstation only if all four panes satisfy size, row alignment and non-overlap checks. Top-left preview, top-right HUD, bottom-left settings and bottom-right recording controls use measured positions, not model/device assumptions.
 - Added dedicated CSS positioning and explicit cleanup of all 16 four-pane variables after the geometry changes or the screen observer unmounts. Unsupported, insufficient or malformed configurations retain ordinary camera UI instead of simulating a four-panel device.
 - Added unit regression tests covering perpendicular hinges, reordering, and rejection of decorative/undersized panes. This is functional UI code and CI-testable geometry, but must still be validated with actual Android WindowManager reports and touch targets on hardware.
+
+## Failure-preserving native MP4 finalization — 29 October 2026
+- Camera/recording requirement: if Camera2 or MediaRecorder reports an error but a finalized, locally readable MP4 remains salvageable, the Android service must keep the original failure evidence. Final state is `saved_interrupted`, never `saved` merely because the final MP4 parses.
+- Failures before encoder start that leave no recoverable file now persist an `error` attempt in the bounded native audit history instead of disappearing.
+- Foldable/recording continuity: a fold-related camera disconnect can no longer be overwritten with an apparently successful saved capture. This does not interrupt the recorder merely for a fold layout event.
+- Added a source-level regression guard. Passing CI verifies source/tests/build, not Android hardware fault-injection or real-device session continuity. Physical acceptance remains open.
