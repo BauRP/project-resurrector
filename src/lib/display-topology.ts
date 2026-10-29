@@ -161,6 +161,23 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
   };
 }
 
+/** Intersect an actual pane with the camera container (below its persistent
+ * header). Blindly clamping a negative top coordinate to zero would extend
+ * the preview across an occluding horizontal hinge.
+ */
+export function clipFoldPaneToCamera(
+  pane: Region, camera: Region,
+): Region | null {
+  if (![pane.left,pane.top,pane.width,pane.height,
+         camera.left,camera.top,camera.width,camera.height].every(Number.isFinite) ||
+      pane.width<=0 || pane.height<=0 || camera.width<=0 || camera.height<=0)
+    return null;
+  const left=Math.max(pane.left,camera.left), top=Math.max(pane.top,camera.top);
+  const right=Math.min(pane.left+pane.width,camera.left+camera.width);
+  const bottom=Math.min(pane.top+pane.height,camera.top+camera.height);
+  return right>left&&bottom>top?{left,top,width:right-left,height:bottom-top}:null;
+}
+
 /** True four-pane camera workstation only with four actual usable regions
  * forming a 2x2 grid. No synthetic sections or device-name heuristics.
  */
@@ -293,14 +310,25 @@ export function startDisplayAdaptation(): () => void {
       thirdPane.height >= 260 && panes[1]!.height >= 260;
     // In a verified three-region window: primary viewfinder | HUD/tools |
     // record controls. Never synthesize a third region from device branding.
-    const quad=geometry.hinges.length>=2 ? fourPaneCameraLayout(geometry.regions) : null;
-    root.dataset["cameraSplit"] = quad ? "quad" :
-      eligibleThree ? "tri" : eligible ? "side" : "none";
     const leftPane = panes[0], rightPane = panes[1];
     const controlPane = eligibleThree ? thirdPane : rightPane;
     const cameraRect = document.querySelector(".camera-screen")?.getBoundingClientRect();
     const cameraLeft = cameraRect?.left ?? 0;
     const cameraTop = cameraRect?.top ?? 0;
+    const cameraBounds: Region = {
+      left:cameraLeft,top:cameraTop,
+      width:cameraRect?.width??width(),height:cameraRect?.height??height(),
+    };
+    // Require all four ACTUAL pane intersections to remain usable after
+    // excluding the persistent header and other non-camera window regions.
+    const clippedQuadRegions=geometry.hinges.length>=2
+      ? geometry.regions.map(p=>clipFoldPaneToCamera(p,cameraBounds))
+      : [];
+    const quad=clippedQuadRegions.length===4 &&
+      clippedQuadRegions.every((r):r is Region=>r!==null)
+      ?fourPaneCameraLayout(clippedQuadRegions as Region[]):null;
+    root.dataset["cameraSplit"] = quad ? "quad" :
+      eligibleThree ? "tri" : eligible ? "side" : "none";
     root.style.setProperty("--camera-left-pane-width", Math.max(0, (leftPane?.left ?? 0) + (leftPane?.width ?? width()) - cameraLeft) + "px");
     root.style.setProperty("--camera-right-pane-left", Math.max(0, (rightPane?.left ?? width()) - cameraLeft) + "px");
     root.style.setProperty("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
