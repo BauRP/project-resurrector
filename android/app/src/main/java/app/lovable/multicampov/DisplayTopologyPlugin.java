@@ -156,8 +156,11 @@ public class DisplayTopologyPlugin extends Plugin {
                 }
             };
             activeOwners.add(ownerId);
-            adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
+            // A mainExecutor may dispatch the initial layout synchronously.
+            // Register the native lease BEFORE connecting the callback, or
+            // its first (possibly only) posture can be discarded as stale.
             NativeCaptureService.observeFoldObserverActive(lease);
+            adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
             stopListener();
