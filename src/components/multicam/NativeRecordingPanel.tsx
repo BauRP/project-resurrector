@@ -1,5 +1,6 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { nativePreviewPlacement, samePreviewPlacement, type PreviewRect } from "@/lib/native-preview-placement";
+import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection } from "@/lib/native-mode-selection";
