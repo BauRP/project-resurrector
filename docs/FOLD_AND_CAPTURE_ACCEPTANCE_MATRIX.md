@@ -164,3 +164,8 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - Failures before encoder start that leave no recoverable file now persist an `error` attempt in the bounded native audit history instead of disappearing.
 - Foldable/recording continuity: a fold-related camera disconnect can no longer be overwritten with an apparently successful saved capture. This does not interrupt the recorder merely for a fold layout event.
 - Added a source-level regression guard. Passing CI verifies source/tests/build, not Android hardware fault-injection or real-device session continuity. Physical acceptance remains open.
+
+## Native Android direct preview respects measured physical hinges — 29 October 2026
+- Previously the direct Camera2 TextureView overlay only checked whole-WebView bounds. After a physical fold, the Android overlay could cross a real separating hinge even though the HTML camera UI was pane-aware.
+- Direct preview placement now also checks that its entire measured CSS rectangle fits within one actually reported usable fold region. If not, the overlay is hidden without stopping the Camera2 recorder; after the layout becomes safe the preview may reposition. Fold topology updates trigger a fresh placement check.
+- Added regression tests for a valid left/right pane, a rectangle crossing an actual hinge, and malformed multi-pane metadata. This is functional safety gating, not a hardware claim; live testing of Android TextureView occlusion and physical folding remains outstanding.
