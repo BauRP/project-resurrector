@@ -44,10 +44,11 @@ public final class NativeCaptureAuditStore {
                 String[] strings={"state","cameraId","message","stabilization","savedUri"};
                 for(String k:strings)item.put(k,status.optString(k,""));
                 String[] longs={"captureId","startedAt","recordedDurationMs","savedBytes",
-                    "lastFoldAt","maxFoldNearbyCallbackGapMs","mp4DurationMs","mp4MaxFoldPtsGapMs"};
+                    "lastFoldAt","maxFoldNearbyCallbackGapMs","mp4DurationMs","mp4MaxFoldPtsGapMs",
+                    "mp4AvTailOffsetMs"};
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
-                    "mp4VideoSamples","mp4AudioSamples","mp4MiddleProbes","mp4MiddleMatched",
+                    "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4MiddleProbes","mp4MiddleMatched",
                     "mp4FoldProbes","mp4FoldMatched","mp4FoldPointsSkipped",
                     "foldObservations","foldPostureChanges","foldGeometryOnlyChanges",
                     "foldCheckpointsOmitted","foldChangesWhilePaused",
@@ -57,7 +58,8 @@ public final class NativeCaptureAuditStore {
                 for(String k:integers)item.put(k,status.optInt(k,0));
                 String[] booleans={"audioRequested","mp4TracksInspected","mp4HasVideoTrack",
                     "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable",
-                    "mp4CheckpointAuditCompleted","foldObserverGap"};
+                    "mp4CheckpointAuditCompleted","foldObserverGap",
+                    "mp4TailAudioNearEnd","mp4AvTailOffsetMeasured"};
                 for(String k:booleans)item.put(k,status.optBoolean(k,false));
                 item.put("savedAt",System.currentTimeMillis());
             }catch(Exception ignored){return;}
