@@ -144,6 +144,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4AudioPtsAnomalies:0},12345)?.state).toBe("recorded");
   expect(nativeRecordedModeEvidence({...base,audioRequested:false,mp4AudioPtsAnomalies:2},12345)?.state).toBe("recorded");
  });
+ it("requires real audio PTS on both sides of observed folds",()=>{
+  const fold={...base,mp4FoldProbes:2,mp4FoldMatched:2,mp4FoldPtsSpanChecks:2,
+    mp4FoldAudioPtsSpanChecks:2,mp4FoldAudioPtsLargeGaps:0};
+  expect(nativeRecordedModeEvidence(fold,12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...fold,mp4FoldAudioPtsSpanChecks:1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...fold,mp4FoldAudioPtsLargeGaps:1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...fold,audioRequested:false,mp4FoldAudioPtsSpanChecks:0},12345)?.state).toBe("recorded");
+ });
  it("refuses unfinalized recording and unknown dimensions",()=>{
   expect(nativeRecordedModeEvidence({...base,state:"recording"},12345)).toBeNull();
   expect(nativeRecordedModeEvidence({...base,cameraId:""},12345)).toBeNull();
