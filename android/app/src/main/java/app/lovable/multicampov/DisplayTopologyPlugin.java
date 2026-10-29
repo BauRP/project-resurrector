@@ -60,6 +60,26 @@ public class DisplayTopologyPlugin extends Plugin {
         result.put("widthDp", width / density);
         result.put("heightDp", height / density);
         result.put("density", density);
+        // FoldingFeature bounds are in Android WINDOW pixels. A Capacitor
+        // WebView need not start at (0,0) or fill the DecorView (system bars,
+        // multi-window, custom hosting). Report its measured bounds in the
+        // same DecorView-relative pixel coordinate system, not Android dp.
+        // JavaScript converts the resulting clipped rectangle into CSS px.
+        View webView = getBridge() == null ? null : getBridge().getWebView();
+        if (webView != null && webView.getWidth() > 0 && webView.getHeight() > 0) {
+            int[] origin = new int[2];
+            int[] webOrigin = new int[2];
+            root.getLocationInWindow(origin);
+            webView.getLocationInWindow(webOrigin);
+            int left = webOrigin[0] - origin[0];
+            int top = webOrigin[1] - origin[1];
+            JSObject viewport = new JSObject();
+            viewport.put("left", left);
+            viewport.put("top", top);
+            viewport.put("right", left + webView.getWidth());
+            viewport.put("bottom", top + webView.getHeight());
+            result.put("webViewBoundsPx", viewport);
+        }
         // Expose inset diagnostics; the WebView independently applies CSS env(safe-area-*)
         // so these values must not be blindly added as a second padding.
         WindowInsetsCompat windowInsets = ViewCompat.getRootWindowInsets(root);
