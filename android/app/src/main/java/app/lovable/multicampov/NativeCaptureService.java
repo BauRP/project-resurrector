@@ -24,6 +24,8 @@ import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.hardware.camera2.params.MeteringRectangle;
 import android.media.MediaRecorder;
+import android.media.MediaCodecInfo;
+import android.media.MediaCodecList;
 import android.media.ImageReader;
 import android.media.Image;
 import android.graphics.ImageFormat;
@@ -1518,6 +1520,44 @@ public class NativeCaptureService extends Service {
         };
         worker.postDelayed(storageMonitor,STORAGE_CHECK_INTERVAL_MS);
     }
+    /** AVC encoder declaration is a preflight, not proof that MediaRecorder
+     * will successfully create the selected recording. Some OEM codecs omit
+     * capabilities entirely: that remains unknown and is handled by prepare().
+     * When all inspected AVC encoders explicitly reject a size/FPS pair,
+     * reject it before camera and recorder resources are opened.
+     */
+    private int advertisedH264Bitrate(int width,int height,int fps) {
+        long target=Math.min(16000000L,Math.max(1500000L,
+            (long)width*(long)height*(long)fps/9L));
+        boolean inspected=false;
+        try{
+            for(MediaCodecInfo codec:new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()){
+                if(!codec.isEncoder())continue;
+                for(String mime:codec.getSupportedTypes()){
+                    if(!"video/avc".equalsIgnoreCase(mime))continue;
+                    try{
+                        MediaCodecInfo.CodecCapabilities caps=codec.getCapabilitiesForType(mime);
+                        MediaCodecInfo.VideoCapabilities video=caps.getVideoCapabilities();
+                        if(video==null)continue;
+                        inspected=true;
+                        if(!video.areSizeAndRateSupported(width,height,fps))continue;
+                        Range<Integer> bitrate=video.getBitrateRange();
+                        long bounded=Math.min(bitrate.getUpper(),Math.max(bitrate.getLower(),target));
+                        return (int)bounded;
+                    }catch(RuntimeException ignored){
+                        // Broken vendor metadata is unknown, not unsupported.
+                    }
+                }
+            }
+        }catch(RuntimeException ignored){
+            // MediaRecorder.prepare() remains the authority if metadata fails.
+            return (int)target;
+        }
+        if(inspected)throw new IllegalArgumentException(
+            "H.264-кодировщики устройства не объявляют поддержку " +
+            width+"×"+height+" при "+fps+" FPS");
+        return (int)target;
+    }
     private void open(int session, String id, int width, int height, int fps) {
         try {
             if (session != generation) return; // stale open must not finish new session
@@ -1578,6 +1618,9 @@ public class NativeCaptureService extends Service {
             // alone can repeat during rapid stop/restart or a fast OEM error,
             // which could truncate an earlier clip when MediaRecorder opens
             // the same path. Use capture ID for traceability, not uniqueness.
+            // Validate declared encoder support before allocating the
+            // recorder. Actual successful encoding is verified from MP4.
+            int selectedVideoBitrate=advertisedH264Bitrate(width,height,fps);
             media = File.createTempFile("native-" + currentCaptureId + "-", ".mp4", directory);
             encoder = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
             if (wantAudio) encoder.setAudioSource(MediaRecorder.AudioSource.MIC);
@@ -1608,8 +1651,7 @@ public class NativeCaptureService extends Service {
             }
             encoder.setVideoSize(width,height);
             encoder.setVideoFrameRate(fps);
-            encoder.setVideoEncodingBitRate((int)Math.min(16000000L, Math.max(1500000L,
-                (long)width * (long)height * (long)fps / 9L)));
+            encoder.setVideoEncodingBitRate(selectedVideoBitrate);
             encoder.setOutputFile(media.getAbsolutePath());
             encoder.prepare();
             final Surface surface = encoder.getSurface();
