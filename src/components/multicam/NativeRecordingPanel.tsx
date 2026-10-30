@@ -115,10 +115,12 @@ export function NativeRecordingPanel(){
             lastViewport?.width===viewport.width&&lastViewport?.height===viewport.height)return;
          // A real fold may have caused Android to detach its TextureView even
          // if the DOM box did not move. Re-submit only for a changed topology.
-         await bridge.setDirectPreview({ownerId,visible:true,...placement,
+         const acknowledged=await bridge.setDirectPreview({ownerId,visible:true,...placement,
            viewportWidth:viewport.width,viewportHeight:viewport.height});
-         lastVisible=true;lastPosition=placement;lastViewport=viewport;
-         lastShownFoldEpoch=submittedFoldEpoch;
+         lastVisible=acknowledged?.visible===true;
+         lastPosition=lastVisible?placement:null;
+         lastViewport=lastVisible?viewport:null;
+         lastShownFoldEpoch=lastVisible?submittedFoldEpoch:-1;
        });
        if(!live)return;
        setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
