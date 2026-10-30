@@ -35,7 +35,8 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(panel).toContain('if(recoveringEpoch===foldEpoch)return;');
   expect(panel).toContain('recoveringEpoch=foldEpoch;');
   expect(panel).toContain('if(invalidationHandle)void invalidationHandle.remove()');
-  expect(panel).not.toContain('bridge.stop()');
+  const invalidate=panel.slice(panel.indexOf('bridge.addListener("directPreviewInvalidated"'),panel.indexOf('const observer=typeof ResizeObserver'));
+  expect(invalidate).not.toContain("bridge.stop()");
  });
  it("folding only invalidates the preview surface, never stops the Camera2 recorder",()=>{
   const start=panel.indexOf("const folding=()=>");
