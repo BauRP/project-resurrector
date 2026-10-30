@@ -178,6 +178,23 @@ export function clipFoldPaneToCamera(
   return right>left&&bottom>top?{left,top,width:right-left,height:bottom-top}:null;
 }
 
+/** Restrict editor/settings to the *intersection* of reported WindowManager
+ * panes and the currently visible content viewport, on BOTH axes.
+ * Otherwise a lower tabletop pane can be selected by area while its UI still
+ * crosses the physical horizontal hinge.
+ */
+export function selectSafeFoldWorkspace(
+  regions:Region[], contentBounds:Region,
+  minWidth=300,minHeight=220,
+):Region|null {
+  if(regions.length<2)return null;
+  const usable=regions.map(region=>clipFoldPaneToCamera(region,contentBounds))
+    .filter((region):region is Region=>region!==null &&
+      region.width>=minWidth && region.height>=minHeight);
+  usable.sort((a,b)=>b.width*b.height-a.width*a.height||a.top-b.top||a.left-b.left);
+  return usable[0]??null;
+}
+
 /** True four-pane camera workstation only with four actual usable regions
  * forming a 2x2 grid. No synthetic sections or device-name heuristics.
  */
@@ -227,6 +244,8 @@ export function startDisplayAdaptation(): () => void {
   let listener: PluginListenerHandle | undefined;
   let lastNative: DisplayTopology | null = null;
   let refreshFrame = 0;
+  let workspaceTarget:Element|null=null;
+  let workspaceYOffset=0;
   const root = document.documentElement;
   const width = () => window.innerWidth;
   const height = () => window.innerHeight;
@@ -281,21 +300,30 @@ export function startDisplayAdaptation(): () => void {
     // hinge cuts across the app window. Unlike camera this region is chosen
     // by usable size rather than a hard-coded left/right position.
     const shell = document.querySelector(".app-shell")?.getBoundingClientRect();
+    const scroll = document.querySelector(".app-scroll")?.getBoundingClientRect();
+    const header = document.querySelector(".app-header")?.getBoundingClientRect();
     const shellLeft = Number.isFinite(shell?.left) ? shell!.left : 0;
-    const shellWidth = Number.isFinite(shell?.width) && shell!.width > 0 ? shell!.width : width();
-    const workspace = [...geometry.regions].map(region => {
-      const left = Math.max(0, region.left - shellLeft);
-      const right = Math.min(shellWidth, region.left + region.width - shellLeft);
-      return { ...region, left, width: Math.max(0, right - left) };
-    }).sort((a,b)=> b.width*b.height-a.width*a.height)[0];
-    // The selected editor/settings pane must have both dimensions usable.
-    // A narrow letterbox from a partially folded window must not become
-    // the global workspace merely because its total area is largest.
-    const safeWorkspace = geometry.regions.length > 1 && !!workspace &&
-      workspace.width >= 300 && workspace.height >= 220 && shellWidth > 0;
-    root.dataset["foldWorkspace"] = safeWorkspace ? "pane" : "normal";
-    root.style.setProperty("--fold-work-left", (workspace?.left ?? 0) + "px");
-    root.style.setProperty("--fold-work-width", (workspace?.width ?? shellWidth) + "px");
+    const shellWidth = Number.isFinite(shell?.width) && shell!.width>0 ? shell!.width : width();
+    const contentTop = Math.max(scroll?.top??0,header?.bottom??0);
+    const contentBottom = scroll?.bottom??height();
+    const contentBounds:Region={
+      left:shellLeft,top:contentTop,width:shellWidth,
+      height:Math.max(0,contentBottom-contentTop),
+    };
+    const workspace = selectSafeFoldWorkspace(geometry.regions,contentBounds);
+    root.dataset["foldWorkspace"] = workspace ? "pane" : "normal";
+    root.style.setProperty("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
+    root.style.setProperty("--fold-work-width",(workspace?.width??shellWidth)+"px");
+    root.style.setProperty("--fold-work-height",(workspace?.height??contentBounds.height)+"px");
+    const target=document.querySelector(".editor-fold-workspace, .settings-fold-workspace");
+    if(target!==workspaceTarget){workspaceTarget=target;workspaceYOffset=0;}
+    // position:relative top offsets can be measured without accumulating
+    // drift through ResizeObserver or repeated fold callbacks.
+    const targetTop=target?.getBoundingClientRect().top??contentTop;
+    const unshiftedTop=targetTop-workspaceYOffset;
+    workspaceYOffset=target&&workspace
+      ?Math.max(0,workspace.top-unshiftedTop):0;
+    root.style.setProperty("--fold-work-y-offset",workspaceYOffset+"px");
     const panes = [...geometry.regions].sort((a,b) => a.left - b.left || a.top - b.top);
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     // Mixed-orientation multi-hinge layouts need their own pane model; a
@@ -461,7 +489,7 @@ export function startDisplayAdaptation(): () => void {
     if (activeAdaptation === token) {
       activeAdaptation = null;
       ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-      ["--app-viewport-height","--fold-work-left","--fold-work-width","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
+      ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
     }
   };
 }
