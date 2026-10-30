@@ -148,6 +148,17 @@ export function NativeRecordingPanel(){
    try{setStatus(await bridge.tapToMeter({x,y}));setError("");}
    catch(error){setError(String(error));}
  };
+ // A real camera metering action reachable with TalkBack, keyboard and on
+ // narrow foldable panes where a precise tap in the preview is inaccessible.
+ // Submitting the request is not proof that the physical lens has focused.
+ const meterCenter=async()=>{
+   if(busy || !status || !["previewing","recording","paused"].includes(status.state) ||
+      (!status.tapAfSupported&&!status.tapAeSupported))return;
+   try{
+     setStatus(await bridge.tapToMeter({x:0.5,y:0.5}));
+     setError("");
+   }catch(error){setError(String(error));}
+ };
  const tapPreview=async(e:MouseEvent<HTMLImageElement>)=>{
   if(!status?.tapAfSupported&&!status?.tapAeSupported)return;
   const image=e.currentTarget;
@@ -367,6 +378,13 @@ export function NativeRecordingPanel(){
      <p role="status">{status.directPreviewActive
        ?"Camera2 передаёт изображение напрямую в Android TextureView. Реальная частота кадров пока не измерена."
        :"Прямой вывод не подтверждён: Camera2 использует запасной режим или ожидает поверхность."}</p>}
+   {(status?.tapAfSupported||status?.tapAeSupported)&&
+     <Button type="button" variant="outline" disabled={busy||
+       !["previewing","recording","paused"].includes(status?.state??"")}
+       aria-label="Фокусировка и замер экспозиции в центре изображения"
+       onClick={()=>void meterCenter()}>
+       Фокус и экспозиция по центру кадра
+     </Button>}
    {(status?.tapAfSupported||status?.tapAeSupported)&&<p className="text-muted-foreground">Коснитесь изображения, чтобы выбрать точку {status.tapAfSupported?"автофокуса и ":""}экспозамера. Чёрные поля неактивны. Подтверждение команды не означает успешное наведение.</p>}
    <p className="text-muted-foreground">Нативный Android-рекордер работает независимо от интерфейса. Запускайте через режим «Нативная запись» в разделе Камера; обычный предпросмотр должен быть закрыт. Видео сохраняется в «Фильмы / MULTI-CAM POV».</p>
    {!cameras.length&&<Button variant="outline" onClick={()=>void refreshCameras()}>Разрешить камеру и показать объективы</Button>}
