@@ -106,6 +106,10 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain("String thermalFailure=criticalThermalFailure()");
    expect(service).toContain("if(thermalFailure!=null)");
  });
+ it("reserves unique MP4 paths instead of timestamp reuse",()=>{
+   expect(service).toContain('File.createTempFile("native-" + currentCaptureId + "-", ".mp4", directory)');
+   expect(service).not.toContain('media = new File(directory, "native-" + System.currentTimeMillis()');
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
