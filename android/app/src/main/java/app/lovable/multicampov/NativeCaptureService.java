@@ -162,6 +162,11 @@ public class NativeCaptureService extends Service {
     private static boolean mp4CheckpointAuditCompleted = false;
     private static long mp4MaxFoldPtsGapMs=0L;
     private static final int MP4_SCAN_SAMPLES_PER_TRACK = 512;
+    // Reserve space for MP4 container finalization. These are conservative
+    // thresholds, NOT a promise of any particular recording duration.
+    private static final long MIN_CAPTURE_START_BYTES = 96L*1024L*1024L;
+    private static final long MIN_CAPTURE_CONTINUE_BYTES = 32L*1024L*1024L;
+    private static final long STORAGE_CHECK_INTERVAL_MS = 3500L;
 
     /** Recover an attempt that belonged to a dead Android process.
      * Never reattach a stale MediaRecorder or mark an orphan MP4 playable.
@@ -459,6 +464,7 @@ public class NativeCaptureService extends Service {
     private boolean interruptedByCamera;
     private int generation = 0;
     private Runnable openingTimeout;
+    private Runnable storageMonitor;
     private CaptureRequest.Builder liveRequest;
     private CameraCaptureSession.CaptureCallback liveCallback;
     private Rect activeSensor;
@@ -1468,6 +1474,27 @@ public class NativeCaptureService extends Service {
     private boolean isRecordingState() {
         return "recording".equals(state) || "paused".equals(state) || "stopping".equals(state);
     }
+    /** Periodic free-space check on Camera2 worker; never block the UI or
+     * wait for ENOSPC before attempting to finalize a user recording.
+     */
+    private void armStorageMonitor(final int session){
+        if(worker==null)return;
+        if(storageMonitor!=null)worker.removeCallbacks(storageMonitor);
+        storageMonitor=new Runnable(){
+            @Override public void run(){
+                if(session!=generation || stopRequested || !encoderStarted ||
+                    !("recording".equals(state)||"paused".equals(state)))return;
+                File dir=media==null?null:media.getParentFile();
+                if(dir==null || dir.getUsableSpace()<MIN_CAPTURE_CONTINUE_BYTES){
+                    fail(new IllegalStateException(
+                        "Недостаточно свободной памяти для безопасного завершения MP4"));
+                    return;
+                }
+                if(worker!=null)worker.postDelayed(this,STORAGE_CHECK_INTERVAL_MS);
+            }
+        };
+        worker.postDelayed(storageMonitor,STORAGE_CHECK_INTERVAL_MS);
+    }
     private void open(int session, String id, int width, int height, int fps) {
         try {
             if (session != generation) return; // stale open must not finish new session
@@ -1518,6 +1545,10 @@ public class NativeCaptureService extends Service {
             File directory = new File(getFilesDir(), "native-video");
             if (!directory.exists() && !directory.mkdirs())
                 throw new IllegalStateException("Нет места для каталога видео");
+            // Check the app-private volume, not a possibly unrelated SD card.
+            if(directory.getUsableSpace()<MIN_CAPTURE_START_BYTES)
+                throw new IllegalStateException(
+                    "Свободной памяти недостаточно для начала безопасной записи MP4");
             media = new File(directory, "native-" + System.currentTimeMillis() + ".mp4");
             encoder = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
             if (wantAudio) encoder.setAudioSource(MediaRecorder.AudioSource.MIC);
@@ -1639,6 +1670,7 @@ public class NativeCaptureService extends Service {
                                         armRecordingFoldBaseline();
                                         publish("recording",
                                             "Нативная Camera2 запись запущена. Контроль через уведомление.");
+                                        armStorageMonitor(session);
                                     } catch(Exception error) { fail(error); }
                                 }
                                 @Override public void onConfigureFailed(CameraCaptureSession sessionHandle) {
@@ -1690,6 +1722,7 @@ public class NativeCaptureService extends Service {
                                                         armRecordingFoldBaseline();
                                                         publish("recording",
                                                             "MP4 записывается; параллельный предпросмотр камерой не поддержан");
+                                                        armStorageMonitor(session);
                                                     } catch(Exception error){fail(error);}
                                                 }
                                                 @Override public void onConfigureFailed(CameraCaptureSession broken) {
@@ -2164,6 +2197,10 @@ public class NativeCaptureService extends Service {
         finally { try {reader.release();}catch(Exception ignored) {} }
     }
     private void finish() {
+        if(worker!=null && storageMonitor!=null){
+            worker.removeCallbacks(storageMonitor);
+            storageMonitor=null;
+        }
         if ("previewing".equals(state) && encoder == null) {
             generation++;
             if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
