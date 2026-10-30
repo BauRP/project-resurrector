@@ -42,6 +42,12 @@ function entrySummary(item:Record<string,unknown>) {
       avTailOffsetMs:typeof item["mp4AvTailOffsetMs"]==="number" && Number.isSafeInteger(item["mp4AvTailOffsetMs"]) && Math.abs(item["mp4AvTailOffsetMs"])<=600000 ? item["mp4AvTailOffsetMs"]:null,
       firstFrameDecoded:flag(item["mp4FirstFrameDecodable"]),
       tailFrameDecoded:flag(item["mp4TailFrameDecodable"]),
+      timelineCompleted:flag(item["mp4TimelineCompleted"]),
+      timelineSamples:count(item["mp4TimelineSamples"],120000),
+      timelineRollbacks:count(item["mp4TimelineRollbacks"],120000),
+      timelineDuplicates:count(item["mp4TimelineDuplicates"],120000),
+      timelineLargeGaps:count(item["mp4TimelineLargeGaps"],120000),
+      timelineMaxGapMs:count(item["mp4TimelineMaxGapMs"],600000),
     },
     fold:{
       observations:count(item["foldObservations"]),
