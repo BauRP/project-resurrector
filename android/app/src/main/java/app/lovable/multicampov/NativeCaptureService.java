@@ -360,19 +360,28 @@ public class NativeCaptureService extends Service {
                             recordingFoldChangesWhilePaused++;
                     }else if("recording".equals(state) && recordingStartedAt>0L){
                         recordingLastFoldElapsedMs=android.os.SystemClock.elapsedRealtime();
-                        if(recordingFoldPointsMs.isEmpty() ||
-                            recordingFoldPointsMs.split(",").length<8){
-                            // Approximate MP4 position; not a frame guarantee.
-                            long activeMs=recordingStartedElapsedMs>=0L
-                                ?Math.max(0L,recordingLastFoldElapsedMs-
-                                    recordingStartedElapsedMs-totalPausedElapsedMs)
-                                :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
-                            recordingFoldPointsMs +=
-                                (recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
-                        }else if(recordingFoldCheckpointsOmitted<Integer.MAX_VALUE){
-                            // Never silently call a >8-transition capture clean.
+                        // Multiple WindowManager callbacks within one
+                        // millisecond refer to the same MP4 time position.
+                        // Count the real posture changes, but do not fabricate
+                        // multiple independently checkable video checkpoints.
+                        long activeMs=recordingStartedElapsedMs>=0L
+                            ?Math.max(0L,recordingLastFoldElapsedMs-
+                                recordingStartedElapsedMs-totalPausedElapsedMs)
+                            :Math.max(0L,recordingLastFoldAt-recordingStartedAt-totalPausedMs);
+                        String[] points=recordingFoldPointsMs.isEmpty()
+                            ?new String[0]:recordingFoldPointsMs.split(",");
+                        long previousPoint=points.length>0
+                            ?Long.parseLong(points[points.length-1]):-1L;
+                        if(activeMs>previousPoint && points.length<8)
+                            recordingFoldPointsMs+=(recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+                        else if(activeMs>previousPoint && points.length>=8 &&
+                                recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)
                             recordingFoldCheckpointsOmitted++;
-                        }
+                        else if(activeMs==previousPoint &&
+                                recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)
+                            // Distinct physical changes can occur faster than
+                            // the millisecond precision of our audit journal.
+                            recordingFoldCheckpointsOmitted++;
                     }
                 }else if(!geometrySignature.equals(recordingLastFoldGeometrySignature)){
                     recordingFoldGeometryOnlyChanges++;
