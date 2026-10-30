@@ -462,6 +462,8 @@ export function startDisplayAdaptation(): () => void {
   window.addEventListener("resize", scheduleMeasure);
   window.addEventListener("orientationchange", scheduleMeasure);
   window.visualViewport?.addEventListener("resize", scheduleMeasure);
+  // On mobile pinch/keyboard pans VisualViewport can move without resizing.
+  window.visualViewport?.addEventListener("scroll", scheduleMeasure);
   const geometryObserver = typeof ResizeObserver !== "undefined"
     ? new ResizeObserver(scheduleMeasure) : null;
   const shell = document.querySelector(".app-shell");
@@ -503,6 +505,7 @@ export function startDisplayAdaptation(): () => void {
     window.removeEventListener("resize", scheduleMeasure);
     window.removeEventListener("orientationchange", scheduleMeasure);
     window.visualViewport?.removeEventListener("resize", scheduleMeasure);
+    window.visualViewport?.removeEventListener("scroll", scheduleMeasure);
     mutations?.disconnect();
     if (observedCamera) geometryObserver?.unobserve(observedCamera);
     observedCamera = null;
