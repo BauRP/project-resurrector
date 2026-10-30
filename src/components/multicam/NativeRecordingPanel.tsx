@@ -474,12 +474,14 @@ export function NativeRecordingPanel(){
      </p>}
    {status?.mp4TracksInspected&&<p role="status">
      Последовательная проверка временных меток MP4: {status.mp4TimelineCompleted===true?"завершена":"не завершена"},
+     причина ограничения: {status.mp4TimelineLimitReason??"неизвестна"};
      просмотрено {status.mp4TimelineSamples??0} видеосэмплов; подозрительных длинных интервалов {status.mp4TimelineLargeGaps??0},
      откатов {status.mp4TimelineRollbacks??0}, повторов {status.mp4TimelineDuplicates??0}; самый длинный интервал {status.mp4TimelineMaxGapMs??0} мс.
      Это проверка временных меток, а не полноценное декодирование всего видео.
    </p>}
    {status?.mp4TracksInspected && status.audioRequested && <p role="status">
      Проверка всех доступных аудиометок: {status.mp4AudioTimelineCompleted?"завершена":"не завершена"};
+     причина ограничения: {status.mp4AudioTimelineLimitReason??"неизвестна"};
      найдено {status.mp4AudioTimelineSamples??0} сэмплов; подозрительных интервалов {status.mp4AudioTimelineLargeGaps??0},
      откатов {status.mp4AudioTimelineRollbacks??0}, повторов {status.mp4AudioTimelineDuplicates??0}.
      Наличие дорожки: {status.mp4AudioTimelineTrackFound?"подтверждено":"не подтверждено"}.
