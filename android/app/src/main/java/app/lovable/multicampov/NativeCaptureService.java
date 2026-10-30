@@ -1574,7 +1574,11 @@ public class NativeCaptureService extends Service {
             if(directory.getUsableSpace()<MIN_CAPTURE_START_BYTES)
                 throw new IllegalStateException(
                     "Свободной памяти недостаточно для начала безопасной записи MP4");
-            media = new File(directory, "native-" + System.currentTimeMillis() + ".mp4");
+            // Reserve a unique private destination atomically. A timestamp
+            // alone can repeat during rapid stop/restart or a fast OEM error,
+            // which could truncate an earlier clip when MediaRecorder opens
+            // the same path. Use capture ID for traceability, not uniqueness.
+            media = File.createTempFile("native-" + currentCaptureId + "-", ".mp4", directory);
             encoder = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
             if (wantAudio) encoder.setAudioSource(MediaRecorder.AudioSource.MIC);
             encoder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
