@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldVisibleContentBounds, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -187,6 +187,23 @@ describe("camera view below persistent header in a two-axis fold",()=>{
       {left:0,top:150,width:600,height:300})).toBeNull();
     expect(clipFoldPaneToCamera({left:0,top:0,width:Number.NaN,height:200},
       {left:0,top:0,width:600,height:450})).toBeNull();
+  });
+});
+describe("visible fold workspace during software keyboard",()=>{
+  it("clips tabletop editor below header and above keyboard",()=>{
+    const bounds=foldVisibleContentBounds(
+      {left:0,top:0,width:600,height:800},
+      {left:0,top:60,width:600,height:680},
+      60,{offsetTop:0,height:470});
+    expect(bounds).toEqual({left:0,top:60,width:600,height:410});
+  });
+  it("handles a shifted or unavailable visual viewport without inventing a hinge",()=>{
+    const shell={left:0,top:0,width:600,height:800};
+    const content={left:0,top:60,width:600,height:700};
+    expect(foldVisibleContentBounds(shell,content,60,{offsetTop:100,height:450}))
+      .toEqual({left:0,top:100,width:600,height:450});
+    expect(foldVisibleContentBounds(shell,content,60,{offsetTop:NaN,height:0}))
+      .toEqual({left:0,top:60,width:600,height:700});
   });
 });
 describe("editor and settings use a real safe fold pane",()=>{
