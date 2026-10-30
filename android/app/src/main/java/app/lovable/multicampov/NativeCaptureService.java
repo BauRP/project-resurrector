@@ -366,6 +366,24 @@ public class NativeCaptureService extends Service {
                     }
                 }else if(!geometrySignature.equals(recordingLastFoldGeometrySignature)){
                     recordingFoldGeometryOnlyChanges++;
+                    // A real measured WindowManager geometry change can move
+                    // the visible preview even if the hinge posture string
+                    // stays unchanged. Keep it as a bounded MP4 checkpoint,
+                    // but NEVER inflate the physical posture-change counter.
+                    if("recording".equals(state) && recordingStartedElapsedMs>=0L){
+                        long now=android.os.SystemClock.elapsedRealtime();
+                        long activeMs=Math.max(0L,now-recordingStartedElapsedMs-
+                            totalPausedElapsedMs);
+                        // Shared bounded checkpoint journal: no stale or
+                        // duplicate location should be mistaken for a new fold.
+                        String[] points=recordingFoldPointsMs.isEmpty()
+                            ?new String[0]:recordingFoldPointsMs.split(",");
+                        long last=points.length>0?Long.parseLong(points[points.length-1]):-1L;
+                        if(activeMs>last && points.length<8)
+                            recordingFoldPointsMs+=(recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
+                        else if(points.length>=8 && recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)
+                            recordingFoldCheckpointsOmitted++;
+                    }
                 }
             }
             // A genuine first observation can have zero folding features.
