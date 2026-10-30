@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -187,6 +187,24 @@ describe("camera view below persistent header in a two-axis fold",()=>{
       {left:0,top:150,width:600,height:300})).toBeNull();
     expect(clipFoldPaneToCamera({left:0,top:0,width:Number.NaN,height:200},
       {left:0,top:0,width:600,height:450})).toBeNull();
+  });
+});
+describe("editor and settings use a real safe fold pane",()=>{
+  it("selects the lower tabletop region without crossing a horizontal hinge",()=>{
+    const regions=[
+      {left:0,top:0,width:600,height:215},
+      {left:0,top:235,width:600,height:215},
+    ];
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:60,width:600,height:390}))
+      .toEqual({left:0,top:235,width:600,height:215});
+  });
+  it("refuses inaccessible, tiny or invalid panes without fabricating safe space",()=>{
+    const regions=[
+      {left:0,top:0,width:200,height:200},
+      {left:210,top:0,width:200,height:200},
+    ];
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:0,width:420,height:200})).toBeNull();
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:0,width:0,height:200})).toBeNull();
   });
 });
 describe("real dual-axis four-pane camera workstation",()=>{
