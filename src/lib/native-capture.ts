@@ -17,6 +17,7 @@ export interface NativeCaptureStatus {
  mp4CheckpointAuditCompleted?:boolean;
  mp4FoldPtsSpanChecks?:number;mp4FoldPtsLargeGaps?:number;mp4MaxFoldPtsGapMs?:number;
  mp4FoldAudioPtsSpanChecks?:number;mp4FoldAudioPtsLargeGaps?:number;mp4MaxFoldAudioPtsGapMs?:number;
+ mp4TimelineCompleted?:boolean;mp4TimelineSamples?:number;mp4TimelineRollbacks?:number;mp4TimelineDuplicates?:number;mp4TimelineLargeGaps?:number;mp4TimelineMaxGapMs?:number;
  mp4VideoSamples?:number;mp4AudioSamples?:number;mp4AudioPtsAnomalies?:number;mp4VideoTimestampRollbacks?:number;
  mp4DurationMs?:number;mp4TailVideoSamples?:number;mp4TailAudioSamples?:number;mp4TailAudioNearEnd?:boolean;mp4AvTailOffsetMeasured?:boolean;mp4AvTailOffsetMs?:number;mp4TailSampledFps?:number;mp4TailNearEnd?:boolean;
  mp4VideoTimestampDuplicates?:number;mp4VideoSampleLimitReached?:boolean;mp4SampledFps?:number;
