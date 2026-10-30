@@ -193,10 +193,10 @@ describe("editor and settings use a real safe fold pane",()=>{
   it("selects the lower tabletop region without crossing a horizontal hinge",()=>{
     const regions=[
       {left:0,top:0,width:600,height:215},
-      {left:0,top:235,width:600,height:215},
+      {left:0,top:235,width:600,height:225},
     ];
-    expect(selectSafeFoldWorkspace(regions,{left:0,top:60,width:600,height:390}))
-      .toEqual({left:0,top:235,width:600,height:215});
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:60,width:600,height:400}))
+      .toEqual({left:0,top:235,width:600,height:225});
   });
   it("refuses inaccessible, tiny or invalid panes without fabricating safe space",()=>{
     const regions=[
