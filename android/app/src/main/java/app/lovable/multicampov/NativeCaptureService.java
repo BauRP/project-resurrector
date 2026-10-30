@@ -117,6 +117,7 @@ public class NativeCaptureService extends Service {
     private static boolean mp4VideoSampleLimitReached = false;
     private static float mp4SampledFps = -1f;
     private static boolean mp4TimelineCompleted = false;
+    private static String mp4TimelineLimitReason="not_checked",mp4AudioTimelineLimitReason="not_requested";
     private static int mp4TimelineSamples = 0, mp4TimelineRollbacks = 0, mp4TimelineDuplicates = 0, mp4TimelineLargeGaps = 0;
     private static long mp4TimelineMaxGapMs = 0L;
     private static boolean mp4AudioTimelineCompleted=false,mp4AudioTimelineTrackFound=false;
@@ -248,6 +249,8 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4AudioTimelineDuplicates",0)
                 .putInt("mp4AudioTimelineLargeGaps",0)
                 .putLong("mp4AudioTimelineMaxGapMs",0L)
+                .putString("mp4TimelineLimitReason","not_checked")
+                .putString("mp4AudioTimelineLimitReason","not_requested")
                 .putBoolean("mp4TimelineCompleted",false)
                 .putInt("mp4TimelineSamples",0)
                 .putInt("mp4TimelineRollbacks",0)
@@ -1009,6 +1012,8 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4VideoTimestampDuplicates", 0) : mp4VideoTimestampDuplicates);
             out.put("mp4VideoSampleLimitReached", runningInstance == null
                 ? previous.getBoolean("mp4VideoSampleLimitReached", false) : mp4VideoSampleLimitReached);
+            out.put("mp4TimelineLimitReason",runningInstance==null?previous.getString("mp4TimelineLimitReason","not_checked"):mp4TimelineLimitReason);
+            out.put("mp4AudioTimelineLimitReason",runningInstance==null?previous.getString("mp4AudioTimelineLimitReason","not_requested"):mp4AudioTimelineLimitReason);
             out.put("mp4TimelineCompleted",runningInstance==null?previous.getBoolean("mp4TimelineCompleted",false):mp4TimelineCompleted);
             out.put("mp4TimelineSamples",runningInstance==null?previous.getInt("mp4TimelineSamples",0):mp4TimelineSamples);
             out.put("mp4TimelineRollbacks",runningInstance==null?previous.getInt("mp4TimelineRollbacks",0):mp4TimelineRollbacks);
@@ -1134,6 +1139,8 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4VideoTimestampRollbacks", mp4VideoTimestampRollbacks)
                 .putInt("mp4VideoTimestampDuplicates", mp4VideoTimestampDuplicates)
                 .putBoolean("mp4VideoSampleLimitReached", mp4VideoSampleLimitReached)
+                .putString("mp4TimelineLimitReason",mp4TimelineLimitReason)
+                .putString("mp4AudioTimelineLimitReason",mp4AudioTimelineLimitReason)
                 .putBoolean("mp4TimelineCompleted",mp4TimelineCompleted)
                 .putInt("mp4TimelineSamples",mp4TimelineSamples)
                 .putInt("mp4TimelineRollbacks",mp4TimelineRollbacks)
@@ -1315,6 +1322,7 @@ public class NativeCaptureService extends Service {
             mp4VideoSamples = 0; mp4AudioSamples = 0;
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
+            mp4TimelineLimitReason="not_checked";mp4AudioTimelineLimitReason="not_requested";
             mp4TimelineCompleted=false;mp4TimelineSamples=0;mp4TimelineRollbacks=0;
             mp4TimelineDuplicates=0;mp4TimelineLargeGaps=0;mp4TimelineMaxGapMs=0L;
             mp4AudioTimelineCompleted=false;mp4AudioTimelineTrackFound=false;
@@ -2424,6 +2432,8 @@ public class NativeCaptureService extends Service {
         if (valid && media != null) {
             Mp4TrackAudit audit = inspectMp4Tracks(media);
             NativeMp4TimelineAudit.Result timeline = NativeMp4TimelineAudit.inspect(media,selectedFps,wantAudio);
+            mp4TimelineLimitReason=timeline.videoLimitReason;
+            mp4AudioTimelineLimitReason=timeline.audioLimitReason;
             mp4TimelineCompleted=timeline.completed;
             mp4TimelineSamples=timeline.samples;
             mp4TimelineRollbacks=timeline.rollbacks;
