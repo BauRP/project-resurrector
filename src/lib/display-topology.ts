@@ -195,6 +195,26 @@ export function selectSafeFoldWorkspace(
   return usable[0]??null;
 }
 
+/** Constrain editor/settings to the portion visible above the Android
+ * software keyboard. VisualViewport may be offset during zoom/keyboard
+ * transitions; do not treat its height alone as a screen-origin rectangle.
+ * Camera2 and the underlying physical hinge mapping remain unchanged.
+ */
+export function foldVisibleContentBounds(
+  shell:Region, content:Region, headerBottom:number,
+  visual:{offsetTop:number;height:number}|null|undefined,
+):Region {
+  const safeVisual=!!visual && Number.isFinite(visual.offsetTop) &&
+    Number.isFinite(visual.height) && visual.height>0;
+  const top=Math.max(content.top,Number.isFinite(headerBottom)?headerBottom:content.top,
+    safeVisual?visual!.offsetTop:content.top);
+  const bottom=Math.min(content.top+content.height,
+    safeVisual?visual!.offsetTop+visual!.height:content.top+content.height);
+  const left=Math.max(shell.left,content.left);
+  const right=Math.min(shell.left+shell.width,content.left+content.width);
+  return {left,top,width:Math.max(0,right-left),height:Math.max(0,bottom-top)};
+}
+
 /** True four-pane camera workstation only with four actual usable regions
  * forming a 2x2 grid. No synthetic sections or device-name heuristics.
  */
@@ -304,12 +324,16 @@ export function startDisplayAdaptation(): () => void {
     const header = document.querySelector(".app-header")?.getBoundingClientRect();
     const shellLeft = Number.isFinite(shell?.left) ? shell!.left : 0;
     const shellWidth = Number.isFinite(shell?.width) && shell!.width>0 ? shell!.width : width();
-    const contentTop = Math.max(scroll?.top??0,header?.bottom??0);
-    const contentBottom = scroll?.bottom??height();
-    const contentBounds:Region={
-      left:shellLeft,top:contentTop,width:shellWidth,
-      height:Math.max(0,contentBottom-contentTop),
-    };
+    const contentBounds=foldVisibleContentBounds(
+      {left:shellLeft,top:shell?.top??0,width:shellWidth,height:shell?.height??height()},
+      {left:scroll?.left??shellLeft,top:scroll?.top??0,
+        width:scroll?.width??shellWidth,height:scroll?.height??height()},
+      header?.bottom??0,
+      window.visualViewport
+        ?{offsetTop:window.visualViewport.offsetTop,height:window.visualViewport.height}
+        :null,
+    );
+    const contentTop=contentBounds.top;
     const workspace = selectSafeFoldWorkspace(geometry.regions,contentBounds);
     root.dataset["foldWorkspace"] = workspace ? "pane" : "normal";
     root.style.setProperty("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
