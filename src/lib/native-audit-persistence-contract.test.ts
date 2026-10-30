@@ -52,8 +52,8 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  });
  it("keeps a readable MP4 marked interrupted after Camera2 failure",()=>{
   expect(service).toContain('final boolean captureFailed = "error".equals(state)');
-  expect(service).toContain("boolean incomplete = captureFailed || checkpointIssue");
-  expect(service).toContain('String message = captureFailed');
+  expect(service).toContain("boolean incomplete = captureFailed || stopFailed || checkpointIssue");
+  expect(service).toContain('String message = stopFailed');
   expect(service).toContain('NativeCaptureAuditStore.append(this,status(this))');
  });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
