@@ -51,6 +51,8 @@ function entrySummary(item:Record<string,unknown>) {
       audioTimelineDuplicates:count(item["mp4AudioTimelineDuplicates"],180000),
       audioTimelineLargeGaps:count(item["mp4AudioTimelineLargeGaps"],180000),
       audioTimelineMaxGapMs:count(item["mp4AudioTimelineMaxGapMs"],600000),
+      timelineLimitReason:typeof item["mp4TimelineLimitReason"]==="string" && ["completed","sample_limit","time_limit","too_short","missing_track","extractor_error","not_checked"].includes(item["mp4TimelineLimitReason"]) ? item["mp4TimelineLimitReason"]:null,
+      audioTimelineLimitReason:typeof item["mp4AudioTimelineLimitReason"]==="string" && ["completed","sample_limit","time_limit","too_short","missing_track","extractor_error","not_requested"].includes(item["mp4AudioTimelineLimitReason"]) ? item["mp4AudioTimelineLimitReason"]:null,
       timelineCompleted:flag(item["mp4TimelineCompleted"]),
       timelineSamples:count(item["mp4TimelineSamples"],120000),
       timelineRollbacks:count(item["mp4TimelineRollbacks"],120000),
