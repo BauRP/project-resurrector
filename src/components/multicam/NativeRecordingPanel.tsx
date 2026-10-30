@@ -275,7 +275,6 @@ export function NativeRecordingPanel(){
     setVisible(false);
   };
  },[]);
- if(!isNative())return null;
  const current=cameras.find(x=>x.cameraId===camera);
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
  const mode=validNativeSelection(current,resolution,fps);
@@ -293,6 +292,7 @@ export function NativeRecordingPanel(){
  },[camera,resolution,fps]);
  // The restored UI mode may belong to an old lens. Offer the real
  // compatible fallback explicitly, never silently change capture settings.
+ // All hooks must execute unconditionally, including in WebView-only builds.
  const canRestoreMode=!!mode.size && (mode.size!==resolution||mode.fps!==fps);
  const applyCompatibleMode=()=>{
    if(busy||nativeRecorderOwnsCamera(status?.state??""))return;
@@ -351,6 +351,7 @@ export function NativeRecordingPanel(){
   catch(e){setError(String(e));}
  };
  const active=nativeRecorderOwnsCamera(status?.state??"");
+ if(!isNative())return null;
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
    <p role="status">H.264-кодировщик: {encoderSupport==="declared"
