@@ -67,6 +67,8 @@ export function nativePreviewSnapshot(
  */
 export interface FoldPreviewTopology {
  posture?:string;hingeCount?:number;layout?:string;regionGeometry?:string;
+ /** Informational Android revision; intentionally ignored for surface refresh. */
+ revision?:number;
 }
 export function foldPreviewTopologySignature(value:FoldPreviewTopology|null|undefined):string {
  if(!value)return "unobserved";
