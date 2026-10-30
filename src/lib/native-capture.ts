@@ -1,4 +1,4 @@
-import {registerPlugin} from "@capacitor/core";
+import {registerPlugin, type PluginListenerHandle} from "@capacitor/core";
 export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;captureId?:number;stabilization:string;directPreviewActive?:boolean;
  cameraSensorFrames?:number;cameraSensorFps?:number;
@@ -31,6 +31,7 @@ export interface NativeCaptureStatus {
  manualFocusSupported?:boolean;autoFocusSupported?:boolean;focusMode?:string;focusDiopters?:number;maxFocusDiopters?:number;reportedFocusDiopters?:number;reportedAfState?:number;
 }
 export interface NativeCaptureBridge {
+ addListener(eventName:"directPreviewInvalidated",listener:(event:{ownerId:string;reason:string})=>void):Promise<PluginListenerHandle>;
  startPreview(options:{cameraId:string}):Promise<NativeCaptureStatus>;
  start(options:{cameraId:string;width:number;height:number;fps:number;audio:boolean}):Promise<NativeCaptureStatus>;
  stop():Promise<NativeCaptureStatus>;
