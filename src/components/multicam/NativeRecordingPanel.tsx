@@ -119,7 +119,10 @@ export function NativeRecordingPanel(){
    const resized=()=>void sync();
    const visibility=()=>void sync();
    const scrolling=()=>void sync();
-   const folding=()=>void sync();
+   // Native Android can detach the TextureView when a hinge moves while the
+   // CSS rectangle appears unchanged. Invalidate our lastVisible cache so
+   // returning to a safe pane restores the preview without touching recording.
+   const folding=()=>{void hide().then(()=>{if(live)void sync();});};
    window.addEventListener("resize",resized);
    window.addEventListener("scroll",scrolling,true);
    window.addEventListener("multicam-fold-topology",folding);
