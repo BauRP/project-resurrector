@@ -22,6 +22,13 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(panel).toContain("lastViewport?.width===viewport.width");
   expect(panel).toContain("lastViewport?.height===viewport.height");
  });
+ it("video survives denied microphone permission with an explicit silent capture choice",()=>{
+  expect(panel).toContain('if(result["camera"]!=="granted")');
+  expect(panel).toContain('if(audio&&!recordAudio)');
+  expect(panel).toContain('setAudio(false)');
+  expect(panel).toContain('audio:recordAudio');
+  expect(panel).not.toContain('if(result["camera"]!=="granted"||(audio&&');
+ });
  it("folding only invalidates the preview surface, never stops the Camera2 recorder",()=>{
   const start=panel.indexOf("const folding=()=>");
   const end=panel.indexOf('window.addEventListener("resize"',start);
