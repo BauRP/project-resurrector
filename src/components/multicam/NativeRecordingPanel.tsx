@@ -127,7 +127,10 @@ export function NativeRecordingPanel(){
    // Native Android can detach the TextureView when a hinge moves while the
    // CSS rectangle appears unchanged. Invalidate our lastVisible cache so
    // returning to a safe pane restores the preview without touching recording.
-   const folding=()=>{void hide().then(()=>{if(live)void sync();});};
+   // Native WindowManager already hides an overlay that physically crosses
+   // a hinge. Here a geometry recheck is enough: identical callbacks must
+   // not detach and recreate a perfectly safe Android TextureView.
+   const folding=()=>{void sync();};
    window.addEventListener("resize",resized);
    window.addEventListener("scroll",scrolling,true);
    window.addEventListener("multicam-fold-topology",folding);
