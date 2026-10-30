@@ -100,6 +100,12 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain("worker.removeCallbacks(storageMonitor)");
    expect(service).toContain("Недостаточно свободной памяти для безопасного завершения MP4");
  });
+ it("fails gracefully on real Android emergency thermal status",()=>{
+   expect(service).toContain("power.getCurrentThermalStatus()");
+   expect(service).toContain("PowerManager.THERMAL_STATUS_EMERGENCY");
+   expect(service).toContain("String thermalFailure=criticalThermalFailure()");
+   expect(service).toContain("if(thermalFailure!=null)");
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
