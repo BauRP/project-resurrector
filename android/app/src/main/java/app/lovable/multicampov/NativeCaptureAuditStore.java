@@ -70,6 +70,8 @@ public final class NativeCaptureAuditStore {
                     "mp4TimelineCompleted","mp4AudioTimelineCompleted",
                     "mp4AudioTimelineTrackFound","mp4AvDriftMeasured"};
                 for(String k:booleans)item.put(k,status.optBoolean(k,false));
+                double measuredFps=status.optDouble("mp4TimelineSampledFps",-1d);
+                item.put("mp4TimelineSampledFps",Double.isFinite(measuredFps) && measuredFps>0d && measuredFps<=240d ? measuredFps:-1d);
                 item.put("savedAt",System.currentTimeMillis());
             }catch(Exception ignored){return;}
             rows.put(item);
