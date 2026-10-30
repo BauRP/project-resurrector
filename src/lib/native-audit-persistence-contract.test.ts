@@ -77,6 +77,13 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(capturePlugin).toContain("DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(");
    expect(capturePlugin).toContain("if(visiblePreview.get()==this)visiblePreview.clear()");
  });
+ it("restricts Gallery retry to a verified last app-owned clip",()=>{
+   expect(service).toContain('public static boolean retryGalleryPublication(Context context)');
+   expect(service).toContain('new File(context.getFilesDir(),"native-video").getCanonicalFile()');
+   expect(service).toContain('expectedDir.equals(source.getParentFile())');
+   expect(service).toContain('prefs.getLong("captureId",0L)!=captureId');
+   expect(capturePlugin).toContain('new Thread(()->');
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
