@@ -81,6 +81,8 @@ export function NativeRecordingPanel(){
    let lastViewport:{width:number;height:number}|null=null;
    let lastVisible=false;
    let foldEpoch=0,lastShownFoldEpoch=-1;
+   let recoveringEpoch=-1;
+   let invalidationHandle:{remove:()=>Promise<void>}|null=null;
    let foldSignature=foldPreviewTopologySignature(getActiveFoldBaseline());
    // Keep errors visible to callers without poisoning later cleanup.
    const enqueue=createSerializedAsyncActions();
@@ -128,9 +130,19 @@ export function NativeRecordingPanel(){
        if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
      }
    };
+   // Native invalidation may happen independently of DOM resize. Avoid
+   // repeated restoration attempts for the same geometry and fold epoch.
+   void bridge.addListener("directPreviewInvalidated",event=>{
+     if(!live||event.ownerId!==ownerId)return;
+     lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
+     if(recoveringEpoch===foldEpoch)return;
+     recoveringEpoch=foldEpoch;
+     void sync();
+   }).then(handle=>{if(live)invalidationHandle=handle;else void handle.remove();})
+     .catch(()=>undefined);
    const observer=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>void sync()):null;
    if(directTarget.current)observer?.observe(directTarget.current);
-   const resized=()=>void sync();
+   const resized=()=>{foldEpoch++;recoveringEpoch=-1;void sync();};
    const visibility=()=>void sync();
    const scrolling=()=>void sync();
    // Native Android can detach the TextureView when a hinge moves while the
@@ -141,7 +153,7 @@ export function NativeRecordingPanel(){
    // not detach and recreate a perfectly safe Android TextureView.
    const folding=()=>{
      const next=foldPreviewTopologySignature(getActiveFoldBaseline());
-     if(next!==foldSignature){foldSignature=next;foldEpoch++;}
+     if(next!==foldSignature){foldSignature=next;foldEpoch++;recoveringEpoch=-1;}
      void sync();
    };
    window.addEventListener("resize",resized);
@@ -149,7 +161,7 @@ export function NativeRecordingPanel(){
    window.addEventListener("multicam-fold-topology",folding);
    document.addEventListener("visibilitychange",visibility);
    void sync();
-   return ()=>{live=false;observer?.disconnect();window.removeEventListener("resize",resized);
+   return ()=>{live=false;observer?.disconnect();if(invalidationHandle)void invalidationHandle.remove();window.removeEventListener("resize",resized);
      window.removeEventListener("scroll",scrolling,true);
      window.removeEventListener("multicam-fold-topology",folding);
      document.removeEventListener("visibilitychange",visibility);
