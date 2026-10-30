@@ -36,6 +36,10 @@ describe("Camera2 preview during Android fold transitions",()=>{
   const callback=panel.slice(start,end);
   expect(callback).not.toContain("hide().then(");
   expect(callback).toContain("sync()");
+  expect(callback).toContain("foldPreviewTopologySignature(getActiveFoldBaseline())");
+  expect(callback).toContain("foldEpoch++");
+  expect(panel).toContain("lastShownFoldEpoch===submittedFoldEpoch");
+  expect(panel).toContain("lastShownFoldEpoch=submittedFoldEpoch");
   expect(callback).not.toMatch(/bridge\.(stop|pause|start)\(/);
  });
 });
