@@ -1,5 +1,5 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
-import { nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, type PreviewRect } from "@/lib/native-preview-placement";
+import { nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, foldPreviewTopologySignature, type PreviewRect } from "@/lib/native-preview-placement";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
@@ -80,11 +80,13 @@ export function NativeRecordingPanel(){
    let lastPosition:PreviewRect|null=null;
    let lastViewport:{width:number;height:number}|null=null;
    let lastVisible=false;
+   let foldEpoch=0,lastShownFoldEpoch=-1;
+   let foldSignature=foldPreviewTopologySignature(getActiveFoldBaseline());
    // Keep errors visible to callers without poisoning later cleanup.
    const enqueue=createSerializedAsyncActions();
    const hide=()=>enqueue(async()=>{
      if(!lastVisible)return;
-     lastVisible=false;lastPosition=null;lastViewport=null;
+     lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
      await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
    });
    const measure=()=>nativePreviewSnapshot(
@@ -102,16 +104,21 @@ export function NativeRecordingPanel(){
          // geometry and both scaling axes at command submission time.
          const latest=document.hidden?null:measure();
          if(!latest){
-           lastVisible=false;lastPosition=null;lastViewport=null;
+           lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
            await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
            return;
          }
          const {placement,viewport}=latest;
-         if(lastVisible&&samePreviewPlacement(placement,lastPosition)&&
+         const submittedFoldEpoch=foldEpoch;
+         if(lastVisible&&lastShownFoldEpoch===submittedFoldEpoch&&
+            samePreviewPlacement(placement,lastPosition)&&
             lastViewport?.width===viewport.width&&lastViewport?.height===viewport.height)return;
+         // A real fold may have caused Android to detach its TextureView even
+         // if the DOM box did not move. Re-submit only for a changed topology.
          await bridge.setDirectPreview({ownerId,visible:true,...placement,
            viewportWidth:viewport.width,viewportHeight:viewport.height});
          lastVisible=true;lastPosition=placement;lastViewport=viewport;
+         lastShownFoldEpoch=submittedFoldEpoch;
        });
        if(!live)return;
        setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
@@ -130,7 +137,11 @@ export function NativeRecordingPanel(){
    // Native WindowManager already hides an overlay that physically crosses
    // a hinge. Here a geometry recheck is enough: identical callbacks must
    // not detach and recreate a perfectly safe Android TextureView.
-   const folding=()=>{void sync();};
+   const folding=()=>{
+     const next=foldPreviewTopologySignature(getActiveFoldBaseline());
+     if(next!==foldSignature){foldSignature=next;foldEpoch++;}
+     void sync();
+   };
    window.addEventListener("resize",resized);
    window.addEventListener("scroll",scrolling,true);
    window.addEventListener("multicam-fold-topology",folding);
@@ -142,7 +153,7 @@ export function NativeRecordingPanel(){
      document.removeEventListener("visibilitychange",visibility);
      // Always queue a final hide, even when the first show is pending.
      void enqueue(async()=>{
-       lastVisible=false;lastPosition=null;lastViewport=null;
+       lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
        await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
      });};
  },[directEnabled]);
