@@ -29,12 +29,17 @@ public final class NativeMp4TimelineAudit {
         public int audioSamples, audioRollbacks, audioDuplicates, audioLargeGaps;
         public long audioMaximumGapMs;
         public boolean audioCompleted;
+        // Relative timeline offset at the beginning and end of both tracks.
+        // Drift is a warning, not a measurement of audible lip-sync quality.
+        public boolean avDriftMeasured;
+        public long avStartOffsetMs, avEndOffsetMs, avDriftMs;
     }
     private static final class TrackScan {
         int samples, rollbacks, duplicates, largeGaps;
         long maximumGapMs;
         boolean completed;
         float approximateFps = -1f;
+        long firstPtsUs = -1L, lastPtsUs = -1L;
     }
     private NativeMp4TimelineAudit() {}
 
@@ -65,6 +70,8 @@ public final class NativeMp4TimelineAudit {
                 scan.samples++;
                 if (!extractor.advance()) { ended = true; break; }
             }
+            scan.firstPtsUs=first;
+            scan.lastPtsUs=previous;
             scan.completed = ended && scan.samples >= 2;
             if (scan.samples > 2 && previous > first &&
                 scan.rollbacks == 0 && scan.duplicates == 0) {
@@ -85,6 +92,8 @@ public final class NativeMp4TimelineAudit {
         Result result = new Result();
         if (file == null || !file.isFile() || file.length() < 1024L) return result;
         MediaExtractor extractor = new MediaExtractor();
+        TrackScan videoTimeline = null;
+        TrackScan audioTimeline = null;
         try {
             extractor.setDataSource(file.getAbsolutePath());
             int video = -1, audio = -1;
@@ -101,6 +110,7 @@ public final class NativeMp4TimelineAudit {
                     ? 1000000L / requestedFps : 33333L;
                 TrackScan scanned = scanTrack(extractor, video,
                     VIDEO_MAX_SAMPLES, VIDEO_BUDGET_MS, Math.max(500000L, frameUs * 10L));
+                videoTimeline = scanned;
                 result.samples = scanned.samples;
                 result.rollbacks = scanned.rollbacks;
                 result.duplicates = scanned.duplicates;
@@ -113,12 +123,23 @@ public final class NativeMp4TimelineAudit {
             if (inspectAudio && audio >= 0) {
                 TrackScan scanned = scanTrack(extractor, audio,
                     AUDIO_MAX_SAMPLES, AUDIO_BUDGET_MS, 500000L);
+                audioTimeline = scanned;
                 result.audioSamples = scanned.samples;
                 result.audioRollbacks = scanned.rollbacks;
                 result.audioDuplicates = scanned.duplicates;
                 result.audioLargeGaps = scanned.largeGaps;
                 result.audioMaximumGapMs = scanned.maximumGapMs;
                 result.audioCompleted = scanned.completed;
+            }
+            if (inspectAudio && videoTimeline != null && audioTimeline != null &&
+                videoTimeline.completed && audioTimeline.completed &&
+                videoTimeline.firstPtsUs >= 0L && audioTimeline.firstPtsUs >= 0L &&
+                videoTimeline.lastPtsUs >= videoTimeline.firstPtsUs &&
+                audioTimeline.lastPtsUs >= audioTimeline.firstPtsUs) {
+                result.avStartOffsetMs=(audioTimeline.firstPtsUs-videoTimeline.firstPtsUs)/1000L;
+                result.avEndOffsetMs=(audioTimeline.lastPtsUs-videoTimeline.lastPtsUs)/1000L;
+                result.avDriftMs=result.avEndOffsetMs-result.avStartOffsetMs;
+                result.avDriftMeasured=true;
             }
         } catch (Exception ignored) {
             result.completed = false;
