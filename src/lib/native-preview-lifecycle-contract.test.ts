@@ -34,7 +34,7 @@ describe("Camera2 preview during Android fold transitions",()=>{
   const end=panel.indexOf('window.addEventListener("resize"',start);
   expect(start).toBeGreaterThan(0);
   const callback=panel.slice(start,end);
-  expect(callback).toContain("hide().then(");
+  expect(callback).not.toContain("hide().then(");
   expect(callback).toContain("sync()");
   expect(callback).not.toMatch(/bridge\.(stop|pause|start)\(/);
  });
