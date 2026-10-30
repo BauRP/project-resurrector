@@ -122,6 +122,8 @@ public class NativeCaptureService extends Service {
     private static boolean mp4AudioTimelineCompleted=false,mp4AudioTimelineTrackFound=false;
     private static int mp4AudioTimelineSamples=0,mp4AudioTimelineRollbacks=0,mp4AudioTimelineDuplicates=0,mp4AudioTimelineLargeGaps=0;
     private static long mp4AudioTimelineMaxGapMs=0L;
+    private static boolean mp4AvDriftMeasured=false;
+    private static long mp4AvDriftMs=0L;
     private static long mp4DurationMs = -1L;
     private static int mp4TailVideoSamples = 0;
     private static float mp4TailSampledFps = -1f;
@@ -237,6 +239,8 @@ public class NativeCaptureService extends Service {
                 .putString("message",reason)
                 .putString("path","")
                 .putString("uri","")
+                .putBoolean("mp4AvDriftMeasured",false)
+                .putLong("mp4AvDriftMs",0L)
                 .putBoolean("mp4AudioTimelineCompleted",false)
                 .putBoolean("mp4AudioTimelineTrackFound",false)
                 .putInt("mp4AudioTimelineSamples",0)
@@ -1018,6 +1022,8 @@ public class NativeCaptureService extends Service {
             out.put("mp4AudioTimelineDuplicates",runningInstance==null?previous.getInt("mp4AudioTimelineDuplicates",0):mp4AudioTimelineDuplicates);
             out.put("mp4AudioTimelineLargeGaps",runningInstance==null?previous.getInt("mp4AudioTimelineLargeGaps",0):mp4AudioTimelineLargeGaps);
             out.put("mp4AudioTimelineMaxGapMs",runningInstance==null?previous.getLong("mp4AudioTimelineMaxGapMs",0L):mp4AudioTimelineMaxGapMs);
+            out.put("mp4AvDriftMeasured",runningInstance==null?previous.getBoolean("mp4AvDriftMeasured",false):mp4AvDriftMeasured);
+            out.put("mp4AvDriftMs",runningInstance==null?previous.getLong("mp4AvDriftMs",0L):mp4AvDriftMs);
             out.put("mp4SampledFps", runningInstance == null
                 ? previous.getFloat("mp4SampledFps", -1f) : mp4SampledFps);
             out.put("mp4DurationMs", runningInstance == null
@@ -1141,6 +1147,8 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4AudioTimelineDuplicates",mp4AudioTimelineDuplicates)
                 .putInt("mp4AudioTimelineLargeGaps",mp4AudioTimelineLargeGaps)
                 .putLong("mp4AudioTimelineMaxGapMs",mp4AudioTimelineMaxGapMs)
+                .putBoolean("mp4AvDriftMeasured",mp4AvDriftMeasured)
+                .putLong("mp4AvDriftMs",mp4AvDriftMs)
                 .putFloat("mp4SampledFps", mp4SampledFps)
                 .putLong("mp4DurationMs", mp4DurationMs)
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
@@ -1312,6 +1320,7 @@ public class NativeCaptureService extends Service {
             mp4AudioTimelineCompleted=false;mp4AudioTimelineTrackFound=false;
             mp4AudioTimelineSamples=0;mp4AudioTimelineRollbacks=0;
             mp4AudioTimelineDuplicates=0;mp4AudioTimelineLargeGaps=0;mp4AudioTimelineMaxGapMs=0L;
+            mp4AvDriftMeasured=false;mp4AvDriftMs=0L;
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
             mp4TailAudioSamples=0;mp4AudioPtsAnomalies=0;mp4TailAudioNearEnd=false;
             mp4AvTailOffsetMeasured=false;mp4AvTailOffsetMs=0L;
@@ -2428,6 +2437,8 @@ public class NativeCaptureService extends Service {
             mp4AudioTimelineDuplicates=timeline.audioDuplicates;
             mp4AudioTimelineLargeGaps=timeline.audioLargeGaps;
             mp4AudioTimelineMaxGapMs=timeline.audioMaximumGapMs;
+            mp4AvDriftMeasured=timeline.avDriftMeasured;
+            mp4AvDriftMs=timeline.avDriftMs;
             mp4TracksInspected = audit != null;
             mp4HasVideoTrack = audit != null && audit.video;
             mp4HasAudioTrack = audit != null && audit.audio;
@@ -2506,7 +2517,8 @@ public class NativeCaptureService extends Service {
             boolean audioTimelineIssue=wantAudio && (!mp4AudioTimelineTrackFound ||
                 !mp4AudioTimelineCompleted || mp4AudioTimelineSamples<2 ||
                 mp4AudioTimelineRollbacks>0 || mp4AudioTimelineDuplicates>0 ||
-                mp4AudioTimelineLargeGaps>0);
+                mp4AudioTimelineLargeGaps>0 || !mp4AvDriftMeasured ||
+                Math.abs(mp4AvDriftMs)>500L);
             boolean incomplete = audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
