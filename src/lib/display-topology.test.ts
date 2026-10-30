@@ -189,6 +189,15 @@ describe("camera view below persistent header in a two-axis fold",()=>{
       {left:0,top:0,width:600,height:450})).toBeNull();
   });
 });
+describe("visible fold workspace horizontal inset",()=>{
+  it("keeps editor within the actual visual viewport on both axes",()=>{
+    const shell={left:0,top:0,width:900,height:800};
+    const content={left:0,top:60,width:900,height:700};
+    expect(foldVisibleContentBounds(shell,content,60,
+      {offsetLeft:120,offsetTop:100,width:500,height:460}))
+      .toEqual({left:120,top:100,width:500,height:460});
+  });
+});
 describe("visible fold workspace during software keyboard",()=>{
   it("keeps safe area tied to visual viewport vertical scroll position",()=>{
     const shell={left:0,top:0,width:600,height:800};
