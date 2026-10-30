@@ -33,6 +33,7 @@ export interface NativeCaptureBridge {
  resume():Promise<NativeCaptureStatus>;
  status():Promise<NativeCaptureStatus>;
  auditHistory():Promise<{entries:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}>;
+ retryGalleryPublication():Promise<NativeCaptureStatus>;
  previewFrame():Promise<{jpeg:string;frameAt?:number}>;
  setDirectPreview(options:{ownerId:string;visible:boolean;left?:number;top?:number;width?:number;height?:number;viewportWidth?:number;viewportHeight?:number}):Promise<void>;
  setControls(options:{zoom:number;exposureIndex:number}):Promise<NativeCaptureStatus>;
