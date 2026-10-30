@@ -84,6 +84,13 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain('prefs.getLong("captureId",0L)!=captureId');
    expect(capturePlugin).toContain('new Thread(()->');
  });
+ it("salvages readable MP4 after MediaRecorder.stop throws without certifying success",()=>{
+   expect(service).toContain('boolean stopFailed = false');
+   expect(service).toContain('boolean valid = previouslyRecording && savedMp4HasVideo(media)');
+   expect(service).toContain('boolean incomplete = captureFailed || stopFailed || checkpointIssue');
+   expect(service).toContain('String message = stopFailed');
+   expect(service).toContain('saved_interrupted');
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
