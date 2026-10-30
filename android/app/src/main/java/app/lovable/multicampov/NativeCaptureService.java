@@ -116,6 +116,8 @@ public class NativeCaptureService extends Service {
     private static int mp4VideoTimestampRollbacks = 0, mp4VideoTimestampDuplicates = 0;
     private static boolean mp4VideoSampleLimitReached = false;
     private static float mp4SampledFps = -1f;
+    // Measured across the entire available encoded video timeline (never requested FPS).
+    private static float mp4TimelineSampledFps = -1f;
     private static boolean mp4TimelineCompleted = false;
     private static String mp4TimelineLimitReason="not_checked",mp4AudioTimelineLimitReason="not_requested";
     private static int mp4TimelineSamples = 0, mp4TimelineRollbacks = 0, mp4TimelineDuplicates = 0, mp4TimelineLargeGaps = 0;
@@ -251,6 +253,7 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",0L)
                 .putString("mp4TimelineLimitReason","not_checked")
                 .putString("mp4AudioTimelineLimitReason","not_requested")
+                .putFloat("mp4TimelineSampledFps",-1f)
                 .putBoolean("mp4TimelineCompleted",false)
                 .putInt("mp4TimelineSamples",0)
                 .putInt("mp4TimelineRollbacks",0)
@@ -1029,6 +1032,8 @@ public class NativeCaptureService extends Service {
             out.put("mp4AudioTimelineMaxGapMs",runningInstance==null?previous.getLong("mp4AudioTimelineMaxGapMs",0L):mp4AudioTimelineMaxGapMs);
             out.put("mp4AvDriftMeasured",runningInstance==null?previous.getBoolean("mp4AvDriftMeasured",false):mp4AvDriftMeasured);
             out.put("mp4AvDriftMs",runningInstance==null?previous.getLong("mp4AvDriftMs",0L):mp4AvDriftMs);
+            out.put("mp4TimelineSampledFps", runningInstance == null
+                ? previous.getFloat("mp4TimelineSampledFps",-1f) : mp4TimelineSampledFps);
             out.put("mp4SampledFps", runningInstance == null
                 ? previous.getFloat("mp4SampledFps", -1f) : mp4SampledFps);
             out.put("mp4DurationMs", runningInstance == null
@@ -1156,6 +1161,7 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",mp4AudioTimelineMaxGapMs)
                 .putBoolean("mp4AvDriftMeasured",mp4AvDriftMeasured)
                 .putLong("mp4AvDriftMs",mp4AvDriftMs)
+                .putFloat("mp4TimelineSampledFps",mp4TimelineSampledFps)
                 .putFloat("mp4SampledFps", mp4SampledFps)
                 .putLong("mp4DurationMs", mp4DurationMs)
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
@@ -1322,6 +1328,7 @@ public class NativeCaptureService extends Service {
             mp4VideoSamples = 0; mp4AudioSamples = 0;
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
+            mp4TimelineSampledFps=-1f;
             mp4TimelineLimitReason="not_checked";mp4AudioTimelineLimitReason="not_requested";
             mp4TimelineCompleted=false;mp4TimelineSamples=0;mp4TimelineRollbacks=0;
             mp4TimelineDuplicates=0;mp4TimelineLargeGaps=0;mp4TimelineMaxGapMs=0L;
@@ -2435,6 +2442,7 @@ public class NativeCaptureService extends Service {
             mp4TimelineLimitReason=timeline.videoLimitReason;
             mp4AudioTimelineLimitReason=timeline.audioLimitReason;
             mp4TimelineCompleted=timeline.completed;
+            mp4TimelineSampledFps=timeline.approximateFps;
             mp4TimelineSamples=timeline.samples;
             mp4TimelineRollbacks=timeline.rollbacks;
             mp4TimelineDuplicates=timeline.duplicates;
@@ -2488,7 +2496,8 @@ public class NativeCaptureService extends Service {
             // observed mismatch in bounded prefix/tail FPS is not proof that
             // the requested encoder mode was applied throughout the file.
             float fpsTolerance=Math.max(2f,selectedFps*0.1f);
-            boolean fpsMismatch = audit != null &&
+            boolean fpsMismatch = (timeline.completed && timeline.approximateFps>0f &&
+                Math.abs(timeline.approximateFps-selectedFps)>fpsTolerance) || audit != null &&
                 ((Float.isFinite(audit.sampledFps) && audit.sampledFps>0f &&
                     Math.abs(audit.sampledFps-selectedFps)>fpsTolerance) ||
                  (Float.isFinite(audit.tailSampledFps) && audit.tailSampledFps>0f &&
