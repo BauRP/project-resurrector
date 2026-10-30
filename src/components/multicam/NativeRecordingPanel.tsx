@@ -3,7 +3,7 @@ import { nativePreviewPlacement, samePreviewPlacement, type PreviewRect } from "
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
-import { validNativeSelection } from "@/lib/native-mode-selection";
+import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
 import { recordModeEvidence } from "@/lib/camera-passport";
 import { nativeAnonymizedAuditReport } from "@/lib/native-audit-report";
@@ -28,6 +28,7 @@ export function NativeRecordingPanel(){
    }catch{return 30;}
  });
  const [audio,setAudio]=useState(true);
+ const [encoderSupport,setEncoderSupport]=useState<"declared"|"unsupported"|"unknown">("unknown");
  // Save UI choices only, never recorder ownership or a fictitious resumed
  // recording. A persisted lens must match current Camera2 enumeration.
  useEffect(()=>{
@@ -260,6 +261,17 @@ export function NativeRecordingPanel(){
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
  const mode=validNativeSelection(current,resolution,fps);
  const availableFps=mode.choices;
+ useEffect(()=>{
+   if(!isNative()||!camera||!resolution||!fps){setEncoderSupport("unknown");return;}
+   const [width,height]=resolution.split("x").map(Number);
+   if(!width||!height){setEncoderSupport("unknown");return;}
+   let active=true;
+   setEncoderSupport("unknown");
+   void MultiCamNative.getEncoderSupport({width,height,fps}).then(result=>{
+     if(active)setEncoderSupport(declaredAvcRecordingSupport(result.encoders));
+   }).catch(()=>{if(active)setEncoderSupport("unknown");});
+   return ()=>{active=false;};
+ },[camera,resolution,fps]);
  // The restored UI mode may belong to an old lens. Offer the real
  // compatible fallback explicitly, never silently change capture settings.
  const canRestoreMode=!!mode.size && (mode.size!==resolution||mode.fps!==fps);
@@ -291,6 +303,7 @@ export function NativeRecordingPanel(){
    const [width = 0,height = 0]=resolution.split("x").map(Number);
    if(!sizes.includes(resolution))throw Error("Это разрешение не объявлено выбранной камерой.");
    if(mode.size!==resolution||!mode.choices.includes(fps))throw Error("Разрешение и FPS не совместимы по опубликованным ограничениям Camera2. Выберите доступную комбинацию.");
+   if(encoderSupport==="unsupported")throw Error("H.264-кодировщик не объявляет поддержку выбранного разрешения/FPS.");
    setStatus(await bridge.start({cameraId:camera,width,height,fps,audio}));
   }catch(e){setError(String(e));}
   finally{setBusy(false);}
@@ -321,6 +334,11 @@ export function NativeRecordingPanel(){
  const active=nativeRecorderOwnsCamera(status?.state??"");
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
+   <p role="status">H.264-кодировщик: {encoderSupport==="declared"
+     ?"комбинация разрешения/FPS заявлена (требуется пробная запись)"
+     :encoderSupport==="unsupported"
+     ?"выбранная комбинация явно не поддерживается"
+     :"поддержка не подтверждена; окончательная проверка при старте записи"}.</p>
    <div ref={directTarget} onClick={e=>void tapDirect(e)} className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
     {directEnabled ? <p className="px-3 text-center text-white/80">Прямой Android-видоискатель. Если кадр не появился, выключите этот режим.</p> :
      preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} /> :
