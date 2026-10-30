@@ -77,4 +77,19 @@ describe("recovered native fold and camera report safety",()=>{
     expect(report.entries.map((x:{fold:{checkpointAuditCompleted:boolean|null}})=>
       x.fold.checkpointAuditCompleted)).toEqual([false,true,null]);
   });
+ it("exports bounded timestamp audit without private camera identifiers",()=>{
+  const report=nativeAnonymizedAuditReport({entries:[{
+   cameraId:"PRIVATE_CAMERA",savedUri:"content://private/fold.mp4",
+   mp4TimelineCompleted:false,mp4TimelineSamples:120000,
+   mp4TimelineRollbacks:2,mp4TimelineDuplicates:1,
+   mp4TimelineLargeGaps:5,mp4TimelineMaxGapMs:640
+  }],maxEntries:24,omittedEarlier:0});
+  const media=JSON.parse(report).entries[0].media;
+  expect(media.timelineCompleted).toBe(false);
+  expect(media.timelineSamples).toBe(120000);
+  expect(media.timelineLargeGaps).toBe(5);
+  expect(report).not.toContain("PRIVATE_CAMERA");
+  expect(report).not.toContain("content://private");
+ });
+
 });
