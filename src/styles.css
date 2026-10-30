@@ -566,6 +566,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   width: min(var(--fold-work-width), 100%);
   max-width: 100%;
   min-width: 0;
+  top: var(--fold-work-y-offset, 0px);
+  max-height: var(--fold-work-height, 100%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 [data-fold-workspace="pane"] .editor-fold-workspace * ,
 [data-fold-workspace="pane"] .settings-fold-workspace * { min-width: 0; }
