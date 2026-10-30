@@ -312,8 +312,15 @@ export function NativeRecordingPanel(){
   if(busy)return;setBusy(true);setError("");
   try{
    const result=await bridge.requestPermissions({permissions:audio?["camera","microphone"]:["camera"]});
-   if(result["camera"]!=="granted"||(audio&&result["microphone"]!=="granted"))
-    throw Error("Android не предоставил разрешение на камеру/микрофон.");
+   if(result["camera"]!=="granted")
+    throw Error("Android не предоставил разрешение на камеру.");
+   // Microphone denial must not block a genuine Camera2 video-only recording.
+   // Require an explicit choice; never silently imply a soundtrack exists.
+   const recordAudio=audio && result["microphone"]==="granted";
+   if(audio&&!recordAudio){
+     if(!window.confirm("Микрофон недоступен. Записать настоящее видео без звука?"))return;
+     setAudio(false);
+   }
    if(!window.confirm("Запустить отдельную нативную запись Camera2? Обычный предпросмотр WebView должен быть закрыт. Запись продолжается при пересоздании интерфейса, но не гарантирована при гибели процесса Android."))return;
    if(directEnabled){
      await bridge.setDirectPreview({ownerId:directLease.current,visible:false}).catch(()=>undefined);
@@ -323,7 +330,7 @@ export function NativeRecordingPanel(){
    if(!sizes.includes(resolution))throw Error("Это разрешение не объявлено выбранной камерой.");
    if(mode.size!==resolution||!mode.choices.includes(fps))throw Error("Разрешение и FPS не совместимы по опубликованным ограничениям Camera2. Выберите доступную комбинацию.");
    if(encoderSupport==="unsupported")throw Error("H.264-кодировщик не объявляет поддержку выбранного разрешения/FPS.");
-   setStatus(await bridge.start({cameraId:camera,width,height,fps,audio}));
+   setStatus(await bridge.start({cameraId:camera,width,height,fps,audio:recordAudio}));
   }catch(e){setError(String(e));}
   finally{setBusy(false);}
  };
