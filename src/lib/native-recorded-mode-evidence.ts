@@ -117,7 +117,8 @@ export function nativeRecordedModeEvidence(
   // Treat measured beginning/end MP4 timing as evidence about the selected
   // mode, not as full-file verification. Unknown measurements stay unknown.
   const fpsTolerance = Math.max(2, fps! * .1);
-  const observedFps = [status.mp4SampledFps,status.mp4TailSampledFps]
+  const observedFps = [status.mp4SampledFps,status.mp4TailSampledFps,
+    ...(status.mp4TimelineCompleted === true ? [status.mp4TimelineSampledFps] : [])]
     .filter((value): value is number => typeof value === "number" &&
       Number.isFinite(value) && value > 0);
   const measuredFpsMismatch = observedFps.some(value =>
