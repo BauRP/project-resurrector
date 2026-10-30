@@ -477,6 +477,7 @@ export function NativeRecordingPanel(){
      причина ограничения: {status.mp4TimelineLimitReason??"неизвестна"};
      просмотрено {status.mp4TimelineSamples??0} видеосэмплов; подозрительных длинных интервалов {status.mp4TimelineLargeGaps??0},
      откатов {status.mp4TimelineRollbacks??0}, повторов {status.mp4TimelineDuplicates??0}; самый длинный интервал {status.mp4TimelineMaxGapMs??0} мс.
+     {status.mp4TimelineCompleted && status.mp4TimelineSampledFps!==undefined && status.mp4TimelineSampledFps>0 ? ` Средний измеренный FPS всей видеодорожки: ${status.mp4TimelineSampledFps.toFixed(1)}.` : " Измеренный FPS всей видеодорожки неизвестен."}
      Это проверка временных меток, а не полноценное декодирование всего видео.
    </p>}
    {status?.mp4TracksInspected && status.audioRequested && <p role="status">
