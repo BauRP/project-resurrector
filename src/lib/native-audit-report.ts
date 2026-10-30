@@ -42,6 +42,8 @@ function entrySummary(item:Record<string,unknown>) {
       avTailOffsetMs:typeof item["mp4AvTailOffsetMs"]==="number" && Number.isSafeInteger(item["mp4AvTailOffsetMs"]) && Math.abs(item["mp4AvTailOffsetMs"])<=600000 ? item["mp4AvTailOffsetMs"]:null,
       firstFrameDecoded:flag(item["mp4FirstFrameDecodable"]),
       tailFrameDecoded:flag(item["mp4TailFrameDecodable"]),
+      avDriftMeasured:flag(item["mp4AvDriftMeasured"]),
+      avDriftMs:typeof item["mp4AvDriftMs"]==="number" && Number.isSafeInteger(item["mp4AvDriftMs"]) && Math.abs(item["mp4AvDriftMs"])<=600000 ? item["mp4AvDriftMs"]:null,
       audioTimelineCompleted:flag(item["mp4AudioTimelineCompleted"]),
       audioTimelineTrackFound:flag(item["mp4AudioTimelineTrackFound"]),
       audioTimelineSamples:count(item["mp4AudioTimelineSamples"],180000),
