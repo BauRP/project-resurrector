@@ -60,3 +60,16 @@ export function nativePreviewSnapshot(
  const placement=nativePreviewPlacement(rect,viewport,regionGeometry);
  return placement ? {placement,viewport:{width:viewport.width,height:viewport.height}} : null;
 }
+
+/** TextureView safety is invalidated by a REAL change in observed posture or
+ * pane geometry, not by every duplicate WindowManager revision. Android may
+ * have detached the native surface even when its CSS rectangle is unchanged.
+ */
+export interface FoldPreviewTopology {
+ posture?:string;hingeCount?:number;layout?:string;regionGeometry?:string;
+}
+export function foldPreviewTopologySignature(value:FoldPreviewTopology|null|undefined):string {
+ if(!value)return "unobserved";
+ return JSON.stringify([value.posture??"",value.hingeCount??-1,
+   value.layout??"",value.regionGeometry??""]);
+}
