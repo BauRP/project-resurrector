@@ -469,6 +469,7 @@ export function NativeRecordingPanel(){
      найдено {status.mp4AudioTimelineSamples??0} сэмплов; подозрительных интервалов {status.mp4AudioTimelineLargeGaps??0},
      откатов {status.mp4AudioTimelineRollbacks??0}, повторов {status.mp4AudioTimelineDuplicates??0}.
      Наличие дорожки: {status.mp4AudioTimelineTrackFound?"подтверждено":"не подтверждено"}.
+     {status.mp4AvDriftMeasured===true ? ` Изменение сдвига звука относительно видео от начала к концу: ${status.mp4AvDriftMs??0} мс.` : " Дрейф звука и видео неизвестен."}
      Это проверка меток, а не прослушивание звука или подтверждение синхронности всего ролика.
    </p>}
    {status?.mp4TracksInspected&&<p role="status">
