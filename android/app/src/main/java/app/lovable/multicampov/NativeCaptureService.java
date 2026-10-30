@@ -2211,20 +2211,31 @@ public class NativeCaptureService extends Service {
         }
         if (!"error".equals(state)) publish("stopping", "Закрываю и сохраняю MP4");
         releaseCamera();
-        boolean valid = false;
+        // Some OEM MediaRecorder implementations throw from stop() even if
+        // the muxer has already written a readable MP4. Release the encoder
+        // FIRST, then inspect the retained app-owned file. An exception is
+        // never erased by a successful salvage: the final verdict stays
+        // saved_interrupted and the original failure is included in history.
+        boolean stopFailed = false;
+        String stopFailureReason = "";
         try {
             if (encoder != null && previouslyRecording) encoder.stop();
-            valid = previouslyRecording && savedMp4HasVideo(media);
         } catch (RuntimeException exception) {
-            publish("error", "Не удалось завершить нативный MP4: " + exception.getMessage());
+            stopFailed = true;
+            stopFailureReason = String.valueOf(exception.getMessage());
+            publish("error", "Ошибка завершения MediaRecorder: " + stopFailureReason);
         } finally {
             if (encoder != null) {
-                try {encoder.reset();encoder.release();}catch(Exception ignored){}
+                try { encoder.reset(); } catch (Exception ignored) {}
+                try { encoder.release(); } catch (Exception ignored) {}
                 encoder = null;
             }
             encoderStarted = false;
             encoderPaused = false;
         }
+        // Metadata plus real decoded samples are checked further below.
+        // Do not call this "saved" solely because the file exists.
+        boolean valid = previouslyRecording && savedMp4HasVideo(media);
         if (valid && media != null) {
             Mp4TrackAudit audit = inspectMp4Tracks(media);
             mp4TracksInspected = audit != null;
@@ -2300,14 +2311,17 @@ public class NativeCaptureService extends Service {
             boolean tailDecodeIssue = mp4DurationMs > 1500L && !mp4TailFrameDecodable;
             boolean inspectionUnknown = audit == null || !mp4HasVideoTrack ||
                 mp4VideoSamples <= 0;
-            boolean incomplete = captureFailed || checkpointIssue ||
+            boolean incomplete = captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
                 inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
             String gallery = publishVideo(this,media);
             savedUri = gallery == null ? "" : gallery;
-            String message = captureFailed
+            String message = stopFailed
+                ? "MP4 удалось восстановить после ошибки MediaRecorder.stop(): " +
+                  stopFailureReason + "; целостность всей записи не подтверждена"
+                : captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
                   "; непрерывность не подтверждена"
                 : !mp4CheckpointAuditCompleted
