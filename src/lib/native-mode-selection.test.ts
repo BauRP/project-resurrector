@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {nativeFpsCandidates,validNativeSelection} from "./native-mode-selection";
+import {nativeFpsCandidates,validNativeSelection,declaredAvcRecordingSupport} from "./native-mode-selection";
 const camera={sizes:["1280x720","1920x1080"],fpsRanges:["15-30","30-60"],
  videoOutputSizes:[{width:1280,height:720,theoreticalMaxFps:60},{width:1920,height:1080,theoreticalMaxFps:30}]};
 describe("native per-lens candidate selection",()=>{
@@ -26,5 +26,17 @@ describe("native per-lens candidate selection",()=>{
  it("does not invent a recordable size when every sensor option is unknown",()=>{
   const profile={...camera,fpsRanges:[]};
   expect(validNativeSelection(profile,"1920x1080",30)).toEqual({size:"",fps:0,choices:[]});
+ });
+});
+
+describe("declared H264 recorder compatibility",()=>{
+ it("rejects only explicit AVC encoder rejection",()=>{
+  expect(declaredAvcRecordingSupport([{mime:"video/avc",declaredSizeRate:false}])).toBe("unsupported");
+  expect(declaredAvcRecordingSupport([{mime:"video/hevc",declaredSizeRate:true}])).toBe("unknown");
+ });
+ it("accepts a stated candidate but does not claim a working MP4",()=>{
+  expect(declaredAvcRecordingSupport([{mime:"video/avc",declaredSizeRate:false},
+   {mime:"video/avc",declaredSizeRate:true}])).toBe("declared");
+  expect(declaredAvcRecordingSupport(null)).toBe("unknown");
  });
 });
