@@ -202,7 +202,7 @@ export function selectSafeFoldWorkspace(
  */
 export function foldVisibleContentBounds(
   shell:Region, content:Region, headerBottom:number,
-  visual:{offsetTop:number;height:number}|null|undefined,
+  visual:{offsetLeft?:number;offsetTop:number;width?:number;height:number}|null|undefined,
 ):Region {
   const safeVisual=!!visual && Number.isFinite(visual.offsetTop) &&
     Number.isFinite(visual.height) && visual.height>0;
@@ -210,8 +210,11 @@ export function foldVisibleContentBounds(
     safeVisual?visual!.offsetTop:content.top);
   const bottom=Math.min(content.top+content.height,
     safeVisual?visual!.offsetTop+visual!.height:content.top+content.height);
-  const left=Math.max(shell.left,content.left);
-  const right=Math.min(shell.left+shell.width,content.left+content.width);
+  const left=Math.max(shell.left,content.left,
+    safeVisual && Number.isFinite(visual?.offsetLeft) ? visual!.offsetLeft! : content.left);
+  const right=Math.min(shell.left+shell.width,content.left+content.width,
+    safeVisual && Number.isFinite(visual?.offsetLeft) && Number.isFinite(visual?.width)
+      && visual!.width!>0 ? visual!.offsetLeft!+visual!.width! : content.left+content.width);
   return {left,top,width:Math.max(0,right-left),height:Math.max(0,bottom-top)};
 }
 
@@ -330,7 +333,7 @@ export function startDisplayAdaptation(): () => void {
         width:scroll?.width??shellWidth,height:scroll?.height??height()},
       header?.bottom??0,
       window.visualViewport
-        ?{offsetTop:window.visualViewport.offsetTop,height:window.visualViewport.height}
+        ?{offsetLeft:window.visualViewport.offsetLeft,offsetTop:window.visualViewport.offsetTop,width:window.visualViewport.width,height:window.visualViewport.height}
         :null,
     );
     const contentTop=contentBounds.top;
