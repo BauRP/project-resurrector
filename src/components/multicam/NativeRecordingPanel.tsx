@@ -296,6 +296,13 @@ export function NativeRecordingPanel(){
   finally{setBusy(false);}
  };
  const stop=async()=>{setBusy(true);try{setStatus(await bridge.stop());}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const retryGallery=async()=>{
+   if(busy)return;
+   setBusy(true);setError("");
+   try{setStatus(await bridge.retryGalleryPublication());}
+   catch(e){setError(String(e));}
+   finally{setBusy(false);}
+ };
  const changePause=async()=>{
   if(busy)return;setBusy(true);setError("");
   try{setStatus(status?.state==="paused"?await bridge.resume():await bridge.pause());}
@@ -367,6 +374,11 @@ export function NativeRecordingPanel(){
        : <span> Камера не сообщает совместимый режим записи.</span>}
    </div>}
    <p role="status">Состояние: {status?.state??"неизвестно"}. {status?.message??""} {status?.recordedDurationMs!==undefined&&`Время видеозаписи: ${Math.floor(status.recordedDurationMs/1000)} сек.`}</p>
+   {status&&["saved","saved_interrupted"].includes(status.state)&&
+     !status.savedUri&&(status.savedBytes??0)>1024&&
+     <Button type="button" variant="outline" disabled={busy} onClick={()=>void retryGallery()}>
+       Повторить сохранение готового MP4 в Галерею
+     </Button>}
    {status&&["saved","saved_interrupted"].includes(status.state)&&<p role="status">
      Декодирование MP4: {status.mp4FirstFrameDecodable
        ?"начальный кадр успешно прочитан"
