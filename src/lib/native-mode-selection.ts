@@ -31,3 +31,17 @@ export function validNativeSelection(camera:Profile|null|undefined,size:string,f
  }
  return {size:"",fps:0,choices:[] as number[]};
 }
+
+/** Encoder declarations cannot confirm a recording, but an explicit AVC
+ * rejection must not be offered as a usable Camera2 record mode. Missing or
+ * broken vendor metadata stays UNKNOWN rather than being fabricated.
+ */
+export function declaredAvcRecordingSupport(
+ encoders:{mime:string;declaredSizeRate:boolean}[]|null|undefined,
+):"declared"|"unsupported"|"unknown" {
+ if(!encoders)return "unknown";
+ const avc=encoders.filter(item=>item?.mime?.toLowerCase()==="video/avc");
+ if(avc.length===0)return "unknown";
+ if(avc.some(item=>item.declaredSizeRate===true))return "declared";
+ return avc.every(item=>item.declaredSizeRate===false)?"unsupported":"unknown";
+}
