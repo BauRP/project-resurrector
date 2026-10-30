@@ -4,6 +4,8 @@ import android.Manifest;
 import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.graphics.Rect;
+import android.view.View;
+import com.getcapacitor.JSObject;
 import java.lang.ref.WeakReference;
 import android.view.TextureView;
 import android.view.MotionEvent;
@@ -33,24 +35,60 @@ public class NativeCapturePlugin extends Plugin {
    if(plugin==null||plugin.getActivity()==null)return;
    plugin.getActivity().runOnUiThread(plugin::hidePreviewCrossingCurrentFold);
  }
+ // Activity/WebView may resize without a new FoldingFeature.
+ // Observe both native containers; never leave a TextureView over controls.
+ private View directWatchWeb,directWatchRoot;
+ private View.OnLayoutChangeListener directBoundsListener;
+ private void clearPreviewBoundsWatch() {
+   if(directBoundsListener!=null){
+     if(directWatchWeb!=null)directWatchWeb.removeOnLayoutChangeListener(directBoundsListener);
+     if(directWatchRoot!=null)directWatchRoot.removeOnLayoutChangeListener(directBoundsListener);
+   }
+   directBoundsListener=null;directWatchWeb=null;directWatchRoot=null;
+ }
+ private void ensurePreviewBoundsWatch(WebView web,FrameLayout root) {
+   if(directBoundsListener!=null && directWatchWeb==web && directWatchRoot==root)return;
+   clearPreviewBoundsWatch();
+   directBoundsListener=(view,left,top,right,bottom,oldLeft,oldTop,oldRight,oldBottom)->{
+     if(left!=oldLeft||top!=oldTop||right!=oldRight||bottom!=oldBottom)
+       hidePreviewCrossingCurrentFold();
+   };
+   directWatchWeb=web;directWatchRoot=root;
+   web.addOnLayoutChangeListener(directBoundsListener);
+   root.addOnLayoutChangeListener(directBoundsListener);
+ }
  private void hidePreviewCrossingCurrentFold() {
    TextureView view=directView;
    if(view==null||view.getParent()==null)return;
-   android.view.View decor=getActivity().getWindow().getDecorView();
-   int[] origin=new int[2],decorOrigin=new int[2];
-   view.getLocationInWindow(origin);
-   decor.getLocationInWindow(decorOrigin);
+   WebView web=getBridge()==null?null:getBridge().getWebView();
+   View root=getActivity()==null?null:getActivity().findViewById(android.R.id.content);
+   if(web==null||root==null){detachDirectView();return;}
+   View decor=getActivity().getWindow().getDecorView();
+   int[] pos=new int[2],decorPos=new int[2],webPos=new int[2],rootPos=new int[2];
+   view.getLocationInWindow(pos);
+   decor.getLocationInWindow(decorPos);
+   web.getLocationInWindow(webPos);
+   root.getLocationInWindow(rootPos);
    int width=view.getWidth(),height=view.getHeight();
    if(width<=0||height<=0){
      FrameLayout.LayoutParams params=(FrameLayout.LayoutParams)view.getLayoutParams();
      width=params.width;height=params.height;
    }
-   if(width<=0||height<=0 || DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(
-       new Rect(origin[0]-decorOrigin[0],origin[1]-decorOrigin[1],
-         origin[0]-decorOrigin[0]+width,origin[1]-decorOrigin[1]+height)))
+   Rect viewWindow=new Rect(pos[0],pos[1],pos[0]+width,pos[1]+height);
+   Rect webWindow=new Rect(webPos[0],webPos[1],
+       webPos[0]+web.getWidth(),webPos[1]+web.getHeight());
+   Rect rootWindow=new Rect(rootPos[0],rootPos[1],
+       rootPos[0]+root.getWidth(),rootPos[1]+root.getHeight());
+   boolean inside=width>0&&height>0&&web.getWidth()>0&&web.getHeight()>0&&
+       root.getWidth()>0&&root.getHeight()>0&&
+       webWindow.contains(viewWindow)&&rootWindow.contains(viewWindow);
+   Rect relativeToDecor=new Rect(viewWindow);
+   relativeToDecor.offset(-decorPos[0],-decorPos[1]);
+   if(!inside||DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(relativeToDecor))
      detachDirectView();
  }
  private void detachDirectView() {
+   clearPreviewBoundsWatch();
    String old=directOwner;
    directOwner=null;
    if(visiblePreview.get()==this)visiblePreview.clear();
@@ -68,7 +106,8 @@ public class NativeCapturePlugin extends Plugin {
    getActivity().runOnUiThread(()->{
      if(!Boolean.TRUE.equals(enabled)){
        if(owner.equals(directOwner))detachDirectView();
-       call.resolve();return;
+       JSObject ack=new JSObject();ack.put("visible",false);
+       call.resolve(ack);return;
      }
      if(NativeCaptureService.isRunning() &&
          !"previewing".equals(NativeCaptureService.status(getContext()).getString("state"))){
@@ -169,8 +208,14 @@ public class NativeCapturePlugin extends Plugin {
      // The overlay is a native Activity view: a fold can move across it
      // without any new JS show request. Recheck on EVERY native fold event.
      visiblePreview=new WeakReference<>(this);
+     ensurePreviewBoundsWatch(web,root);
      hidePreviewCrossingCurrentFold();
-     call.resolve();
+     // Native geometry can become unsafe between JS measurement and
+     // UI-thread show; never acknowledge a detached surface as visible.
+     JSObject ack=new JSObject();
+     ack.put("visible",owner.equals(directOwner)&&directView!=null&&
+         directView.getParent()!=null);
+     call.resolve(ack);
    });
  }
  @Override protected void handleOnDestroy(){
