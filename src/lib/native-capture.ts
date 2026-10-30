@@ -20,6 +20,7 @@ export interface NativeCaptureStatus {
  mp4AvDriftMeasured?:boolean;mp4AvDriftMs?:number;
  mp4AudioTimelineCompleted?:boolean;mp4AudioTimelineTrackFound?:boolean;mp4AudioTimelineSamples?:number;mp4AudioTimelineRollbacks?:number;mp4AudioTimelineDuplicates?:number;mp4AudioTimelineLargeGaps?:number;mp4AudioTimelineMaxGapMs?:number;
  mp4TimelineLimitReason?:string;mp4AudioTimelineLimitReason?:string;
+ mp4LowFpsWindows?:number;
  mp4TimelineSampledFps?:number;
  mp4TimelineCompleted?:boolean;mp4TimelineSamples?:number;mp4TimelineRollbacks?:number;mp4TimelineDuplicates?:number;mp4TimelineLargeGaps?:number;mp4TimelineMaxGapMs?:number;
  mp4VideoSamples?:number;mp4AudioSamples?:number;mp4AudioPtsAnomalies?:number;mp4VideoTimestampRollbacks?:number;
