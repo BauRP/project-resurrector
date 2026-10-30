@@ -232,6 +232,13 @@ public class NativeCapturePlugin extends Plugin {
     call.reject("Фокусировка или экспозамер по касанию недоступны для текущей камеры");
   }
  }
+ @PluginMethod public void retryGalleryPublication(PluginCall call){
+   new Thread(()->{
+     boolean success=NativeCaptureService.retryGalleryPublication(getContext());
+     if(success)call.resolve(NativeCaptureService.status(getContext()));
+     else call.reject("Повторная публикация недоступна или файл не подтверждён");
+   },"Gallery-Publish-Retry").start();
+ }
  @PluginMethod public void auditHistory(PluginCall call){
    NativeCaptureService.recoverAbandonedRecording(getContext());
    call.resolve(NativeCaptureAuditStore.history(getContext()));
