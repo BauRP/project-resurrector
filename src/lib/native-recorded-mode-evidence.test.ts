@@ -184,6 +184,18 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4TimelineCompleted:true,
    mp4TimelineSamples:-1},12345)?.state).toBe("unknown");
  });
+ it("rejects incomplete real audio timeline while preserving deliberate silent recording",()=>{
+  const incomplete={...base,mp4AudioTimelineCompleted:false,mp4AudioTimelineSamples:180000};
+  expect(nativeRecordedModeEvidence(incomplete,12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...incomplete,audioRequested:false},12345)?.state).toBe("recorded");
+  const good={...base,mp4AudioTimelineCompleted:true,mp4AudioTimelineTrackFound:true,
+   mp4AudioTimelineSamples:8200,mp4AudioTimelineRollbacks:0,
+   mp4AudioTimelineDuplicates:0,mp4AudioTimelineLargeGaps:0};
+  expect(nativeRecordedModeEvidence(good,12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...good,mp4AudioTimelineLargeGaps:2},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...good,mp4AudioTimelineRollbacks:1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...good,mp4AudioTimelineSamples:NaN},12345)?.state).toBe("unknown");
+ });
  it("marks interrupted recording with truthful warning",()=>{
   const r=nativeRecordedModeEvidence({...base,state:"saved_interrupted"},12345);
   expect(r?.message).toContain("прерывание");
