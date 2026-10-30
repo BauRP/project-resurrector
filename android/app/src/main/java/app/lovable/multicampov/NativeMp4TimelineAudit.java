@@ -29,6 +29,7 @@ public final class NativeMp4TimelineAudit {
         public int audioSamples, audioRollbacks, audioDuplicates, audioLargeGaps;
         public long audioMaximumGapMs;
         public boolean audioCompleted;
+        public String videoLimitReason = "not_checked", audioLimitReason = "not_requested";
         // Relative timeline offset at the beginning and end of both tracks.
         // Drift is a warning, not a measurement of audible lip-sync quality.
         public boolean avDriftMeasured;
@@ -38,6 +39,7 @@ public final class NativeMp4TimelineAudit {
         int samples, rollbacks, duplicates, largeGaps;
         long maximumGapMs;
         boolean completed;
+        String limitReason = "unknown";
         float approximateFps = -1f;
         long firstPtsUs = -1L, lastPtsUs = -1L;
     }
@@ -73,6 +75,8 @@ public final class NativeMp4TimelineAudit {
             scan.firstPtsUs=first;
             scan.lastPtsUs=previous;
             scan.completed = ended && scan.samples >= 2;
+            scan.limitReason = ended ? (scan.completed ? "completed" : "too_short") :
+                scan.samples >= maxSamples ? "sample_limit" : "time_limit";
             if (scan.samples > 2 && previous > first &&
                 scan.rollbacks == 0 && scan.duplicates == 0) {
                 double fps = (scan.samples - 1) * 1000000.0 / (previous - first);
@@ -82,6 +86,7 @@ public final class NativeMp4TimelineAudit {
         } catch (Exception ignored) {
             // An exception after some samples invalidates a "full" claim.
             scan.completed = false;
+            scan.limitReason = "extractor_error";
         } finally {
             extractor.unselectTrack(track);
         }
@@ -105,6 +110,8 @@ public final class NativeMp4TimelineAudit {
                 if (audio < 0 && mime != null && mime.startsWith("audio/")) audio = i;
             }
             result.audioTrackFound = audio >= 0;
+            if(video < 0) result.videoLimitReason = "missing_track";
+            if(inspectAudio && audio < 0) result.audioLimitReason = "missing_track";
             if (video >= 0) {
                 long frameUs = requestedFps > 0
                     ? 1000000L / requestedFps : 33333L;
@@ -117,6 +124,7 @@ public final class NativeMp4TimelineAudit {
                 result.largeGaps = scanned.largeGaps;
                 result.maximumGapMs = scanned.maximumGapMs;
                 result.completed = scanned.completed;
+                result.videoLimitReason = scanned.limitReason;
                 result.approximateFps = scanned.approximateFps;
             }
             // A real video-only mode must not fail because no audio was requested.
@@ -130,6 +138,7 @@ public final class NativeMp4TimelineAudit {
                 result.audioLargeGaps = scanned.largeGaps;
                 result.audioMaximumGapMs = scanned.maximumGapMs;
                 result.audioCompleted = scanned.completed;
+                result.audioLimitReason = scanned.limitReason;
             }
             if (inspectAudio && videoTimeline != null && audioTimeline != null &&
                 videoTimeline.completed && audioTimeline.completed &&
@@ -144,6 +153,8 @@ public final class NativeMp4TimelineAudit {
         } catch (Exception ignored) {
             result.completed = false;
             result.audioCompleted = false;
+            result.videoLimitReason = "extractor_error";
+            if(inspectAudio) result.audioLimitReason = "extractor_error";
         } finally {
             try { extractor.release(); } catch (Exception ignored) {}
         }
