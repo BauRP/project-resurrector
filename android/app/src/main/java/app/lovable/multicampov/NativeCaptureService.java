@@ -116,6 +116,9 @@ public class NativeCaptureService extends Service {
     private static int mp4VideoTimestampRollbacks = 0, mp4VideoTimestampDuplicates = 0;
     private static boolean mp4VideoSampleLimitReached = false;
     private static float mp4SampledFps = -1f;
+    private static boolean mp4TimelineCompleted = false;
+    private static int mp4TimelineSamples = 0, mp4TimelineRollbacks = 0, mp4TimelineDuplicates = 0, mp4TimelineLargeGaps = 0;
+    private static long mp4TimelineMaxGapMs = 0L;
     private static long mp4DurationMs = -1L;
     private static int mp4TailVideoSamples = 0;
     private static float mp4TailSampledFps = -1f;
@@ -231,6 +234,12 @@ public class NativeCaptureService extends Service {
                 .putString("message",reason)
                 .putString("path","")
                 .putString("uri","")
+                .putBoolean("mp4TimelineCompleted",false)
+                .putInt("mp4TimelineSamples",0)
+                .putInt("mp4TimelineRollbacks",0)
+                .putInt("mp4TimelineDuplicates",0)
+                .putInt("mp4TimelineLargeGaps",0)
+                .putLong("mp4TimelineMaxGapMs",0L)
                 .putBoolean("mp4TracksInspected",false)
                 .putBoolean("mp4HasVideoTrack",false)
                 .putBoolean("mp4HasAudioTrack",false)
@@ -968,6 +977,12 @@ public class NativeCaptureService extends Service {
                 ? previous.getInt("mp4VideoTimestampDuplicates", 0) : mp4VideoTimestampDuplicates);
             out.put("mp4VideoSampleLimitReached", runningInstance == null
                 ? previous.getBoolean("mp4VideoSampleLimitReached", false) : mp4VideoSampleLimitReached);
+            out.put("mp4TimelineCompleted",runningInstance==null?previous.getBoolean("mp4TimelineCompleted",false):mp4TimelineCompleted);
+            out.put("mp4TimelineSamples",runningInstance==null?previous.getInt("mp4TimelineSamples",0):mp4TimelineSamples);
+            out.put("mp4TimelineRollbacks",runningInstance==null?previous.getInt("mp4TimelineRollbacks",0):mp4TimelineRollbacks);
+            out.put("mp4TimelineDuplicates",runningInstance==null?previous.getInt("mp4TimelineDuplicates",0):mp4TimelineDuplicates);
+            out.put("mp4TimelineLargeGaps",runningInstance==null?previous.getInt("mp4TimelineLargeGaps",0):mp4TimelineLargeGaps);
+            out.put("mp4TimelineMaxGapMs",runningInstance==null?previous.getLong("mp4TimelineMaxGapMs",0L):mp4TimelineMaxGapMs);
             out.put("mp4SampledFps", runningInstance == null
                 ? previous.getFloat("mp4SampledFps", -1f) : mp4SampledFps);
             out.put("mp4DurationMs", runningInstance == null
@@ -1078,6 +1093,12 @@ public class NativeCaptureService extends Service {
                 .putInt("mp4VideoTimestampRollbacks", mp4VideoTimestampRollbacks)
                 .putInt("mp4VideoTimestampDuplicates", mp4VideoTimestampDuplicates)
                 .putBoolean("mp4VideoSampleLimitReached", mp4VideoSampleLimitReached)
+                .putBoolean("mp4TimelineCompleted",mp4TimelineCompleted)
+                .putInt("mp4TimelineSamples",mp4TimelineSamples)
+                .putInt("mp4TimelineRollbacks",mp4TimelineRollbacks)
+                .putInt("mp4TimelineDuplicates",mp4TimelineDuplicates)
+                .putInt("mp4TimelineLargeGaps",mp4TimelineLargeGaps)
+                .putLong("mp4TimelineMaxGapMs",mp4TimelineMaxGapMs)
                 .putFloat("mp4SampledFps", mp4SampledFps)
                 .putLong("mp4DurationMs", mp4DurationMs)
                 .putInt("mp4TailVideoSamples", mp4TailVideoSamples)
@@ -1244,6 +1265,8 @@ public class NativeCaptureService extends Service {
             mp4VideoSamples = 0; mp4AudioSamples = 0;
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
+            mp4TimelineCompleted=false;mp4TimelineSamples=0;mp4TimelineRollbacks=0;
+            mp4TimelineDuplicates=0;mp4TimelineLargeGaps=0;mp4TimelineMaxGapMs=0L;
             mp4DurationMs = -1L; mp4TailVideoSamples = 0;
             mp4TailAudioSamples=0;mp4AudioPtsAnomalies=0;mp4TailAudioNearEnd=false;
             mp4AvTailOffsetMeasured=false;mp4AvTailOffsetMs=0L;
@@ -2346,6 +2369,13 @@ public class NativeCaptureService extends Service {
         boolean valid = previouslyRecording && savedMp4HasVideo(media);
         if (valid && media != null) {
             Mp4TrackAudit audit = inspectMp4Tracks(media);
+            NativeMp4TimelineAudit.Result timeline = NativeMp4TimelineAudit.inspect(media,selectedFps);
+            mp4TimelineCompleted=timeline.completed;
+            mp4TimelineSamples=timeline.samples;
+            mp4TimelineRollbacks=timeline.rollbacks;
+            mp4TimelineDuplicates=timeline.duplicates;
+            mp4TimelineLargeGaps=timeline.largeGaps;
+            mp4TimelineMaxGapMs=timeline.maximumGapMs;
             mp4TracksInspected = audit != null;
             mp4HasVideoTrack = audit != null && audit.video;
             mp4HasAudioTrack = audit != null && audit.audio;
@@ -2419,7 +2449,9 @@ public class NativeCaptureService extends Service {
             boolean tailDecodeIssue = mp4DurationMs > 1500L && !mp4TailFrameDecodable;
             boolean inspectionUnknown = audit == null || !mp4HasVideoTrack ||
                 mp4VideoSamples <= 0;
-            boolean incomplete = captureFailed || stopFailed || checkpointIssue ||
+            boolean timelineIssue = !mp4TimelineCompleted || mp4TimelineSamples<2 ||
+                mp4TimelineRollbacks>0 || mp4TimelineDuplicates>0 || mp4TimelineLargeGaps>0;
+            boolean incomplete = timelineIssue || captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
                 inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
@@ -2432,6 +2464,8 @@ public class NativeCaptureService extends Service {
                 : captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
                   "; непрерывность не подтверждена"
+                : timelineIssue
+                ? "MP4 сохранён, но последовательная проверка временных меток кадров не завершена или обнаружила подозрительные разрывы"
                 : !mp4CheckpointAuditCompleted
                 ? "MP4 сохранён, но проверка промежуточных кадров не завершилась"
                 : wantAudio && (mp4FoldAudioPtsSpanChecks<mp4FoldProbes ||
