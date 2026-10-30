@@ -195,3 +195,9 @@ See source requirements: `СДелать Раскладушки(2).txt`, scenari
 - In the actual WindowManager split regions, editor/settings now select a usable pane intersected with the **content area below the fixed header**, not merely the widest pane across the whole window.
 - A measured vertical offset and maximum safe height keep independently scrollable editor/settings content inside a horizontal tabletop region. Book and tri-fold layouts continue selecting the largest viable measured pane; invalid/undersized regions gracefully fall back without inventing a hinge.
 - Pure calculation tests cover horizontal two-pane and unsupported small-pane geometries. Native MP4 and Camera2 ownership are unchanged by this layout-only update. Real device UI touch and keyboard acceptance is still pending.
+
+## Acceptance reset and recorder-stop recovery — 30 October 2026
+- The previous **98% camera / 99% foldable** numbers are historical estimates, not acceptance percentages. Do not continue reporting them as measured progress. Full requirement-by-requirement functional evidence has not been tallied.
+- The 36-scenario fold matrix records **zero physical device-verified scenarios**. The older 7/36 code/CI tally is a checkpoint snapshot and cannot be read as current software completion after subsequent changes.
+- A native `MediaRecorder.stop()` exception may occur after a readable MP4 was written. The Camera2 service now releases the encoder, probes the retained local MP4, and processes a salvageable file through bounded file checks. An exception forces `saved_interrupted`, with the failure reason preserved, never `saved`.
+- Next acceptance gates are on-device camera start/stop and storage-failure injection; video+audio duration, orientation, lens switching and thermal runs; and actual WindowManager postures, accessibility, editor interactions and uninterrupted recording during a physical fold. Unsupported hardware must be marked not verified, not completed.
