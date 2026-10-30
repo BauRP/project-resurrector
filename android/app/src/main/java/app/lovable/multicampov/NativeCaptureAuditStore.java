@@ -41,11 +41,13 @@ public final class NativeCaptureAuditStore {
             }
             JSONObject item=new JSONObject();
             try {
-                String[] strings={"state","cameraId","message","stabilization","savedUri"};
+                String[] strings={"state","cameraId","message","stabilization","savedUri",
+                    "mp4TimelineLimitReason","mp4AudioTimelineLimitReason"};
                 for(String k:strings)item.put(k,status.optString(k,""));
                 String[] longs={"captureId","startedAt","recordedDurationMs","savedBytes",
                     "lastFoldAt","maxFoldNearbyCallbackGapMs","mp4DurationMs","mp4MaxFoldPtsGapMs",
-                    "mp4AvTailOffsetMs","mp4MaxFoldAudioPtsGapMs"};
+                    "mp4AvTailOffsetMs","mp4MaxFoldAudioPtsGapMs",
+                    "mp4TimelineMaxGapMs","mp4AudioTimelineMaxGapMs","mp4AvDriftMs"};
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
                     "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4AudioPtsAnomalies","mp4MiddleProbes","mp4MiddleMatched",
@@ -55,12 +57,18 @@ public final class NativeCaptureAuditStore {
                     "foldNearbyCallbackGaps","mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",
                     "mp4FoldAudioPtsSpanChecks","mp4FoldAudioPtsLargeGaps",
                     "recordingEisFrames","recordingOisFrames",
-                    "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames"};
+                    "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames",
+                    "mp4TimelineSamples","mp4TimelineRollbacks","mp4TimelineDuplicates",
+                    "mp4TimelineLargeGaps","mp4AudioTimelineSamples",
+                    "mp4AudioTimelineRollbacks","mp4AudioTimelineDuplicates",
+                    "mp4AudioTimelineLargeGaps"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
                 String[] booleans={"audioRequested","mp4TracksInspected","mp4HasVideoTrack",
                     "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable",
                     "mp4CheckpointAuditCompleted","foldObserverGap",
-                    "mp4TailAudioNearEnd","mp4AvTailOffsetMeasured"};
+                    "mp4TailAudioNearEnd","mp4AvTailOffsetMeasured",
+                    "mp4TimelineCompleted","mp4AudioTimelineCompleted",
+                    "mp4AudioTimelineTrackFound","mp4AvDriftMeasured"};
                 for(String k:booleans)item.put(k,status.optBoolean(k,false));
                 item.put("savedAt",System.currentTimeMillis());
             }catch(Exception ignored){return;}
