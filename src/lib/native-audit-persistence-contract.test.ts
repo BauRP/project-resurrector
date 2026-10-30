@@ -88,10 +88,16 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  it("rejects a direct camera surface crossing a real WindowManager hinge",()=>{
   expect(foldObserver).toContain("surfaceTopologyObserved=false");
   expect(foldObserver).toContain("if(!fold.isSeparating())continue;");
-  expect(foldObserver).toContain("surfaceHinges.add(hinge)");
+  expect(foldObserver).toContain("nextHinges.add(hinge)");
+  expect(foldObserver).toContain("surfaceHinges.addAll(nextHinges)");
   expect(foldObserver).toContain("if(Rect.intersects(rect,hinge))return true;");
   expect(capturePlugin).toContain("DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect");
   expect(capturePlugin).toContain("if(owner.equals(directOwner))detachDirectView()");
+ });
+ it("coalesces duplicate WindowManager callbacks but checks first actual topology",()=>{
+   expect(foldObserver).toContain("changed=!surfaceTopologyObserved || !surfaceHinges.equals(nextHinges)");
+   expect(foldObserver).toContain("Collections.sort(nextHinges");
+   expect(foldObserver).toContain("if(changed)NativeCapturePlugin.onFoldGeometryChanged()");
  });
  it("checks an already visible native overlay after a real hinge moves",()=>{
    expect(foldObserver).toContain("NativeCapturePlugin.onFoldGeometryChanged()");
