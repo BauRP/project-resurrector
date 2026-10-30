@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {nativePreviewPlacement,samePreviewPlacement} from "./native-preview-placement";
+import {nativePreviewPlacement,samePreviewPlacement,nativePreviewSnapshot} from "./native-preview-placement";
 const screen={width:400,height:800};
 describe("foldable native preview overlay boundaries",()=>{
  it("accepts a fully visible preview",()=>expect(nativePreviewPlacement({left:10,top:70,width:380,height:240},screen)).toEqual({left:10,top:70,width:380,height:240}));
@@ -26,5 +26,20 @@ describe("foldable native preview overlay boundaries",()=>{
  it("does not restart the native surface for subpixel geometry changes",()=>{
   expect(samePreviewPlacement({left:1,top:2,width:300,height:200},{left:1.2,top:2,width:300,height:200})).toBe(true);
   expect(samePreviewPlacement({left:1,top:2,width:300,height:200},{left:4,top:2,width:300,height:200})).toBe(false);
+ });
+ it("revalidates the resized WebView instead of reusing a stale geometry snapshot",()=>{
+  const rectangle={left:220,top:100,width:170,height:200};
+  const old=nativePreviewSnapshot(rectangle,{width:400,height:800},"0,0,190,800;210,0,190,800");
+  expect(old?.viewport.width).toBe(400);
+  // The Activity becomes a 190 CSS-pixel cover window before the async show.
+  expect(nativePreviewSnapshot(rectangle,{width:190,height:800},"0,0,190,800")).toBeNull();
+  // Another fold can change the usable pane without changing viewport width.
+  expect(nativePreviewSnapshot(rectangle,{width:400,height:800},"0,0,390,90;0,110,390,690")).toBeNull();
+ });
+ it("returns current viewport scaling together with the actual safe target",()=>{
+  const result=nativePreviewSnapshot({left:4,top:8,width:160,height:100},
+   {width:220,height:520},"0,0,220,520");
+  expect(result).toEqual({placement:{left:4,top:8,width:160,height:100},
+   viewport:{width:220,height:520}});
  });
 });
