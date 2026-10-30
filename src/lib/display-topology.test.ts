@@ -190,6 +190,13 @@ describe("camera view below persistent header in a two-axis fold",()=>{
   });
 });
 describe("visible fold workspace during software keyboard",()=>{
+  it("keeps safe area tied to visual viewport vertical scroll position",()=>{
+    const shell={left:0,top:0,width:600,height:800};
+    const content={left:0,top:60,width:600,height:700};
+    expect(foldVisibleContentBounds(shell,content,60,{offsetTop:110,height:430}))
+      .toEqual({left:0,top:110,width:600,height:430});
+  });
+
   it("clips tabletop editor below header and above keyboard",()=>{
     const bounds=foldVisibleContentBounds(
       {left:0,top:0,width:600,height:800},
