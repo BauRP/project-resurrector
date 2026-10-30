@@ -38,6 +38,7 @@ import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
+import android.os.PowerManager;
 import android.provider.MediaStore;
 import android.util.Range;
 import android.util.Size;
@@ -1474,8 +1475,25 @@ public class NativeCaptureService extends Service {
     private boolean isRecordingState() {
         return "recording".equals(state) || "paused".equals(state) || "stopping".equals(state);
     }
-    /** Periodic free-space check on Camera2 worker; never block the UI or
-     * wait for ENOSPC before attempting to finalize a user recording.
+    /** Check only a genuinely CRITICAL Android thermal state. Warm/hot
+     * status is not proof of failure; unknown support stays unknown. This
+     * guard never fabricates a temperature in degrees or thermal capacity.
+     */
+    private String criticalThermalFailure(){
+        if(Build.VERSION.SDK_INT<29)return null;
+        try{
+            PowerManager power=(PowerManager)getSystemService(Context.POWER_SERVICE);
+            if(power==null)return null;
+            int status=power.getCurrentThermalStatus();
+            if(status>=PowerManager.THERMAL_STATUS_EMERGENCY)
+                return "Android сообщил об аварийном перегреве; запись будет сохранена с отметкой о прерывании";
+        }catch(RuntimeException ignored){
+            // Thermal status unavailable: do not report a fabricated normal state.
+        }
+        return null;
+    }
+    /** Periodic free-space and critical-thermal checks on Camera2 worker.
+     * They must never block Activity UI or create another camera owner.
      */
     private void armStorageMonitor(final int session){
         if(worker==null)return;
@@ -1490,6 +1508,11 @@ public class NativeCaptureService extends Service {
                         "Недостаточно свободной памяти для безопасного завершения MP4"));
                     return;
                 }
+                String thermalFailure=criticalThermalFailure();
+                if(thermalFailure!=null){
+                    fail(new IllegalStateException(thermalFailure));
+                    return;
+                }
                 if(worker!=null)worker.postDelayed(this,STORAGE_CHECK_INTERVAL_MS);
             }
         };
@@ -1502,6 +1525,8 @@ public class NativeCaptureService extends Service {
             if (id == null || id.isEmpty() || width < 160 || height < 120 ||
                 width > 3840 || height > 2160 || fps < 15 || fps > 60)
                 throw new IllegalArgumentException("Недопустимый режим Native Camera2");
+            String thermalFailure=criticalThermalFailure();
+            if(thermalFailure!=null)throw new IllegalStateException(thermalFailure);
             if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED)
                 throw new SecurityException("Разрешение камеры отсутствует");
             if (wantAudio && checkSelfPermission(Manifest.permission.RECORD_AUDIO) !=
