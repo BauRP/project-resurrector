@@ -92,4 +92,24 @@ describe("recovered native fold and camera report safety",()=>{
   expect(report).not.toContain("content://private");
  });
 
+ it("retains bounded final capture AV drift and scan coverage without leaking private paths",()=>{
+  const report=nativeAnonymizedAuditReport({entries:[{
+    state:"saved_interrupted",cameraId:"SECRET_REAR",savedUri:"content://secret/record.mp4",
+    mp4TimelineLimitReason:"time_limit",mp4AudioTimelineLimitReason:"sample_limit",
+    mp4AvDriftMeasured:true,mp4AvDriftMs:650,
+    mp4TimelineCompleted:false,mp4TimelineSamples:120000,
+    mp4AudioTimelineCompleted:false,mp4AudioTimelineSamples:180000,
+    foldGeometryOnlyChanges:5,foldObserverGap:true,
+  }],maxEntries:24,omittedEarlier:0});
+  const item=JSON.parse(report).entries[0];
+  expect(item.media.timelineLimitReason).toBe("time_limit");
+  expect(item.media.audioTimelineLimitReason).toBe("sample_limit");
+  expect(item.media.avDriftMeasured).toBe(true);
+  expect(item.media.avDriftMs).toBe(650);
+  expect(item.fold.geometryOnlyChanges).toBe(5);
+  expect(item.fold.observerGap).toBe(true);
+  expect(report).not.toContain("SECRET_REAR");
+  expect(report).not.toContain("content://secret");
+ });
+
 });
