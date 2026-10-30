@@ -49,24 +49,35 @@ public class DisplayTopologyPlugin extends Plugin {
         }
     }
     private static void updateSurfaceHinges(String lease,WindowLayoutInfo layout){
+        boolean changed=false;
         synchronized(SURFACE_LOCK){
             if(!lease.equals(surfaceLease))return;
-            surfaceHinges.clear();
+            ArrayList<Rect> nextHinges=new ArrayList<>();
             for(DisplayFeature feature:layout.getDisplayFeatures()){
                 if(!(feature instanceof FoldingFeature))continue;
                 FoldingFeature fold=(FoldingFeature)feature;
                 if(!fold.isSeparating())continue;
                 Rect hinge=new Rect(fold.getBounds());
-                // A flat, separating hinge can be a zero-width/height line.
-                // Give such a line two pixels of protective clearance.
                 if(hinge.width()==0){hinge.left-=2;hinge.right+=2;}
                 if(hinge.height()==0){hinge.top-=2;hinge.bottom+=2;}
-                surfaceHinges.add(hinge);
+                nextHinges.add(hinge);
             }
+            // WindowManager callbacks may repeat the same separating geometry
+            // in another order. Only REAL changes need a native overlay check.
+            Collections.sort(nextHinges,(a,b)->{
+                if(a.left!=b.left)return Integer.compare(a.left,b.left);
+                if(a.top!=b.top)return Integer.compare(a.top,b.top);
+                if(a.right!=b.right)return Integer.compare(a.right,b.right);
+                return Integer.compare(a.bottom,b.bottom);
+            });
+            changed=!surfaceTopologyObserved || !surfaceHinges.equals(nextHinges);
+            surfaceHinges.clear();
+            surfaceHinges.addAll(nextHinges);
             surfaceTopologyObserved=true;
         }
-        // Native overlays can become unsafe even without another JS request.
-        NativeCapturePlugin.onFoldGeometryChanged();
+        // The first observed topology resolves the safety gate. A repeated
+        // no-op notification must not schedule needless camera UI work.
+        if(changed)NativeCapturePlugin.onFoldGeometryChanged();
     }
     static boolean isUnsafeDirectPreviewWindowRect(Rect rect){
         synchronized(SURFACE_LOCK){
