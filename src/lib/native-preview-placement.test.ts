@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {nativePreviewPlacement,samePreviewPlacement,nativePreviewSnapshot} from "./native-preview-placement";
+import {nativePreviewPlacement,samePreviewPlacement,nativePreviewSnapshot,foldPreviewTopologySignature} from "./native-preview-placement";
 const screen={width:400,height:800};
 describe("foldable native preview overlay boundaries",()=>{
  it("accepts a fully visible preview",()=>expect(nativePreviewPlacement({left:10,top:70,width:380,height:240},screen)).toEqual({left:10,top:70,width:380,height:240}));
@@ -42,4 +42,15 @@ describe("foldable native preview overlay boundaries",()=>{
   expect(result).toEqual({placement:{left:4,top:8,width:160,height:100},
    viewport:{width:220,height:520}});
  });
+ it("treats reordered duplicate WindowManager revisions as unchanged preview geometry",()=>{
+  const before={posture:"FLAT",hingeCount:2,layout:"vertical",regionGeometry:"0,0,190,800;210,0,190,800",revision:2};
+  expect(foldPreviewTopologySignature(before)).toBe(
+    foldPreviewTopologySignature({...before,revision:99}));
+  expect(foldPreviewTopologySignature(before)).not.toBe(
+    foldPreviewTopologySignature({...before,posture:"HALF_OPENED"}));
+  expect(foldPreviewTopologySignature(before)).not.toBe(
+    foldPreviewTopologySignature({...before,regionGeometry:"0,0,180,800;220,0,180,800"}));
+  expect(foldPreviewTopologySignature(before)).not.toBe("unobserved");
+ });
+
 });
