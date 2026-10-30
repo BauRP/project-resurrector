@@ -91,6 +91,15 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain('String message = stopFailed');
    expect(service).toContain('saved_interrupted');
  });
+ it("protects native Camera2 long capture from full storage",()=>{
+   expect(service).toContain("MIN_CAPTURE_START_BYTES = 96L*1024L*1024L");
+   expect(service).toContain("MIN_CAPTURE_CONTINUE_BYTES = 32L*1024L*1024L");
+   expect(service).toContain("directory.getUsableSpace()<MIN_CAPTURE_START_BYTES");
+   expect(service).toContain("dir.getUsableSpace()<MIN_CAPTURE_CONTINUE_BYTES");
+   expect(service.match(/armStorageMonitor\(session\);/g)).toHaveLength(2);
+   expect(service).toContain("worker.removeCallbacks(storageMonitor)");
+   expect(service).toContain("Недостаточно свободной памяти для безопасного завершения MP4");
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
