@@ -102,6 +102,13 @@ export function nativeRecordedModeEvidence(
       (!(status.mp4TimelineSamples!==undefined&&status.mp4TimelineSamples>=2) ||
        (status.mp4TimelineRollbacks??0)>0 || (status.mp4TimelineDuplicates??0)>0 ||
        (status.mp4TimelineLargeGaps??0)>0));
+  const audioTimelineValues=[status.mp4AudioTimelineSamples,status.mp4AudioTimelineRollbacks,status.mp4AudioTimelineDuplicates,status.mp4AudioTimelineLargeGaps,status.mp4AudioTimelineMaxGapMs];
+  const audioTimelineInvalid=audioTimelineValues.some(v=>v!==undefined&&(!Number.isSafeInteger(v)||v<0));
+  const audioTimelineUnknown=status.audioRequested===true && (status.mp4AudioTimelineCompleted===false || audioTimelineInvalid ||
+    (status.mp4AudioTimelineCompleted===true &&
+      (status.mp4AudioTimelineTrackFound!==true || (status.mp4AudioTimelineSamples??0)<2 ||
+       (status.mp4AudioTimelineRollbacks??0)>0 || (status.mp4AudioTimelineDuplicates??0)>0 ||
+       (status.mp4AudioTimelineLargeGaps??0)>0)));
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -118,7 +125,7 @@ export function nativeRecordedModeEvidence(
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
     dimensionsMatch && !anomalies && !audioIncomplete && !audioPtsBad && !audioTailMissing && !audioFoldUnknown &&
     !measuredFpsMismatch && !tailDecodeFailure && !missingTailSamples &&
-    !checkpointMismatch && !suspiciousFoldPts && !timelineUncertain;
+    !checkpointMismatch && !suspiciousFoldPts && !timelineUncertain && !audioTimelineUnknown;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -136,6 +143,7 @@ export function nativeRecordedModeEvidence(
     missingTailSamples ? "Не подтверждены видеосэмплы возле конца MP4." :
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
     timelineUncertain ? "Последовательная проверка временных меток MP4 неполна или обнаружены подозрительные интервалы." :
+    audioTimelineUnknown ? "Последовательная проверка временных меток звука неполна или обнаружены подозрительные интервалы." :
     suspiciousFoldPts ? (observerGap
       ? "Наблюдение за складыванием прерывалось; непрерывность MP4 неизвестна."
       : omitted>0
@@ -167,6 +175,10 @@ export function nativeRecordedModeEvidence(
       (status.mp4TimelineLargeGaps??0) + ", откатов " + (status.mp4TimelineRollbacks??0) +
       ", повторов " + (status.mp4TimelineDuplicates??0) + ". Это не декодирование каждого кадра."
     : "";
+  const audioTimelineEvidence=status.audioRequested && status.mp4AudioTimelineCompleted!==undefined
+    ? " Аудиометки MP4: " + (status.mp4AudioTimelineCompleted?"полный обход":"ограниченный обход") +
+      "; сэмплов " + (status.mp4AudioTimelineSamples??0) + ", подозрительных пауз " +
+      (status.mp4AudioTimelineLargeGaps??0) + "." : "";
   const stabilizationEvidence = stabilizationNotes.some(value=>value>0)
     ? " Во время записи наблюдались состояния стабилизации (EIS/OIS/OFF/UNKNOWN): "
       + stabilizationNotes.join("/") + "."
@@ -181,7 +193,7 @@ export function nativeRecordedModeEvidence(
     state,
     checkedAt,
     message:prefix + reason +
-      stabilizationEvidence + foldAuditNotes + timelineEvidence +
+      stabilizationEvidence + foldAuditNotes + timelineEvidence + audioTimelineEvidence +
       " Реальная эффективность стабилизации всего MP4 и непрерывность при складывании не подтверждены.",
   };
 }
