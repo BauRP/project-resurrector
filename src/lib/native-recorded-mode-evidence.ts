@@ -165,7 +165,7 @@ export function nativeRecordedModeEvidence(
   const foldAuditNotes = status.mp4MiddleProbes!==undefined ||
     status.mp4FoldProbes!==undefined
     ? " Проверка кадров MP4 (декодирование + близкая PTS-метка): середина " + (status.mp4MiddleMatched??0) +
-      "/" + (status.mp4MiddleProbes??0) + ", точки складывания " +
+      "/" + (status.mp4MiddleProbes??0) + ", точки складывания/геометрии " +
       (status.mp4FoldMatched??0) + "/" + (status.mp4FoldProbes??0) +
       " (выборка, не вся запись)."
     : " Промежуточные точки MP4 не проверены.";
