@@ -59,7 +59,7 @@ public final class NativeCaptureAuditStore {
                     "recordingEisFrames","recordingOisFrames",
                     "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames",
                     "mp4TimelineSamples","mp4TimelineRollbacks","mp4TimelineDuplicates",
-                    "mp4TimelineLargeGaps","mp4AudioTimelineSamples",
+                    "mp4TimelineLargeGaps","mp4LowFpsWindows","mp4AudioTimelineSamples",
                     "mp4AudioTimelineRollbacks","mp4AudioTimelineDuplicates",
                     "mp4AudioTimelineLargeGaps"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
