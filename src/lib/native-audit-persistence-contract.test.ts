@@ -117,6 +117,11 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain('encoder.setVideoEncodingBitRate(selectedVideoBitrate)');
    expect(service).toContain("H.264-кодировщики устройства не объявляют поддержку");
  });
+ it("checks H264 encoder support before opening recorder",()=>{
+   expect(service).toContain("private int advertisedH264Bitrate(int width,int height,int fps)");
+   expect(service).toContain("video.areSizeAndRateSupported(width,height,fps)");
+   expect(service).toContain("encoder.setVideoEncodingBitRate(selectedVideoBitrate)");
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
