@@ -459,6 +459,12 @@ export function NativeRecordingPanel(){
        Это только начало MP4, не проверка синхронности всего ролика.
      </p>}
    {status?.mp4TracksInspected&&<p role="status">
+     Последовательная проверка временных меток MP4: {status.mp4TimelineCompleted===true?"завершена":"не завершена"},
+     просмотрено {status.mp4TimelineSamples??0} видеосэмплов; подозрительных длинных интервалов {status.mp4TimelineLargeGaps??0},
+     откатов {status.mp4TimelineRollbacks??0}, повторов {status.mp4TimelineDuplicates??0}; самый длинный интервал {status.mp4TimelineMaxGapMs??0} мс.
+     Это проверка временных меток, а не полноценное декодирование всего видео.
+   </p>}
+   {status?.mp4TracksInspected&&<p role="status">
      Выборочная проверка MP4 (декодирование и временные метки до 250 мс): середина {status.mp4MiddleMatched??0} из {status.mp4MiddleProbes??0},
      около наблюдавшихся складываний {status.mp4FoldMatched??0} из {status.mp4FoldProbes??0}.
      Пропущено точек складывания у краёв файла: {status.mp4FoldPointsSkipped??0}. Интервалы временных меток MP4 возле складок: {status.mp4FoldPtsSpanChecks??0} проверок,
