@@ -109,6 +109,9 @@ export function nativeRecordedModeEvidence(
       (status.mp4AudioTimelineTrackFound!==true || (status.mp4AudioTimelineSamples??0)<2 ||
        (status.mp4AudioTimelineRollbacks??0)>0 || (status.mp4AudioTimelineDuplicates??0)>0 ||
        (status.mp4AudioTimelineLargeGaps??0)>0)));
+  const avDriftUnknown=status.audioRequested===true && (status.mp4AvDriftMeasured===false ||
+    (status.mp4AvDriftMeasured===true &&
+      (!Number.isSafeInteger(status.mp4AvDriftMs) || Math.abs(status.mp4AvDriftMs!)>500)));
   const audioIncomplete = status.audioRequested === true &&
     (!status.mp4HasAudioTrack || audioSamples <= 0);
   // Treat measured beginning/end MP4 timing as evidence about the selected
@@ -125,7 +128,7 @@ export function nativeRecordedModeEvidence(
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
     dimensionsMatch && !anomalies && !audioIncomplete && !audioPtsBad && !audioTailMissing && !audioFoldUnknown &&
     !measuredFpsMismatch && !tailDecodeFailure && !missingTailSamples &&
-    !checkpointMismatch && !suspiciousFoldPts && !timelineUncertain && !audioTimelineUnknown;
+    !checkpointMismatch && !suspiciousFoldPts && !timelineUncertain && !audioTimelineUnknown && !avDriftUnknown;
   const state: ModeEvidence["state"] = recordingConfirmed &&
     status.state === "saved" ? "recorded" : "unknown";
   const reason = !filePresent ? "Файл MP4 не подтверждён." :
@@ -144,6 +147,7 @@ export function nativeRecordedModeEvidence(
     checkpointMismatch ? "Часть кадров около середины/складывания не декодировалась." :
     timelineUncertain ? "Последовательная проверка временных меток MP4 неполна или обнаружены подозрительные интервалы." :
     audioTimelineUnknown ? "Последовательная проверка временных меток звука неполна или обнаружены подозрительные интервалы." :
+    avDriftUnknown ? "Начальный и конечный сдвиг аудиовидеодорожек не подтверждён или заметно изменился." :
     suspiciousFoldPts ? (observerGap
       ? "Наблюдение за складыванием прерывалось; непрерывность MP4 неизвестна."
       : omitted>0
@@ -194,6 +198,7 @@ export function nativeRecordedModeEvidence(
     checkedAt,
     message:prefix + reason +
       stabilizationEvidence + foldAuditNotes + timelineEvidence + audioTimelineEvidence +
+      (status.mp4AvDriftMeasured ? ` Измеренный дрейф аудио/видео: ${status.mp4AvDriftMs} мс.` : "") +
       " Реальная эффективность стабилизации всего MP4 и непрерывность при складывании не подтверждены.",
   };
 }
