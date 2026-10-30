@@ -211,6 +211,14 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence(verified,12345)?.state).toBe("recorded");
   expect(nativeRecordedModeEvidence({...verified,mp4TimelineSampledFps:19.8},12345)?.state).toBe("unknown");
  });
+ it("detects mid-file FPS collapses even if average full-file FPS is good",()=>{
+  expect(nativeRecordedModeEvidence({...base,mp4TimelineCompleted:true,
+    mp4TimelineSampledFps:30,mp4TimelineSamples:3000,mp4LowFpsWindows:2},12345)?.state)
+    .toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4TimelineCompleted:true,
+    mp4TimelineSampledFps:30,mp4TimelineSamples:3000,mp4LowFpsWindows:0},12345)?.state)
+    .toBe("recorded");
+ });
  it("marks interrupted recording with truthful warning",()=>{
   const r=nativeRecordedModeEvidence({...base,state:"saved_interrupted"},12345);
   expect(r?.message).toContain("прерывание");
