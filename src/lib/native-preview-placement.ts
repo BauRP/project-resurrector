@@ -48,3 +48,15 @@ export function samePreviewPlacement(a:PreviewRect|null,b:PreviewRect|null):bool
  return Math.abs(a.left-b.left)<.5&&Math.abs(a.top-b.top)<.5&&
    Math.abs(a.width-b.width)<.5&&Math.abs(a.height-b.height)<.5;
 }
+
+/** One atomic, *current* geometry snapshot for Android overlay submission.
+ * Both the rectangle and WebView dimensions must be measured again when a
+ * serialized async show finally executes. A stale viewport can otherwise
+ * place a TextureView across a new hinge or outside the resized Activity.
+ */
+export function nativePreviewSnapshot(
+ rect:PreviewRect|null|undefined,viewport:PreviewViewport,regionGeometry?:string,
+):{placement:PreviewRect;viewport:PreviewViewport}|null {
+ const placement=nativePreviewPlacement(rect,viewport,regionGeometry);
+ return placement ? {placement,viewport:{width:viewport.width,height:viewport.height}} : null;
+}
