@@ -110,6 +110,13 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain('File.createTempFile("native-" + currentCaptureId + "-", ".mp4", directory)');
    expect(service).not.toContain('media = new File(directory, "native-" + System.currentTimeMillis()');
  });
+ it("preflights the device AVC encoder and applies its declared bitrate",()=>{
+   expect(service).toContain("private int advertisedH264Bitrate(int width,int height,int fps)");
+   expect(service).toContain('video.areSizeAndRateSupported(width,height,fps)');
+   expect(service).toContain('int selectedVideoBitrate=advertisedH264Bitrate(width,height,fps)');
+   expect(service).toContain('encoder.setVideoEncodingBitRate(selectedVideoBitrate)');
+   expect(service).toContain("H.264-кодировщики устройства не объявляют поддержку");
+ });
  it("does not revive abandoned recording as an MP4 success",()=>{
   expect(service).toContain('recovered.put("mp4CheckpointAuditCompleted",false)');
   expect(service).toContain('recovered.put("savedBytes",0L)');
