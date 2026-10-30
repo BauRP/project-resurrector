@@ -64,6 +64,7 @@ public class NativeCaptureService extends Service {
     public static final String ACTION_STOP = "app.lovable.multicampov.NATIVE_STOP";
     public static final String ACTION_PAUSE = "app.lovable.multicampov.NATIVE_PAUSE";
     public static final String ACTION_RESUME = "app.lovable.multicampov.NATIVE_RESUME";
+    private static boolean galleryRetryBusy = false;
     private static final String CHANNEL = "multicam_native_capture";
     private static final int NOTIFICATION = 2017;
     private static final String STORE = "native_capture_v1";
@@ -2304,7 +2305,7 @@ public class NativeCaptureService extends Service {
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
                 inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
-            String gallery = publishVideo(media);
+            String gallery = publishVideo(this,media);
             savedUri = gallery == null ? "" : gallery;
             String message = captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
@@ -2358,7 +2359,10 @@ public class NativeCaptureService extends Service {
         stopSelf();
     }
     /** Copy successfully finalized MP4 to system Gallery (no downloads/server). */
-    private String publishVideo(File source) {
+    /** Reuse the same verified Gallery copy path for initial publication and
+     * a later explicitly requested retry. This function does not touch Camera2.
+     */
+    private static String publishVideo(Context context,File source) {
         Uri dest = null;
         try {
             ContentValues values = new ContentValues();
@@ -2369,11 +2373,11 @@ public class NativeCaptureService extends Service {
                     Environment.DIRECTORY_MOVIES + "/MULTI-CAM POV");
                 values.put(MediaStore.Video.Media.IS_PENDING, 1);
             }
-            dest = getContentResolver().insert(
+            dest = context.getContentResolver().insert(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
             if (dest == null) return null;
             try (FileInputStream input = new FileInputStream(source);
-                 OutputStream output = getContentResolver().openOutputStream(dest)) {
+                 OutputStream output = context.getContentResolver().openOutputStream(dest)) {
                 if (output == null) throw new IllegalStateException("MediaStore write failed");
                 byte[] buf = new byte[65536];
                 int size;
@@ -2390,7 +2394,7 @@ public class NativeCaptureService extends Service {
             if (Build.VERSION.SDK_INT >= 29) {
                 ContentValues pending = new ContentValues();
                 pending.put(MediaStore.Video.Media.IS_PENDING, 0);
-                if (getContentResolver().update(dest,pending,null,null) <= 0)
+                if (context.getContentResolver().update(dest,pending,null,null) <= 0)
                     throw new IllegalStateException("MediaStore не подтвердил публикацию");
             }
             // A successful OutputStream.flush() alone does not prove the
@@ -2398,14 +2402,88 @@ public class NativeCaptureService extends Service {
             // pending state was finalized; a broken provider must not be
             // reported as a published Gallery clip. The original private
             // MP4 stays untouched and can be recovered by the app.
-            try (InputStream saved = getContentResolver().openInputStream(dest)) {
+            try (InputStream saved = context.getContentResolver().openInputStream(dest)) {
                 if (saved == null || saved.read() < 0)
                     throw new IllegalStateException("MediaStore: итоговый файл недоступен");
             }
             return dest.toString();
         } catch(Exception error) {
-            if (dest != null) try {getContentResolver().delete(dest,null,null);}catch(Exception ignored){}
+            if (dest != null) try {context.getContentResolver().delete(dest,null,null);}catch(Exception ignored){}
             return null;
+        }
+    }
+
+    /** Retry Gallery publication of the LAST verified private MP4. Never
+     * accept a filename from WebView: only the saved, bounded app-owned path
+     * from SharedPreferences is permitted. Do not start Camera2 or an encoder.
+     */
+    public static boolean retryGalleryPublication(Context context){
+        final String path;
+        final long captureId;
+        final android.content.SharedPreferences prefs=context.getSharedPreferences(STORE,MODE_PRIVATE);
+        synchronized(STATE_LOCK){
+            if(galleryRetryBusy||isRunning())return false;
+            String persistedState=prefs.getString("state","idle");
+            if(!"saved".equals(persistedState)&&!"saved_interrupted".equals(persistedState))
+                return false;
+            if(!prefs.getString("uri","").isEmpty())return false;
+            path=prefs.getString("path","");
+            captureId=prefs.getLong("captureId",0L);
+            if(path.isEmpty()||captureId<=0L)return false;
+            galleryRetryBusy=true;
+        }
+        try{
+            File source=new File(path).getCanonicalFile();
+            File expectedDir=new File(context.getFilesDir(),"native-video").getCanonicalFile();
+            if(!expectedDir.equals(source.getParentFile())||
+                !source.getName().endsWith(".mp4")||!source.isFile()||source.length()<1024L)
+                return false;
+            // An old path with a damaged or replaced file is not eligible.
+            MediaExtractor verify=new MediaExtractor();
+            boolean readable=false;
+            try{
+                verify.setDataSource(source.getAbsolutePath());
+                for(int i=0;i<verify.getTrackCount();i++){
+                    MediaFormat format=verify.getTrackFormat(i);
+                    String mime=format.containsKey(MediaFormat.KEY_MIME)
+                        ?format.getString(MediaFormat.KEY_MIME):null;
+                    if(mime!=null&&mime.startsWith("video/")){
+                        verify.selectTrack(i);
+                        readable=verify.getSampleTime()>=0L;
+                        break;
+                    }
+                }
+            }finally{verify.release();}
+            if(!readable)return false;
+            String uri=publishVideo(context,source);
+            if(uri==null)return false;
+            synchronized(STATE_LOCK){
+                // A new capture can start while an IO-bound retry is copying.
+                // Never replace its status, history or Gallery URI with old data.
+                if(isRunning()||prefs.getLong("captureId",0L)!=captureId||
+                    !path.equals(prefs.getString("path",""))||
+                    !prefs.getString("uri","").isEmpty()){
+                    try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
+                    catch(Exception ignored){}
+                    return false;
+                }
+                String message="Повторная публикация ранее сохранённого MP4 в Галерею подтверждена";
+                if(!prefs.edit().putString("uri",uri).putString("message",message).commit()){
+                    try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
+                    catch(Exception ignored){}
+                    return false;
+                }
+                // The still-alive Service may hold a saved result in memory.
+                savedUri=uri;
+                lastMessage=message;
+            }
+            NativeCaptureAuditStore.append(context,status(context));
+            return true;
+        }catch(Exception ignored){
+            // Original local MP4 is kept. User can retry after freeing storage.
+            return false;
+        }finally{
+            synchronized(STATE_LOCK){galleryRetryBusy=false;}
         }
     }
     @Override public void onDestroy() {
