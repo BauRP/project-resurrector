@@ -62,7 +62,7 @@ public class NativeCapturePlugin extends Plugin {
    if(view==null||view.getParent()==null)return;
    WebView web=getBridge()==null?null:getBridge().getWebView();
    View root=getActivity()==null?null:getActivity().findViewById(android.R.id.content);
-   if(web==null||root==null){detachDirectView();return;}
+   if(web==null||root==null){invalidatePreviewForLayout("window_unavailable");return;}
    View decor=getActivity().getWindow().getDecorView();
    int[] pos=new int[2],decorPos=new int[2],webPos=new int[2],rootPos=new int[2];
    view.getLocationInWindow(pos);
@@ -85,7 +85,19 @@ public class NativeCapturePlugin extends Plugin {
    Rect relativeToDecor=new Rect(viewWindow);
    relativeToDecor.offset(-decorPos[0],-decorPos[1]);
    if(!inside||DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(relativeToDecor))
-     detachDirectView();
+     invalidatePreviewForLayout(!inside?"window_bounds":"fold_hinge");
+ }
+ // Android may detach the direct TextureView independently of the JS
+ // command queue (WindowManager hinge, keyboard, split-screen, Activity).
+ // Notify only on NATIVE safety invalidation, not intentional UI hide.
+ private void invalidatePreviewForLayout(String reason) {
+   String invalidatedOwner=directOwner;
+   if(invalidatedOwner==null || directView==null)return;
+   detachDirectView();
+   JSObject event=new JSObject();
+   event.put("ownerId",invalidatedOwner);
+   event.put("reason",reason);
+   notifyListeners("directPreviewInvalidated",event);
  }
  private void detachDirectView() {
    clearPreviewBoundsWatch();
