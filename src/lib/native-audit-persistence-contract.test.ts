@@ -52,7 +52,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  });
  it("keeps a readable MP4 marked interrupted after Camera2 failure",()=>{
   expect(service).toContain('final boolean captureFailed = "error".equals(state)');
-  expect(service).toContain("boolean incomplete = timelineIssue || captureFailed || stopFailed || checkpointIssue");
+  expect(service).toContain("boolean incomplete = audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue");
   expect(service).toContain('String message = stopFailed');
   expect(service).toContain('NativeCaptureAuditStore.append(this,status(this))');
  });
@@ -87,7 +87,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  it("salvages readable MP4 after MediaRecorder.stop throws without certifying success",()=>{
    expect(service).toContain('boolean stopFailed = false');
    expect(service).toContain('boolean valid = previouslyRecording && savedMp4HasVideo(media)');
-   expect(service).toContain('boolean incomplete = timelineIssue || captureFailed || stopFailed || checkpointIssue');
+   expect(service).toContain('boolean incomplete = audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue');
    expect(service).toContain('String message = stopFailed');
    expect(service).toContain('saved_interrupted');
  });
