@@ -91,6 +91,14 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(capturePlugin).toContain("y.floatValue()*cssScaleY");
   expect(capturePlugin).toContain("h.floatValue()*cssScaleY");
  });
+ it("hides Camera2 native overlay when Activity or WebView actually resizes",()=>{
+   expect(capturePlugin).toContain("web.addOnLayoutChangeListener(directBoundsListener)");
+   expect(capturePlugin).toContain("root.addOnLayoutChangeListener(directBoundsListener)");
+   expect(capturePlugin).toContain("webWindow.contains(viewWindow)&&rootWindow.contains(viewWindow)");
+   expect(capturePlugin).toContain("clearPreviewBoundsWatch()");
+   expect(capturePlugin).toContain('ack.put("visible",owner.equals(directOwner)&&directView!=null&&');
+   expect(capturePlugin).not.toContain('call.resolve();\n   });\n }\n @Override protected void handleOnDestroy()');
+ });
  it("rejects a direct camera surface crossing a real WindowManager hinge",()=>{
   expect(foldObserver).toContain("surfaceTopologyObserved=false");
   expect(foldObserver).toContain("if(!fold.isSeparating())continue;");
