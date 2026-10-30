@@ -1,5 +1,5 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
-import { nativePreviewPlacement, samePreviewPlacement, type PreviewRect } from "@/lib/native-preview-placement";
+import { nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, type PreviewRect } from "@/lib/native-preview-placement";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
@@ -78,35 +78,40 @@ export function NativeRecordingPanel(){
    let live=true;
    const ownerId=directLease.current;
    let lastPosition:PreviewRect|null=null;
+   let lastViewport:{width:number;height:number}|null=null;
    let lastVisible=false;
    // Keep errors visible to callers without poisoning later cleanup.
    const enqueue=createSerializedAsyncActions();
    const hide=()=>enqueue(async()=>{
      if(!lastVisible)return;
-     lastVisible=false;lastPosition=null;
+     lastVisible=false;lastPosition=null;lastViewport=null;
      await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
    });
+   const measure=()=>nativePreviewSnapshot(
+     directTarget.current?.getBoundingClientRect(),
+     {width:document.documentElement.clientWidth,height:window.innerHeight},
+     getActiveFoldBaseline()?.regionGeometry);
    const sync=async()=>{
      if(!live)return;
-     const viewport={width:document.documentElement.clientWidth,height:window.innerHeight};
-     const rect=directTarget.current?.getBoundingClientRect();
-     const fold=getActiveFoldBaseline();
-     const safe=nativePreviewPlacement(rect,viewport,fold?.regionGeometry);
-     if(document.hidden||!safe){await hide();return;}
-     if(lastVisible&&samePreviewPlacement(safe,lastPosition))return;
+     // Do not use a cached WindowManager/CSS viewport after a fold.
+     if(document.hidden||!measure()){await hide();return;}
      try {
        await enqueue(async()=>{
-         if(!live||document.hidden)return;
-         // Re-evaluate at execution time: a queued show may outlive a fold.
-         const current=directTarget.current?.getBoundingClientRect();
-         const latest=nativePreviewPlacement(current,viewport,getActiveFoldBaseline()?.regionGeometry);
-         if(!latest||!samePreviewPlacement(safe,latest)){
-           lastVisible=false;lastPosition=null;
+         if(!live)return;
+         // The async queue may run after several folds. Take the real CURRENT
+         // geometry and both scaling axes at command submission time.
+         const latest=document.hidden?null:measure();
+         if(!latest){
+           lastVisible=false;lastPosition=null;lastViewport=null;
            await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
            return;
          }
-         await bridge.setDirectPreview({ownerId,visible:true,...safe,viewportWidth:viewport.width,viewportHeight:viewport.height});
-         lastVisible=true;lastPosition=safe;
+         const {placement,viewport}=latest;
+         if(lastVisible&&samePreviewPlacement(placement,lastPosition)&&
+            lastViewport?.width===viewport.width&&lastViewport?.height===viewport.height)return;
+         await bridge.setDirectPreview({ownerId,visible:true,...placement,
+           viewportWidth:viewport.width,viewportHeight:viewport.height});
+         lastVisible=true;lastPosition=placement;lastViewport=viewport;
        });
        if(!live)return;
        setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
@@ -134,7 +139,7 @@ export function NativeRecordingPanel(){
      document.removeEventListener("visibilitychange",visibility);
      // Always queue a final hide, even when the first show is pending.
      void enqueue(async()=>{
-       lastVisible=false;lastPosition=null;
+       lastVisible=false;lastPosition=null;lastViewport=null;
        await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
      });};
  },[directEnabled]);
