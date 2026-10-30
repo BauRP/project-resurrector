@@ -22,6 +22,21 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service, "service missing "+key).toContain('"'+key+'"');
   }
  });
+ it("retains real MP4 track timeline and AV drift evidence after Activity recreation",()=>{
+  for(const key of ["mp4TimelineLimitReason","mp4AudioTimelineLimitReason",
+   "mp4TimelineCompleted","mp4AudioTimelineCompleted","mp4AudioTimelineTrackFound",
+   "mp4TimelineSamples","mp4AudioTimelineSamples",
+   "mp4TimelineRollbacks","mp4AudioTimelineRollbacks",
+   "mp4TimelineDuplicates","mp4AudioTimelineDuplicates",
+   "mp4TimelineLargeGaps","mp4AudioTimelineLargeGaps",
+   "mp4TimelineMaxGapMs","mp4AudioTimelineMaxGapMs",
+   "mp4AvDriftMeasured","mp4AvDriftMs"]){
+    expect(store,"persistent capture history missing "+key).toContain('"'+key+'"');
+    expect(service,"native service status missing "+key).toContain('"'+key+'"');
+  }
+  expect(store).toContain("p.edit().putString(ENTRIES,retained.toString())");
+  expect(store).toContain(".commit();");
+ });
  it("activates the fold observer lease before registering its first callback",()=>{
   const before=foldObserver.indexOf("NativeCaptureService.observeFoldObserverActive(lease);");
   const subscribe=foldObserver.indexOf("adapter.addWindowLayoutInfoListener(getActivity(), main, listener);");
