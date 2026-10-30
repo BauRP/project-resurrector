@@ -25,6 +25,7 @@ public final class NativeMp4TimelineAudit {
         public long maximumGapMs;
         public boolean completed;
         public float approximateFps = -1f;
+        public int videoLowFpsWindows;
         public boolean audioTrackFound;
         public int audioSamples, audioRollbacks, audioDuplicates, audioLargeGaps;
         public long audioMaximumGapMs;
@@ -42,13 +43,16 @@ public final class NativeMp4TimelineAudit {
         String limitReason = "unknown";
         float approximateFps = -1f;
         long firstPtsUs = -1L, lastPtsUs = -1L;
+        int lowFpsWindows;
     }
     private NativeMp4TimelineAudit() {}
 
     private static TrackScan scanTrack(MediaExtractor extractor, int track,
-        int maxSamples, long budgetMs, long longGapThresholdUs) {
+        int maxSamples, long budgetMs, long longGapThresholdUs, int expectedFps) {
         TrackScan scan = new TrackScan();
         extractor.selectTrack(track);
+        long windowStartUs=-1L;
+        int windowSamples=0;
         try {
             extractor.seekTo(0L, MediaExtractor.SEEK_TO_PREVIOUS_SYNC);
             final long deadline = SystemClock.elapsedRealtime() + budgetMs;
@@ -59,6 +63,19 @@ public final class NativeMp4TimelineAudit {
                 long pts = extractor.getSampleTime();
                 if (pts < 0L) { ended = true; break; }
                 if (first < 0L) first = pts;
+                if (windowStartUs<0L)windowStartUs=pts;
+                if (expectedFps>0){
+                    // Video only: completed five-second windows reveal an
+                    // encoder running slowly in the middle of a long file.
+                    if(pts-windowStartUs>=5000000L){
+                        double localFps=windowSamples*1000000.0/(pts-windowStartUs);
+                        if(localFps>0 && localFps<1000 &&
+                           localFps < expectedFps * 0.70)
+                            scan.lowFpsWindows++;
+                        windowStartUs=pts;windowSamples=0;
+                    }
+                    windowSamples++;
+                }
                 if (previous >= 0L) {
                     if (pts < previous) scan.rollbacks++;
                     else if (pts == previous) scan.duplicates++;
@@ -116,9 +133,10 @@ public final class NativeMp4TimelineAudit {
                 long frameUs = requestedFps > 0
                     ? 1000000L / requestedFps : 33333L;
                 TrackScan scanned = scanTrack(extractor, video,
-                    VIDEO_MAX_SAMPLES, VIDEO_BUDGET_MS, Math.max(500000L, frameUs * 10L));
+                    VIDEO_MAX_SAMPLES, VIDEO_BUDGET_MS, Math.max(500000L, frameUs * 10L), requestedFps);
                 videoTimeline = scanned;
                 result.samples = scanned.samples;
+                result.videoLowFpsWindows=scanned.lowFpsWindows;
                 result.rollbacks = scanned.rollbacks;
                 result.duplicates = scanned.duplicates;
                 result.largeGaps = scanned.largeGaps;
@@ -130,7 +148,7 @@ public final class NativeMp4TimelineAudit {
             // A real video-only mode must not fail because no audio was requested.
             if (inspectAudio && audio >= 0) {
                 TrackScan scanned = scanTrack(extractor, audio,
-                    AUDIO_MAX_SAMPLES, AUDIO_BUDGET_MS, 500000L);
+                    AUDIO_MAX_SAMPLES, AUDIO_BUDGET_MS, 500000L, 0);
                 audioTimeline = scanned;
                 result.audioSamples = scanned.samples;
                 result.audioRollbacks = scanned.rollbacks;
