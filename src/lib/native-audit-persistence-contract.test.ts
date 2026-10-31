@@ -183,6 +183,12 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain('session!=capture || !"recording".equals(state))return;');
   expect(service).toContain("callbackGeneration!=generation");
  });
+ it("does not certify missing Camera2 sensor timestamps around a physical fold",()=>{
+  expect(service).toContain("sensorTimestampMissingEvents++");
+  expect(service).toContain("foldNearbyMissingSensorTimestamps++");
+  expect(service).toContain("boolean incomplete = sensorTimestampMissingEvents>0 ||");
+  expect(store).toContain('"sensorTimestampMissingEvents"');
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
