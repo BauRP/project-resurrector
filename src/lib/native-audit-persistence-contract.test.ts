@@ -65,6 +65,19 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(method.indexOf("openInputStream(dest)")).toBeGreaterThan(method.indexOf("MediaStore.Video.Media.IS_PENDING, 0"));
   expect(method).toContain("context.getContentResolver().delete(dest,null,null)");
  });
+ it("verifies exact Gallery MP4 bytes with bounded streaming hash before reporting published",()=>{
+  expect(service).toContain('MessageDigest.getInstance("SHA-256")');
+  expect(service).toContain("originalHash.update(buf,0,size)");
+  expect(service).toContain("publishedHash.update(verifyBuffer,0,verifyCount)");
+  expect(service).toContain("MessageDigest.isEqual(originalHash.digest(),publishedHash.digest())");
+  expect(service).toContain("if(verifiedBytes!=source.length()");
+  expect(service).toContain("if (dest != null) try {context.getContentResolver().delete(dest,null,null);}");
+ });
+ it("notifies only actual TextureView owner on OS surface loss during a fold",()=>{
+  expect(capturePlugin).toContain("onSurfaceTextureDestroyed(SurfaceTexture texture)");
+  expect(capturePlugin).toContain('invalidatePreviewForLayout("surface_destroyed")');
+  expect(capturePlugin).toContain("if(owner.equals(directOwner) && directView!=null)");
+ });
  it("validates real video and requested audio sample in the final published MediaStore item",()=>{
   expect(service).toContain("published.setDataSource(context,dest,null)");
   expect(service).toContain('if(!video || (requireAudio && !audio))');
