@@ -51,6 +51,13 @@ describe("Camera2 preview during Android fold transitions",()=>{
   const invalidate=panel.slice(panel.indexOf('bridge.addListener("directPreviewInvalidated"'),panel.indexOf('const observer=typeof ResizeObserver'));
   expect(invalidate).not.toContain("bridge.stop()");
  });
+ it("coalesces repeated scroll/hinge sync requests without queued stale preview placements",()=>{
+   expect(panel).toContain("let syncRunning=false,syncDirty=false");
+   expect(panel).toContain("if(syncRunning){syncDirty=true;return;}");
+   expect(panel).toContain("await syncOnce()");
+   expect(panel).toContain("while(live&&syncDirty)");
+   expect(panel).toContain("const latest=document.hidden||!(await safePreviewState())?null:measure()");
+ });
  it("folding only invalidates the preview surface, never stops the Camera2 recorder",()=>{
   const start=panel.indexOf("const folding=()=>");
   const end=panel.indexOf('window.addEventListener("resize"',start);
