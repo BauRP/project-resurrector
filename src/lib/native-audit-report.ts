@@ -55,6 +55,8 @@ function entrySummary(item:Record<string,unknown>) {
       audioTimelineLimitReason:typeof item["mp4AudioTimelineLimitReason"]==="string" && ["completed","sample_limit","time_limit","too_short","missing_track","extractor_error","not_requested"].includes(item["mp4AudioTimelineLimitReason"]) ? item["mp4AudioTimelineLimitReason"]:null,
       timelineMeasuredFps:typeof item["mp4TimelineSampledFps"]==="number" && Number.isFinite(item["mp4TimelineSampledFps"]) && item["mp4TimelineSampledFps"]>0 && item["mp4TimelineSampledFps"]<=240 ? item["mp4TimelineSampledFps"]:null,
       timelineCompleted:flag(item["mp4TimelineCompleted"]),
+      sensorTimestampMissingEvents:count(item["sensorTimestampMissingEvents"],100000),
+      foldNearbyMissingSensorTimestamps:count(item["foldNearbyMissingSensorTimestamps"],100000),
       sensorTimestampDiscontinuities:count(item["sensorTimestampDiscontinuities"],100000),
       sensorTimestampRollbacks:count(item["sensorTimestampRollbacks"],100000),
       cameraCaptureFailureEvents:count(item["cameraCaptureFailureEvents"],100000),
