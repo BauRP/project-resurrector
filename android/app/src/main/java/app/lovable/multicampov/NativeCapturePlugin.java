@@ -154,6 +154,10 @@ public class NativeCapturePlugin extends Plugin {
         viewportWidth<=0||viewportHeight<=0){
        call.reject("Invalid WebView viewport size");return;
      }
+     // Reject stale CSS geometry during a fold before Java float-to-int rounding.
+     if(x+w>viewportWidth+2.0 || y+h>viewportHeight+2.0){
+       call.reject("Native preview exceeds current WebView viewport");return;
+     }
      // WebView CSS X/Y are independent scales in multi-window, rotated
      // foldable, keyboard and letterboxed layouts. Scaling Y with the X
      // ratio can position the native TextureView over controls or a hinge.
@@ -212,6 +216,9 @@ public class NativeCapturePlugin extends Plugin {
        // Route touches from the real Android surface to the same Camera2
        // controller used by JPEG preview, never opening another camera.
        directView.setOnTouchListener((view,event)->{
+         // An old TextureView can deliver its last ACTION_UP after a fold.
+         if(view!=createdView || directView!=createdView ||
+            !owner.equals(directOwner))return true;
          if(event.getActionMasked()!=MotionEvent.ACTION_UP)return true;
          if(view.getWidth()<=0||view.getHeight()<=0)return true;
          final float nx=event.getX()/view.getWidth();

@@ -460,7 +460,7 @@ public class NativeCaptureService extends Service {
     private MediaRecorder encoder;
     private volatile ImageReader previewReader;
     private Surface activeDirectPreviewSurface;
-    private int previewSessionRevision = 0;
+    private volatile int previewSessionRevision = 0;
     private final Runnable previewRebindTask = this::rebindPreviewOutput;
     private volatile long sensorFramesSeen = 0L;
     private volatile float recentSensorFps = -1f;
@@ -578,7 +578,7 @@ public class NativeCaptureService extends Service {
     private boolean stopRequested;
     private boolean wantAudio;
     private boolean interruptedByCamera;
-    private int generation = 0;
+    private volatile int generation = 0;
     private Runnable openingTimeout;
     private Runnable storageMonitor;
     private CaptureRequest.Builder liveRequest;
@@ -615,6 +615,15 @@ public class NativeCaptureService extends Service {
         }
         return result;
     }
+    // Queued UI controls must not jump between Camera2 generations after
+    // a physical fold, lens handoff or service shutdown.
+    private boolean acceptsQueuedControl(int expectedGeneration) {
+        synchronized(STATE_LOCK) {
+            return runningInstance==this && generation==expectedGeneration &&
+                !stopRequested && ("previewing".equals(state) ||
+                "recording".equals(state) || "paused".equals(state));
+        }
+    }
     public static boolean updateControls(float zoom, int evIndex,
         java.util.function.Consumer<Boolean> completed) {
         synchronized (STATE_LOCK) {
@@ -625,7 +634,11 @@ public class NativeCaptureService extends Service {
             if (!Float.isFinite(zoom) || zoom < 1f || zoom > owner.maxDigitalZoom ||
                 evIndex < owner.exposureRange.getLower() ||
                 evIndex > owner.exposureRange.getUpper()) return false;
-            return owner.worker.post(() -> completed.accept(owner.applyControls(zoom,evIndex)));
+            final int commandGeneration=owner.generation;
+            return owner.worker.post(()->{
+                boolean current=owner.acceptsQueuedControl(commandGeneration);
+                completed.accept(current && owner.applyControls(zoom,evIndex));
+            });
         }
     }
     private void configureControlLimits(CameraCharacteristics characteristics) {
@@ -762,7 +775,11 @@ public class NativeCaptureService extends Service {
             if(owner==null || owner.worker==null || !owner.torchAvailable ||
                !( "previewing".equals(state) || "recording".equals(state) ||
                   "paused".equals(state)))return false;
-            return owner.worker.post(()->completed.accept(owner.applyTorch(enabled)));
+            final int commandGeneration=owner.generation;
+            return owner.worker.post(()->{
+                boolean current=owner.acceptsQueuedControl(commandGeneration);
+                completed.accept(current && owner.applyTorch(enabled));
+            });
         }
     }
     private boolean applyTorch(boolean enabled) {
@@ -791,7 +808,11 @@ public class NativeCaptureService extends Service {
             if(manual && (!owner.manualFocusSupported || !Float.isFinite(diopters) ||
                 diopters<0f || diopters>owner.maxFocusDiopters))return false;
             if(!manual && !owner.autoFocusSupported)return false;
-            return owner.worker.post(()->completed.accept(owner.applyFocus(manual,diopters)));
+            final int commandGeneration=owner.generation;
+            return owner.worker.post(()->{
+                boolean current=owner.acceptsQueuedControl(commandGeneration);
+                completed.accept(current && owner.applyFocus(manual,diopters));
+            });
         }
     }
     private boolean applyFocus(boolean manual,float diopters){
@@ -945,7 +966,13 @@ public class NativeCaptureService extends Service {
                 ||(owner.previewReader==null && !directPreviewActive)||
                 !(owner.maxAfRegions>0&&owner.autoFocusSupported ||
                   owner.maxAeRegions>0))return false;
-            return owner.worker.post(()->completed.accept(owner.applyTapToMeter(x,y)));
+            final int commandGeneration=owner.generation;
+            final int expectedPreviewRevision=owner.previewSessionRevision;
+            return owner.worker.post(()->{
+                boolean current=owner.acceptsQueuedControl(commandGeneration) &&
+                    owner.previewSessionRevision==expectedPreviewRevision;
+                completed.accept(current && owner.applyTapToMeter(x,y));
+            });
         }
     }
     private boolean applyTapToMeter(float x,float y){
