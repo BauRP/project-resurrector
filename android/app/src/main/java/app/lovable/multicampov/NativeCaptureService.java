@@ -2665,6 +2665,32 @@ public class NativeCaptureService extends Service {
                 if (saved == null || saved.read() < 0)
                     throw new IllegalStateException("MediaStore: итоговый файл недоступен");
             }
+            // The reopened Gallery item must be a parseable MP4 with a
+            // readable VIDEO sample, not just an arbitrary nonempty blob.
+            // Audio, when requested, must also survive MediaStore copying.
+            MediaExtractor published=new MediaExtractor();
+            try {
+                published.setDataSource(context,dest,null);
+                boolean video=false,audio=false;
+                for(int i=0;i<published.getTrackCount();i++){
+                    MediaFormat format=published.getTrackFormat(i);
+                    String mime=format.containsKey(MediaFormat.KEY_MIME)
+                        ?format.getString(MediaFormat.KEY_MIME):null;
+                    if(mime==null)continue;
+                    if(mime.startsWith("video/")){
+                        published.selectTrack(i);
+                        video=published.getSampleTime()>=0L;
+                        published.unselectTrack(i);
+                    }
+                    if(mime.startsWith("audio/")){
+                        published.selectTrack(i);
+                        audio=published.getSampleTime()>=0L;
+                        published.unselectTrack(i);
+                    }
+                }
+                if(!video || (wantAudio && !audio))
+                    throw new IllegalStateException("MediaStore: опубликованные MP4-дорожки не подтверждены");
+            }finally{published.release();}
             return dest.toString();
         } catch(Exception error) {
             if (dest != null) try {context.getContentResolver().delete(dest,null,null);}catch(Exception ignored){}
