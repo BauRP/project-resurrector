@@ -39,11 +39,15 @@ public class DisplayTopologyPlugin extends Plugin {
     private static final Object SURFACE_LOCK=new Object();
     private static String surfaceLease="";
     private static boolean surfaceTopologyObserved=false;
+    // Once native hinge observation has started, an absent observer is
+    // UNKNOWN safety, not proof that there is no hinge in the new Activity.
+    private static boolean surfaceObservationRequired=false;
     private static final ArrayList<Rect> surfaceHinges=new ArrayList<>();
 
     private static void armSurfaceLease(String lease){
         synchronized(SURFACE_LOCK){
             surfaceLease=lease;
+            surfaceObservationRequired=true;
             surfaceTopologyObserved=false;
             surfaceHinges.clear();
         }
@@ -81,18 +85,19 @@ public class DisplayTopologyPlugin extends Plugin {
     }
     static boolean isUnsafeDirectPreviewWindowRect(Rect rect){
         synchronized(SURFACE_LOCK){
-            if(!surfaceLease.isEmpty()&&!surfaceTopologyObserved)return true;
+            if(surfaceObservationRequired&&!surfaceTopologyObserved)return true;
             for(Rect hinge:surfaceHinges)
                 if(Rect.intersects(rect,hinge))return true;
             return false;
         }
     }
-    private static void disarmSurfaceLease(String lease){
+    private static boolean disarmSurfaceLease(String lease){
         synchronized(SURFACE_LOCK){
-            if(!lease.equals(surfaceLease))return;
+            if(!lease.equals(surfaceLease))return false;
             surfaceLease="";
             surfaceTopologyObserved=false;
             surfaceHinges.clear();
+            return true;
         }
     }
     private WindowInfoTrackerCallbackAdapter adapter;
@@ -270,7 +275,10 @@ public class DisplayTopologyPlugin extends Plugin {
         // matching lease may report an observation gap to the recorder.
         if(observerLease!=null){
             NativeCaptureService.observeFoldObserverStopped(observerLease);
-            disarmSurfaceLease(observerLease);
+            // An old listener may stop AFTER a successor has registered.
+            // Only a matching lease can invalidate the current native gate.
+            if(disarmSurfaceLease(observerLease))
+                NativeCapturePlugin.onFoldGeometryChanged();
             observerLease=null;
         }
         if (listener != null && adapter != null) {
