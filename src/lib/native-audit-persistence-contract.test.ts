@@ -11,6 +11,12 @@ const foldObserver=readFileSync(nativeDir+"DisplayTopologyPlugin.java","utf8");
 const capturePlugin=readFileSync(nativeDir+"NativeCapturePlugin.java","utf8");
 const report=readFileSync("src/lib/native-audit-report.ts","utf8");
 describe("native Camera2 and fold audit persistence contract",()=>{
+ it("observes real folds on Android 7 without API 28-only getMainExecutor",()=>{
+  expect(foldObserver).toContain("ContextCompat.getMainExecutor(getContext())");
+  expect(foldObserver).not.toContain("getActivity().getMainExecutor()");
+  expect(foldObserver).toContain("activeOwners.remove(ownerId);");
+  expect(foldObserver).toContain("adapter.addWindowLayoutInfoListener(getActivity(), main, listener);");
+ });
  it("persists all essential late-stage fold and MP4 audit fields",()=>{
   for(const key of ["mp4CheckpointAuditCompleted","mp4FoldPointsSkipped",
     "mp4FoldPtsSpanChecks","mp4FoldPtsLargeGaps",

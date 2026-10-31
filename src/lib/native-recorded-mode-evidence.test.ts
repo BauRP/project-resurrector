@@ -22,6 +22,20 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   const absent=nativeRecordedModeEvidence({...base,recordingEisFrames:0},12345);
   expect(absent?.message).toContain("неизвестно");
  });
+ it("rejects corrupted or fractional audio samples rather than certifying MP4",()=>{
+  for(const samples of [0.5,NaN,Infinity,-1])
+    expect(nativeRecordedModeEvidence({...base,mp4AudioSamples:samples},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4AudioSamples:120},12345)?.state).toBe("recorded");
+  expect(nativeRecordedModeEvidence({...base,audioRequested:false,videoOnly:true,
+    mp4HasAudioTrack:false,mp4AudioSamples:0},12345)?.state).toBe("recorded");
+ });
+ it("rejects corrupt MP4 duration and measured FPS but permits native unknown sentinel",()=>{
+  for(const duration of [NaN,Infinity,-2,0.5])
+    expect(nativeRecordedModeEvidence({...base,mp4DurationMs:duration},12345)?.state).toBe("unknown");
+  for(const sampleFps of [NaN,Infinity,0,-3])
+    expect(nativeRecordedModeEvidence({...base,mp4SampledFps:sampleFps},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,mp4DurationMs:-1,mp4SampledFps:-1},12345)?.state).toBe("recorded");
+ });
  it("does not fabricate success on missing audio, decoder or damaged timing",()=>{
   expect(nativeRecordedModeEvidence({...base,mp4AudioSamples:0},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,mp4FirstFrameDecodable:false},12345)?.state).toBe("unknown");

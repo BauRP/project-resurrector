@@ -21,6 +21,17 @@ export function nativeRecordedModeEvidence(
   const decoded = status.mp4FirstFrameDecodable === true;
   const videoSamples = status.mp4VideoSamples ?? 0;
   const audioSamples = status.mp4AudioSamples ?? 0;
+  // A recorded microphone track needs an integral positive number of samples:
+  // NaN, Infinity, fractions or negative legacy data cannot certify audio.
+  const validAudioSamples=Number.isSafeInteger(audioSamples) && audioSamples>0;
+  // Native unknown duration / FPS use -1. Other invalid numeric values
+  // are corrupted evidence, never an implicit successful recording.
+  const invalidDuration=status.mp4DurationMs!==undefined &&
+    (!Number.isSafeInteger(status.mp4DurationMs)||status.mp4DurationMs < -1);
+  const invalidFpsEvidence=[status.mp4SampledFps,status.mp4TailSampledFps,
+    status.mp4TimelineSampledFps].some(value=>
+      value!==undefined && (!Number.isFinite(value) ||
+      (value!==-1 && value<=0)));
   const dimensions = status.mp4VideoWidth && status.mp4VideoHeight &&
     Number.isSafeInteger(status.mp4VideoWidth) &&
     Number.isSafeInteger(status.mp4VideoHeight)
@@ -123,7 +134,7 @@ export function nativeRecordedModeEvidence(
     (status.mp4AvDriftMeasured===true &&
       (!Number.isSafeInteger(status.mp4AvDriftMs) || Math.abs(status.mp4AvDriftMs!)>500)));
   const audioIncomplete = status.audioRequested === true &&
-    (!status.mp4HasAudioTrack || audioSamples <= 0);
+    (!status.mp4HasAudioTrack || !validAudioSamples);
   // Treat measured beginning/end MP4 timing as evidence about the selected
   // mode, not as full-file verification. Unknown measurements stay unknown.
   const fpsTolerance = Math.max(2, fps! * .1);
@@ -137,7 +148,8 @@ export function nativeRecordedModeEvidence(
   // not VERIFIED. A fold interruption or audio loss must remain explicit.
   const recordingConfirmed = filePresent && track && decoded &&
     Number.isSafeInteger(videoSamples) && videoSamples > 0 &&
-    dimensionsMatch && !anomalies && !audioIncomplete && !audioPtsBad && !audioTailMissing && !audioFoldUnknown &&
+    dimensionsMatch && !anomalies && !invalidDuration && !invalidFpsEvidence &&
+    !audioIncomplete && !audioPtsBad && !audioTailMissing && !audioFoldUnknown &&
     !measuredFpsMismatch && !tailDecodeFailure && !missingTailSamples &&
     !checkpointMismatch && !suspiciousFoldPts && !timelineUncertain && !audioTimelineUnknown && !avDriftUnknown;
   const state: ModeEvidence["state"] = recordingConfirmed &&
@@ -148,6 +160,8 @@ export function nativeRecordedModeEvidence(
     !dimensionsMatch ? "Фактическое разрешение не подтверждено или отличается." :
     videoSamples <= 0 ? "Наличие видеокадров не подтверждено." :
     anomalies ? "В проверенном участке обнаружены нарушения времени кадров." :
+    invalidDuration ? "Длительность MP4 имеет недостоверное значение." :
+    invalidFpsEvidence ? "Измеренные значения FPS содержат ошибочные данные." :
     audioIncomplete ? "Запрошенная звуковая дорожка не подтверждена." :
     audioPtsBad ? "Обнаружены нарушения временных меток аудиодорожки." :
     audioFoldUnknown ? "Временные метки аудио возле складывания не подтверждены." :

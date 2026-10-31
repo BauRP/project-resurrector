@@ -2,6 +2,7 @@ package app.lovable.multicampov;
 
 import android.graphics.Rect;
 import android.util.DisplayMetrics;
+import androidx.core.content.ContextCompat;
 import android.view.View;
 
 import androidx.core.util.Consumer;
@@ -209,7 +210,9 @@ public class DisplayTopologyPlugin extends Plugin {
         }
         try {
             adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(getActivity()));
-            Executor main = getActivity().getMainExecutor();
+            // API 28 Context.getMainExecutor is not available on Android 7.
+            // Jetpack ContextCompat keeps real WindowManager callbacks on main.
+            Executor main = ContextCompat.getMainExecutor(getContext());
             final long ownerGeneration = ++observerGeneration;
             final String lease = java.util.UUID.randomUUID().toString();
             observerLease = lease;
@@ -265,6 +268,8 @@ public class DisplayTopologyPlugin extends Plugin {
             adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
+            // Failed subscription must not leave a phantom observer owner.
+            activeOwners.remove(ownerId);
             stopListener();
             call.reject("Window topology observer unavailable: " + error.getMessage());
         }
