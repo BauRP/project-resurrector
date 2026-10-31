@@ -1740,6 +1740,34 @@ public class NativeCaptureService extends Service {
             int selectedVideoBitrate=advertisedH264Bitrate(width,height,fps);
             media = File.createTempFile("native-" + currentCaptureId + "-", ".mp4", directory);
             encoder = Build.VERSION.SDK_INT >= 31 ? new MediaRecorder(this) : new MediaRecorder();
+            // OEM MediaRecorder errors can occur long AFTER prepare/start.
+            // The service/Camera2 worker owns finalization; callbacks never
+            // operate MediaRecorder directly or restart the capture session.
+            final MediaRecorder configuredRecorder=encoder;
+            encoder.setOnErrorListener((recorder,what,extra)->{
+                Handler cameraWorker=worker;
+                if(cameraWorker==null)return;
+                cameraWorker.post(()->{
+                    if(session!=generation || encoder!=configuredRecorder ||
+                        finalizationStarted.get() || stopRequested)return;
+                    fail(new IllegalStateException(
+                        "MediaRecorder runtime error "+what+" ("+extra+")"));
+                });
+            });
+            encoder.setOnInfoListener((recorder,what,extra)->{
+                if(what!=MediaRecorder.MEDIA_RECORDER_INFO_MAX_DURATION_REACHED &&
+                   what!=MediaRecorder.MEDIA_RECORDER_INFO_MAX_FILESIZE_REACHED)return;
+                Handler cameraWorker=worker;
+                if(cameraWorker==null)return;
+                cameraWorker.post(()->{
+                    if(session!=generation || encoder!=configuredRecorder ||
+                        finalizationStarted.get() || stopRequested)return;
+                    // A vendor-initiated limit can truncate output before
+                    // the user's STOP. Preserve an interrupted result.
+                    fail(new IllegalStateException(
+                        "MediaRecorder recording limit "+what+" ("+extra+")"));
+                });
+            });
             if (wantAudio) encoder.setAudioSource(MediaRecorder.AudioSource.MIC);
             encoder.setVideoSource(MediaRecorder.VideoSource.SURFACE);
             encoder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);
