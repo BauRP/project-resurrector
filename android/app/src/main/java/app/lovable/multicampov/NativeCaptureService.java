@@ -19,6 +19,7 @@ import android.hardware.camera2.CameraCharacteristics;
 import android.hardware.camera2.CameraDevice;
 import android.hardware.camera2.CameraManager;
 import android.hardware.camera2.CaptureRequest;
+import android.hardware.camera2.CaptureFailure;
 import android.hardware.camera2.CaptureResult;
 import android.hardware.camera2.TotalCaptureResult;
 import android.hardware.camera2.params.StreamConfigurationMap;
@@ -259,6 +260,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",0L)
                 .putString("mp4TimelineLimitReason","not_checked")
                 .putString("mp4AudioTimelineLimitReason","not_requested")
+                .putInt("cameraCaptureFailureEvents",0)
+                .putInt("foldNearbyCaptureFailureEvents",0)
                 .putInt("cameraCallbackStallEpisodes",0)
                 .putLong("maxCameraCallbackSilenceMs",0L)
                 .putInt("mp4LowFpsWindows",0)
@@ -464,6 +467,8 @@ public class NativeCaptureService extends Service {
     // Sensor capture callbacks are NOT encoded MP4 samples. Monitor their
     // silence as independent evidence without stopping a valid recorder.
     private static final long CAMERA_CALLBACK_SILENCE_MS = 8000L;
+    private static int cameraCaptureFailureEvents=0;
+    private static int foldNearbyCaptureFailureEvents=0;
     private static int cameraCallbackStallEpisodes=0;
     private static long maxCameraCallbackSilenceMs=0L;
     private long callbackWatchStartedElapsedMs=-1L;
@@ -859,6 +864,22 @@ public class NativeCaptureService extends Service {
                     chosenStabilization="CaptureResult stabilization OFF during recording";
                 }
             }
+            @Override public void onCaptureFailed(CameraCaptureSession session,
+                CaptureRequest request,CaptureFailure failure){
+                if(callbackGeneration!=generation || finalizationStarted.get() ||
+                    !"recording".equals(state))return;
+                // Native Camera2 reported a failed sensor request. Distinguish
+                // this from mere JPEG lag; do not abort a potentially salvageable
+                // MediaRecorder session solely on a callback.
+                if(cameraCaptureFailureEvents<Integer.MAX_VALUE)
+                    cameraCaptureFailureEvents++;
+                long now=android.os.SystemClock.elapsedRealtime();
+                if(recordingLastFoldElapsedMs>0L &&
+                    now>=recordingLastFoldElapsedMs &&
+                    now-recordingLastFoldElapsedMs<=3000L &&
+                    foldNearbyCaptureFailureEvents<Integer.MAX_VALUE)
+                    foldNearbyCaptureFailureEvents++;
+            }
         };
     }
     public static boolean tapToMeter(float x,float y,
@@ -1072,6 +1093,10 @@ public class NativeCaptureService extends Service {
             out.put("mp4AudioTimelineMaxGapMs",runningInstance==null?previous.getLong("mp4AudioTimelineMaxGapMs",0L):mp4AudioTimelineMaxGapMs);
             out.put("mp4AvDriftMeasured",runningInstance==null?previous.getBoolean("mp4AvDriftMeasured",false):mp4AvDriftMeasured);
             out.put("mp4AvDriftMs",runningInstance==null?previous.getLong("mp4AvDriftMs",0L):mp4AvDriftMs);
+            out.put("cameraCaptureFailureEvents",runningInstance==null
+                ?previous.getInt("cameraCaptureFailureEvents",0):cameraCaptureFailureEvents);
+            out.put("foldNearbyCaptureFailureEvents",runningInstance==null
+                ?previous.getInt("foldNearbyCaptureFailureEvents",0):foldNearbyCaptureFailureEvents);
             out.put("cameraCallbackStallEpisodes",runningInstance==null
                 ?previous.getInt("cameraCallbackStallEpisodes",0):cameraCallbackStallEpisodes);
             out.put("maxCameraCallbackSilenceMs",runningInstance==null
@@ -1206,6 +1231,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",mp4AudioTimelineMaxGapMs)
                 .putBoolean("mp4AvDriftMeasured",mp4AvDriftMeasured)
                 .putLong("mp4AvDriftMs",mp4AvDriftMs)
+                .putInt("cameraCaptureFailureEvents",cameraCaptureFailureEvents)
+                .putInt("foldNearbyCaptureFailureEvents",foldNearbyCaptureFailureEvents)
                 .putInt("cameraCallbackStallEpisodes",cameraCallbackStallEpisodes)
                 .putLong("maxCameraCallbackSilenceMs",maxCameraCallbackSilenceMs)
                 .putInt("mp4LowFpsWindows",mp4LowFpsWindows)
@@ -1385,6 +1412,7 @@ public class NativeCaptureService extends Service {
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
             mp4TimelineSampledFps=-1f;mp4LowFpsWindows=0;
+            cameraCaptureFailureEvents=0;foldNearbyCaptureFailureEvents=0;
             cameraCallbackStallEpisodes=0;maxCameraCallbackSilenceMs=0L;
             callbackWatchStartedElapsedMs=-1L;callbackStallEpisodeActive=false;
             mp4TimelineLimitReason="not_checked";mp4AudioTimelineLimitReason="not_requested";
@@ -2658,7 +2686,8 @@ public class NativeCaptureService extends Service {
                 (mp4DurationMs<=0L ||
                  Math.abs(mp4DurationMs-finishedDurationMs)>
                     Math.max(1500L,finishedDurationMs/10L));
-            boolean incomplete = cameraCallbackStallEpisodes>0 ||
+            boolean incomplete = cameraCaptureFailureEvents>0 ||
+                cameraCallbackStallEpisodes>0 ||
                 durationMismatch || audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
@@ -2672,6 +2701,8 @@ public class NativeCaptureService extends Service {
                 : captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
                   "; непрерывность не подтверждена"
+                : cameraCaptureFailureEvents>0
+                ? "MP4 сохранён, но Camera2 сообщила об ошибке получения отдельных кадров; непрерывность не подтверждена"
                 : cameraCallbackStallEpisodes>0
                 ? "MP4 сохранён, но Camera2 длительно не подтверждала новые кадры; непрерывность не подтверждена"
                 : durationMismatch
