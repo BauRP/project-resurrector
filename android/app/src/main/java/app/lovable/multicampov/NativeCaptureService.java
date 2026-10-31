@@ -1340,6 +1340,13 @@ public class NativeCaptureService extends Service {
         try {
             encoder.pause();
             encoderPaused = true;
+            // A pause is an intentional break in the recorded video timeline.
+            // Reset only the rolling FPS window, not accumulated anomaly
+            // counters: failed/real discontinuities remain in the audit.
+            lastSensorNs=0L;
+            sensorWindowFirstNs=0L;
+            sensorWindowFrames=0;
+            recentSensorFps=-1f;
             pausedAtMs = System.currentTimeMillis();
             pausedAtElapsedMs=android.os.SystemClock.elapsedRealtime();
             recordingLastFoldElapsedMs=-1L;
@@ -1353,9 +1360,16 @@ public class NativeCaptureService extends Service {
         try {
             encoder.resume();
             // Ignore the intentional pause in sensor-callback silence metrics.
+            // An OEM may stop capture callbacks while MediaRecorder is paused.
+            // The first sensor timestamp after resume is a NEW baseline, not
+            // evidence that the encoder dropped >1s of recorded video.
             callbackWatchStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
             lastCaptureCallbackElapsedMs=-1L;
             callbackStallEpisodeActive=false;
+            lastSensorNs=0L;
+            sensorWindowFirstNs=0L;
+            sensorWindowFrames=0;
+            recentSensorFps=-1f;
             totalPausedMs += Math.max(0L, System.currentTimeMillis() - pausedAtMs);
             if(pausedAtElapsedMs>=0L)
                 totalPausedElapsedMs+=Math.max(0L,
