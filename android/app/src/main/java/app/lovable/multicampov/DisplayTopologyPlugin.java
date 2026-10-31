@@ -62,6 +62,15 @@ public class DisplayTopologyPlugin extends Plugin {
                 FoldingFeature fold=(FoldingFeature)feature;
                 if(!fold.isSeparating())continue;
                 Rect hinge=new Rect(fold.getBounds());
+                // Invalid/unknown separating bounds are not evidence of
+                // a safe pane. Fail closed until WindowManager reports valid
+                // geometry, rather than positioning the overlay over a hinge.
+                if(hinge.width()<0||hinge.height()<0 ||
+                   hinge.width()==0&&hinge.height()==0){
+                    nextHinges.add(new Rect(Integer.MIN_VALUE/4,
+                        Integer.MIN_VALUE/4,Integer.MAX_VALUE/4,Integer.MAX_VALUE/4));
+                    continue;
+                }
                 if(hinge.width()==0){hinge.left-=2;hinge.right+=2;}
                 if(hinge.height()==0){hinge.top-=2;hinge.bottom+=2;}
                 nextHinges.add(hinge);
