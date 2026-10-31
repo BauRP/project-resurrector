@@ -96,6 +96,17 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(capturePlugin).toContain('invalidatePreviewForLayout("surface_destroyed")');
    expect(capturePlugin).not.toContain('directView.post(()->{');
  });
+ it("rejects a truncated MP4 against actual monotonic recorder duration after fold and pauses",()=>{
+  expect(service).toContain("boolean durationMismatch=finishedDurationMs>2000L");
+  expect(service).toContain("Math.abs(mp4DurationMs-finishedDurationMs)");
+  expect(service).toContain("Math.max(1500L,finishedDurationMs/10L)");
+  expect(service).toContain("boolean incomplete = durationMismatch || audioTimelineIssue");
+ });
+ it("ignores stale callbacks from replaced same-owner native TextureView",()=>{
+  expect(capturePlugin).toContain("final TextureView createdView=directView");
+  expect(capturePlugin).toContain("directView==createdView");
+  expect(capturePlugin).toContain("final TextureView lostView=createdView");
+ });
  it("validates real video and requested audio sample in the final published MediaStore item",()=>{
   expect(service).toContain("published.setDataSource(context,dest,null)");
   expect(service).toContain('if(!video || (requireAudio && !audio))');
