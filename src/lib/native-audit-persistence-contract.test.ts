@@ -59,11 +59,17 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("audit.audioPtsAnomalies += rollbacks + duplicates;");
  });
  it("reopens the published MediaStore item instead of trusting only copied bytes",()=>{
-  const method=service.slice(service.indexOf("private static String publishVideo(Context context,File source)"));
+  const method=service.slice(service.indexOf("private static String publishVideo(Context context,File source,boolean requireAudio)"));
   expect(method).toContain("openOutputStream(dest)");
   expect(method).toContain("context.getContentResolver().openInputStream(dest)");
   expect(method.indexOf("openInputStream(dest)")).toBeGreaterThan(method.indexOf("MediaStore.Video.Media.IS_PENDING, 0"));
   expect(method).toContain("context.getContentResolver().delete(dest,null,null)");
+ });
+ it("validates real video and requested audio sample in the final published MediaStore item",()=>{
+  expect(service).toContain("published.setDataSource(context,dest,null)");
+  expect(service).toContain('if(!video || (requireAudio && !audio))');
+  expect(service).toContain("publishVideo(this,media,wantAudio)");
+  expect(service).toContain('publishVideo(context,source,prefs.getBoolean("recordAudio",false))');
  });
  it("keeps a readable MP4 marked interrupted after Camera2 failure",()=>{
   expect(service).toContain('final boolean captureFailed = "error".equals(state)');
