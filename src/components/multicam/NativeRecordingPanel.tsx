@@ -91,6 +91,12 @@ export function NativeRecordingPanel(){
      lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
      await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
    });
+   // A direct Android surface has no role until a real preview session is
+   // ready. Status is read at command execution time, not at render time.
+   const safePreviewState=async()=>{
+     const current=await bridge.status();
+     return current.state==="previewing";
+   };
    const measure=()=>nativePreviewSnapshot(
      directTarget.current?.getBoundingClientRect(),
      {width:document.documentElement.clientWidth,height:window.innerHeight},
@@ -104,7 +110,7 @@ export function NativeRecordingPanel(){
          if(!live)return;
          // The async queue may run after several folds. Take the real CURRENT
          // geometry and both scaling axes at command submission time.
-         const latest=document.hidden?null:measure();
+         const latest=document.hidden||!(await safePreviewState())?null:measure();
          if(!latest){
            lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
            await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
