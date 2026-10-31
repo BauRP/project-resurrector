@@ -368,8 +368,10 @@ export function NativeRecordingPanel(){
    }
    if(!window.confirm("Запустить отдельную нативную запись Camera2? Обычный предпросмотр WebView должен быть закрыт. Запись продолжается при пересоздании интерфейса, но не гарантирована при гибели процесса Android."))return;
    if(directEnabled){
+     // The capture state gate will hide this Activity-owned TextureView
+     // during MediaRecorder recording. Preserve the user's selected direct
+     // preview preference so it returns on the next valid preview session.
      await bridge.setDirectPreview({ownerId:directLease.current,visible:false}).catch(()=>undefined);
-     setDirectEnabled(false);
    }
    const [width = 0,height = 0]=resolution.split("x").map(Number);
    if(!sizes.includes(resolution))throw Error("Это разрешение не объявлено выбранной камерой.");
