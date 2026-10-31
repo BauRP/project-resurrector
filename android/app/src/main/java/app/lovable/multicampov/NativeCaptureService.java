@@ -259,6 +259,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",0L)
                 .putString("mp4TimelineLimitReason","not_checked")
                 .putString("mp4AudioTimelineLimitReason","not_requested")
+                .putInt("cameraCallbackStallEpisodes",0)
+                .putLong("maxCameraCallbackSilenceMs",0L)
                 .putInt("mp4LowFpsWindows",0)
                 .putFloat("mp4TimelineSampledFps",-1f)
                 .putBoolean("mp4TimelineCompleted",false)
@@ -459,6 +461,13 @@ public class NativeCaptureService extends Service {
     private int sensorWindowFrames = 0;
     private long lastSensorNs = 0L;
     private long lastCaptureCallbackElapsedMs = -1L;
+    // Sensor capture callbacks are NOT encoded MP4 samples. Monitor their
+    // silence as independent evidence without stopping a valid recorder.
+    private static final long CAMERA_CALLBACK_SILENCE_MS = 8000L;
+    private static int cameraCallbackStallEpisodes=0;
+    private static long maxCameraCallbackSilenceMs=0L;
+    private long callbackWatchStartedElapsedMs=-1L;
+    private boolean callbackStallEpisodeActive=false;
     private volatile boolean previewConsumerVisible;
     /** An Activity contributes only a surface, not a second Camera2 owner.
      * Unmounting its surface cannot terminate a MediaRecorder session.
@@ -782,9 +791,13 @@ public class NativeCaptureService extends Service {
         }
     }
     private CameraCaptureSession.CaptureCallback captureFeedback(){
+        final int callbackGeneration=generation;
         return new CameraCaptureSession.CaptureCallback(){
             @Override public void onCaptureCompleted(CameraCaptureSession session,
                 CaptureRequest request,TotalCaptureResult result){
+                // Discard late Camera2 data from an already finalized capture
+                // session; never attribute it to a new camera/passport.
+                if(callbackGeneration!=generation || finalizationStarted.get())return;
                 Float focus=result.get(CaptureResult.LENS_FOCUS_DISTANCE);
                 Integer af=result.get(CaptureResult.CONTROL_AF_STATE);
                 if(focus!=null)reportedFocusDiopters=focus;
@@ -804,6 +817,8 @@ public class NativeCaptureService extends Service {
                         maxFoldNearbyCallbackGapMs=Math.max(maxFoldNearbyCallbackGapMs,gap);
                     }
                 }
+                if(callbackStallEpisodeActive && "recording".equals(state))
+                    callbackStallEpisodeActive=false;
                 lastCaptureCallbackElapsedMs=callbackAt;
                 Long sensorTime=result.get(CaptureResult.SENSOR_TIMESTAMP);
                 if(sensorTime!=null&&sensorTime>0L){
@@ -1057,6 +1072,10 @@ public class NativeCaptureService extends Service {
             out.put("mp4AudioTimelineMaxGapMs",runningInstance==null?previous.getLong("mp4AudioTimelineMaxGapMs",0L):mp4AudioTimelineMaxGapMs);
             out.put("mp4AvDriftMeasured",runningInstance==null?previous.getBoolean("mp4AvDriftMeasured",false):mp4AvDriftMeasured);
             out.put("mp4AvDriftMs",runningInstance==null?previous.getLong("mp4AvDriftMs",0L):mp4AvDriftMs);
+            out.put("cameraCallbackStallEpisodes",runningInstance==null
+                ?previous.getInt("cameraCallbackStallEpisodes",0):cameraCallbackStallEpisodes);
+            out.put("maxCameraCallbackSilenceMs",runningInstance==null
+                ?previous.getLong("maxCameraCallbackSilenceMs",0L):maxCameraCallbackSilenceMs);
             out.put("mp4LowFpsWindows",runningInstance==null?previous.getInt("mp4LowFpsWindows",0):mp4LowFpsWindows);
             out.put("mp4TimelineSampledFps", runningInstance == null
                 ? previous.getFloat("mp4TimelineSampledFps",-1f) : mp4TimelineSampledFps);
@@ -1187,6 +1206,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",mp4AudioTimelineMaxGapMs)
                 .putBoolean("mp4AvDriftMeasured",mp4AvDriftMeasured)
                 .putLong("mp4AvDriftMs",mp4AvDriftMs)
+                .putInt("cameraCallbackStallEpisodes",cameraCallbackStallEpisodes)
+                .putLong("maxCameraCallbackSilenceMs",maxCameraCallbackSilenceMs)
                 .putInt("mp4LowFpsWindows",mp4LowFpsWindows)
                 .putFloat("mp4TimelineSampledFps",mp4TimelineSampledFps)
                 .putFloat("mp4SampledFps", mp4SampledFps)
@@ -1290,6 +1311,10 @@ public class NativeCaptureService extends Service {
         if (!encoderStarted || !encoderPaused || stopRequested || !"paused".equals(state)) return;
         try {
             encoder.resume();
+            // Ignore the intentional pause in sensor-callback silence metrics.
+            callbackWatchStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
+            lastCaptureCallbackElapsedMs=-1L;
+            callbackStallEpisodeActive=false;
             totalPausedMs += Math.max(0L, System.currentTimeMillis() - pausedAtMs);
             if(pausedAtElapsedMs>=0L)
                 totalPausedElapsedMs+=Math.max(0L,
@@ -1360,6 +1385,8 @@ public class NativeCaptureService extends Service {
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
             mp4TimelineSampledFps=-1f;mp4LowFpsWindows=0;
+            cameraCallbackStallEpisodes=0;maxCameraCallbackSilenceMs=0L;
+            callbackWatchStartedElapsedMs=-1L;callbackStallEpisodeActive=false;
             mp4TimelineLimitReason="not_checked";mp4AudioTimelineLimitReason="not_requested";
             mp4TimelineCompleted=false;mp4TimelineSamples=0;mp4TimelineRollbacks=0;
             mp4TimelineDuplicates=0;mp4TimelineLargeGaps=0;mp4TimelineMaxGapMs=0L;
@@ -1627,6 +1654,23 @@ public class NativeCaptureService extends Service {
             @Override public void run(){
                 if(session!=generation || stopRequested || !encoderStarted ||
                     !("recording".equals(state)||"paused".equals(state)))return;
+                // Check actual service-side Camera2 feedback, not JPEG frame
+                // delivery. OEMs may omit callbacks; silence is an uncertainty
+                // in the audit, never an order to abort MediaRecorder.
+                if("recording".equals(state)){
+                    long now=android.os.SystemClock.elapsedRealtime();
+                    long baseline=Math.max(callbackWatchStartedElapsedMs,
+                        lastCaptureCallbackElapsedMs);
+                    if(baseline>0L && now-baseline>=CAMERA_CALLBACK_SILENCE_MS){
+                        long gap=now-baseline;
+                        maxCameraCallbackSilenceMs=Math.max(maxCameraCallbackSilenceMs,gap);
+                        if(!callbackStallEpisodeActive){
+                            callbackStallEpisodeActive=true;
+                            if(cameraCallbackStallEpisodes<Integer.MAX_VALUE)
+                                cameraCallbackStallEpisodes++;
+                        }
+                    }
+                }
                 File dir=media==null?null:media.getParentFile();
                 if(dir==null || dir.getUsableSpace()<MIN_CAPTURE_CONTINUE_BYTES){
                     fail(new IllegalStateException(
@@ -1885,6 +1929,9 @@ public class NativeCaptureService extends Service {
                                             openingTimeout = null;
                                         }
                                         encoder.start();
+                                        callbackWatchStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
+                                        lastCaptureCallbackElapsedMs=-1L;
+                                        callbackStallEpisodeActive=false;
                                         encoderStarted = true;
                                         encoderPaused = false;
                                         recordingStartedAt = System.currentTimeMillis();
@@ -1938,7 +1985,11 @@ public class NativeCaptureService extends Service {
                                                             worker.removeCallbacks(openingTimeout);
                                                             openingTimeout=null;
                                                         }
-                                                        encoder.start();encoderStarted=true;encoderPaused=false;
+                                                        encoder.start();
+                                                        callbackWatchStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
+                                                        lastCaptureCallbackElapsedMs=-1L;
+                                                        callbackStallEpisodeActive=false;
+                                                        encoderStarted=true;encoderPaused=false;
                                                         recordingStartedAt=System.currentTimeMillis();
                                         recordingStartedElapsedMs=android.os.SystemClock.elapsedRealtime();
                                                         armRecordingFoldBaseline();
@@ -2607,7 +2658,8 @@ public class NativeCaptureService extends Service {
                 (mp4DurationMs<=0L ||
                  Math.abs(mp4DurationMs-finishedDurationMs)>
                     Math.max(1500L,finishedDurationMs/10L));
-            boolean incomplete = durationMismatch || audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
+            boolean incomplete = cameraCallbackStallEpisodes>0 ||
+                durationMismatch || audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
                 inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
@@ -2620,6 +2672,8 @@ public class NativeCaptureService extends Service {
                 : captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
                   "; непрерывность не подтверждена"
+                : cameraCallbackStallEpisodes>0
+                ? "MP4 сохранён, но Camera2 длительно не подтверждала новые кадры; непрерывность не подтверждена"
                 : durationMismatch
                 ? "MP4 сохранён, но длительность видеодорожки отличается от реального времени записи без пауз"
                 : audioTimelineIssue
