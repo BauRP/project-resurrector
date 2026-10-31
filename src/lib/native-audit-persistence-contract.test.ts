@@ -206,7 +206,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   const block=service.slice(start,end);
-  const declarations=block.match(/android\\.content\\.SharedPreferences\\.Editor stateEditor\\s*=/g)??[];
+  const declarations=block.match(/android\.content\.SharedPreferences\.Editor stateEditor\s*=/g)??[];
   expect(declarations).toHaveLength(1);
   expect(block).toContain("getSharedPreferences(STORE, MODE_PRIVATE).edit()");
   expect(block).toContain("if(!stateEditor.commit())");
