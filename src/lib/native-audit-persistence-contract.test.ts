@@ -167,6 +167,17 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("sensorTimestampDiscontinuities++");
   expect(store).toContain('"sensorTimestampDiscontinuities"');
  });
+ it("does not miscount intentional MediaRecorder pause as a sensor clock failure",()=>{
+  expect(service).toContain("lastSensorNs=0L;");
+  expect(service).toContain("sensorWindowFirstNs=0L;");
+  expect(service).toContain("encoder.resume();");
+  const resume=service.slice(service.indexOf("private void resumeRecording()"),service.indexOf("@Override public int onStartCommand"));
+  expect(resume).toContain("lastSensorNs=0L;");
+ });
+ it("hides stale TextureView immediately when a new fold observer has unknown topology",()=>{
+  const start=foldObserver.slice(foldObserver.indexOf("armSurfaceLease(lease);"),foldObserver.indexOf("adapter.addWindowLayoutInfoListener"));
+  expect(start).toContain("NativeCapturePlugin.onFoldGeometryChanged()");
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
