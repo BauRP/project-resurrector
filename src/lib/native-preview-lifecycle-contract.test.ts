@@ -23,6 +23,12 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(panel).toContain("lastViewport?.width===viewport.width");
   expect(panel).toContain("lastViewport?.height===viewport.height");
  });
+ it("retries once Camera2 asynchronously reaches previewing after panel mount",()=>{
+  expect(panel).toContain('if(status?.state==="previewing")');
+  expect(panel).toContain('window.dispatchEvent(new Event("multicam-native-preview-ready"))');
+  expect(panel).toContain('window.addEventListener("multicam-native-preview-ready",resized)');
+  expect(panel).toContain('window.removeEventListener("multicam-native-preview-ready",resized)');
+ });
  it("video survives denied microphone permission with an explicit silent capture choice",()=>{
   expect(panel).toContain('if(result["camera"]!=="granted")');
   expect(panel).toContain('if(audio&&!recordAudio)');
