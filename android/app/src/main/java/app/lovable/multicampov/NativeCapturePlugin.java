@@ -34,8 +34,13 @@ public class NativeCapturePlugin extends Plugin {
      new WeakReference<>(null);
  static void onFoldGeometryChanged() {
    NativeCapturePlugin plugin=visiblePreview.get();
-   if(plugin==null||plugin.getActivity()==null)return;
-   plugin.getActivity().runOnUiThread(plugin::hidePreviewCrossingCurrentFold);
+   if(plugin==null)return;
+   final android.app.Activity host=plugin.getActivity();
+   if(host==null||host.isDestroyed())return;
+   host.runOnUiThread(()->{
+     if(plugin.getActivity()==host && !host.isDestroyed())
+       plugin.hidePreviewCrossingCurrentFold();
+   });
  }
  // Activity/WebView may resize without a new FoldingFeature.
  // Observe both native containers; never leave a TextureView over controls.
@@ -117,7 +122,14 @@ public class NativeCapturePlugin extends Plugin {
    String owner=call.getString("ownerId");
    Boolean enabled=call.getBoolean("visible",false);
    if(owner==null||owner.isEmpty()||owner.length()>128){call.reject("Invalid native preview owner");return;}
-   getActivity().runOnUiThread(()->{
+   final android.app.Activity host=getActivity();
+   if(host==null||host.isDestroyed()||host.isFinishing()){
+     call.reject("Native preview Activity unavailable");return;
+   }
+   host.runOnUiThread(()->{
+     if(getActivity()!=host||host.isDestroyed()||host.isFinishing()){
+       call.reject("Native preview Activity changed");return;
+     }
      if(!Boolean.TRUE.equals(enabled)){
        if(owner.equals(directOwner))detachDirectView();
        JSObject ack=new JSObject();ack.put("visible",false);
@@ -279,7 +291,8 @@ public class NativeCapturePlugin extends Plugin {
    });
  }
  @Override protected void handleOnDestroy(){
-   getActivity().runOnUiThread(this::detachDirectView);
+   // Capacitor may have already detached its Activity at teardown.
+   new Handler(Looper.getMainLooper()).post(this::detachDirectView);
    super.handleOnDestroy();
  }
  @PluginMethod public void setPreviewVisible(PluginCall call) {

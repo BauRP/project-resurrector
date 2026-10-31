@@ -14,6 +14,15 @@ describe("Camera2 queued controls and fold preview lifecycle",()=>{
    expect(service).toContain("completed.accept(current && owner."+fn+");");
   }
  });
+ it("does not apply stale preview commands after a physical fold",()=>{
+  expect(service.match(/final int commandPreviewRevision=owner\.previewSessionRevision;/g)).toHaveLength(3);
+  expect(service.match(/owner\.previewSessionRevision==commandPreviewRevision;/g)).toHaveLength(3);
+ });
+ it("cleans up direct preview even when Android Activity was already detached",()=>{
+  expect(plugin).toContain("new Handler(Looper.getMainLooper()).post(this::detachDirectView);");
+  expect(plugin).toContain("if(getActivity()!=host||host.isDestroyed()||host.isFinishing())");
+  expect(plugin).not.toContain("getActivity().runOnUiThread(this::detachDirectView)");
+ });
  it("does not use pre-fold tap locations on a new Camera2 preview surface",()=>{
   const a=service.indexOf("public static boolean tapToMeter(");
   const b=service.indexOf("private boolean applyTapToMeter(",a);

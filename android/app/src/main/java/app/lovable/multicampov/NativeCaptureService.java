@@ -635,8 +635,11 @@ public class NativeCaptureService extends Service {
                 evIndex < owner.exposureRange.getLower() ||
                 evIndex > owner.exposureRange.getUpper()) return false;
             final int commandGeneration=owner.generation;
+            final int commandPreviewRevision=owner.previewSessionRevision;
             return owner.worker.post(()->{
-                boolean current=owner.acceptsQueuedControl(commandGeneration);
+                // Reject commands from a pre-fold preview session.
+                boolean current=owner.acceptsQueuedControl(commandGeneration) &&
+                    owner.previewSessionRevision==commandPreviewRevision;
                 completed.accept(current && owner.applyControls(zoom,evIndex));
             });
         }
@@ -776,8 +779,11 @@ public class NativeCaptureService extends Service {
                !( "previewing".equals(state) || "recording".equals(state) ||
                   "paused".equals(state)))return false;
             final int commandGeneration=owner.generation;
+            final int commandPreviewRevision=owner.previewSessionRevision;
             return owner.worker.post(()->{
-                boolean current=owner.acceptsQueuedControl(commandGeneration);
+                // Reject commands from a pre-fold preview session.
+                boolean current=owner.acceptsQueuedControl(commandGeneration) &&
+                    owner.previewSessionRevision==commandPreviewRevision;
                 completed.accept(current && owner.applyTorch(enabled));
             });
         }
@@ -809,8 +815,11 @@ public class NativeCaptureService extends Service {
                 diopters<0f || diopters>owner.maxFocusDiopters))return false;
             if(!manual && !owner.autoFocusSupported)return false;
             final int commandGeneration=owner.generation;
+            final int commandPreviewRevision=owner.previewSessionRevision;
             return owner.worker.post(()->{
-                boolean current=owner.acceptsQueuedControl(commandGeneration);
+                // Reject commands from a pre-fold preview session.
+                boolean current=owner.acceptsQueuedControl(commandGeneration) &&
+                    owner.previewSessionRevision==commandPreviewRevision;
                 completed.accept(current && owner.applyFocus(manual,diopters));
             });
         }

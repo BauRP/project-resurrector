@@ -53,7 +53,13 @@ public class DisplayTopologyPlugin extends Plugin {
             surfaceHinges.clear();
         }
     }
-    private static void updateSurfaceHinges(String lease,WindowLayoutInfo layout){
+    private void updateSurfaceHinges(String lease,WindowLayoutInfo layout){
+        // Physical WindowManager hinge bounds must belong to this Activity.
+        // Unknown dimensions remain unsafe, not an invented single pane.
+        final android.app.Activity host=getActivity();
+        final View decor=host==null?null:host.getWindow().getDecorView();
+        final int windowWidth=decor==null?0:decor.getWidth();
+        final int windowHeight=decor==null?0:decor.getHeight();
         boolean changed=false;
         synchronized(SURFACE_LOCK){
             if(!lease.equals(surfaceLease))return;
@@ -67,7 +73,10 @@ public class DisplayTopologyPlugin extends Plugin {
                 // a safe pane. Fail closed until WindowManager reports valid
                 // geometry, rather than positioning the overlay over a hinge.
                 if(hinge.width()<0||hinge.height()<0 ||
-                   hinge.width()==0&&hinge.height()==0){
+                   hinge.width()==0&&hinge.height()==0 ||
+                   windowWidth<=0||windowHeight<=0 ||
+                   hinge.left<0||hinge.top<0 ||
+                   hinge.right>windowWidth||hinge.bottom>windowHeight){
                     nextHinges.add(new Rect(Integer.MIN_VALUE/4,
                         Integer.MIN_VALUE/4,Integer.MAX_VALUE/4,Integer.MAX_VALUE/4));
                     continue;
@@ -95,6 +104,7 @@ public class DisplayTopologyPlugin extends Plugin {
     }
     static boolean isUnsafeDirectPreviewWindowRect(Rect rect){
         synchronized(SURFACE_LOCK){
+            if(rect==null||rect.width()<=0||rect.height()<=0)return true;
             if(surfaceObservationRequired&&!surfaceTopologyObserved)return true;
             for(Rect hinge:surfaceHinges)
                 if(Rect.intersects(rect,hinge))return true;
