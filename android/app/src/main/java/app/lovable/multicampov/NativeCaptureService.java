@@ -403,7 +403,10 @@ public class NativeCaptureService extends Service {
                         long last=points.length>0?Long.parseLong(points[points.length-1]):-1L;
                         if(activeMs>last && points.length<8)
                             recordingFoldPointsMs+=(recordingFoldPointsMs.isEmpty()?"":",")+activeMs;
-                        else if(points.length>=8 && recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)
+                        else if(activeMs>=last && recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)
+                            // Same-millisecond hinge geometry movements are
+                            // real events, but not independently checkable
+                            // MP4 positions. Include them in omitted count.
                             recordingFoldCheckpointsOmitted++;
                     }
                 }
