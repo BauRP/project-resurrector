@@ -129,6 +129,10 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
         else next.push(region);
       } else next.push(region);
     }
+    // Malformed OEM feature streams can describe many mutually crossing
+    // lines. Never expand an unbounded number of React/CSS pane targets.
+    // Ignore only the overflowing feature; keep the last measured safe panes.
+    if(next.length>16)continue;
     if (next.length > regions.length) usedHinges.push(f);
     regions = next;
   }

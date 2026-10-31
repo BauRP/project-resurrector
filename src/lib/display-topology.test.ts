@@ -47,6 +47,24 @@ describe("multi-hinge topology", () => {
     expect(panes[0]![0]!+panes[0]![2]!).toBe(panes[1]![0]);
     expect(panes[1]![0]!+panes[1]![2]!).toBe(panes[2]![0]);
   });
+  it("caps anomalous WindowManager cross-hinges at 16 measured panes",()=>{
+    // Seven vertical and seven horizontal FULL separating lines can create
+    // dozens of fragments; such malformed topology must never allocate
+    // unbounded UI panes or invent more reported usable regions.
+    const many=[
+      ...Array.from({length:7},(_,i)=>({
+        ...hinge((i+1)*145,(i+1)*145+1),
+      })),
+      ...Array.from({length:7},(_,i)=>({
+        leftPx:0,rightPx:1200,topPx:(i+1)*105,bottomPx:(i+1)*105+1,
+        orientation:"HORIZONTAL",state:"FLAT",occlusion:"FULL",separating:true,
+      })),
+    ];
+    const output=calculateDisplayRegions(topology(many),600,450);
+    expect(output.regions.length).toBeLessThanOrEqual(16);
+    expect(output.regions.every(r=>r.width>0&&r.height>0)).toBe(true);
+    expect(foldEventDetails(topology(many),600,450).usableRegions).toBeLessThanOrEqual(16);
+  });
   it("supports two actual Android hinge bounds for tri-fold devices", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);
     expect(result.regions).toHaveLength(3);
