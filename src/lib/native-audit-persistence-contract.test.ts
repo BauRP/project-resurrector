@@ -137,6 +137,17 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("recordingFoldGeometryOnlyChanges++");
   expect(service).toContain("recordingFoldCheckpointsOmitted++");
  });
+ it("flags paused geometry-only fold changes as uncheckable video evidence",()=>{
+  expect(service).toContain('if("paused".equals(state)){');
+  expect(service).toContain('recordingFoldGeometryOnlyChanges++');
+  expect(service).toContain('recordingFoldCheckpointsOmitted++');
+ });
+ it("handles OEM MediaRecorder runtime and recording-limit callbacks without losing failure evidence",()=>{
+  expect(service).toContain("encoder.setOnErrorListener((recorder,what,extra)->{");
+  expect(service).toContain("encoder.setOnInfoListener((recorder,what,extra)->{");
+  expect(service).toContain("if(session!=generation || encoder!=configuredRecorder ||");
+  expect(service).toContain('fail(new IllegalStateException(');
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
