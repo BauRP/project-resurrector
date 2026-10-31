@@ -445,21 +445,7 @@ public class NativeCaptureService extends Service {
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
-                .putString("foldPointsMs",recordingFoldPointsMs);
-            // MediaRecorder transitions must survive immediate process loss:
-            // apply() may leave the persisted camera status one step behind.
-            // Commit only material transitions; frequent UI/control updates
-            // stay asynchronous to protect the Camera2 worker latency.
-            String persistedState=getSharedPreferences(STORE, MODE_PRIVATE)
-                .getString("state","idle");
-            if(!newState.equals(persistedState) ||
-                "saved".equals(newState) || "saved_interrupted".equals(newState) ||
-                "interrupted".equals(newState) || "error".equals(newState)){
-                if(!stateEditor.commit())
-                    android.util.Log.e("NativeCaptureService","Could not persist critical camera state: "+newState);
-            }else{
-                stateEditor.apply();
-            }
+                .putString("foldPointsMs",recordingFoldPointsMs).apply();
         }
     }
 
@@ -1257,6 +1243,7 @@ public class NativeCaptureService extends Service {
             state = newState;
             lastMessage = message;
             android.content.SharedPreferences.Editor stateEditor=
+                android.content.SharedPreferences.Editor stateEditor=
                 getSharedPreferences(STORE, MODE_PRIVATE).edit()
                 .putString("state", newState).putString("message", message)
                 .putString("path", savedPath).putString("uri", savedUri)
@@ -1349,7 +1336,20 @@ public class NativeCaptureService extends Service {
                 .putLong("lastFoldAt",recordingLastFoldAt)
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
-                .putString("foldPointsMs",recordingFoldPointsMs).apply();
+                .putString("foldPointsMs",recordingFoldPointsMs);
+            // Persist critical transitions before returning to Android:
+            // asynchronous apply() can lose the last state on process death.
+            // Frequent same-state control updates remain asynchronous.
+            String persistedState=getSharedPreferences(STORE, MODE_PRIVATE)
+                .getString("state","idle");
+            if(!newState.equals(persistedState) ||
+                "saved".equals(newState) || "saved_interrupted".equals(newState) ||
+                "interrupted".equals(newState) || "error".equals(newState)){
+                if(!stateEditor.commit())
+                    android.util.Log.e("NativeCaptureService","Could not persist critical camera state: "+newState);
+            }else{
+                stateEditor.apply();
+            }
         }
     }
     @Override public void onCreate() {
