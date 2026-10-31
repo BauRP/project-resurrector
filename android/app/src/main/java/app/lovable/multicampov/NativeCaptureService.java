@@ -512,6 +512,25 @@ public class NativeCaptureService extends Service {
             active.worker.postDelayed(active.previewRebindTask, 80L);
         }
     }
+    /** Reconnect only the Camera2 PREVIEW stream when an existing TextureView
+     * changes real size (unfold/cover display/split-screen). MediaRecorder is
+     * never stopped or reconfigured: its capture service remains the owner.
+     * Delayed events from a superseded owner/surface are ignored.
+     */
+    public static void onDirectPreviewTextureResized(String ownerId, SurfaceTexture texture) {
+        if(ownerId==null || texture==null)return;
+        final NativeCaptureService active;
+        synchronized(STATE_LOCK){
+            if(!ownerId.equals(directPreviewOwnerId) || texture!=directPreviewTexture ||
+                runningInstance==null || runningInstance.camera==null ||
+                runningInstance.encoder!=null || !"previewing".equals(state))return;
+            active=runningInstance;
+        }
+        if(active.worker!=null){
+            active.worker.removeCallbacks(active.previewRebindTask);
+            active.worker.postDelayed(active.previewRebindTask,120L);
+        }
+    }
     public static void setPreviewConsumerVisible(boolean visible, String ownerId) {
         if (ownerId == null || ownerId.isEmpty()) return;
         synchronized (STATE_LOCK) {
