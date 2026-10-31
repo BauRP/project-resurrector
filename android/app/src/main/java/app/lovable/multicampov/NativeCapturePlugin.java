@@ -121,9 +121,18 @@ public class NativeCapturePlugin extends Plugin {
        JSObject ack=new JSObject();ack.put("visible",false);
        call.resolve(ack);return;
      }
-     if(NativeCaptureService.isRunning() &&
-         !"previewing".equals(NativeCaptureService.status(getContext()).getString("state"))){
-       call.reject("Direct preview cannot overlay active video recording");return;
+     // The native TextureView is meaningful ONLY while Camera2 really owns
+     // an active preview. A speculative overlay before camera open obscures
+     // controls; an overlay during MediaRecorder capture obscures REC controls.
+     // Returning a non-visible result is not a permanent feature failure.
+     String captureState=NativeCaptureService.status(getContext()).getString("state");
+     if(!"previewing".equals(captureState)){
+       if(owner.equals(directOwner))detachDirectView();
+       JSObject ack=new JSObject();
+       ack.put("visible",false);
+       ack.put("reason","camera_not_previewing");
+       call.resolve(ack);
+       return;
      }
      Double x=call.getDouble("left"),y=call.getDouble("top"),
        w=call.getDouble("width"),h=call.getDouble("height");
