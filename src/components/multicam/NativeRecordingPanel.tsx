@@ -93,6 +93,10 @@ export function NativeRecordingPanel(){
    let foldSignature=foldPreviewTopologySignature(getActiveFoldBaseline());
    // Keep errors visible to callers without poisoning later cleanup.
    const enqueue=createSerializedAsyncActions();
+   // Collapse scroll/resize/hinge storms to the latest geometry. Keep a
+   // single in-flight check, plus at most one follow-up for any events that
+   // arrived while Android was processing the preceding async command.
+   let syncRunning=false,syncDirty=false;
    const hide=()=>enqueue(async()=>{
      if(!lastVisible)return;
      lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
@@ -108,7 +112,7 @@ export function NativeRecordingPanel(){
      directTarget.current?.getBoundingClientRect(),
      {width:document.documentElement.clientWidth,height:window.innerHeight},
      getActiveFoldBaseline()?.regionGeometry);
-   const sync=async()=>{
+   const syncOnce=async()=>{
      if(!live)return;
      // Do not use a cached WindowManager/CSS viewport after a fold.
      if(document.hidden||!measure()){await hide();return;}
@@ -144,6 +148,17 @@ export function NativeRecordingPanel(){
      }catch{
        if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
      }
+   };
+   const sync=async()=>{
+     if(!live)return;
+     if(syncRunning){syncDirty=true;return;}
+     syncRunning=true;
+     try{
+       do{
+         syncDirty=false;
+         await syncOnce();
+       }while(live&&syncDirty);
+     }finally{syncRunning=false;}
    };
    // Native invalidation may happen independently of DOM resize. Avoid
    // repeated restoration attempts for the same geometry and fold epoch.
