@@ -2557,7 +2557,7 @@ public class NativeCaptureService extends Service {
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
                 inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
             savedPath = media.getAbsolutePath();
-            String gallery = publishVideo(this,media);
+            String gallery = publishVideo(this,media,wantAudio);
             savedUri = gallery == null ? "" : gallery;
             String message = stopFailed
                 ? "MP4 удалось восстановить после ошибки MediaRecorder.stop(): " +
@@ -2621,7 +2621,7 @@ public class NativeCaptureService extends Service {
     /** Reuse the same verified Gallery copy path for initial publication and
      * a later explicitly requested retry. This function does not touch Camera2.
      */
-    private static String publishVideo(Context context,File source) {
+    private static String publishVideo(Context context,File source,boolean requireAudio) {
         Uri dest = null;
         try {
             ContentValues values = new ContentValues();
@@ -2688,7 +2688,7 @@ public class NativeCaptureService extends Service {
                         published.unselectTrack(i);
                     }
                 }
-                if(!video || (wantAudio && !audio))
+                if(!video || (requireAudio && !audio))
                     throw new IllegalStateException("MediaStore: опубликованные MP4-дорожки не подтверждены");
             }finally{published.release();}
             return dest.toString();
@@ -2740,7 +2740,7 @@ public class NativeCaptureService extends Service {
                 }
             }finally{verify.release();}
             if(!readable)return false;
-            String uri=publishVideo(context,source);
+            String uri=publishVideo(context,source,prefs.getBoolean("recordAudio",false));
             if(uri==null)return false;
             synchronized(STATE_LOCK){
                 // A new capture can start while an IO-bound retry is copying.
