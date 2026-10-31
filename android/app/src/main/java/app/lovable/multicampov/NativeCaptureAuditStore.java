@@ -47,7 +47,8 @@ public final class NativeCaptureAuditStore {
                 String[] longs={"captureId","startedAt","recordedDurationMs","savedBytes",
                     "lastFoldAt","maxFoldNearbyCallbackGapMs","mp4DurationMs","mp4MaxFoldPtsGapMs",
                     "mp4AvTailOffsetMs","mp4MaxFoldAudioPtsGapMs",
-                    "mp4TimelineMaxGapMs","mp4AudioTimelineMaxGapMs","mp4AvDriftMs"};
+                    "mp4TimelineMaxGapMs","mp4AudioTimelineMaxGapMs","mp4AvDriftMs",
+                    "maxCameraCallbackSilenceMs"};
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
                     "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4AudioPtsAnomalies","mp4MiddleProbes","mp4MiddleMatched",
@@ -59,7 +60,8 @@ public final class NativeCaptureAuditStore {
                     "recordingEisFrames","recordingOisFrames",
                     "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames",
                     "mp4TimelineSamples","mp4TimelineRollbacks","mp4TimelineDuplicates",
-                    "mp4TimelineLargeGaps","mp4LowFpsWindows","mp4AudioTimelineSamples",
+                    "mp4TimelineLargeGaps","mp4LowFpsWindows","cameraCallbackStallEpisodes",
+                    "mp4AudioTimelineSamples",
                     "mp4AudioTimelineRollbacks","mp4AudioTimelineDuplicates",
                     "mp4AudioTimelineLargeGaps"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
