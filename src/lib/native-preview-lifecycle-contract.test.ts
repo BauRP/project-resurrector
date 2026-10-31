@@ -29,6 +29,12 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(panel).toContain('window.addEventListener("multicam-native-preview-ready",resized)');
   expect(panel).toContain('window.removeEventListener("multicam-native-preview-ready",resized)');
  });
+ it("retains the user's direct-preview preference when starting actual recording",()=>{
+  const start=panel.slice(panel.indexOf("const start=async()=>"),panel.indexOf("const stop=async()=>"));
+  expect(start).toContain("bridge.setDirectPreview({ownerId:directLease.current,visible:false})");
+  expect(start).not.toContain("setDirectEnabled(false)");
+  expect(panel).toContain('localStorage.setItem("multicam-native-direct-preview-v1"');
+ });
  it("video survives denied microphone permission with an explicit silent capture choice",()=>{
   expect(panel).toContain('if(result["camera"]!=="granted")');
   expect(panel).toContain('if(audio&&!recordAudio)');
