@@ -2565,7 +2565,15 @@ public class NativeCaptureService extends Service {
                 mp4AudioTimelineRollbacks>0 || mp4AudioTimelineDuplicates>0 ||
                 mp4AudioTimelineLargeGaps>0 || !mp4AvDriftMeasured ||
                 Math.abs(mp4AvDriftMs)>500L);
-            boolean incomplete = audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
+            // A playable MP4 can still be dramatically shorter than the
+            // actual monotonic recorder clock (OEM encoder stall or truncation).
+            // Pause time has already been excluded from finishedDurationMs.
+            // Allow startup/muxer rounding, but never certify a significant loss.
+            boolean durationMismatch=finishedDurationMs>2000L &&
+                (mp4DurationMs<=0L ||
+                 Math.abs(mp4DurationMs-finishedDurationMs)>
+                    Math.max(1500L,finishedDurationMs/10L));
+            boolean incomplete = durationMismatch || audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
                 fpsMismatch || sampleIssue || tailIssue || audioTailIssue ||
                 inspectionUnknown || tailDecodeIssue || !mp4FirstFrameDecodable;
@@ -2578,6 +2586,8 @@ public class NativeCaptureService extends Service {
                 : captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
                   "; непрерывность не подтверждена"
+                : durationMismatch
+                ? "MP4 сохранён, но длительность видеодорожки отличается от реального времени записи без пауз"
                 : audioTimelineIssue
                 ? "MP4 сохранён, но полная проверка временных меток звука не завершена или обнаружила подозрительные интервалы"
                 : timelineIssue
