@@ -200,9 +200,22 @@ public class NativeCaptureService extends Service {
             android.content.SharedPreferences preferences =
                 context.getSharedPreferences(STORE, MODE_PRIVATE);
             String previous = preferences.getString("state", "idle");
-            if ("previewing".equals(previous)) {
+            // A process may die while a preview-only ACTION_PREVIEW is still
+            // "starting", before Camera2 calls onOpened(). Never record that
+            // as an interrupted MP4 or overwrite an earlier captureId.
+            // Legacy APKs lacked the explicit flag: only their validated
+            // nonzero capture mode can identify an older recording attempt.
+            boolean wasRecordingAttempt=preferences.contains("recordingAttemptStarted")
+                ? preferences.getBoolean("recordingAttemptStarted",false)
+                : preferences.getLong("captureId",0L)>0L &&
+                  preferences.getInt("width",0)>0 &&
+                  preferences.getInt("height",0)>0 &&
+                  preferences.getInt("fps",0)>0;
+            if ("previewing".equals(previous) ||
+                ("starting".equals(previous) && !wasRecordingAttempt)) {
                 preferences.edit().putString("state","idle")
                     .putString("message","Предпросмотр завершён вместе с процессом Android")
+                    .putBoolean("recordingAttemptStarted",false)
                     .commit();
                 return;
             }
@@ -247,6 +260,7 @@ public class NativeCaptureService extends Service {
             // status, but keep the interrupted attempt in the audit journal.
             preferences.edit().putString("state","interrupted")
                 .putString("message",reason)
+                .putBoolean("recordingAttemptStarted",false)
                 .putString("path","")
                 .putString("uri","")
                 .putBoolean("mp4AvDriftMeasured",false)
@@ -1314,6 +1328,7 @@ public class NativeCaptureService extends Service {
                 .putInt("recordingStabilizationOffFrames",recordingStabilizationOffFrames)
                 .putInt("recordingStabilizationUnknownFrames",recordingStabilizationUnknownFrames)
                 .putLong("captureId",currentCaptureId)
+                .putBoolean("recordingAttemptStarted",recordingAttemptStarted)
                 .putLong("started", recordingStartedAt)
                 .putString("cameraId", selectedCameraId)
                 .putInt("width", selectedWidth)
@@ -1543,7 +1558,21 @@ public class NativeCaptureService extends Service {
                 notification(), type);
             else startForeground(NOTIFICATION, notification());
         } catch (RuntimeException error) {
+            // Record a rejected start as an error for this attempted mode,
+            // not with the previous capture's MP4 or identity.
+            synchronized(STATE_LOCK){
+                currentCaptureId=Math.max(System.currentTimeMillis(),currentCaptureId+1L);
+                selectedCameraId=intent.getStringExtra("cameraId");
+                if(selectedCameraId==null)selectedCameraId="";
+                selectedWidth=intent.getIntExtra("width",0);
+                selectedHeight=intent.getIntExtra("height",0);
+                selectedFps=intent.getIntExtra("fps",0);
+                savedPath="";savedUri="";
+                mp4TracksInspected=false;mp4HasVideoTrack=false;mp4HasAudioTrack=false;
+                mp4VideoSamples=0;mp4AudioSamples=0;
+            }
             publish("error", "Android отказал в запуске службы камеры: " + error.getMessage());
+            NativeCaptureAuditStore.append(this,status(this));
             stopSelf(); return START_NOT_STICKY;
         }
         stopRequested = false;
@@ -1624,6 +1653,11 @@ public class NativeCaptureService extends Service {
     private void startPreview(Intent intent) {
         if (camera != null || encoder != null || isRecordingState()) return;
         final String id = intent.getStringExtra("cameraId");
+        // Mark this operation as preview-only BEFORE permission/foreground
+        // failures can publish state. This must never reuse an earlier MP4.
+        recordingAttemptStarted=false;
+        selectedWidth=0;selectedHeight=0;selectedFps=0;
+        selectedCameraId=id==null?"":id;
         if (id == null || id.isEmpty() ||
             checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
             publish("error","Разрешение на камеру или объектив недоступны"); stopSelf(); return;
@@ -1636,11 +1670,7 @@ public class NativeCaptureService extends Service {
             publish("error","Android запретил предпросмотр: "+error.getMessage());stopSelf();return;
         }
         stopRequested=false;
-        recordingAttemptStarted=false;
-        // A preview-only error must not be mistaken for last MP4's mode.
-        selectedWidth=0;selectedHeight=0;selectedFps=0;
         int token=++generation;
-        selectedCameraId=id;
         publish("starting","Открываю нативный предпросмотр");
         openingTimeout=()->{
             if(token==generation && !"previewing".equals(state) && !stopRequested)
@@ -2213,7 +2243,8 @@ public class NativeCaptureService extends Service {
     private void fail(Exception error) {
         if (stopRequested) return;
         stopRequested = true;
-        publish("error", "Нативная запись: " + error.getMessage());
+        publish("error", (recordingAttemptStarted ? "Нативная запись: " :
+            "Предпросмотр Camera2: ") + error.getMessage());
         finish();
     }
     private void releaseCamera() {

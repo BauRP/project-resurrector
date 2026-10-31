@@ -29,6 +29,12 @@ describe("foldable native preview overlay boundaries",()=>{
     "0,0,100,800;unknown","0,0,999999999999999999999,800"])
     expect(nativePreviewPlacement({left:40,top:100,width:280,height:300},screen,broken)).toBeNull();
  });
+ it("refuses overlapping or overflowing real fold pane coordinates",()=>{
+  const rectangle={left:30,top:100,width:160,height:200};
+  expect(nativePreviewPlacement(rectangle,screen,"0,0,210,800;180,0,220,800")).toBeNull();
+  expect(nativePreviewPlacement(rectangle,screen,"0,0,9007199254740990,800")).toBeNull();
+  expect(nativePreviewPlacement(rectangle,screen,"0,0,210,800;210,0,190,800")).not.toBeNull();
+ });
  it("rejects malformed multi-pane region metadata rather than covering controls",()=>{
   expect(nativePreviewPlacement({left:10,top:10,width:160,height:200},screen,
     "invalid;geometry")).toBeNull();

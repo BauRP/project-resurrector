@@ -1,3 +1,5 @@
+import {validFoldRegionGeometry} from "./fold-recording-evidence";
+
 /** A native TextureView is an Activity overlay, not a DOM node.
  * Only place it when its complete target fits in the visible WebView.
  * Otherwise it can cover unrelated controls after scrolling or folding.
@@ -14,8 +16,9 @@ export function previewFitsFoldRegion(rect:PreviewRect, regionGeometry:string|un
  const regions=regionGeometry.split(";");
  // One measured cover-display region can be smaller than the WebView.
  // Never interpret that lone real pane as permission to use the full screen.
- if(regions.length>16 || !regions.every(r=>/^\d+,\d+,\d+,\d+$/.test(r)))
-   return false;
+ // A malformed or overlapping set of panes must never authorize native
+ // overlay placement even when one individual rectangle happens to fit.
+ if(!validFoldRegionGeometry(regionGeometry))return false;
  return regions.some(region=>{
    const [x,y,w,h]=region.split(",").map(Number);
    if(![x,y,w,h].every(Number.isSafeInteger)||w===undefined||h===undefined||w<=0||h<=0)return false;

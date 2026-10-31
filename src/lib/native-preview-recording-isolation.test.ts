@@ -19,6 +19,24 @@ describe("Camera2 preview-only sessions never masquerade as MP4 captures",()=>{
   expect(finish.slice(guard,finalized)).toContain('if(!"error".equals(state))');
   expect(finish.slice(guard,finalized)).toContain("return;");
  });
+ it("recovers a process-killed preview opening without fabricating an interrupted MP4",()=>{
+  const recovery=service.slice(service.indexOf("public static void recoverAbandonedRecording("),
+    service.indexOf("public static void observeFoldObserverActive("));
+  expect(recovery).toContain('preferences.contains("recordingAttemptStarted")');
+  expect(recovery).toContain('("starting".equals(previous) && !wasRecordingAttempt)');
+  expect(recovery.indexOf('("starting".equals(previous) && !wasRecordingAttempt)'))
+    .toBeLessThan(recovery.indexOf("NativeCaptureAuditStore.append(context,recovered);"));
+  expect(recovery).toContain('.putBoolean("recordingAttemptStarted",false)');
+  expect(service).toContain('.putBoolean("recordingAttemptStarted",recordingAttemptStarted)');
+ });
+ it("records a rejected camera foreground start without reusing the last MP4",()=>{
+  const denial=service.slice(service.indexOf("Android отказал в запуске службы камеры:")-650,
+    service.indexOf("Android отказал в запуске службы камеры:")+350);
+  expect(denial).toContain("currentCaptureId=Math.max(System.currentTimeMillis(),currentCaptureId+1L)");
+  expect(denial).toContain('savedPath="";savedUri="";');
+  expect(denial).toContain("NativeCaptureAuditStore.append(this,status(this))");
+  expect(service).toContain('"Предпросмотр Camera2: "');
+ });
  it("never overwrites durable MP4 audit with a later preview-only failure",()=>{
   expect(service).toContain('if ("error".equals(state) && recordingAttemptStarted)');
   const start=service.indexOf("private void startPreview(Intent intent)");
