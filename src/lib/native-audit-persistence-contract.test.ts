@@ -178,6 +178,11 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   const start=foldObserver.slice(foldObserver.indexOf("armSurfaceLease(lease);"),foldObserver.indexOf("adapter.addWindowLayoutInfoListener"));
   expect(start).toContain("NativeCapturePlugin.onFoldGeometryChanged()");
  });
+ it("ignores stale Camera2 callbacks from previous sessions after fold surface rebind",()=>{
+  expect(service).toContain("session!=capture)return;");
+  expect(service).toContain('session!=capture || !"recording".equals(state))return;');
+  expect(service).toContain("callbackGeneration!=generation");
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
