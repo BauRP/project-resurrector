@@ -11,7 +11,9 @@ export interface PreviewViewport {width:number;height:number}
  * cover a hinge or controls unless it is explicitly hidden.
  * Region geometry comes from WindowManager, already mapped to CSS pixels.
  */
-export function previewFitsFoldRegion(rect:PreviewRect, regionGeometry:string|undefined):boolean {
+export function previewFitsFoldRegion(
+ rect:PreviewRect, regionGeometry:string|undefined, viewport?:PreviewViewport,
+):boolean {
  if(!regionGeometry)return true;
  const regions=regionGeometry.split(";");
  // One measured cover-display region can be smaller than the WebView.
@@ -19,6 +21,20 @@ export function previewFitsFoldRegion(rect:PreviewRect, regionGeometry:string|un
  // A malformed or overlapping set of panes must never authorize native
  // overlay placement even when one individual rectangle happens to fit.
  if(!validFoldRegionGeometry(regionGeometry))return false;
+ if(viewport){
+   // A valid integer pane can still be an obsolete full-size WindowManager
+   // observation from before the Activity shrank to a cover/split window.
+   // Reject the whole report instead of authorizing an overlay from one pane.
+   const epsilon=1;
+   if(!Number.isFinite(viewport.width)||!Number.isFinite(viewport.height)||
+      viewport.width<=0||viewport.height<=0 ||
+      regions.some(region=>{
+        const [x,y,w,h]=region.split(",").map(Number);
+        return x===undefined||y===undefined||w===undefined||h===undefined||
+          x < -epsilon || y < -epsilon ||
+          x+w > viewport.width+epsilon || y+h > viewport.height+epsilon;
+      }))return false;
+ }
  return regions.some(region=>{
    const [x,y,w,h]=region.split(",").map(Number);
    if(![x,y,w,h].every(Number.isSafeInteger)||w===undefined||h===undefined||w<=0||h<=0)return false;
@@ -40,7 +56,7 @@ export function nativePreviewPlacement(
  if(rect.left < -epsilon || rect.top < -epsilon ||
    rect.left+rect.width > viewport.width+epsilon ||
    rect.top+rect.height > viewport.height+epsilon ||
-   !previewFitsFoldRegion(rect,regionGeometry))return null;
+   !previewFitsFoldRegion(rect,regionGeometry,viewport))return null;
  return {
    left:Math.max(0,rect.left),top:Math.max(0,rect.top),
    width:Math.min(rect.width,viewport.width-Math.max(0,rect.left)),

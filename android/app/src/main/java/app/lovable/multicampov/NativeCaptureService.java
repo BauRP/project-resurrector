@@ -1050,13 +1050,10 @@ public class NativeCaptureService extends Service {
         }catch(Exception error){
             focusTapX=oldX;focusTapY=oldY;manualFocus=wasManual;
             focusTapAf=oldAf;focusTapAe=oldAe;
-            try{
-                liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
-                    CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
-                setRequestControls(liveRequest);
-                capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
-            }catch(Exception ignored){}
-            publish(state,"Фокус/экспозамер по касанию не применён: "+error.getMessage());
+            boolean restored=restoreRepeatingControlsAfterRejection();
+            publish(state,"Фокус/экспозамер по касанию не применён: "+error.getMessage()+
+                (restored ? "; прежняя команда повторно принята Camera2" :
+                "; восстановление предыдущей конфигурации не подтверждено"));
             return false;
         }
     }

@@ -40,6 +40,15 @@ describe("Camera2 queued controls and fold preview lifecycle",()=>{
   }
   expect(service).toContain("восстановление предыдущей конфигурации не подтверждено");
  });
+ it("restores the last repeating Camera2 request after rejected tap metering",()=>{
+  const start=service.indexOf("private boolean applyTapToMeter(");
+  const end=service.indexOf("public static boolean isRunning()",start);
+  const code=service.slice(start,end);
+  expect(code).toContain("focusTapX=oldX;focusTapY=oldY;manualFocus=wasManual;");
+  expect(code).toContain("boolean restored=restoreRepeatingControlsAfterRejection();");
+  expect(code).toContain("восстановление предыдущей конфигурации не подтверждено");
+  expect(code).not.toContain("catch(Exception ignored){}");
+ });
  it("does not use pre-fold tap locations on a new Camera2 preview surface",()=>{
   const a=service.indexOf("public static boolean tapToMeter(");
   const b=service.indexOf("private boolean applyTapToMeter(",a);

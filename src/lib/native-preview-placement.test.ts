@@ -35,6 +35,13 @@ describe("foldable native preview overlay boundaries",()=>{
   expect(nativePreviewPlacement(rectangle,screen,"0,0,9007199254740990,800")).toBeNull();
   expect(nativePreviewPlacement(rectangle,screen,"0,0,210,800;210,0,190,800")).not.toBeNull();
  });
+ it("rejects an old cover-screen pane larger than the current WebView even if integers are valid",()=>{
+  const rect={left:40,top:80,width:160,height:200};
+  expect(nativePreviewPlacement(rect,screen,"0,0,450,800")).toBeNull();
+  expect(nativePreviewPlacement(rect,screen,"0,0,400,820")).toBeNull();
+  expect(nativePreviewPlacement(rect,screen,"0,0,200,800;210,0,200,800")).toBeNull();
+  expect(nativePreviewPlacement(rect,screen,"0,0,200,800;210,0,190,800")).not.toBeNull();
+ });
  it("rejects malformed multi-pane region metadata rather than covering controls",()=>{
   expect(nativePreviewPlacement({left:10,top:10,width:160,height:200},screen,
     "invalid;geometry")).toBeNull();
