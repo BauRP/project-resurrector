@@ -223,6 +223,10 @@ describe("native Camera2 per-mode recorded evidence",()=>{
   expect(nativeRecordedModeEvidence({...base,cameraCallbackStallEpisodes:2},12345)?.state).toBe("unknown");
   expect(nativeRecordedModeEvidence({...base,cameraCallbackStallEpisodes:0},12345)?.state).toBe("recorded");
  });
+ it("never certifies an MP4 with reported Camera2 capture request failures",()=>{
+  expect(nativeRecordedModeEvidence({...base,cameraCaptureFailureEvents:1},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,cameraCaptureFailureEvents:0},12345)?.state).toBe("recorded");
+ });
  it("marks interrupted recording with truthful warning",()=>{
   const r=nativeRecordedModeEvidence({...base,state:"saved_interrupted"},12345);
   expect(r?.message).toContain("прерывание");
