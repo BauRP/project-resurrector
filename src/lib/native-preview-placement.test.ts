@@ -19,6 +19,16 @@ describe("foldable native preview overlay boundaries",()=>{
   expect(nativePreviewPlacement({left:100,top:100,width:200,height:200},screen,panes)).toBeNull();
   expect(nativePreviewPlacement({left:220,top:100,width:170,height:200},screen,panes)).not.toBeNull();
  });
+ it("keeps direct preview inside a single measured safe cover-display pane",()=>{
+  const pane="30,80,320,650";
+  expect(nativePreviewPlacement({left:40,top:110,width:280,height:300},screen,pane)).not.toBeNull();
+  expect(nativePreviewPlacement({left:0,top:110,width:280,height:300},screen,pane)).toBeNull();
+  expect(nativePreviewPlacement({left:40,top:40,width:280,height:300},screen,pane)).toBeNull();
+  expect(nativePreviewPlacement({left:40,top:500,width:280,height:300},screen,pane)).toBeNull();
+  for(const broken of ["garbage","0,0,0,800","0,0,Infinity,800",
+    "0,0,100,800;unknown","0,0,999999999999999999999,800"])
+    expect(nativePreviewPlacement({left:40,top:100,width:280,height:300},screen,broken)).toBeNull();
+ });
  it("rejects malformed multi-pane region metadata rather than covering controls",()=>{
   expect(nativePreviewPlacement({left:10,top:10,width:160,height:200},screen,
     "invalid;geometry")).toBeNull();

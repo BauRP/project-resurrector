@@ -12,7 +12,8 @@ export interface PreviewViewport {width:number;height:number}
 export function previewFitsFoldRegion(rect:PreviewRect, regionGeometry:string|undefined):boolean {
  if(!regionGeometry)return true;
  const regions=regionGeometry.split(";");
- if(regions.length<2)return true;
+ // One measured cover-display region can be smaller than the WebView.
+ // Never interpret that lone real pane as permission to use the full screen.
  if(regions.length>16 || !regions.every(r=>/^\d+,\d+,\d+,\d+$/.test(r)))
    return false;
  return regions.some(region=>{

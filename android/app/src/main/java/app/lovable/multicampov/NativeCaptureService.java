@@ -756,6 +756,23 @@ public class NativeCaptureService extends Service {
                 request.set(CaptureRequest.CONTROL_AE_REGIONS,new MeteringRectangle[]{region});
         }
     }
+    /** Best-effort rollback. Reverting Java fields alone would leave Camera2
+     * using a newer repeating request if it accepted a partial change.
+     * Queue the last selected settings again; final hardware confirmation
+     * still requires a CaptureResult and is not assumed here.
+     */
+    private boolean restoreRepeatingControlsAfterRejection() {
+        if(liveRequest==null||capture==null||camera==null||stopRequested)return false;
+        try {
+            liveRequest.set(CaptureRequest.CONTROL_AF_TRIGGER,
+                CaptureRequest.CONTROL_AF_TRIGGER_IDLE);
+            setRequestControls(liveRequest);
+            capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);
+            return true; // submitted to Camera2, not verified by CaptureResult
+        } catch(Exception ignored) {
+            return false;
+        }
+    }
     private boolean applyControls(float zoom,int evIndex) {
         if(liveRequest==null || capture==null || camera==null || stopRequested)return false;
         float previousZoom=requestedZoom;
@@ -768,8 +785,10 @@ public class NativeCaptureService extends Service {
             return true;
         } catch(Exception error) {
             requestedZoom=previousZoom;requestedExposure=previousEv;
-            try {setRequestControls(liveRequest);}catch(Exception ignored){}
-            publish(state,"Не удалось применить увеличение или экспозицию: "+error.getMessage());
+            boolean restored=restoreRepeatingControlsAfterRejection();
+            publish(state,"Не удалось применить увеличение или экспозицию: "+error.getMessage()+
+                (restored ? "; прежняя команда повторно принята Camera2" :
+                "; восстановление предыдущей конфигурации не подтверждено"));
             return false;
         }
     }
@@ -801,8 +820,10 @@ public class NativeCaptureService extends Service {
             return true;
         }catch(Exception error){
             torchEnabled=old;
-            try{setRequestControls(liveRequest);}catch(Exception ignored){}
-            publish(state,"Невозможно включить фонарик: "+error.getMessage());
+            boolean restored=restoreRepeatingControlsAfterRejection();
+            publish(state,"Невозможно включить фонарик: "+error.getMessage()+
+                (restored ? "; прежняя команда повторно принята Camera2" :
+                "; восстановление предыдущей конфигурации не подтверждено"));
             return false;
         }
     }
@@ -849,8 +870,10 @@ public class NativeCaptureService extends Service {
             return true;
         }catch(Exception error){
             manualFocus=previousMode;requestedFocusDiopters=previousDistance;
-            try{setRequestControls(liveRequest);}catch(Exception ignored){}
-            publish(state,"Не удалось установить фокус: "+error.getMessage());
+            boolean restored=restoreRepeatingControlsAfterRejection();
+            publish(state,"Не удалось установить фокус: "+error.getMessage()+
+                (restored ? "; прежняя команда повторно принята Camera2" :
+                "; восстановление предыдущей конфигурации не подтверждено"));
             return false;
         }
     }

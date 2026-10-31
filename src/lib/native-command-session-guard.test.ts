@@ -23,6 +23,23 @@ describe("Camera2 queued controls and fold preview lifecycle",()=>{
   expect(plugin).toContain("if(getActivity()!=host||host.isDestroyed()||host.isFinishing())");
   expect(plugin).not.toContain("getActivity().runOnUiThread(this::detachDirectView)");
  });
+ it("resubmits previous repeating request when Camera2 rejects zoom, torch or focus",()=>{
+  const start=service.indexOf("private boolean restoreRepeatingControlsAfterRejection()");
+  const restore=service.slice(start,service.indexOf("private boolean applyControls(",start));
+  expect(restore).toContain("setRequestControls(liveRequest);");
+  expect(restore).toContain("capture.setRepeatingRequest(liveRequest.build(),liveCallback,worker);");
+  expect(restore).toContain("return false;");
+  for(const oldSettings of [
+    "requestedZoom=previousZoom;requestedExposure=previousEv;",
+    "torchEnabled=old;",
+    "manualFocus=previousMode;requestedFocusDiopters=previousDistance;"
+  ]){
+    const i=service.indexOf(oldSettings);
+    expect(i).toBeGreaterThan(0);
+    expect(service.slice(i,i+170)).toContain("restoreRepeatingControlsAfterRejection()");
+  }
+  expect(service).toContain("восстановление предыдущей конфигурации не подтверждено");
+ });
  it("does not use pre-fold tap locations on a new Camera2 preview surface",()=>{
   const a=service.indexOf("public static boolean tapToMeter(");
   const b=service.indexOf("private boolean applyTapToMeter(",a);
