@@ -260,6 +260,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",0L)
                 .putString("mp4TimelineLimitReason","not_checked")
                 .putString("mp4AudioTimelineLimitReason","not_requested")
+                .putInt("sensorTimestampDiscontinuities",0)
+                .putInt("sensorTimestampRollbacks",0)
                 .putInt("cameraCaptureFailureEvents",0)
                 .putInt("foldNearbyCaptureFailureEvents",0)
                 .putInt("cameraCallbackStallEpisodes",0)
@@ -467,6 +469,8 @@ public class NativeCaptureService extends Service {
     // Sensor capture callbacks are NOT encoded MP4 samples. Monitor their
     // silence as independent evidence without stopping a valid recorder.
     private static final long CAMERA_CALLBACK_SILENCE_MS = 8000L;
+    private static int sensorTimestampDiscontinuities=0;
+    private static int sensorTimestampRollbacks=0;
     private static int cameraCaptureFailureEvents=0;
     private static int foldNearbyCaptureFailureEvents=0;
     private static int cameraCallbackStallEpisodes=0;
@@ -833,6 +837,12 @@ public class NativeCaptureService extends Service {
                     // Reset the FPS window rather than average across that gap.
                     if(lastSensorNs>0L &&
                         (sensorTime<=lastSensorNs || sensorTime-lastSensorNs>1000000000L)){
+                        if("recording".equals(state)){
+                            if(sensorTimestampDiscontinuities<Integer.MAX_VALUE)
+                                sensorTimestampDiscontinuities++;
+                            if(sensorTime<=lastSensorNs && sensorTimestampRollbacks<Integer.MAX_VALUE)
+                                sensorTimestampRollbacks++;
+                        }
                         sensorWindowFrames=0;sensorWindowFirstNs=0L;
                         recentSensorFps=-1f;
                     }
@@ -1093,6 +1103,8 @@ public class NativeCaptureService extends Service {
             out.put("mp4AudioTimelineMaxGapMs",runningInstance==null?previous.getLong("mp4AudioTimelineMaxGapMs",0L):mp4AudioTimelineMaxGapMs);
             out.put("mp4AvDriftMeasured",runningInstance==null?previous.getBoolean("mp4AvDriftMeasured",false):mp4AvDriftMeasured);
             out.put("mp4AvDriftMs",runningInstance==null?previous.getLong("mp4AvDriftMs",0L):mp4AvDriftMs);
+            out.put("sensorTimestampDiscontinuities",runningInstance==null?previous.getInt("sensorTimestampDiscontinuities",0):sensorTimestampDiscontinuities);
+            out.put("sensorTimestampRollbacks",runningInstance==null?previous.getInt("sensorTimestampRollbacks",0):sensorTimestampRollbacks);
             out.put("cameraCaptureFailureEvents",runningInstance==null
                 ?previous.getInt("cameraCaptureFailureEvents",0):cameraCaptureFailureEvents);
             out.put("foldNearbyCaptureFailureEvents",runningInstance==null
@@ -1231,6 +1243,8 @@ public class NativeCaptureService extends Service {
                 .putLong("mp4AudioTimelineMaxGapMs",mp4AudioTimelineMaxGapMs)
                 .putBoolean("mp4AvDriftMeasured",mp4AvDriftMeasured)
                 .putLong("mp4AvDriftMs",mp4AvDriftMs)
+                .putInt("sensorTimestampDiscontinuities",sensorTimestampDiscontinuities)
+                .putInt("sensorTimestampRollbacks",sensorTimestampRollbacks)
                 .putInt("cameraCaptureFailureEvents",cameraCaptureFailureEvents)
                 .putInt("foldNearbyCaptureFailureEvents",foldNearbyCaptureFailureEvents)
                 .putInt("cameraCallbackStallEpisodes",cameraCallbackStallEpisodes)
@@ -1412,6 +1426,7 @@ public class NativeCaptureService extends Service {
             mp4VideoTimestampRollbacks = 0; mp4VideoTimestampDuplicates = 0;
             mp4VideoSampleLimitReached = false; mp4SampledFps = -1f;
             mp4TimelineSampledFps=-1f;mp4LowFpsWindows=0;
+            sensorTimestampDiscontinuities=0;sensorTimestampRollbacks=0;
             cameraCaptureFailureEvents=0;foldNearbyCaptureFailureEvents=0;
             cameraCallbackStallEpisodes=0;maxCameraCallbackSilenceMs=0L;
             callbackWatchStartedElapsedMs=-1L;callbackStallEpisodeActive=false;
@@ -2686,7 +2701,7 @@ public class NativeCaptureService extends Service {
                 (mp4DurationMs<=0L ||
                  Math.abs(mp4DurationMs-finishedDurationMs)>
                     Math.max(1500L,finishedDurationMs/10L));
-            boolean incomplete = cameraCaptureFailureEvents>0 ||
+            boolean incomplete = sensorTimestampDiscontinuities>0 || cameraCaptureFailureEvents>0 ||
                 cameraCallbackStallEpisodes>0 ||
                 durationMismatch || audioTimelineIssue || timelineIssue || captureFailed || stopFailed || checkpointIssue ||
                 interruptedByCamera || audioNotConfirmed || videoMismatch ||
@@ -2701,6 +2716,8 @@ public class NativeCaptureService extends Service {
                 : captureFailed
                 ? "MP4 сохранён после ошибки Camera2/кодировщика: " + captureFailureReason +
                   "; непрерывность не подтверждена"
+                : sensorTimestampDiscontinuities>0
+                ? "MP4 сохранён, но Camera2 зарегистрировала разрывы или откаты времени сенсора; результат требует проверки"
                 : cameraCaptureFailureEvents>0
                 ? "MP4 сохранён, но Camera2 сообщила об ошибке получения отдельных кадров; непрерывность не подтверждена"
                 : cameraCallbackStallEpisodes>0
