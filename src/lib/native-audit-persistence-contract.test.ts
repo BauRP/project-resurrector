@@ -148,6 +148,11 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("if(session!=generation || encoder!=configuredRecorder ||");
   expect(service).toContain('fail(new IllegalStateException(');
  });
+ it("retains camera sensor callback stalls for fold diagnostics",()=>{
+  expect(service).toContain("cameraCallbackStallEpisodes++");
+  expect(service).toContain("maxCameraCallbackSilenceMs=Math.max(");
+  expect(store).toContain('"cameraCallbackStallEpisodes"');
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
