@@ -108,6 +108,11 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("recordingFoldCheckpointsOmitted++");
   expect(service).toContain("recordingPostureChanges++");
  });
+ it("reports uncheckable same-millisecond hinge geometry events instead of silently dropping them",()=>{
+  expect(service).toContain("else if(activeMs>=last && recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)");
+  expect(service).toContain("recordingFoldGeometryOnlyChanges++");
+  expect(service).toContain("recordingFoldCheckpointsOmitted++");
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
