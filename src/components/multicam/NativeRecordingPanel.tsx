@@ -123,9 +123,11 @@ export function NativeRecordingPanel(){
          lastPosition=lastVisible?placement:null;
          lastViewport=lastVisible?viewport:null;
          lastShownFoldEpoch=lastVisible?submittedFoldEpoch:-1;
+         if(live)setDirectNotice(lastVisible
+           ?"Поверхность подготовлена. Откройте видоискатель."
+           :"Прямой видоискатель временно скрыт из-за геометрии экрана; запись Camera2 не останавливается.");
        });
        if(!live)return;
-       setDirectNotice("Поверхность подготовлена. Откройте видоискатель.");
      }catch{
        if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
      }
