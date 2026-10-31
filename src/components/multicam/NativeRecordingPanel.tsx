@@ -420,6 +420,10 @@ export function NativeRecordingPanel(){
   catch(e){setError(String(e));}
  };
  const active=nativeRecorderOwnsCamera(status?.state??"");
+ // The direct TextureView is a pre-recording preview only. During capture
+ // or an unsafe fold transition, use genuine ImageReader frames when available.
+ const directSurfaceVisible=directEnabled&&status?.state==="previewing"&&
+   status.directPreviewActive===true;
  if(!isNative())return null;
  return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
@@ -429,11 +433,17 @@ export function NativeRecordingPanel(){
      ?"выбранная комбинация явно не поддерживается"
      :"поддержка не подтверждена; окончательная проверка при старте записи"}.</p>
    <div ref={directTarget} onClick={e=>void tapDirect(e)} className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
-    {directEnabled ? <p className="px-3 text-center text-white/80">Прямой Android-видоискатель. Если кадр не появился, выключите этот режим.</p> :
-     preview ? <img src={preview} alt="Текущее изображение с Camera2" className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} /> :
-      <p className="max-w-sm px-4 text-center text-sm text-white/80">{nativeRecorderOwnsCamera(status?.state??"") ?
-        "Камера записывает MP4. Предпросмотр ожидает кадр либо не поддерживается этим устройством." :
-        "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
+    {directSurfaceVisible
+      ? <p className="px-3 text-center text-white/80">Прямой Android-предпросмотр работает поверх этой области. Если кадр не появился, проверьте состояние Camera2.</p>
+      : preview
+      ? <img src={preview} alt={status?.state==="paused"?"Последний полученный кадр Camera2 (запись на паузе)":"Кадр с настоящей камеры Camera2"} className="h-full w-full object-contain" onClick={e=>void tapPreview(e)} style={{cursor:status?.tapAfSupported||status?.tapAeSupported?"crosshair":"default"}} />
+      : <p className="max-w-sm px-4 text-center text-sm text-white/80">{status?.state==="recording"
+        ? "MP4 записывается на Android. Реальный контрольный кадр пока недоступен; это не означает остановку записи."
+        : status?.state==="paused"
+        ? "Нативная запись на паузе. Новые кадры не записываются."
+        : nativeRecorderOwnsCamera(status?.state??"")
+        ? "Ожидается настоящий кадр Camera2. Если устройство не выдаёт ImageReader-кадры, контрольный предпросмотр недоступен."
+        : "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
     {["recording","paused"].includes(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
    </div>
    <label className="flex items-center gap-2"><input type="checkbox" checked={directEnabled}
