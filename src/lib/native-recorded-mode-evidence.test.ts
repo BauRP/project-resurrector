@@ -219,6 +219,10 @@ describe("native Camera2 per-mode recorded evidence",()=>{
     mp4TimelineSampledFps:30,mp4TimelineSamples:3000,mp4LowFpsWindows:0},12345)?.state)
     .toBe("recorded");
  });
+ it("does not certify MP4 if live Camera2 callbacks stalled",()=>{
+  expect(nativeRecordedModeEvidence({...base,cameraCallbackStallEpisodes:2},12345)?.state).toBe("unknown");
+  expect(nativeRecordedModeEvidence({...base,cameraCallbackStallEpisodes:0},12345)?.state).toBe("recorded");
+ });
  it("marks interrupted recording with truthful warning",()=>{
   const r=nativeRecordedModeEvidence({...base,state:"saved_interrupted"},12345);
   expect(r?.message).toContain("прерывание");
