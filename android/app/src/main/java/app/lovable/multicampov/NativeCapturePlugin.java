@@ -203,6 +203,10 @@ public class NativeCapturePlugin extends Plugin {
      if(directView==null){
        directOwner=owner;
        directView=new TextureView(getContext());
+       // Capture the exact native view, not only its owner ID. The same
+       // owner may receive a replacement TextureView after a fold. Late
+       // callbacks from its former view must not clear the new surface.
+       final TextureView createdView=directView;
        directView.setOpaque(true);
        // TextureView lives ABOVE the WebView; JS clicks below it never arrive.
        // Route touches from the real Android surface to the same Camera2
@@ -218,11 +222,13 @@ public class NativeCapturePlugin extends Plugin {
        });
        directView.setSurfaceTextureListener(new TextureView.SurfaceTextureListener(){
          @Override public void onSurfaceTextureAvailable(SurfaceTexture texture,int width,int height){
-           if(owner.equals(directOwner))NativeCaptureService.setDirectPreviewTexture(owner,texture);
+           if(owner.equals(directOwner) && directView==createdView)
+             NativeCaptureService.setDirectPreviewTexture(owner,texture);
          }
          @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){}
          @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
-           NativeCaptureService.setDirectPreviewTexture(owner,null);
+           if(owner.equals(directOwner) && directView==createdView)
+             NativeCaptureService.setDirectPreviewTexture(owner,null);
            // The OS may destroy a surface without a WindowManager posture
            // callback (display handoff, GPU loss, Activity resize). Only
            // invalidate this owner's actual TextureView and let the JS
@@ -230,8 +236,8 @@ public class NativeCapturePlugin extends Plugin {
            // Posting on an already-detached TextureView can silently drop
            // the Runnable. Use the Activity main Looper instead, and reject
            // callbacks belonging to an old/replaced same-owner view.
-           final TextureView lostView=directView;
-           if(owner.equals(directOwner) && lostView!=null)
+           final TextureView lostView=createdView;
+           if(owner.equals(directOwner) && directView==lostView)
              new Handler(Looper.getMainLooper()).post(()->{
                if(owner.equals(directOwner) && directView==lostView &&
                    !lostView.isAvailable())
