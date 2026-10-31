@@ -83,6 +83,12 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(capturePlugin).toContain('ack.put("reason","camera_not_previewing")');
    expect(capturePlugin).toContain('if(owner.equals(directOwner))detachDirectView()');
  });
+ it("finalizes each actual Camera2 MP4 at most once when UI, fold and service shutdown race",()=>{
+  expect(service).toContain("finalizationStarted.compareAndSet(false,true)");
+  expect(service).toContain("if(finalizationStarted.get())return START_NOT_STICKY;");
+  expect(service).toContain("if(finalizationStarted.get()) return START_NOT_STICKY;");
+  expect(service).toContain("private final AtomicBoolean finalizationStarted = new AtomicBoolean(false)");
+ });
  it("validates real video and requested audio sample in the final published MediaStore item",()=>{
   expect(service).toContain("published.setDataSource(context,dest,null)");
   expect(service).toContain('if(!video || (requireAudio && !audio))');
