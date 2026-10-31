@@ -20,9 +20,14 @@ export function candidateWebViewModes(
   capabilities: Pick<MediaTrackCapabilities,"width"|"height"|"frameRate"> | null | undefined,
   current?: Pick<MediaTrackSettings,"width"|"height"|"frameRate">,
 ): TestMode[] {
-  const validRange=(value: MediaSettingsRange | undefined) =>
-    value && Number.isFinite(value.min) && Number.isFinite(value.max) &&
-    value.min>0 && value.max>=value.min ? value : null;
+  // MediaTrackCapabilities ranges may omit min/max in the DOM typings.
+  // Convert to an explicit finite pair so both runtime and TS can prove it.
+  const validRange=(value: MediaSettingsRange | undefined):{min:number;max:number}|null => {
+    const min=value?.min,max=value?.max;
+    return typeof min==="number" && typeof max==="number" &&
+      Number.isFinite(min) && Number.isFinite(max) &&
+      min>0 && max>=min ? {min,max} : null;
+  };
   const width=validRange(capabilities?.width),height=validRange(capabilities?.height);
   const frameRate=validRange(capabilities?.frameRate);
   if(!width||!height||!frameRate)return [...TEST_MODES];
