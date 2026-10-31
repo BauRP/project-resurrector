@@ -76,7 +76,8 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  it("notifies only actual TextureView owner on OS surface loss during a fold",()=>{
   expect(capturePlugin).toContain("onSurfaceTextureDestroyed(SurfaceTexture texture)");
   expect(capturePlugin).toContain('invalidatePreviewForLayout("surface_destroyed")');
-  expect(capturePlugin).toContain("if(owner.equals(directOwner) && directView!=null)");
+  expect(capturePlugin).toContain("if(owner.equals(directOwner) && lostView!=null)");
+  expect(capturePlugin).toContain("directView==lostView");
  });
  it("keeps the native fold TextureView off REC and idle controls",()=>{
    expect(capturePlugin).toContain('if(!"previewing".equals(captureState)){');
