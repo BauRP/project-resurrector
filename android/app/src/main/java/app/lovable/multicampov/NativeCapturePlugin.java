@@ -177,8 +177,15 @@ public class NativeCapturePlugin extends Plugin {
      Rect requestedWindowRect=new Rect(px+originX,py+originY,
        px+originX+pw,py+originY+ph);
      if(DisplayTopologyPlugin.isUnsafeDirectPreviewWindowRect(requestedWindowRect)){
-       if(owner.equals(directOwner))detachDirectView();
-       call.reject("Direct preview crosses physical hinge or topology is pending");
+       // A cover/hinge transition is expected while the Activity is moving.
+       // Keep direct preview enabled, but never promise a visible overlay.
+       // A later real fold/resize event can retry this *without* reopening
+       // or stopping Camera2.
+       if(owner.equals(directOwner))invalidatePreviewForLayout("fold_hinge");
+       JSObject ack=new JSObject();
+       ack.put("visible",false);
+       ack.put("reason","topology_pending_or_hinge");
+       call.resolve(ack);
        return;
      }
      if(directView!=null&&!owner.equals(directOwner))detachDirectView();
