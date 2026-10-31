@@ -40,6 +40,13 @@ export function NativeRecordingPanel(){
      localStorage.setItem("multicam-native-last-fps-v1",String(fps));}catch{}
  },[resolution,fps]);
  const [status,setStatus]=useState<Status|null>(null);
+ // The direct overlay effect is intentionally mounted before native Camera2
+ // reaches previewing. A later Service state transition must retry it even
+ // when no fold, resize or scroll event occurs.
+ useEffect(()=>{
+   if(status?.state==="previewing")
+     window.dispatchEvent(new Event("multicam-native-preview-ready"));
+ },[status?.state]);
  const savedModeKey=useRef("");
  useEffect(()=>{
    if(!status||!["saved","saved_interrupted","interrupted","error"].includes(status.state))return;
@@ -167,11 +174,13 @@ export function NativeRecordingPanel(){
    window.addEventListener("resize",resized);
    window.addEventListener("scroll",scrolling,true);
    window.addEventListener("multicam-fold-topology",folding);
+   window.addEventListener("multicam-native-preview-ready",resized);
    document.addEventListener("visibilitychange",visibility);
    void sync();
    return ()=>{live=false;observer?.disconnect();if(invalidationHandle)void invalidationHandle.remove();window.removeEventListener("resize",resized);
      window.removeEventListener("scroll",scrolling,true);
      window.removeEventListener("multicam-fold-topology",folding);
+     window.removeEventListener("multicam-native-preview-ready",resized);
      document.removeEventListener("visibilitychange",visibility);
      // Always queue a final hide, even when the first show is pending.
      void enqueue(async()=>{
