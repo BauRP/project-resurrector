@@ -89,6 +89,12 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("if(finalizationStarted.get()) return START_NOT_STICKY;");
   expect(service).toContain("private final AtomicBoolean finalizationStarted = new AtomicBoolean(false)");
  });
+ it("routes detached TextureView destruction to UI looper and rejects stale surface callback",()=>{
+   expect(capturePlugin).toContain('new Handler(Looper.getMainLooper()).post(()->{');
+   expect(capturePlugin).toContain('directView==lostView');
+   expect(capturePlugin).toContain('invalidatePreviewForLayout("surface_destroyed")');
+   expect(capturePlugin).not.toContain('directView.post(()->{');
+ });
  it("validates real video and requested audio sample in the final published MediaStore item",()=>{
   expect(service).toContain("published.setDataSource(context,dest,null)");
   expect(service).toContain('if(!video || (requireAudio && !audio))');
