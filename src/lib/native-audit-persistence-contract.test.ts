@@ -200,6 +200,18 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(foldObserver).toContain("hinge.width()<0||hinge.height()<0");
   expect(foldObserver).toContain("nextHinges.add(new Rect(Integer.MIN_VALUE/4");
  });
+ it("rejects duplicate Java SharedPreferences editor declarations in Camera2 publish",()=>{
+  const start=service.indexOf("private void publish(String newState, String message)");
+  const end=service.indexOf("@Override public void onCreate()",start);
+  expect(start).toBeGreaterThan(-1);
+  expect(end).toBeGreaterThan(start);
+  const block=service.slice(start,end);
+  const declarations=block.match(/android\\.content\\.SharedPreferences\\.Editor stateEditor\\s*=/g)??[];
+  expect(declarations).toHaveLength(1);
+  expect(block).toContain("getSharedPreferences(STORE, MODE_PRIVATE).edit()");
+  expect(block).toContain("if(!stateEditor.commit())");
+  expect(block).toContain("stateEditor.apply()");
+ });
  it("durably commits critical Camera2 capture transitions across Activity/process interruption",()=>{
   expect(service).toContain("android.content.SharedPreferences.Editor stateEditor=");
   expect(service).toContain("if(!stateEditor.commit())");

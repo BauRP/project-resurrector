@@ -1243,7 +1243,6 @@ public class NativeCaptureService extends Service {
             state = newState;
             lastMessage = message;
             android.content.SharedPreferences.Editor stateEditor=
-                android.content.SharedPreferences.Editor stateEditor=
                 getSharedPreferences(STORE, MODE_PRIVATE).edit()
                 .putString("state", newState).putString("message", message)
                 .putString("path", savedPath).putString("uri", savedUri)
