@@ -78,6 +78,11 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(capturePlugin).toContain('invalidatePreviewForLayout("surface_destroyed")');
   expect(capturePlugin).toContain("if(owner.equals(directOwner) && directView!=null)");
  });
+ it("keeps the native fold TextureView off REC and idle controls",()=>{
+   expect(capturePlugin).toContain('if(!"previewing".equals(captureState)){');
+   expect(capturePlugin).toContain('ack.put("reason","camera_not_previewing")');
+   expect(capturePlugin).toContain('if(owner.equals(directOwner))detachDirectView()');
+ });
  it("validates real video and requested audio sample in the final published MediaStore item",()=>{
   expect(service).toContain("published.setDataSource(context,dest,null)");
   expect(service).toContain('if(!video || (requireAudio && !audio))');
