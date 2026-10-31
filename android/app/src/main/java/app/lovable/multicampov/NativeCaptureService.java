@@ -54,6 +54,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.security.MessageDigest;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * A real Camera2 recorder owned by an Android foreground Service, not WebView.
@@ -69,6 +70,9 @@ public class NativeCaptureService extends Service {
     public static final String ACTION_PAUSE = "app.lovable.multicampov.NATIVE_PAUSE";
     public static final String ACTION_RESUME = "app.lovable.multicampov.NATIVE_RESUME";
     private static boolean galleryRetryBusy = false;
+    // Stop can arrive from UI, notification, Camera2 failure and OS cleanup.
+    // They must never finalize the same MediaRecorder/MP4 more than once.
+    private final AtomicBoolean finalizationStarted = new AtomicBoolean(false);
     private static final String CHANNEL = "multicam_native_capture";
     private static final int NOTIFICATION = 2017;
     private static final String STORE = "native_capture_v1";
@@ -1307,12 +1311,16 @@ public class NativeCaptureService extends Service {
             return START_NOT_STICKY;
         }
         if (intent != null && ACTION_PREVIEW.equals(intent.getAction())) {
+            if(finalizationStarted.get()) return START_NOT_STICKY;
             startPreview(intent);
             return START_NOT_STICKY;
         }
         if (intent == null || !ACTION_START.equals(intent.getAction())) {
             stopSelf(); return START_NOT_STICKY;
         }
+        // Never race a new session with final MediaRecorder.stop(), MP4
+        // verification or an in-progress MediaStore publication.
+        if(finalizationStarted.get())return START_NOT_STICKY;
         final boolean handoff = "previewing".equals(state) && camera != null;
         if ((!handoff && camera != null) || encoder != null || "starting".equals(state) ||
             "recording".equals(state) || "paused".equals(state) ||
@@ -2377,6 +2385,7 @@ public class NativeCaptureService extends Service {
         finally { try {reader.release();}catch(Exception ignored) {} }
     }
     private void finish() {
+        if(!finalizationStarted.compareAndSet(false,true))return;
         if(worker!=null && storageMonitor!=null){
             worker.removeCallbacks(storageMonitor);
             storageMonitor=null;
