@@ -534,7 +534,7 @@ export function NativeRecordingPanel(){
      Последовательная проверка временных меток MP4: {status.mp4TimelineCompleted===true?"завершена":"не завершена"},
      причина ограничения: {status.mp4TimelineLimitReason??"неизвестна"};
      просмотрено {status.mp4TimelineSamples??0} видеосэмплов; подозрительных длинных интервалов {status.mp4TimelineLargeGaps??0},
-     окон с просадкой FPS {status.mp4LowFpsWindows??0}, откатов {status.mp4TimelineRollbacks??0}, повторов {status.mp4TimelineDuplicates??0}; самый длинный интервал {status.mp4TimelineMaxGapMs??0} мс.
+     пауз отклика Camera2 {status.cameraCallbackStallEpisodes??0}, максимум {status.maxCameraCallbackSilenceMs??0} мс; окон с просадкой FPS {status.mp4LowFpsWindows??0}, откатов {status.mp4TimelineRollbacks??0}, повторов {status.mp4TimelineDuplicates??0}; самый длинный интервал {status.mp4TimelineMaxGapMs??0} мс.
      {status.mp4TimelineCompleted && status.mp4TimelineSampledFps!==undefined && status.mp4TimelineSampledFps>0 ? ` Средний измеренный FPS всей видеодорожки: ${status.mp4TimelineSampledFps.toFixed(1)}.` : " Измеренный FPS всей видеодорожки неизвестен."}
      Это проверка временных меток, а не полноценное декодирование всего видео.
    </p>}
