@@ -17,7 +17,8 @@ describe("Camera2 preview during Android fold transitions",()=>{
  });
  it("rechecks current Android overlay dimensions inside the serialized operation",()=>{
   expect(panel).toContain("const measure=()=>nativePreviewSnapshot(");
-  expect(panel).toContain("const latest=document.hidden?null:measure();");
+  expect(panel).toContain("const latest=document.hidden||!(await safePreviewState())?null:measure();");
+  expect(panel).toContain('return current.state==="previewing"');
   expect(panel).toContain("viewportWidth:viewport.width,viewportHeight:viewport.height");
   expect(panel).toContain("lastViewport?.width===viewport.width");
   expect(panel).toContain("lastViewport?.height===viewport.height");
