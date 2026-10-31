@@ -6,8 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
-import { verifyMode, TEST_MODES } from "@/lib/mode-verification";
-import { prepareCameraTestQueue, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
+import { verifyMode, TEST_MODES, discoverWebViewModeCandidates, type TestMode } from "@/lib/mode-verification";
+import { prepareCameraTestQueue, prepareCameraTestQueueByDevice, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
@@ -20,6 +20,9 @@ export function CameraDiagnostics() {
   const [nativeCameras, setNativeCameras] = useState<NativeCameraProfile[]>([]);
   const [tests, setTests] = useState<ModeEvidence[]>(() => loadModeEvidence());
   const [testQueue, setTestQueue] = useState<CameraTestTask[]>(() => loadCameraTestQueue());
+  // Actual candidate plans are per WebView deviceId, never inherited by a
+  // front/tele lens from a different camera's hardware characteristics.
+  const [cameraModePlans,setCameraModePlans]=useState<Record<string,TestMode[]>>({});
   const [running, setRunning] = useState(false);
   const [progress, setProgress] = useState("");
   const [safetyNotice, setSafetyNotice] = useState("");
@@ -87,7 +90,9 @@ export function CameraDiagnostics() {
     };
   }, []);
   const queueIds = devices.map(d => d.deviceId);
-  const planned = prepareCameraTestQueue(queueIds, TEST_MODES, testQueue, tests);
+  const planned = prepareCameraTestQueueByDevice(
+    Object.fromEntries(queueIds.map(id=>[id,cameraModePlans[id]??TEST_MODES])),
+    testQueue,tests);
   const summary = queueSummary(planned, queueIds);
   const run = async (full: boolean) => {
     if (job.current || running || recording || dualBusy || rawBusy || stabilizationBusy || highSpeedState !== "idle" || !devices.length) return;
@@ -101,11 +106,29 @@ export function CameraDiagnostics() {
       if (mounted.current) setTestQueue(queue);
     };
     persist(queue);
-    const candidates = queue.filter(task => queueIds.includes(task.cameraId) &&
-      (full || TEST_MODES.slice(0, 2).some(mode => mode.width === task.mode.width && mode.height === task.mode.height && mode.fps === task.mode.fps)) &&
-      (["pending","retry","deferred"].includes(task.status) || (full && ["error","recorded"].includes(task.status))));
-    const eligible = full ? candidates : selectQuickCameraTasks(candidates, 2, queue);
     try {
+      if(full){
+        const perCamera:Record<string,TestMode[]>={};
+        // Full discovery is explicit user action and sequential: never take
+        // over a recording camera or probe a Cartesian product blindly.
+        for(const id of queueIds){
+          if(current.signal.aborted||document.hidden||recording)return;
+          const safe=await checkDiagnosticSafety(true);
+          if(!safe.proceed){setSafetyNotice("Диагностика отложена: "+safe.reason);return;}
+          setProgress("Читаю допустимые кандидаты объектива: "+
+            (devices.find(d=>d.deviceId===id)?.label||"Камера"));
+          const found=await discoverWebViewModeCandidates(id,current.signal);
+          if(current.signal.aborted)return;
+          perCamera[id]=found.modes;
+        }
+        if(mounted.current)setCameraModePlans(perCamera);
+        persist(prepareCameraTestQueueByDevice(perCamera,loadCameraTestQueue(),loadModeEvidence()));
+      }
+      const candidates = queue.filter(task => queueIds.includes(task.cameraId) &&
+        (full || TEST_MODES.slice(0,2).some(mode=>
+          mode.width===task.mode.width&&mode.height===task.mode.height&&mode.fps===task.mode.fps)) &&
+        (["pending","retry","deferred"].includes(task.status) || (full && ["error","recorded"].includes(task.status))));
+      const eligible = full ? candidates : selectQuickCameraTasks(candidates,2,queue);
       let count = 0;
       for (const task of eligible) {
         if (current.signal.aborted) return;

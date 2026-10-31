@@ -12,6 +12,78 @@ export const TEST_MODES: readonly TestMode[] = [
   { width: 3840, height: 2160, fps: 30 },
   { width: 3840, height: 2160, fps: 60 },
 ];
+/** A plan derived from an ACTUAL WebView track is only a bounded list of
+ * candidate combinations, never proof that any combination records.
+ * The generic seeds are retained for WebViews that hide getCapabilities().
+ */
+export function candidateWebViewModes(
+  capabilities: Pick<MediaTrackCapabilities,"width"|"height"|"frameRate"> | null | undefined,
+  current?: Pick<MediaTrackSettings,"width"|"height"|"frameRate">,
+): TestMode[] {
+  const validRange=(value: MediaSettingsRange | undefined) =>
+    value && Number.isFinite(value.min) && Number.isFinite(value.max) &&
+    value.min>0 && value.max>=value.min ? value : null;
+  const width=validRange(capabilities?.width),height=validRange(capabilities?.height);
+  const frameRate=validRange(capabilities?.frameRate);
+  if(!width||!height||!frameRate)return [...TEST_MODES];
+  // These conventional sizes are candidates ONLY if they fit real per-track
+  // ranges. An OEM can still reject any size/FPS combination at recording time.
+  const sizes: [number,number][]=[
+    [1920,1080],[1280,720],[640,480],[3840,2160],[2560,1440],
+    [1920,1440],[1440,1080],[720,480],[320,240],
+  ];
+  if(Number.isSafeInteger(current?.width) && Number.isSafeInteger(current?.height) &&
+      current!.width!>0 && current!.height!>0)
+    sizes.unshift([current!.width!,current!.height!]);
+  const fpsCandidates=[30,24,25,60,50,120];
+  if(typeof current?.frameRate==="number" && Number.isFinite(current.frameRate) &&
+      current.frameRate>0 && !fpsCandidates.some(f=>Math.abs(f-current.frameRate!)<0.5))
+    fpsCandidates.unshift(Math.round(current.frameRate));
+  const result:TestMode[]=[], seen=new Set<string>();
+  for(const [w,h] of sizes){
+    if(w<width.min||w>width.max||h<height.min||h>height.max)continue;
+    for(const fps of fpsCandidates){
+      if(fps<frameRate.min||fps>frameRate.max)continue;
+      const key=w+"|"+h+"|"+fps;
+      if(seen.has(key))continue;
+      seen.add(key);result.push({width:w,height:h,fps});
+      if(result.length>=24)return result;
+    }
+  }
+  return result.length ? result : [...TEST_MODES];
+}
+
+/** Inspect the specific WebView deviceId without evicting active recording.
+ * Capture is released even on abort/time-out, and a hidden device identity
+ * never earns a supported-mode claim. The returned list is a test PLAN only.
+ */
+export async function discoverWebViewModeCandidates(
+  deviceId:string, signal:AbortSignal,
+):Promise<{modes:TestMode[];source:"track"|"fallback";message:string}>{
+  if(!deviceId || signal.aborted)return {modes:[],source:"fallback",message:"Проверка отменена"};
+  const owner=Symbol("camera-candidate-discovery");
+  try{
+    const stream=await cameraController.acquire(owner,{
+      video:{deviceId:{exact:deviceId}},audio:false,
+    },{preempt:false});
+    if(signal.aborted)return {modes:[],source:"fallback",message:"Проверка отменена"};
+    const track=stream.getVideoTracks()[0];
+    if(!track || track.readyState!=="live" || track.getSettings().deviceId!==deviceId)
+      return {modes:[...TEST_MODES],source:"fallback",
+        message:"Идентификатор WebView не подтверждён; только кандидаты"};
+    const caps=track.getCapabilities?.();
+    const recognized=!!caps?.width && !!caps?.height && !!caps?.frameRate;
+    return {modes:candidateWebViewModes(caps,track.getSettings()),
+      source:recognized?"track":"fallback",
+      message:recognized?"Кандидаты из getCapabilities(), ожидают проверки записи":
+        "WebView не раскрыл диапазоны; режимы пока не подтверждены"};
+  }catch(error){
+    if(signal.aborted)return {modes:[],source:"fallback",message:"Проверка отменена"};
+    return {modes:[...TEST_MODES],source:"fallback",
+      message:"Получить диапазоны объектива не удалось: "+String(error)};
+  }finally{cameraController.release(owner);}
+}
+
 // Diagnostics request video only: do not require an Opus audio encoder.
 const MIMES = ["video/webm;codecs=vp8","video/webm;codecs=vp9","video/webm","video/mp4;codecs=avc1"];
 

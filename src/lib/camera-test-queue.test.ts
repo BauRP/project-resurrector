@@ -1,10 +1,21 @@
 import { describe, it, expect } from "vitest";
-import { cameraTaskKey, prepareCameraTestQueue, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
+import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
 import type { ModeEvidence } from "./camera-passport";
 
 const base = { width:1920, height:1080, fps:30 };
 const proof: ModeEvidence = { api:"webview",cameraId:"rear",requested:base,checkedAt:12,state:"verified" };
 describe("per-lens resumable diagnostic queue", () => {
+  it("keeps per-camera candidate lists isolated and retains only current modes",()=>{
+    const tele={width:3840,height:2160,fps:30};
+    const front={width:640,height:480,fps:24};
+    const plans={rear:[base,tele],front:[front]};
+    const prior=prepareCameraTestQueue(["rear","front"],[base],[],[]);
+    const next=prepareCameraTestQueueByDevice(plans,prior,[]);
+    expect(next.map(t=>t.key)).toEqual([
+      cameraTaskKey("rear",base),cameraTaskKey("rear",tele),cameraTaskKey("front",front),
+    ]);
+    expect(next.filter(t=>t.cameraId==="front"&&t.mode.width===3840)).toHaveLength(0);
+  });
   it("only marks the exact tested camera, size and frame rate verified", () => {
     const tasks = prepareCameraTestQueue(["rear","front"],[base,{ ...base, fps:60 }],[],[proof]);
     expect(tasks).toHaveLength(4);

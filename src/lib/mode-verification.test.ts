@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { classifyModeFailure, decodedOutputMatchesRequested, decodedVideoModeEvidence, isVerifiedCameraIdentity, recordSample } from "./mode-verification";
+import { candidateWebViewModes, classifyModeFailure, decodedOutputMatchesRequested, decodedVideoModeEvidence, discoverWebViewModeCandidates, isVerifiedCameraIdentity, recordSample } from "./mode-verification";
 import { CameraBusyError, CameraSupersededError } from "./camera-controller";
 describe("truthful mode diagnostics",()=>{
   it("marks explicit constraint incompatibility as rejected",()=>{
@@ -111,4 +111,32 @@ describe("separate actual coded FPS from stream and first-frame proof", () => {
     expect(evidence.state).toBe("rejected");
     expect(evidence.message).toContain("отличается");
   });
+});
+
+describe("per-WebView-lens mode discovery without false verification",()=>{
+ const ranges={width:{min:320,max:1920},height:{min:240,max:1080},frameRate:{min:15,max:30}};
+ it("filters each camera's test candidates by its actually reported numeric ranges",()=>{
+  const modes=candidateWebViewModes(ranges);
+  expect(modes.length).toBeGreaterThan(2);
+  expect(modes.every(m=>m.width<=1920&&m.height<=1080&&m.fps<=30)).toBe(true);
+  expect(modes.some(m=>m.width===1920&&m.fps===30)).toBe(true);
+  expect(modes.some(m=>m.width===3840||m.fps===60)).toBe(false);
+ });
+ it("includes a valid actually opened mode and refuses malformed caps without claiming success",()=>{
+  const modes=candidateWebViewModes(ranges,{width:1024,height:768,frameRate:29});
+  expect(modes.some(m=>m.width===1024&&m.height===768)).toBe(true);
+  expect(candidateWebViewModes({width:{min:-1,max:Infinity},height:ranges.height,frameRate:ranges.frameRate}))
+    .toHaveLength(6);
+ });
+ it("bounds the generated modes even for huge capability ranges",()=>{
+  const modes=candidateWebViewModes({width:{min:1,max:8000},height:{min:1,max:8000},frameRate:{min:1,max:240}});
+  expect(modes.length).toBeLessThanOrEqual(24);
+  expect(new Set(modes.map(m=>[m.width,m.height,m.fps].join("|"))).size).toBe(modes.length);
+ });
+ it("never opens a camera when discovery was cancelled",async()=>{
+  const cancel=new AbortController();cancel.abort();
+  const result=await discoverWebViewModeCandidates("rear",cancel.signal);
+  expect(result.modes).toEqual([]);
+  expect(result.source).toBe("fallback");
+ });
 });

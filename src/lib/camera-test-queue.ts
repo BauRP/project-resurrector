@@ -91,6 +91,26 @@ export function prepareCameraTestQueue(
   }
   return [...tasks.values()].slice(-500);
 }
+/** Each WebView device gets its OWN candidate plan. Unioning all ranges
+ * would wrongly assign the telephoto's FPS combinations to the selfie lens.
+ * Previous evidence survives while the queue contains only current candidates.
+ */
+export function prepareCameraTestQueueByDevice(
+  plans: Readonly<Record<string,readonly TestMode[]>>,
+  previous:readonly CameraTestTask[],
+  evidence:readonly ModeEvidence[],
+):CameraTestTask[]{
+  const all:CameraTestTask[]=[];
+  for(const [deviceId,modes] of Object.entries(plans)){
+    if(!deviceId || !Array.isArray(modes))continue;
+    const keys=new Set(modes.map(mode=>cameraTaskKey(deviceId,mode)));
+    for(const task of prepareCameraTestQueue([deviceId],modes,previous,evidence)){
+      if(keys.has(task.key))all.push(task);
+      if(all.length>=500)return all;
+    }
+  }
+  return all;
+}
 /** Quick scan tests at most one pending mode per lens per invocation.
  * Spreads bounded recording effort over distinct cameras. Remaining tasks
  * stay queued for a future quick pass or user-approved full verification.
