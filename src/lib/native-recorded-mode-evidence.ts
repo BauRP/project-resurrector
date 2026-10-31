@@ -97,13 +97,15 @@ export function nativeRecordedModeEvidence(
      !Number.isSafeInteger(status.mp4AvTailOffsetMs) || Math.abs(status.mp4AvTailOffsetMs!)>1000);
   const timelineValues=[status.mp4TimelineSamples,status.mp4TimelineRollbacks,status.mp4TimelineDuplicates,status.mp4TimelineLargeGaps,status.mp4TimelineMaxGapMs];
   const timelineInvalid=timelineValues.some(v=>v!==undefined&&(!Number.isSafeInteger(v)||v<0));
+  const sensorDiscontinuities=status.sensorTimestampDiscontinuities??0;
+  const sensorDiscontinuitiesUnknown=!Number.isSafeInteger(sensorDiscontinuities)||sensorDiscontinuities<0||sensorDiscontinuities>0;
   const captureFailures=status.cameraCaptureFailureEvents??0;
   const captureFailuresUnknown=!Number.isSafeInteger(captureFailures)||captureFailures<0||captureFailures>0;
   const callbackStalls=status.cameraCallbackStallEpisodes??0;
   const callbackStallsUnknown=!Number.isSafeInteger(callbackStalls)||callbackStalls<0||callbackStalls>0;
   const lowFpsWindows=status.mp4LowFpsWindows??0;
   const timelineUncertain=status.mp4TimelineCompleted===false || timelineInvalid ||
-    captureFailuresUnknown || callbackStallsUnknown || !Number.isSafeInteger(lowFpsWindows)||lowFpsWindows<0||lowFpsWindows>0 ||
+    sensorDiscontinuitiesUnknown || captureFailuresUnknown || callbackStallsUnknown || !Number.isSafeInteger(lowFpsWindows)||lowFpsWindows<0||lowFpsWindows>0 ||
     (status.mp4TimelineCompleted===true &&
       (!(status.mp4TimelineSamples!==undefined&&status.mp4TimelineSamples>=2) ||
        (status.mp4TimelineRollbacks??0)>0 || (status.mp4TimelineDuplicates??0)>0 ||
