@@ -54,7 +54,7 @@ export function NativeRecordingPanel(){
    if(!evidence)return;
    // Polling must not repeatedly overwrite the same camera passport entry.
    // Include recording start and saved size so a subsequent new MP4 is fresh.
-   const key=[status.cameraId,status.startedAt,status.savedBytes,status.state].join("|");
+   const key=[status.captureId,status.cameraId,status.startedAt,status.savedBytes,status.state].join("|");
    if(savedModeKey.current===key)return;
    savedModeKey.current=key;
    recordModeEvidence(evidence);
@@ -89,6 +89,8 @@ export function NativeRecordingPanel(){
    let lastVisible=false;
    let foldEpoch=0,lastShownFoldEpoch=-1;
    let recoveringEpoch=-1;
+   // Skip repeated failed shows during the same fold, keeping user preference.
+   let failedFoldEpoch=-1;
    let invalidationHandle:{remove:()=>Promise<void>}|null=null;
    let foldSignature=foldPreviewTopologySignature(getActiveFoldBaseline());
    // Keep errors visible to callers without poisoning later cleanup.
@@ -116,6 +118,7 @@ export function NativeRecordingPanel(){
      if(!live)return;
      // Do not use a cached WindowManager/CSS viewport after a fold.
      if(document.hidden||!measure()){await hide();return;}
+     if(failedFoldEpoch===foldEpoch)return;
      try {
        await enqueue(async()=>{
          if(!live)return;
@@ -146,7 +149,12 @@ export function NativeRecordingPanel(){
        });
        if(!live)return;
      }catch{
-       if(live){setDirectNotice("Прямой вывод недоступен; используйте JPEG.");setDirectEnabled(false);}
+       if(live){
+         // An Activity switch is temporary, not proof of unsupported hardware.
+         failedFoldEpoch=foldEpoch;
+         lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
+         setDirectNotice("Прямой вывод временно недоступен. JPEG работает; повторим после изменения экрана.");
+       }
      }
    };
    const sync=async()=>{
@@ -167,13 +175,14 @@ export function NativeRecordingPanel(){
      lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
      if(recoveringEpoch===foldEpoch)return;
      recoveringEpoch=foldEpoch;
+     failedFoldEpoch=-1;
      void sync();
    }).then(handle=>{if(live)invalidationHandle=handle;else void handle.remove();})
      .catch(()=>undefined);
    const observer=typeof ResizeObserver!=="undefined"?new ResizeObserver(()=>void sync()):null;
    if(directTarget.current)observer?.observe(directTarget.current);
-   const resized=()=>{foldEpoch++;recoveringEpoch=-1;void sync();};
-   const visibility=()=>void sync();
+   const resized=()=>{foldEpoch++;recoveringEpoch=-1;failedFoldEpoch=-1;void sync();};
+   const visibility=()=>{if(!document.hidden){foldEpoch++;failedFoldEpoch=-1;}void sync();};
    const scrolling=()=>void sync();
    // Native Android can detach the TextureView when a hinge moves while the
    // CSS rectangle appears unchanged. Invalidate our lastVisible cache so
@@ -183,7 +192,7 @@ export function NativeRecordingPanel(){
    // not detach and recreate a perfectly safe Android TextureView.
    const folding=()=>{
      const next=foldPreviewTopologySignature(getActiveFoldBaseline());
-     if(next!==foldSignature){foldSignature=next;foldEpoch++;recoveringEpoch=-1;}
+     if(next!==foldSignature){foldSignature=next;foldEpoch++;recoveringEpoch=-1;failedFoldEpoch=-1;}
      void sync();
    };
    window.addEventListener("resize",resized);

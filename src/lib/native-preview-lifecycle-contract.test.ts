@@ -29,6 +29,16 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(panel).toContain('window.addEventListener("multicam-native-preview-ready",resized)');
   expect(panel).toContain('window.removeEventListener("multicam-native-preview-ready",resized)');
  });
+ it("retains direct-preview preference after an expected transient Activity fold failure",()=>{
+  const sync=panel.slice(panel.indexOf("const syncOnce=async()=>"),panel.indexOf("const sync=async()=>"));
+  expect(sync).toContain("failedFoldEpoch=foldEpoch");
+  expect(sync).not.toContain("setDirectEnabled(false)");
+  expect(panel).toContain("failedFoldEpoch=-1");
+  expect(panel).toContain('setDirectNotice("Прямой вывод временно недоступен.');
+ });
+ it("uses native capture identity to deduplicate per-mode evidence",()=>{
+  expect(panel).toContain('const key=[status.captureId,status.cameraId,status.startedAt,status.savedBytes,status.state].join');
+ });
  it("retains the user's direct-preview preference when starting actual recording",()=>{
   const start=panel.slice(panel.indexOf("const start=async()=>"),panel.indexOf("const stop=async()=>"));
   expect(start).toContain("bridge.setDirectPreview({ownerId:directLease.current,visible:false})");

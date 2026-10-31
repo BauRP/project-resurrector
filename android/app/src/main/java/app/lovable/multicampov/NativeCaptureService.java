@@ -578,6 +578,8 @@ public class NativeCaptureService extends Service {
     private boolean stopRequested;
     private boolean wantAudio;
     private boolean interruptedByCamera;
+    // Preview-only Camera2 sessions cannot become MP4 capture attempts.
+    private boolean recordingAttemptStarted;
     private volatile int generation = 0;
     private Runnable openingTimeout;
     private Runnable storageMonitor;
@@ -1509,6 +1511,7 @@ public class NativeCaptureService extends Service {
         if ((!handoff && camera != null) || encoder != null || "starting".equals(state) ||
             "recording".equals(state) || "paused".equals(state) ||
             "stopping".equals(state)) return START_NOT_STICKY;
+        recordingAttemptStarted=true;
         wantAudio = intent.getBooleanExtra("audio", false);
         int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
         if (wantAudio) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
@@ -1610,6 +1613,9 @@ public class NativeCaptureService extends Service {
             publish("error","Android запретил предпросмотр: "+error.getMessage());stopSelf();return;
         }
         stopRequested=false;
+        recordingAttemptStarted=false;
+        // A preview-only error must not be mistaken for last MP4's mode.
+        selectedWidth=0;selectedHeight=0;selectedFps=0;
         int token=++generation;
         selectedCameraId=id;
         publish("starting","Открываю нативный предпросмотр");
@@ -2631,6 +2637,18 @@ public class NativeCaptureService extends Service {
             worker.removeCallbacks(storageMonitor);
             storageMonitor=null;
         }
+        if (!recordingAttemptStarted && encoder == null) {
+            // Even if Camera2 opened, preview has no recorder to finalize.
+            // Preserve a real error, but never overwrite an earlier MP4 audit.
+            generation++;
+            if(openingTimeout!=null){worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+            releaseCamera();
+            if(!"error".equals(state))
+                publish("idle","Предпросмотр остановлен, MP4 не создавался");
+            stopForeground(true);
+            stopSelf();
+            return;
+        }
         if ("previewing".equals(state) && encoder == null) {
             generation++;
             if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
@@ -2649,7 +2667,7 @@ public class NativeCaptureService extends Service {
             // A camera/encoder failure before MediaRecorder.start() is still
             // a failed capture ATTEMPT, even when no file can be recovered.
             // Otherwise the session vanishes from the durable history.
-            if ("error".equals(state))
+            if ("error".equals(state) && recordingAttemptStarted)
                 NativeCaptureAuditStore.append(this,status(this));
             stopForeground(true);
             stopSelf();
