@@ -212,6 +212,16 @@ public class NativeCapturePlugin extends Plugin {
          @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){}
          @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
            NativeCaptureService.setDirectPreviewTexture(owner,null);
+           // The OS may destroy a surface without a WindowManager posture
+           // callback (display handoff, GPU loss, Activity resize). Only
+           // invalidate this owner's actual TextureView and let the JS
+           // bounded recovery decide whether a safe pane remains available.
+           if(owner.equals(directOwner) && directView!=null)
+             directView.post(()->{
+               if(owner.equals(directOwner) && directView!=null &&
+                   !directView.isAvailable())
+                 invalidatePreviewForLayout("surface_destroyed");
+             });
            return true;
          }
          @Override public void onSurfaceTextureUpdated(SurfaceTexture texture){}
