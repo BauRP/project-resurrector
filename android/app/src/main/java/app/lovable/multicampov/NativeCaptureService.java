@@ -52,6 +52,7 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.security.MessageDigest;
 import java.util.Arrays;
 
 /**
@@ -2635,6 +2636,11 @@ public class NativeCaptureService extends Service {
             dest = context.getContentResolver().insert(
                 MediaStore.Video.Media.EXTERNAL_CONTENT_URI, values);
             if (dest == null) return null;
+            // SHA-256 is calculated while copying, then checked against the
+            // actual MediaStore readback. Bounded 64 KiB RAM, no server.
+            // Runs off the UI thread; a CRC or file-size match alone would
+            // miss a same-length damaged Gallery copy.
+            MessageDigest originalHash=MessageDigest.getInstance("SHA-256");
             try (FileInputStream input = new FileInputStream(source);
                  OutputStream output = context.getContentResolver().openOutputStream(dest)) {
                 if (output == null) throw new IllegalStateException("MediaStore write failed");
@@ -2642,6 +2648,7 @@ public class NativeCaptureService extends Service {
                 int size;
                 long copied = 0L;
                 while ((size = input.read(buf)) != -1) {
+                    originalHash.update(buf,0,size);
                     output.write(buf,0,size);
                     copied += size;
                 }
@@ -2661,10 +2668,24 @@ public class NativeCaptureService extends Service {
             // pending state was finalized; a broken provider must not be
             // reported as a published Gallery clip. The original private
             // MP4 stays untouched and can be recovered by the app.
+            MessageDigest publishedHash=MessageDigest.getInstance("SHA-256");
+            long verifiedBytes=0L;
             try (InputStream saved = context.getContentResolver().openInputStream(dest)) {
-                if (saved == null || saved.read() < 0)
+                if (saved == null)
                     throw new IllegalStateException("MediaStore: итоговый файл недоступен");
+                byte[] verifyBuffer=new byte[65536];
+                int verifyCount;
+                while ((verifyCount=saved.read(verifyBuffer))!=-1){
+                    if(verifyCount==0)continue;
+                    verifiedBytes+=verifyCount;
+                    if(verifiedBytes>source.length())
+                        throw new IllegalStateException("MediaStore: неожиданный размер файла");
+                    publishedHash.update(verifyBuffer,0,verifyCount);
+                }
             }
+            if(verifiedBytes!=source.length() ||
+                !MessageDigest.isEqual(originalHash.digest(),publishedHash.digest()))
+                throw new IllegalStateException("MediaStore: байты MP4 отличаются от оригинала");
             // The reopened Gallery item must be a parseable MP4 with a
             // readable VIDEO sample, not just an arbitrary nonempty blob.
             // Audio, when requested, must also survive MediaStore copying.
