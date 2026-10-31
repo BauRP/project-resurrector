@@ -225,7 +225,10 @@ public class NativeCapturePlugin extends Plugin {
            if(owner.equals(directOwner) && directView==createdView)
              NativeCaptureService.setDirectPreviewTexture(owner,texture);
          }
-         @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){}
+         @Override public void onSurfaceTextureSizeChanged(SurfaceTexture texture,int width,int height){
+           if(width>0&&height>0&&owner.equals(directOwner)&&directView==createdView)
+             NativeCaptureService.onDirectPreviewTextureResized(owner,texture);
+         }
          @Override public boolean onSurfaceTextureDestroyed(SurfaceTexture texture){
            if(owner.equals(directOwner) && directView==createdView)
              NativeCaptureService.setDirectPreviewTexture(owner,null);
