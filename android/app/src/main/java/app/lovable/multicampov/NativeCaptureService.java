@@ -806,7 +806,8 @@ public class NativeCaptureService extends Service {
                 CaptureRequest request,TotalCaptureResult result){
                 // Discard late Camera2 data from an already finalized capture
                 // session; never attribute it to a new camera/passport.
-                if(callbackGeneration!=generation || finalizationStarted.get())return;
+                if(callbackGeneration!=generation || finalizationStarted.get() ||
+                    session!=capture)return;
                 Float focus=result.get(CaptureResult.LENS_FOCUS_DISTANCE);
                 Integer af=result.get(CaptureResult.CONTROL_AF_STATE);
                 if(focus!=null)reportedFocusDiopters=focus;
@@ -877,7 +878,7 @@ public class NativeCaptureService extends Service {
             @Override public void onCaptureFailed(CameraCaptureSession session,
                 CaptureRequest request,CaptureFailure failure){
                 if(callbackGeneration!=generation || finalizationStarted.get() ||
-                    !"recording".equals(state))return;
+                    session!=capture || !"recording".equals(state))return;
                 // Native Camera2 reported a failed sensor request. Distinguish
                 // this from mere JPEG lag; do not abort a potentially salvageable
                 // MediaRecorder session solely on a callback.
