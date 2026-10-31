@@ -35,6 +35,12 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(start).not.toContain("setDirectEnabled(false)");
   expect(panel).toContain('localStorage.setItem("multicam-native-direct-preview-v1"');
  });
+ it("uses actual Camera2 frames during native recording even if direct preview was selected",()=>{
+  expect(panel).toContain('const directSurfaceVisible=directEnabled&&status?.state==="previewing"');
+  expect(panel).toContain("status.directPreviewActive===true");
+  expect(panel).toContain(': preview');
+  expect(panel).toContain("MP4 записывается на Android. Реальный контрольный кадр пока недоступен");
+ });
  it("video survives denied microphone permission with an explicit silent capture choice",()=>{
   expect(panel).toContain('if(result["camera"]!=="granted")');
   expect(panel).toContain('if(audio&&!recordAudio)');
