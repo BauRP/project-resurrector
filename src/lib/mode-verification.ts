@@ -27,10 +27,12 @@ export function decodedOutputMatchesRequested(
  */
 export function decodedVideoModeEvidence(
   mode: TestMode, frame: { width: number; height: number }, bytes: number,
-): { state: "recorded"; message: string } {
+): { state: "recorded" | "rejected"; message: string } {
   const exact = decodedOutputMatchesRequested(mode, frame);
   return {
-    state: "recorded",
+    // An encoded file with the WRONG dimensions is not a successful
+    // recording of the selected mode. Retest/offer the actual size instead.
+    state: exact ? "recorded" : "rejected",
     message: exact
       ? "Видеофайл и размер первого кадра подтверждены (" + bytes + " байт, " +
         frame.width + "×" + frame.height +
@@ -160,8 +162,11 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
       result.state = "applied";
       const blob = await recordSample(stream, signal);
       if (blob.size < 1024) throw new Error("Видео пустое");
-      result.state = "recorded";
+      // Keep APPLIED until the saved video has passed an independent decode.
+      // If the decoder fails, never persist a phantom RECORDED mode or let
+      // the diagnostic queue skip its future retry.
       const frame = await verifyDecodedVideoBlob(blob, signal, 5000);
+      if (signal.aborted) throw new Error("Проверка отменена");
       if (!frame.verifiedFirstFrame) throw new Error("Первый кадр не декодирован");
       result.file = { width: frame.width, height: frame.height, bytes: blob.size, mimeType: blob.type };
       // Real recorded codec FPS is not known from track.getSettings() or
@@ -173,17 +178,15 @@ export async function verifyMode(deviceId: string, mode: TestMode, signal: Abort
   } catch (e) {
     const reason = signal.aborted ? "Проверка отменена" :
       e instanceof Error ? e.message : String(e);
-    // Preserve independently observed evidence even if a later encoder or
-    // decoder step failed. An incomplete recording is not a verified FPS.
+    // A failed encoder or first-frame decoder leaves only APPLIED evidence.
+    // No successful RECORDED result was reached before decoding.
     const reached = result.state;
     result.state = signal.aborted ? "unknown" :
       reached === "recorded" || reached === "applied" ? reached :
       classifyModeFailure(e, false);
-    result.message = reached === "recorded" && !signal.aborted
-      ? "Видеофайл получен, но не прошёл проверку декодирования: " + reason
-      : reached === "applied" && !signal.aborted
-        ? "Видеопоток настроен, но пробная запись не подтверждена: " + reason
-        : reason;
+    result.message = reached === "applied" && !signal.aborted
+      ? "Видеопоток настроен, но пробная запись или декодирование не подтверждены: " + reason
+      : reason;
   } finally { cameraController.release(owner); }
   // Transient contention must not overwrite earlier confirmed hardware evidence.
   if (!signal.aborted && result.state !== "unknown") recordModeEvidence(result);

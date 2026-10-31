@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { classifyModeFailure, decodedOutputMatchesRequested, decodedVideoModeEvidence, isVerifiedCameraIdentity, recordSample } from "./mode-verification";
 import { CameraBusyError, CameraSupersededError } from "./camera-controller";
 describe("truthful mode diagnostics",()=>{
@@ -83,6 +84,20 @@ describe("per-lens identity proof for WebView video modes", () => {
   });
 });
 
+describe("decoded output is required before saving a mode as recorded", () => {
+  it("never upgrades a MediaRecorder blob to recorded before decode success", () => {
+    const source=readFileSync("src/lib/mode-verification.ts","utf8");
+    const start=source.indexOf("export async function verifyMode(");
+    const verify=source.slice(start);
+    expect(verify).not.toContain('result.state = "recorded";');
+    const decoder=verify.indexOf("await verifyDecodedVideoBlob(blob, signal, 5000)");
+    const state=verify.indexOf("result.state = evidence.state");
+    expect(decoder).toBeGreaterThan(-1);
+    expect(state).toBeGreaterThan(decoder);
+    expect(verify).toContain('if (signal.aborted) throw new Error("Проверка отменена")');
+    expect(verify).toContain('if (!frame.verifiedFirstFrame) throw new Error("Первый кадр не декодирован")');
+  });
+});
 describe("separate actual coded FPS from stream and first-frame proof", () => {
   it("does not certify a 4K60 encoded mode from one decoded 4K frame", () => {
     const evidence=decodedVideoModeEvidence({width:3840,height:2160,fps:60},
@@ -93,7 +108,7 @@ describe("separate actual coded FPS from stream and first-frame proof", () => {
   it("keeps actual decoded downscaling visible without claiming a verified mode", () => {
     const evidence=decodedVideoModeEvidence({width:3840,height:2160,fps:30},
       {width:1920,height:1080},200000);
-    expect(evidence.state).toBe("recorded");
+    expect(evidence.state).toBe("rejected");
     expect(evidence.message).toContain("отличается");
   });
 });

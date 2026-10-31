@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { validFoldRegionGeometry } from "./fold-recording-evidence";
 import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldVisibleContentBounds, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
@@ -34,6 +35,17 @@ describe("multi-hinge topology", () => {
     expect(result.regions[0]?.width).toBe(295);
     expect(result.regions[1]?.left).toBe(305);
     expect(result.occluded).toBe(true);
+  });
+  it("keeps adjacent fractional tri-fold panes nonoverlapping after CSS pixel rounding",()=>{
+    const real=topology([hinge(101,101,"NONE"),hinge(202,202,"NONE")]);
+    real.widthPx=1000;
+    const details=foldEventDetails(real,601,480);
+    expect(details.hingeCount).toBe(2);
+    expect(details.usableRegions).toBe(3);
+    expect(validFoldRegionGeometry(details.regionGeometry)).toBe(true);
+    const panes=details.regionGeometry.split(";").map(p=>p.split(",").map(Number));
+    expect(panes[0]![0]!+panes[0]![2]!).toBe(panes[1]![0]);
+    expect(panes[1]![0]!+panes[1]![2]!).toBe(panes[2]![0]);
   });
   it("supports two actual Android hinge bounds for tri-fold devices", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);

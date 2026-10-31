@@ -156,8 +156,15 @@ export function foldEventDetails(state: DisplayTopology, cssWidth: number, cssHe
     // WindowManager may reorder two physical hinges between callbacks.
     // Sort measured pane coordinates to avoid fictitious fold events.
     regionGeometry: [...geometry.regions].sort((a,b)=>a.left-b.left || a.top-b.top)
-      .map(r => [r.left,r.top,r.width,r.height]
-        .map(n => Math.round(n)).join(",")).join(";"),
+      .map(r => {
+        // Round absolute EDGES, not origin and size independently.
+        // Fractional WebView-to-window scaling otherwise creates a fake 1px
+        // overlap between genuinely adjacent panes, invalidating the fold
+        // passport and allowing an obsolete layout to persist.
+        const left=Math.round(r.left), top=Math.round(r.top);
+        const right=Math.round(r.left+r.width), bottom=Math.round(r.top+r.height);
+        return [left,top,Math.max(0,right-left),Math.max(0,bottom-top)].join(",");
+      }).join(";"),
   };
 }
 

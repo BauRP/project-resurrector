@@ -16,7 +16,9 @@ const KEY = "multicam-mode-evidence-v1";
 // A verified old session is not proof after a WebView or diagnostic engine change.
 // Existing results remain readable as historical evidence, but must be retried.
 const CONTEXT_KEY = "multicam-mode-evidence-context-v1";
-const ENGINE_REVISION = "webview-recorded-frame-v3-no-unverified-coded-fps";
+// New evidence contract: a blob must decode and have matching frame dimensions
+// before RECORDED may authorize skipping a repeat mode probe.
+const ENGINE_REVISION = "webview-recorded-frame-v4-decoded-mode-dimensions";
 export function cameraPassportContext(): string {
   return ENGINE_REVISION + "|" + (typeof navigator === "undefined" ? "unknown" : navigator.userAgent || "unknown");
 }
