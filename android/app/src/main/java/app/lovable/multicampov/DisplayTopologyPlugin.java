@@ -249,6 +249,10 @@ public class DisplayTopologyPlugin extends Plugin {
             // its first (possibly only) posture can be discarded as stale.
             NativeCaptureService.observeFoldObserverActive(lease);
             armSurfaceLease(lease);
+            // A successor observer initially has UNKNOWN geometry. Hide any
+            // still-mounted old TextureView before the first WindowManager
+            // callback can establish a new safe pane.
+            NativeCapturePlugin.onFoldGeometryChanged();
             adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
