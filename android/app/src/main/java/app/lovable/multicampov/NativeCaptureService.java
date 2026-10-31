@@ -396,7 +396,13 @@ public class NativeCaptureService extends Service {
                     // the visible preview even if the hinge posture string
                     // stays unchanged. Keep it as a bounded MP4 checkpoint,
                     // but NEVER inflate the physical posture-change counter.
-                    if("recording".equals(state) && recordingStartedElapsedMs>=0L){
+                    if("paused".equals(state)){
+                        // Hinge movements while MediaRecorder is paused have
+                        // no encoded frame positions. Keep an explicit omitted
+                        // checkpoint rather than claiming fold continuity.
+                        if(recordingFoldCheckpointsOmitted<Integer.MAX_VALUE)
+                            recordingFoldCheckpointsOmitted++;
+                    }else if("recording".equals(state) && recordingStartedElapsedMs>=0L){
                         long now=android.os.SystemClock.elapsedRealtime();
                         long activeMs=Math.max(0L,now-recordingStartedElapsedMs-
                             totalPausedElapsedMs);
