@@ -200,6 +200,13 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(foldObserver).toContain("hinge.width()<0||hinge.height()<0");
   expect(foldObserver).toContain("nextHinges.add(new Rect(Integer.MIN_VALUE/4");
  });
+ it("durably commits critical Camera2 capture transitions across Activity/process interruption",()=>{
+  expect(service).toContain("android.content.SharedPreferences.Editor stateEditor=");
+  expect(service).toContain("if(!stateEditor.commit())");
+  expect(service).toContain('"saved_interrupted".equals(newState)');
+  expect(service).toContain("stateEditor.apply()");
+  expect(service).toContain("getString(\"state\",\"idle\")");
+ });
  it("uses both CSS axes when placing native TextureView in a foldable",()=>{
   expect(capturePlugin).toContain('call.getDouble("viewportHeight")');
   expect(capturePlugin).toContain("cssScaleX=web.getWidth()");
