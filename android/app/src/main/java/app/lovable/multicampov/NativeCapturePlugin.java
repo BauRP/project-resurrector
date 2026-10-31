@@ -5,6 +5,8 @@ import android.content.Intent;
 import android.graphics.SurfaceTexture;
 import android.graphics.Rect;
 import android.view.View;
+import android.os.Handler;
+import android.os.Looper;
 import com.getcapacitor.JSObject;
 import java.lang.ref.WeakReference;
 import android.view.TextureView;
@@ -225,10 +227,14 @@ public class NativeCapturePlugin extends Plugin {
            // callback (display handoff, GPU loss, Activity resize). Only
            // invalidate this owner's actual TextureView and let the JS
            // bounded recovery decide whether a safe pane remains available.
-           if(owner.equals(directOwner) && directView!=null)
-             directView.post(()->{
-               if(owner.equals(directOwner) && directView!=null &&
-                   !directView.isAvailable())
+           // Posting on an already-detached TextureView can silently drop
+           // the Runnable. Use the Activity main Looper instead, and reject
+           // callbacks belonging to an old/replaced same-owner view.
+           final TextureView lostView=directView;
+           if(owner.equals(directOwner) && lostView!=null)
+             new Handler(Looper.getMainLooper()).post(()->{
+               if(owner.equals(directOwner) && directView==lostView &&
+                   !lostView.isAvailable())
                  invalidatePreviewForLayout("surface_destroyed");
              });
            return true;
