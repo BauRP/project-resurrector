@@ -100,7 +100,8 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("boolean durationMismatch=finishedDurationMs>2000L");
   expect(service).toContain("Math.abs(mp4DurationMs-finishedDurationMs)");
   expect(service).toContain("Math.max(1500L,finishedDurationMs/10L)");
-  expect(service).toContain("boolean incomplete = durationMismatch || audioTimelineIssue");
+  expect(service).toContain("boolean incomplete = cameraCallbackStallEpisodes>0 ||");
+  expect(service).toContain("durationMismatch || audioTimelineIssue");
  });
  it("ignores stale callbacks from replaced same-owner native TextureView",()=>{
   expect(capturePlugin).toContain("final TextureView createdView=directView");
