@@ -60,7 +60,8 @@ public final class NativeCaptureAuditStore {
                     "recordingEisFrames","recordingOisFrames",
                     "recordingStabilizationOffFrames","recordingStabilizationUnknownFrames",
                     "mp4TimelineSamples","mp4TimelineRollbacks","mp4TimelineDuplicates",
-                    "mp4TimelineLargeGaps","mp4LowFpsWindows","cameraCallbackStallEpisodes",
+                    "mp4TimelineLargeGaps","mp4LowFpsWindows","cameraCaptureFailureEvents",
+                    "foldNearbyCaptureFailureEvents","cameraCallbackStallEpisodes",
                     "mp4AudioTimelineSamples",
                     "mp4AudioTimelineRollbacks","mp4AudioTimelineDuplicates",
                     "mp4AudioTimelineLargeGaps"};
