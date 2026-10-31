@@ -100,7 +100,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(service).toContain("boolean durationMismatch=finishedDurationMs>2000L");
   expect(service).toContain("Math.abs(mp4DurationMs-finishedDurationMs)");
   expect(service).toContain("Math.max(1500L,finishedDurationMs/10L)");
-  expect(service).toContain("boolean incomplete = sensorTimestampDiscontinuities>0 || cameraCaptureFailureEvents>0 ||");
+  expect(service).toContain("boolean incomplete = sensorTimestampMissingEvents>0 ||");
   expect(service).toContain("durationMismatch || audioTimelineIssue");
  });
  it("ignores stale callbacks from replaced same-owner native TextureView",()=>{
@@ -116,7 +116,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  });
  it("keeps a readable MP4 marked interrupted after Camera2 failure",()=>{
   expect(service).toContain('final boolean captureFailed = "error".equals(state)');
-  expect(service).toContain("boolean incomplete = sensorTimestampDiscontinuities>0 || cameraCaptureFailureEvents>0 ||");
+  expect(service).toContain("boolean incomplete = sensorTimestampMissingEvents>0 ||");
   expect(service).toContain('String message = stopFailed');
   expect(service).toContain('NativeCaptureAuditStore.append(this,status(this))');
  });
@@ -234,7 +234,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  it("salvages readable MP4 after MediaRecorder.stop throws without certifying success",()=>{
    expect(service).toContain('boolean stopFailed = false');
    expect(service).toContain('boolean valid = previouslyRecording && savedMp4HasVideo(media)');
-   expect(service).toContain('boolean incomplete = sensorTimestampDiscontinuities>0 || cameraCaptureFailureEvents>0 ||');
+   expect(service).toContain('boolean incomplete = sensorTimestampMissingEvents>0 ||');
    expect(service).toContain('String message = stopFailed');
    expect(service).toContain('saved_interrupted');
  });
