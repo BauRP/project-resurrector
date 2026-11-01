@@ -20,6 +20,8 @@ describe("fullscreen editor export and privacy in real fold panes",()=>{
     expect(editor).toContain("export-action-grid mt-3 grid gap-2");
     expect(css).toContain("grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr))");
     expect(css).toContain("white-space:normal;");
+    expect(css).toContain('@media (max-width: 280px), (max-height: 280px)');
+    expect(css).toContain('height:var(--fold-work-height,100dvh);');
     expect(css).toContain('[data-fold-workspace="pane"] .privacy-fold-overlay {\n    top: var(--fold-work-top, 0px);');
     expect(css).toContain('max-height: min(calc(100dvh - 1rem), var(--fold-work-height, 100dvh));');
   });

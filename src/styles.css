@@ -733,3 +733,33 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .export-fold-overlay { padding-inline:.5rem; }
   .privacy-fold-overlay > header { padding-inline:.75rem; }
 }
+
+/* Compact cover screens and genuine miniature app windows: keep all three
+   sections usable without pretending the whole physical display is available.
+   Only viewport geometry triggers this rule, never a manufacturer name. */
+@media (max-width: 280px), (max-height: 280px) {
+  .app-header { grid-template-columns:minmax(0,1fr); gap:.25rem; padding:.25rem .5rem; }
+  .connect-pill { max-width:100%; width:100%; justify-content:center; padding:.25rem; white-space:normal; overflow-wrap:anywhere; }
+  .bottom-nav { height:clamp(3rem,18dvh,4rem); }
+  .bottom-nav button { height:100%; min-width:0; gap:0; }
+  .bottom-nav button span { font-size:clamp(.55rem,2.8vw,.7rem); overflow-wrap:anywhere; }
+  .camera-screen { height:calc(100% - clamp(3rem,18dvh,4rem)); }
+  .camera-hud { overflow-y:auto; max-height:50%; padding-inline:.25rem; }
+  .camera-record-dock { bottom:max(.25rem, env(safe-area-inset-bottom)); }
+  .camera-record-dock .record-shutter { width:2.75rem; height:2.75rem; }
+  .connect-fold-modal { padding:.25rem; place-items:start center; }
+  .connect-fold-modal .glass-panel { padding:.5rem; }
+  .export-fold-overlay { padding:.5rem; }
+  .privacy-fold-overlay > header { padding:.5rem; }
+}
+/* The rule above must not override real WindowManager pane geometry. */
+@media (max-width: 280px), (max-height: 280px) {
+  [data-fold-workspace="pane"] .connect-fold-modal,
+  [data-fold-workspace="pane"] .export-fold-overlay,
+  [data-fold-workspace="pane"] .privacy-fold-overlay {
+    top:var(--fold-work-top,0px);
+    left:var(--fold-work-left,0px);
+    width:min(var(--fold-work-width,100%),100%);
+    height:var(--fold-work-height,100dvh);
+  }
+}
