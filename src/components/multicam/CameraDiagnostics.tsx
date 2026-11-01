@@ -7,7 +7,7 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES, discoverWebViewModeCandidates, type TestMode } from "@/lib/mode-verification";
-import { prepareCameraTestQueue, prepareCameraTestQueueByDevice, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
+import { prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
@@ -58,7 +58,14 @@ export function CameraDiagnostics() {
         .catch(() => { if (mounted.current) setError("Камеры WebView недоступны"); });
     };
     refresh();
-    navigator.mediaDevices?.addEventListener?.("devicechange", refresh);
+    const deviceChanged=()=>{
+      // A camera hotplug or WebView identity change invalidates old mode plans,
+      // and an in-progress scan must not finish for a disconnected lens.
+      job.current?.abort();
+      if(mounted.current)setCameraModePlans({});
+      refresh();
+    };
+    navigator.mediaDevices?.addEventListener?.("devicechange", deviceChanged);
     let removeAvailability: (() => void) | undefined;
     const availabilityOwner = "diagnostics-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2);
     if (isNative()) {
@@ -86,7 +93,7 @@ export function CameraDiagnostics() {
       }
       removeAvailability?.();
       if (isNative()) void MultiCamNative.stopCameraAvailability({ownerId:availabilityOwner}).catch(() => undefined);
-      navigator.mediaDevices?.removeEventListener?.("devicechange", refresh);
+      navigator.mediaDevices?.removeEventListener?.("devicechange", deviceChanged);
     };
   }, []);
   const queueIds = devices.map(d => d.deviceId);
@@ -100,12 +107,18 @@ export function CameraDiagnostics() {
     const current = new AbortController();
     job.current = current;
     setRunning(true); setError(""); setSafetyNotice("");
-    let queue = prepareCameraTestQueue(queueIds, full ? TEST_MODES : TEST_MODES.slice(0, 2), loadCameraTestQueue(), loadModeEvidence());
+    // Full discovery must not overwrite the saved queue with generic modes
+    // before the actual camera capabilities were read. A cancelled scan
+    // leaves the previous diagnostic records untouched.
+    let queue = full ? loadCameraTestQueue()
+      : prepareCameraTestQueueByDevice(
+          quickCameraCandidatePlans(queueIds,cameraModePlans,TEST_MODES),
+          loadCameraTestQueue(),loadModeEvidence());
     const persist = (next: CameraTestTask[]) => {
       queue = next; persistCameraTestQueue(queue);
       if (mounted.current) setTestQueue(queue);
     };
-    persist(queue);
+    if(!full)persist(queue);
     try {
       if(full){
         const perCamera:Record<string,TestMode[]>={};
@@ -125,9 +138,8 @@ export function CameraDiagnostics() {
         persist(prepareCameraTestQueueByDevice(perCamera,loadCameraTestQueue(),loadModeEvidence()));
       }
       const candidates = queue.filter(task => queueIds.includes(task.cameraId) &&
-        (full || TEST_MODES.slice(0,2).some(mode=>
-          mode.width===task.mode.width&&mode.height===task.mode.height&&mode.fps===task.mode.fps)) &&
-        (["pending","retry","deferred"].includes(task.status) || (full && ["error","recorded"].includes(task.status))));
+        (["pending","retry","deferred"].includes(task.status) ||
+          (full && ["error","recorded"].includes(task.status))));
       const eligible = full ? candidates : selectQuickCameraTasks(candidates,2,queue);
       let count = 0;
       for (const task of eligible) {

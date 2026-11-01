@@ -29,6 +29,13 @@ describe("native WindowManager hinge safety gate",()=>{
   expect(code).toContain("rect.right>surfaceWindowWidth||rect.bottom>surfaceWindowHeight");
   expect(code).toContain("surfaceWindowWidth=0;surfaceWindowHeight=0;");
  });
+ it("returns unknown topology for an Activity lost during a display handoff",()=>{
+  expect(code).toContain('if(host==null||host.isDestroyed()){');
+  expect(code).toContain('result.put("source","android-activity-unavailable")');
+  expect(code).toContain('call.reject("Fold Activity unavailable")');
+  expect(code).toContain("WindowInfoTracker.getOrCreate(host)");
+  expect(code).toContain("adapter.addWindowLayoutInfoListener(host, main, listener)");
+ });
  it("does not invent folds and maintains native observer leases",()=>{
   expect(code).toContain("if(!fold.isSeparating())continue;");
   expect(code).toContain("if(!lease.equals(surfaceLease))return;");

@@ -121,6 +121,26 @@ export function prepareCameraTestQueueByDevice(
   }
   return all;
 }
+/** Use already measured per-lens candidate plans during quick scans.
+ * An empty measured plan means "no safe candidate", NOT "fall back to
+ * generic 1080p". Unmeasured devices receive a bounded generic trial list.
+ */
+export function quickCameraCandidatePlans(
+  deviceIds: readonly string[],
+  measuredPlans: Readonly<Record<string,readonly TestMode[]>>,
+  fallback: readonly TestMode[],
+  perDevice=2,
+):Record<string,TestMode[]>{
+  const result:Record<string,TestMode[]>={};
+  const count=Number.isSafeInteger(perDevice)&&perDevice>0?perDevice:0;
+  for(const id of deviceIds){
+    if(!id)continue;
+    const measured=Object.prototype.hasOwnProperty.call(measuredPlans,id)
+      ? measuredPlans[id] : undefined;
+    result[id]=(measured??fallback).slice(0,count);
+  }
+  return result;
+}
 /** Quick scan tests at most one pending mode per lens per invocation.
  * Spreads bounded recording effort over distinct cameras. Remaining tasks
  * stay queued for a future quick pass or user-approved full verification.

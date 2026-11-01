@@ -142,6 +142,13 @@ describe("per-WebView-lens mode discovery without false verification",()=>{
   expect(all[0]).toEqual({width:1920,height:1080,fps:30});
   expect(all.some(m=>m.width===3840&&m.fps===60)).toBe(true);
  });
+ it("keeps the measured 29.97 FPS candidate rather than rounding outside OEM limits",()=>{
+  const modes=candidateWebViewModes({
+    width:{min:1280,max:1280},height:{min:720,max:720},
+    frameRate:{min:29.97,max:29.97}
+  },{width:1280,height:720,frameRate:29.97});
+  expect(modes).toEqual([{width:1280,height:720,fps:29.97}]);
+ });
  it("never proposes unsupported generic modes outside a reported valid capability range",()=>{
   expect(candidateWebViewModes({width:{min:100,max:160},height:{min:100,max:160},
     frameRate:{min:7,max:12}})).toEqual([]);

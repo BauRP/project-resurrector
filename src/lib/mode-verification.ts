@@ -44,8 +44,10 @@ export function candidateWebViewModes(
   // all resolutions before optional cinema/broadcast rates.
   const fpsCandidates=[30,60,24,25,50,120];
   if(typeof current?.frameRate==="number" && Number.isFinite(current.frameRate) &&
-      current.frameRate>0 && !fpsCandidates.some(f=>Math.abs(f-current.frameRate!)<0.5))
-    fpsCandidates.unshift(Math.round(current.frameRate));
+      current.frameRate>0 && !fpsCandidates.some(f=>Math.abs(f-current.frameRate!)<0.0001))
+    // A device reporting 29.97 FPS must not be rounded up to an out-of-range
+    // 30 FPS request when getCapabilities().frameRate.max is only 29.97.
+    fpsCandidates.unshift(current.frameRate);
   const result:TestMode[]=[], seen=new Set<string>();
   const validSizes=sizes.filter(([w,h])=>
     w>=width.min&&w<=width.max&&h>=height.min&&h<=height.max);

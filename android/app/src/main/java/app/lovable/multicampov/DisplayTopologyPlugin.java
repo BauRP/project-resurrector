@@ -158,8 +158,22 @@ public class DisplayTopologyPlugin extends Plugin {
 
     private synchronized JSObject snapshot() {
         JSObject result = new JSObject();
-        View root = getActivity().getWindow().getDecorView();
-        DisplayMetrics metrics = getContext().getResources().getDisplayMetrics();
+        final android.app.Activity host=getActivity();
+        if(host==null||host.isDestroyed()){
+            // A queued WindowManager callback may outlive an Activity during
+            // a fold or display handoff. Unknown dimensions are safer than
+            // throwing from snapshot() and crashing the app.
+            result.put("widthPx",0);result.put("heightPx",0);
+            result.put("widthDp",0);result.put("heightDp",0);
+            result.put("density",1);
+            result.put("revision",revision);
+            result.put("posture","unknown");
+            result.put("source","android-activity-unavailable");
+            result.put("foldingFeatures",new JSArray());
+            return result;
+        }
+        View root = host.getWindow().getDecorView();
+        DisplayMetrics metrics = host.getResources().getDisplayMetrics();
         float density = metrics.density > 0 ? metrics.density : 1f;
         int width = root.getWidth(), height = root.getHeight();
         result.put("widthPx", width);
@@ -239,13 +253,17 @@ public class DisplayTopologyPlugin extends Plugin {
             call.reject("Fold observer ownerId is required");
             return;
         }
+        final android.app.Activity host=getActivity();
+        if(host==null||host.isDestroyed()||host.isFinishing()){
+            call.reject("Fold Activity unavailable");return;
+        }
         if (listener != null) {
             activeOwners.add(ownerId);
             call.resolve(snapshot());
             return;
         }
         try {
-            adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(getActivity()));
+            adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(host));
             // API 28 Context.getMainExecutor is not available on Android 7.
             // Jetpack ContextCompat keeps real WindowManager callbacks on main.
             Executor main = ContextCompat.getMainExecutor(getContext());
@@ -301,7 +319,7 @@ public class DisplayTopologyPlugin extends Plugin {
             // still-mounted old TextureView before the first WindowManager
             // callback can establish a new safe pane.
             NativeCapturePlugin.onFoldGeometryChanged();
-            adapter.addWindowLayoutInfoListener(getActivity(), main, listener);
+            adapter.addWindowLayoutInfoListener(host, main, listener);
             call.resolve(snapshot());
         } catch (RuntimeException error) {
             // Failed subscription must not leave a phantom observer owner.

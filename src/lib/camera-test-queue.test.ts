@@ -1,10 +1,23 @@
 import { describe, it, expect } from "vitest";
-import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
+import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
 import type { ModeEvidence } from "./camera-passport";
 
 const base = { width:1920, height:1080, fps:30 };
 const proof: ModeEvidence = { api:"webview",cameraId:"rear",requested:base,checkedAt:12,state:"verified" };
 describe("per-lens resumable diagnostic queue", () => {
+  it("respects per-camera quick candidates, including an explicitly empty hardware plan",()=>{
+    const hd={width:1280,height:720,fps:30};
+    const plans=quickCameraCandidatePlans(["rear","front","tele"],
+      {rear:[hd],front:[]},[base,{...base,fps:60}],2);
+    expect(plans.rear).toEqual([hd]);
+    expect(plans.front).toEqual([]);
+    expect(plans.tele).toEqual([base,{...base,fps:60}]);
+    const tasks=prepareCameraTestQueueByDevice(plans,[],[]);
+    expect(tasks.some(t=>t.cameraId==="front")).toBe(false);
+    expect(tasks.filter(t=>t.cameraId==="rear").map(t=>t.key))
+      .toEqual([cameraTaskKey("rear",hd)]);
+    expect(quickCameraCandidatePlans(["rear"],{rear:[hd]},[base],0).rear).toEqual([]);
+  });
   it("keeps per-camera candidate lists isolated and retains only current modes",()=>{
     const tele={width:3840,height:2160,fps:30};
     const front={width:640,height:480,fps:24};
