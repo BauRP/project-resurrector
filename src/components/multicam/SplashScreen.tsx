@@ -17,6 +17,8 @@ export function SplashScreen({ onDone }: { onDone: (matrix: CapabilityMatrix) =>
   useEffect(() => {
     let alive = true;
     let completed = false;
+    // Unmount or timeout invalidates the entire startup probe generation.
+    const controller=new AbortController();
 
     const finish = (matrix: CapabilityMatrix) => {
       if (!alive || completed) return;
@@ -26,15 +28,16 @@ export function SplashScreen({ onDone }: { onDone: (matrix: CapabilityMatrix) =>
 
     const timeout = window.setTimeout(() => {
       console.warn("Capability probe timeout; continuing without camera capabilities");
+      controller.abort();
       finish(emptyCapabilityMatrix({ camera: "timeout", microphone: "unavailable", storage: "unavailable" }));
     }, STARTUP_TIMEOUT_MS);
 
     void probeDeviceSafe((nextStage, nextProgress) => {
-      if (alive) {
+      if (alive && !controller.signal.aborted) {
         setStage(nextStage);
         setProgress(nextProgress);
       }
-    })
+    }, undefined, controller.signal)
       .then(finish)
       .catch((error: unknown) => {
         console.warn("Capability probe failed; continuing without camera", error);
@@ -44,6 +47,7 @@ export function SplashScreen({ onDone }: { onDone: (matrix: CapabilityMatrix) =>
 
     return () => {
       alive = false;
+      controller.abort();
       window.clearTimeout(timeout);
     };
   }, [onDone]);
