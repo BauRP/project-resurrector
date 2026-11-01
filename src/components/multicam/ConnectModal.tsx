@@ -136,7 +136,7 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
   const callback = useRef(onCode); callback.current = onCode;
   useEffect(() => {
     const owner=Symbol("qr-scanner");
-    let raf=0, alive=true;
+    let raf=0, alive=true, lastScanAt=0;
     const release=()=>{
       cancelAnimationFrame(raf);
       // This owner may have been superseded. Never release another camera.
@@ -150,7 +150,7 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
       // foreground native recording/preview ownership before asking WebView
       // to open another device; an unknown native state fails closed.
       if(isNative()){
-        const status=await nativeCapture.status();
+        const status=await bounded(nativeCapture.status(),2000,"Native Camera2 status");
         if(nativeRecorderOwnsCamera(status.state))
           throw new Error("Native capture owns the camera");
       }
@@ -172,6 +172,11 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
       }
       const tick=()=>{
         if(!alive)return;
+        const now=performance.now();
+        // Decoding a full video frame at 60 Hz heats mobile CPUs and
+        // competes with recording. ~6 checks/sec is adequate for QR pairing.
+        if(now-lastScanAt<150){raf=requestAnimationFrame(tick);return;}
+        lastScanAt=now;
         const v=video.current,c=canvas.current;
         if(v&&c&&v.videoWidth&&v.videoHeight){
           c.width=v.videoWidth;c.height=v.videoHeight;
