@@ -25,15 +25,16 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
   expect(state.pending).toBe(newer);
   expect(newer.setRemoteDescription).not.toHaveBeenCalled();
  });
- it("rejects a stale answer after leave invalidated the generation",async()=>{
-  const pc={setRemoteDescription:vi.fn(async()=>{})} as unknown as RTCPeerConnection;
+ it("rejects an answer when leave advances the session generation mid-handshake",async()=>{
+  let resolve!:()=>void;
+  const pc={setRemoteDescription:vi.fn(()=>new Promise<void>(r=>{resolve=r;}))} as unknown as RTCPeerConnection;
   state.pending=pc;
   const generation=state.generation;
-  // This verifies the preflight gate; no real peer connection is required.
+  const pending=mesh.acceptAnswer(answer("v=0"));
+  await vi.waitFor(()=>expect(pc.setRemoteDescription).toHaveBeenCalledOnce());
   state.generation=generation+1;
-  const broken=answer("v=0");
-  await expect(mesh.acceptAnswer(broken)).rejects.toThrow("Устаревший");
-  expect(pc.setRemoteDescription).not.toHaveBeenCalled();
+  resolve();
+  await expect(pending).rejects.toThrow("Сеанс подключения сменился");
   state.generation=generation;
  });
 });
