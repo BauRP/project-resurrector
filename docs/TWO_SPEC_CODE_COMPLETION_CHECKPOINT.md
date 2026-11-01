@@ -44,3 +44,14 @@ The labels below mean **not yet fully audited and closed against the entire TЗ*
 5. Continue requirements one by one, with separate commits/test passes. Never reassign a numeric readiness percentage without an explicit counted requirements ledger.
 
 **No hourly automation.** No asynchronous promise: this file persists the continuation point for an interactive future session if the current technical session ends.
+
+## Current interactive session continuation — 2026-11-01, second batch
+
+- CI **#1022** on `11daac39` succeeded; #1023 on checkpoint `e38e3232` succeeded.
+- Camera specification §3: `8631accb`, `4bac7cfd` add startup-probe abort generation and prevent a late completed probe from overwriting the current capability cache after splash timeout/unmount. `22356124`, `690b0863` also gate fallback camera/mic and per-lens probe attempts after cancellation; source contract tests included.
+- Foldable specification §§5,9,12: `5333bdbe`, `77ea52d5` invalidate pane/TextureView geometry when a newly reported Activity has zero/nonfinite window dimensions. Stale lower revisions are ignored first; no camera recorder shutdown is introduced.
+- CI **#1025** on startup-splash changes succeeded; newest code SHA before this checkpoint: `77ea52d53f1fafbb5163cf83e5b2c709e5d2db4c`. **CI #1029** (run `41307488280`) was running when the checkpoint was started. Check its final conclusion; do not assume success from unit tests alone.
+- Prior camera/fold commits: `9dbd764f` invalidates stale offline camera `verified` labels without current passport evidence; `3b6a2e7e` resets untrusted WindowManager geometry; `11daac39` corrects a source-contract test; all validated through successful CI #1022/#1023.
+- Remaining software work is **not finished**. Highest priority after inspecting CI #1029: check true start-up cancellation across permission denials and delayed getUserMedia (an actual behavior-level test is still missing), then verify and implement first-run staged auto-diagnostics and resumable mode queue against §3. Follow with fold-wide coverage of editor, QR/pairing, gallery, export, dialogs, TalkBack/large fonts, and lifecycle-recreation tests. The earlier category-by-category requirement ledger above remains authoritative; review it against each actual function rather than claiming blanket implementation.
+- Device acceptance is intentionally deferred, per the user's explicit request. **No completion percentage can be substantiated without a full per-requirement code/CI accounting**; historical reported 99.x numbers must not be increased or represented as measured completion.
+- **No automation or timed background execution is enabled.** Only active chat tool calls can proceed. Never edit `main` or merge without user consent.
