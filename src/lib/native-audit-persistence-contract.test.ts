@@ -15,7 +15,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(foldObserver).toContain("ContextCompat.getMainExecutor(getContext())");
   expect(foldObserver).not.toContain("getActivity().getMainExecutor()");
   expect(foldObserver).toContain("activeOwners.remove(ownerId);");
-  expect(foldObserver).toContain("adapter.addWindowLayoutInfoListener(getActivity(), main, listener);");
+  expect(foldObserver).toContain("adapter.addWindowLayoutInfoListener(host, main, listener);");
  });
  it("persists all essential late-stage fold and MP4 audit fields",()=>{
   for(const key of ["mp4CheckpointAuditCompleted","mp4FoldPointsSkipped",
@@ -45,7 +45,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  });
  it("activates the fold observer lease before registering its first callback",()=>{
   const before=foldObserver.indexOf("NativeCaptureService.observeFoldObserverActive(lease);");
-  const subscribe=foldObserver.indexOf("adapter.addWindowLayoutInfoListener(getActivity(), main, listener);");
+  const subscribe=foldObserver.indexOf("adapter.addWindowLayoutInfoListener(host, main, listener);");
   expect(before).toBeGreaterThan(0);
   expect(subscribe).toBeGreaterThan(before);
  });
