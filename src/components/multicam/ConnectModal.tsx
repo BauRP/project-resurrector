@@ -14,6 +14,7 @@ import { qrScanDimensions } from "@/lib/qr-scan-frame";
 import { nativeCapture } from "@/lib/native-capture";
 import { acquireWebViewPreviewWithNativeGuard } from "@/lib/camera-preview-acquisition";
 import { isNative } from "@/lib/native";
+import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 
 type Step = "choose" | "id" | "qr";
 
@@ -22,11 +23,17 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
   const s = useMulticamStore();
   const peers = useMeshPeers();
   const [step, setStep] = useState<Step>("choose");
+  const dialogRef=useRef<HTMLDivElement>(null);
+  const latestClose=useRef(onClose);latestClose.current=onClose;
+  useEffect(()=>{
+    if(!dialogRef.current)return;
+    return activateAccessibleDialog(dialogRef.current,()=>latestClose.current());
+  },[]);
   const leave = () => { mesh.leave(); s.set({ role: "solo", sessionCode: "POV-842" }); };
 
   return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="connect-fold-modal fixed inset-0 z-[60] grid place-items-center overflow-y-auto overscroll-contain bg-overlay p-4" onClick={onClose}>
     <motion.div initial={{ scale: .94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .96, opacity: 0 }} transition={{ type: "spring", damping: 26, stiffness: 320 }}
-      onClick={(e) => e.stopPropagation()} className="glass-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-5">
+      ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("howConnect")} tabIndex={-1} onClick={(e) => e.stopPropagation()} className="glass-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-5">
       <div className="mb-4 flex items-center justify-between gap-2">
         {step !== "choose" ? <Button size="icon" variant="ghost" aria-label={t("back")} onClick={() => setStep("choose")}><ChevronLeft /></Button> : <span className="size-9" />}
         <h2 className="min-w-0 flex-1 text-center text-lg font-semibold">{step === "choose" ? t("howConnect") : step === "id" ? t("byId") : t("byQr")}</h2>

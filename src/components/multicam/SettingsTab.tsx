@@ -12,6 +12,7 @@ import { useMeshPeers } from "./useMesh";
 import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
 import { CameraDiagnostics } from "./CameraDiagnostics";
 import { bounded, retry } from "@/lib/async";
+import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 
 const languages = [
   ["en","English"],["ru","Русский"],["kk","Қазақ тілі"],["pt","Português"],["es","Español"],["fr","Français"],["ar","العربية"],["zh","中文"],["ko","한국어"],["ja","日本語"],["de","Deutsch"],["it","Italiano"],["tr","Türkçe"],["pl","Polski"],["hi","हिन्दी"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],
@@ -35,6 +36,11 @@ const copy: Record<string, { title:string; language:string; network:string; stor
 };
 export function SettingsTab() {
  const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers(); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
+ const privacyDialog=useRef<HTMLDivElement>(null);
+ useEffect(()=>{
+   if(!privacy||!privacyDialog.current)return;
+   return activateAccessibleDialog(privacyDialog.current,()=>setPrivacy(false));
+ },[privacy]);
  const alive = useRef(true); const busy = useRef(false); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
  useEffect(() => { alive.current = true; void cacheBytes().then((bytes) => { if (alive.current) s.set({ cacheMB: bytes / 1048576 }); }).catch(() => { if (alive.current) setOperationError("Не удалось измерить кэш"); }); return () => { alive.current = false; }; }, [s.set]);
  const diagnose = async () => {
@@ -60,7 +66,7 @@ export function SettingsTab() {
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <NativeRecordingPanel />
  <CameraDiagnostics />
- {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main><AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="min-h-[65dvh] rounded-lg border border-dashed border-border bg-card p-6" /></div></motion.div>}</AnimatePresence></div>;
+ {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main><AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} ref={privacyDialog} role="dialog" aria-modal="true" aria-label={t.privacy} tabIndex={-1} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="min-h-[65dvh] rounded-lg border border-dashed border-border bg-card p-6" /></div></motion.div>}</AnimatePresence></div>;
 }
 function Group({title,help,children}:{title?:string;help?:string;children:ReactNode}){return <section><h2 className="mb-2 flex items-center gap-1 px-3 text-xs font-semibold uppercase text-muted-foreground">{title}{help&&<HelpDot id={help}/>}</h2><div className="overflow-hidden rounded-lg bg-card">{children}</div></section>}
 function Stat({label,value}:{label:string;value:string}){return <div className="bg-card p-3 text-center"><p className="text-[9px] text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>}
