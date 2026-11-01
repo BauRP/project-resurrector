@@ -15,6 +15,14 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(guard).toBeGreaterThan(panel.lastIndexOf("useEffect(()=>"));
   expect(panel.substring(guard)).not.toContain("useEffect(()=>");
  });
+ it("hides native overlay when fold geometry is no longer trustworthy",()=>{
+  expect(panel).toContain('if(document.documentElement.dataset["foldWorkspace"]==="unknown")return null;');
+  const fold=readFileSync(resolve(process.cwd(),"src/lib/display-topology.ts"),"utf8");
+  expect(fold).toContain("if (!geometry.regions.length){resetUntrustedLayout();return;}");
+  expect(fold).toContain('root.dataset["foldWorkspace"]="unknown"');
+  expect(fold).toContain("forgetActiveFoldSnapshot(token);");
+  expect(fold).toContain("window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{invalid:true}}))");
+ });
  it("rechecks current Android overlay dimensions inside the serialized operation",()=>{
   expect(panel).toContain("const measure=()=>nativePreviewSnapshot(");
   expect(panel).toContain("const latest=document.hidden||!(await safePreviewState())?null:measure();");

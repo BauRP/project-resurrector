@@ -79,7 +79,7 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   const sy = cssHeight / (viewport.bottom - viewport.top);
   // Refuse malformed native values that would produce infinite CSS positions.
   if (!Number.isFinite(sx) || !Number.isFinite(sy) || sx <= 0 || sy <= 0)
-    return { regions: [{left:0,top:0,width:cssWidth,height:cssHeight}], split:"none", occluded:false, hinges:[] };
+    return { regions: [], split:"none", occluded:false, hinges:[] };
   let regions: Region[] = [{ left: 0, top: 0, width: cssWidth, height: cssHeight }];
   let split: Split = "none";
   let occluded = false;
@@ -305,10 +305,32 @@ export function startDisplayAdaptation(): () => void {
     if (lastNative && safeViewportDimension(width()) !== null && safeViewportDimension(height()) !== null)
       layout(lastNative);
   };
+  const resetUntrustedLayout=()=>{
+    // Fail closed: an invalid new window measurement must not leave the old
+    // book/tabletop pane coordinates available for an Android TextureView.
+    forgetActiveFoldSnapshot(token);
+    lastFoldSignature="untrusted";lastFoldRevision=-1;
+    if(root.dataset["foldWorkspace"]==="unknown")return;
+    root.dataset["foldInfo"]="unknown";
+    root.dataset["foldCount"]="0";root.dataset["foldSplit"]="none";
+    root.dataset["separatingFold"]="false";root.dataset["occludingFold"]="false";
+    root.dataset["foldRegions"]="0";root.dataset["foldWorkspace"]="unknown";
+    root.dataset["cameraSplit"]="none";root.dataset["cameraTabletop"]="false";
+    workspaceTarget=null;workspaceYOffset=0;
+    const vars=["--fold-work-left","--fold-work-width","--fold-work-height",
+      "--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left",
+      "--camera-right-pane-width","--camera-control-pane-left",
+      "--camera-control-pane-width","--camera-upper-height","--camera-lower-top"];
+    for(const pane of ["preview","hud","settings","controls"])
+      for(const axis of ["left","top","width","height"])
+        vars.push("--camera-quad-"+pane+"-"+axis);
+    for(const name of vars)root.style.removeProperty(name);
+    window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{invalid:true}}));
+  };
   const layout = (state: DisplayTopology) => {
     if (disposed || activeAdaptation !== token) return;
     const geometry = calculateDisplayRegions(state, width(), height());
-    if (!geometry.regions.length) return;
+    if (!geometry.regions.length){resetUntrustedLayout();return;}
     // A viewport resize can change the usable panes without a fresh native
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());

@@ -158,7 +158,7 @@ describe("multi-hinge topology", () => {
     const state=topology([hinge(390,410)]);
     state.widthPx=Number.MIN_VALUE;
     const result=calculateDisplayRegions(state,600,450);
-    expect(result.regions).toEqual([{left:0,top:0,width:600,height:450}]);
+    expect(result.regions).toEqual([]);
     expect(result.hinges).toHaveLength(0);
     expect(result.split).toBe("none");
   });

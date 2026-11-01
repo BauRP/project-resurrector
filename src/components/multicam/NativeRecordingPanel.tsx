@@ -110,10 +110,15 @@ export function NativeRecordingPanel(){
      const current=await bridge.status();
      return current.state==="previewing";
    };
-   const measure=()=>nativePreviewSnapshot(
-     directTarget.current?.getBoundingClientRect(),
-     {width:document.documentElement.clientWidth,height:window.innerHeight},
-     getActiveFoldBaseline()?.regionGeometry);
+   const measure=()=>{
+     // Unknown measured fold topology forbids reusing the old pane for a
+     // TextureView, even if its CSS rectangle still appears unchanged.
+     if(document.documentElement.dataset["foldWorkspace"]==="unknown")return null;
+     return nativePreviewSnapshot(
+       directTarget.current?.getBoundingClientRect(),
+       {width:document.documentElement.clientWidth,height:window.innerHeight},
+       getActiveFoldBaseline()?.regionGeometry);
+   };
    const syncOnce=async()=>{
      if(!live)return;
      // Do not use a cached WindowManager/CSS viewport after a fold.
