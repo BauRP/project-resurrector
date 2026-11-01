@@ -700,4 +700,13 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-height: 480px) {
   .export-fold-overlay { padding-block: .5rem; }
   .privacy-fold-overlay { top: max(0px, env(safe-area-inset-top)); }
+  /* A compact landscape Activity may be split by a horizontal hinge.
+     The generic privacy top above must never override measured pane top. */
+  [data-fold-workspace="pane"] .privacy-fold-overlay {
+    top: var(--fold-work-top, 0px);
+  }
+  [data-fold-workspace="pane"] .connect-fold-modal > *,
+  [data-fold-workspace="pane"] .export-fold-overlay > * {
+    max-height: min(calc(100dvh - 1rem), var(--fold-work-height, 100dvh));
+  }
 }

@@ -20,9 +20,21 @@ export function decideStabilizationForRecordedMode(
   const unknown = (message = "Системная стабилизация: состояние неизвестно. Проверка Camera2 для текущего режима отсутствует."): StabilizationDecision => ({
     recommendation:"unknown",systemState:"unknown",disableAdditionalProcessing:false,message,
   });
-  if (!probe || !mode.cameraId || probe.cameraId !== mode.cameraId ||
+  // The bridge can deliver stale/partial results across Activity recreation.
+  // A malformed or zero-frame "confirmed" response cannot be trusted.
+  if (!probe || !mode.cameraId || probe.source!=="camera2-capture-result" ||
+      !Number.isFinite(mode.width)||mode.width<=0 ||
+      !Number.isFinite(mode.height)||mode.height<=0 ||
+      !Number.isFinite(mode.fps)||mode.fps<=0 ||
+      probe.cameraId !== mode.cameraId ||
       probe.width !== mode.width || probe.height !== mode.height ||
       probe.fpsRequested !== mode.fps) return unknown();
+  if (probe.state==="capture-result-confirmed" &&
+      (probe.framesObserved!==undefined &&
+       (!Number.isSafeInteger(probe.framesObserved)||probe.framesObserved<=0) ||
+       probe.confirmations!==undefined &&
+       (!Number.isSafeInteger(probe.confirmations)||probe.confirmations<=0)))
+    return unknown("Системная стабилизация: нулевые или недостоверные кадры Camera2. Режим не подтверждён.");
   if (probe.state === "capture-result-confirmed") {
     if (probe.selected === "eis" || probe.selected === "preview-stabilization")
       return {recommendation:"prefer-eis",systemState:"test-confirmed",

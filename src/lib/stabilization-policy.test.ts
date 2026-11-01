@@ -11,6 +11,14 @@ describe("mode-specific stabilization decision",()=>{
    expect(decideStabilizationForRecordedMode(probe,{...mode,fps:60}).recommendation).toBe("unknown");
    expect(decideStabilizationForRecordedMode(probe,{...mode,cameraId:"1"}).recommendation).toBe("unknown");
  });
+ it("ignores malformed or contradictory Camera2 confirmation counts",()=>{
+   expect(decideStabilizationForRecordedMode({...probe,framesObserved:0},mode).recommendation).toBe("unknown");
+   expect(decideStabilizationForRecordedMode({...probe,framesObserved:3,confirmations:0},mode).recommendation).toBe("unknown");
+   expect(decideStabilizationForRecordedMode({...probe,confirmations:NaN},mode).recommendation).toBe("unknown");
+   expect(decideStabilizationForRecordedMode({...probe,framesObserved:7,confirmations:3},mode).recommendation).toBe("prefer-eis");
+   expect(decideStabilizationForRecordedMode({...probe,source:"untrusted" as "camera2-capture-result"},mode).recommendation).toBe("unknown");
+   expect(decideStabilizationForRecordedMode(probe,{...mode,fps:Infinity}).recommendation).toBe("unknown");
+ });
  it("prefers OIS without blending an untested second algorithm",()=>{
    expect(decideStabilizationForRecordedMode({...probe,selected:"ois"},mode)).toMatchObject({recommendation:"prefer-ois",disableAdditionalProcessing:true});
  });
