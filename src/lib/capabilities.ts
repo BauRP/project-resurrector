@@ -103,6 +103,7 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
     // Including a missing-track stream or a throwing OEM capability getter.
     stream.getTracks().forEach(t=>t.stop());
   }
+}
 
 /** Runs real permission requests and hardware probes, reporting each stage. Duration = real execution time. */
 export async function probeDevice(
