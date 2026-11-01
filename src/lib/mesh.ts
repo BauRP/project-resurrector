@@ -100,7 +100,13 @@ class Mesh {
     return { battery, storageMB };
   }
   send(msg: MeshMessage) {
-    this.bc?.postMessage(msg);
+    try{this.bc?.postMessage(msg);}
+    catch{
+      // Android WebView may close BroadcastChannel during background/fold
+      // recreation. Continue serving other real WebRTC cameras.
+      try{this.bc?.close();}catch{/* channel already invalid */}
+      this.bc=null;this.localId=null;
+    }
     const raw = JSON.stringify(msg);
     this.channels.forEach((id, ch) => {
       if(ch.readyState!=="open")return;

@@ -36,6 +36,17 @@ describe("multi-phone mesh message trust and isolation",()=>{
  });
 });
 describe("peer connection loss must not hide healthy remote cameras",()=>{
+ it("does not break remote WebRTC peers when local BroadcastChannel closes mid-send",()=>{
+  const ch=channel();internal.channels.set(ch,"phone1");internal.peers.set("phone1",peer("phone1"));
+  const broken={postMessage:vi.fn(()=>{throw Error("closed")}),close:vi.fn()};
+  (mesh as unknown as {bc:unknown;localId:string|null}).bc=broken;
+  (mesh as unknown as {bc:unknown;localId:string|null}).localId="session";
+  expect(()=>mesh.send({type:"ping",from:"self",t:1})).not.toThrow();
+  expect(broken.close).toHaveBeenCalledOnce();
+  expect((mesh as unknown as {bc:unknown;localId:string|null}).bc).toBeNull();
+  expect(internal.peers.has("phone1")).toBe(true);
+  expect(ch.send).toHaveBeenCalledOnce();
+ });
  it("drops a failed send without throwing into the recording UI",()=>{
   const broken=channel(vi.fn(()=>{throw Error("NetworkLost")}));
   internal.channels.set(broken,"peer1");internal.peers.set("peer1",peer("peer1"));
