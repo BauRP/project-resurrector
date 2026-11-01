@@ -93,23 +93,29 @@ export async function probeDevice(
   const permissions = { camera: "denied", microphone: "denied", storage: "denied" };
   try { const s = await gum({ video: true, audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; permissions.microphone = "granted"; }
   catch {
-    try { const s = await gum({ video: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; } catch { /* camera refused */ }
-    try { const s = await gum({ audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.microphone = "granted"; } catch { /* mic refused */ }
+    // A timed-out first-run check must not start *new* camera/microphone
+    // requests after the app UI has already opened or ownership changed.
+    if(!signal?.aborted){
+      try { const s = await gum({ video: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; } catch { /* camera refused */ }
+    }
+    if(!signal?.aborted){
+      try { const s = await gum({ audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.microphone = "granted"; } catch { /* mic refused */ }
+    }
   }
   try { const persisted = await withTimeout(Promise.resolve(navigator.storage?.persist?.()), 2000, "storage.persist"); permissions.storage = persisted ? "granted" : "prompt"; if (!persisted) permissions.storage = "granted-temporary"; } catch { permissions.storage = "unavailable"; }
   if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
   stage(1, 30);
-  const rear = permissions.camera === "granted" ? await probeCamera("environment") : empty();
+  const rear = !signal?.aborted && permissions.camera === "granted" ? await probeCamera("environment") : empty();
   if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
   stage(2, 60);
-  const front = permissions.camera === "granted" ? await probeCamera("user") : empty();
+  const front = !signal?.aborted && permissions.camera === "granted" ? await probeCamera("user") : empty();
   if (front.available && rear.available && front.deviceId && front.deviceId === rear.deviceId) Object.assign(front, empty());
   if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
   stage(3, 80);
   const devices = await withTimeout(navigator.mediaDevices?.enumerateDevices?.() ?? Promise.resolve([] as MediaDeviceInfo[]), 2000, "enumerateDevices").catch(() => [] as MediaDeviceInfo[]);
   const codecs = typeof MediaRecorder === "undefined" ? [] : Object.entries(CODEC_MIMES).filter(([, m]) => MediaRecorder.isTypeSupported(m)).map(([k]) => k);
   let hardwareCameras: NativeCameraProfile[] = [];
-  if (isNative()) {
+  if (isNative() && !signal?.aborted) {
     try {
       const n = await withTimeout(MultiCamNative.getCapabilities(), 3000, "native capabilities");
       hardwareCameras = n.cameras;
