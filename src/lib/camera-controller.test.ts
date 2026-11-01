@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cameraController, CameraBusyError, checkAppliedCameraSetting, focusPoint } from "./camera-controller";
+import { cameraController, CameraBusyError, CameraUnavailableError, checkAppliedCameraSetting, focusPoint } from "./camera-controller";
 
 function camera() {
   const track = {
@@ -50,6 +50,26 @@ describe("camera ownership and serialized settings", () => {
     expect(userCamera.track.stop).toHaveBeenCalledOnce();
   });
 
+  it("rejects an empty camera stream and releases the lease for another request", async () => {
+    const stopped=vi.fn();
+    const missing={getVideoTracks:()=>[],getTracks:()=>[{stop:stopped}]} as unknown as MediaStream;
+    const next=camera();
+    const gum=vi.fn().mockResolvedValueOnce(missing).mockResolvedValueOnce(next.stream);
+    vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
+    await expect(cameraController.acquire(Symbol("qr"),{video:true},{preempt:false}))
+      .rejects.toBeInstanceOf(CameraUnavailableError);
+    expect(stopped).toHaveBeenCalledOnce();
+    await expect(cameraController.acquire(Symbol("user"),{video:true},{preempt:false}))
+      .resolves.toBe(next.stream);
+  });
+  it("rejects a stream containing only ended tracks without claiming video is live",async()=>{
+    const dead=camera();
+    dead.track.readyState="ended";
+    vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:vi.fn().mockResolvedValue(dead.stream)}});
+    await expect(cameraController.acquire(Symbol("scan"),{video:true},{preempt:false}))
+      .rejects.toBeInstanceOf(CameraUnavailableError);
+    expect(dead.track.stop).toHaveBeenCalledOnce();
+  });
   it("releases the lease after denied camera access", async () => {
     const request = vi.fn().mockRejectedValueOnce(new DOMException("Denied", "NotAllowedError"));
     vi.stubGlobal("navigator", { mediaDevices: { getUserMedia: request } });

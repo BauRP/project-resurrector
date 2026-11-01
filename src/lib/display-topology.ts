@@ -544,8 +544,12 @@ export function startDisplayAdaptation(): () => void {
           return;
         }
         apply(state);
-      }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset["foldInfo"] = "unknown"; });
-    }).catch(() => { if (!disposed && activeAdaptation === token) root.dataset["foldInfo"] = "unknown"; });
+      }).catch(() => {
+        if (!disposed && activeAdaptation === token) resetUntrustedLayout();
+      });
+    }).catch(() => {
+      if (!disposed && activeAdaptation === token) resetUntrustedLayout();
+    });
   }
   return () => {
     disposed = true;

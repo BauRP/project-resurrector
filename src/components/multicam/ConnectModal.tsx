@@ -10,6 +10,7 @@ import { useT } from "@/lib/i18n";
 import { useMeshPeers } from "./useMesh";
 import { bounded, retry } from "@/lib/async";
 import { cameraController } from "@/lib/camera-controller";
+import { qrScanDimensions } from "@/lib/qr-scan-frame";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
 import { isNative } from "@/lib/native";
 
@@ -175,15 +176,20 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
         const now=performance.now();
         // Decoding a full video frame at 60 Hz heats mobile CPUs and
         // competes with recording. ~6 checks/sec is adequate for QR pairing.
-        if(now-lastScanAt<150){raf=requestAnimationFrame(tick);return;}
+        if(now-lastScanAt<150 || document.visibilityState==="hidden"){
+          raf=requestAnimationFrame(tick);return;
+        }
         lastScanAt=now;
         const v=video.current,c=canvas.current;
         if(v&&c&&v.videoWidth&&v.videoHeight){
-          c.width=v.videoWidth;c.height=v.videoHeight;
+          const size=qrScanDimensions(v.videoWidth,v.videoHeight);
+          if(!size){raf=requestAnimationFrame(tick);return;}
+          // Retain aspect ratio across fold and app-window resizing.
+          c.width=size.width;c.height=size.height;
           const ctx=c.getContext("2d",{willReadFrequently:true});
           if(ctx){
             try{
-              ctx.drawImage(v,0,0);
+              ctx.drawImage(v,0,0,c.width,c.height);
               const img=ctx.getImageData(0,0,c.width,c.height);
               const hit=jsQR(img.data,img.width,img.height);
               if(hit?.data){

@@ -23,6 +23,7 @@ describe("Camera2 preview during Android fold transitions",()=>{
   expect(fold).toContain("lastNative=null;");
   expect(fold).toContain("state.revision < lastRevision");
   expect(fold).toContain("forgetActiveFoldSnapshot(token);");
+  expect(fold).toContain("if (!disposed && activeAdaptation === token) resetUntrustedLayout();");
   expect(fold).toContain("window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{invalid:true}}))");
  });
  it("rechecks current Android overlay dimensions inside the serialized operation",()=>{

@@ -4,6 +4,9 @@ import { bounded } from "./async";
 export class CameraBusyError extends Error {
   constructor() { super("Камера занята активным предпросмотром или видеозаписью"); this.name = "CameraBusyError"; }
 }
+export class CameraUnavailableError extends Error {
+  constructor(){super("Нет активного видеопотока камеры");this.name="CameraUnavailableError";}
+}
 export class CameraSupersededError extends Error {
   constructor() { super("Запрос камеры отменён более новым запросом"); this.name = "CameraSupersededError"; }
 }
@@ -79,8 +82,16 @@ class CameraController {
         stream.getTracks().forEach(t => t.stop());
         throw new CameraSupersededError();
       }
+      // A resolved getUserMedia may have zero or already ended video tracks.
+      let videoTracks:MediaStreamTrack[];
+      try { videoTracks=stream.getVideoTracks(); }
+      catch(error) { stream.getTracks().forEach(t=>t.stop()); throw error; }
+      if (!videoTracks.some(track=>track.readyState==="live")) {
+        stream.getTracks().forEach(t=>t.stop());
+        throw new CameraUnavailableError();
+      }
       this.stream = stream;
-      stream.getVideoTracks().forEach(track => this.controlledTracks.add(track));
+      videoTracks.forEach(track => this.controlledTracks.add(track));
       return stream;
     } catch (error) {
       // Failed opens must not retain a stale lease or evict newer requests.
