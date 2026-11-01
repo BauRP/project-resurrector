@@ -38,6 +38,7 @@ public class DisplayTopologyPlugin extends Plugin {
     // may have an outdated layout when a queued show command executes.
     // Store only real WindowManager separating features, never fake hinges.
     private static final Object SURFACE_LOCK=new Object();
+    private static final int MAX_FOLD_FEATURES=32;
     private static String surfaceLease="";
     private static boolean surfaceTopologyObserved=false;
     private static int surfaceWindowWidth=0, surfaceWindowHeight=0;
@@ -71,7 +72,12 @@ public class DisplayTopologyPlugin extends Plugin {
                 surfaceWindowHeight!=windowHeight;
             surfaceWindowWidth=windowWidth;surfaceWindowHeight=windowHeight;
             ArrayList<Rect> nextHinges=new ArrayList<>();
-            for(DisplayFeature feature:layout.getDisplayFeatures()){
+            if(layout.getDisplayFeatures().size()>MAX_FOLD_FEATURES){
+                // Invalid OEM data volume: block the entire direct preview,
+                // never infer that the fold disappeared or trust a stale pane.
+                nextHinges.add(new Rect(Integer.MIN_VALUE/4,
+                    Integer.MIN_VALUE/4,Integer.MAX_VALUE/4,Integer.MAX_VALUE/4));
+            } else for(DisplayFeature feature:layout.getDisplayFeatures()){
                 if(!(feature instanceof FoldingFeature))continue;
                 FoldingFeature fold=(FoldingFeature)feature;
                 if(!fold.isSeparating())continue;
@@ -196,6 +202,12 @@ public class DisplayTopologyPlugin extends Plugin {
         result.put("source", "android-windowmanager");
         JSArray hinges = new JSArray();
         if (latest != null) {
+            if(latest.getDisplayFeatures().size()>MAX_FOLD_FEATURES){
+                result.put("posture","unknown");
+                result.put("source","android-windowmanager-feature-overflow");
+                result.put("foldingFeatures",hinges);
+                return result;
+            }
             for (DisplayFeature feature : latest.getDisplayFeatures()) {
                 if (!(feature instanceof FoldingFeature)) continue;
                 FoldingFeature fold = (FoldingFeature) feature;

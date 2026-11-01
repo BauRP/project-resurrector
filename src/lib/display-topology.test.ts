@@ -47,6 +47,13 @@ describe("multi-hinge topology", () => {
     expect(panes[0]![0]!+panes[0]![2]!).toBe(panes[1]![0]);
     expect(panes[1]![0]!+panes[1]![2]!).toBe(panes[2]![0]);
   });
+  it("rejects an OEM feature flood instead of guessing safe fold panes",()=>{
+    const flood=Array.from({length:33},(_,i)=>hinge(i*10,i*10+1));
+    const output=calculateDisplayRegions(topology(flood),600,450);
+    expect(output.regions).toEqual([]);
+    expect(output.hinges).toEqual([]);
+    expect(calculateDisplayRegions({...topology([]),source:"android-windowmanager-feature-overflow"},600,450).regions).toEqual([]);
+  });
   it("caps anomalous WindowManager cross-hinges at 16 measured panes",()=>{
     // Seven vertical and seven horizontal FULL separating lines can create
     // dozens of fragments; such malformed topology must never allocate

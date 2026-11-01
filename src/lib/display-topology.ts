@@ -51,7 +51,9 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   if (!Number.isFinite(cssWidth) || !Number.isFinite(cssHeight) ||
       cssWidth <= 0 || cssHeight <= 0 || !Number.isFinite(topology.widthPx) ||
       !Number.isFinite(topology.heightPx) || topology.widthPx <= 0 ||
-      topology.heightPx <= 0 || !Array.isArray(topology.foldingFeatures)) {
+      topology.heightPx <= 0 || !Array.isArray(topology.foldingFeatures) ||
+      topology.foldingFeatures.length>32 ||
+      topology.source==="android-windowmanager-feature-overflow") {
     return { regions: [], split: "none", occluded: false, hinges: [] };
   }
   // WindowManager reports folding bounds in WINDOW pixels; the browser's

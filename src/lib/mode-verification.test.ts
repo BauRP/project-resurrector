@@ -133,6 +133,15 @@ describe("per-WebView-lens mode discovery without false verification",()=>{
   expect(modes.length).toBeLessThanOrEqual(24);
   expect(new Set(modes.map(m=>[m.width,m.height,m.fps].join("|"))).size).toBe(modes.length);
  });
+ it("covers 4K, 2K, 1080p and 720p before the 24-mode diagnostic cap",()=>{
+  const all=candidateWebViewModes({width:{min:1,max:8000},height:{min:1,max:8000},
+    frameRate:{min:1,max:240}});
+  const widths=new Set(all.map(m=>m.width));
+  for(const width of [3840,2560,1920,1280])expect(widths.has(width)).toBe(true);
+  expect(all).toHaveLength(24);
+  expect(all[0]).toEqual({width:1920,height:1080,fps:30});
+  expect(all.some(m=>m.width===3840&&m.fps===60)).toBe(true);
+ });
  it("never proposes unsupported generic modes outside a reported valid capability range",()=>{
   expect(candidateWebViewModes({width:{min:100,max:160},height:{min:100,max:160},
     frameRate:{min:7,max:12}})).toEqual([]);

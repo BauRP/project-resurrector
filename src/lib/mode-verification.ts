@@ -45,10 +45,14 @@ export function candidateWebViewModes(
       current.frameRate>0 && !fpsCandidates.some(f=>Math.abs(f-current.frameRate!)<0.5))
     fpsCandidates.unshift(Math.round(current.frameRate));
   const result:TestMode[]=[], seen=new Set<string>();
-  for(const [w,h] of sizes){
-    if(w<width.min||w>width.max||h<height.min||h>height.max)continue;
-    for(const fps of fpsCandidates){
-      if(fps<frameRate.min||fps>frameRate.max)continue;
+  const validSizes=sizes.filter(([w,h])=>
+    w>=width.min&&w<=width.max&&h>=height.min&&h<=height.max);
+  const validFps=fpsCandidates.filter(fps=>fps>=frameRate.min&&fps<=frameRate.max);
+  // Round-robin ACROSS resolutions, not all FPS on the first resolution.
+  // Otherwise a broad Android range can fill the 24-slot plan with
+  // 1080p/720p and silently omit an advertised 2K or 4K candidate.
+  for(const fps of validFps){
+    for(const [w,h] of validSizes){
       const key=w+"|"+h+"|"+fps;
       if(seen.has(key))continue;
       seen.add(key);result.push({width:w,height:h,fps});

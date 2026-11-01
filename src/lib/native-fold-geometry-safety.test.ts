@@ -13,6 +13,12 @@ describe("native WindowManager hinge safety gate",()=>{
   expect(code).toContain("nextHinges.add(new Rect(Integer.MIN_VALUE/4,");
   expect(code).toContain("if(Rect.intersects(rect,hinge))return true;");
  });
+ it("treats excessive OEM hinge feature streams as unknown and unsafe",()=>{
+  expect(code).toContain("private static final int MAX_FOLD_FEATURES=32;");
+  expect(code).toContain("if(layout.getDisplayFeatures().size()>MAX_FOLD_FEATURES)");
+  expect(code).toContain('result.put("source","android-windowmanager-feature-overflow")');
+  expect(code).toContain("nextHinges.add(new Rect(Integer.MIN_VALUE/4,");
+ });
  it("rejects a zero-size native preview target",()=>{
   expect(code).toContain("if(rect==null||rect.width()<=0||rect.height()<=0)return true;");
  });
