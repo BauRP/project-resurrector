@@ -671,3 +671,27 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .connect-fold-modal { place-items: start center; padding-block: .5rem; }
   .connect-fold-modal > * { max-height: calc(100dvh - 1rem); }
 }
+
+/* Dedicated editor/export and privacy overlays are fixed-position siblings of
+   the workspace. Confine them separately to an ACTUAL Android usable pane so
+   their close buttons and controls never cross an occluding fold/dual display. */
+[data-fold-workspace="pane"] .export-fold-overlay,
+[data-fold-workspace="pane"] .privacy-fold-overlay {
+  left: var(--fold-work-left, 0px);
+  right: auto;
+  width: min(var(--fold-work-width, 100%), 100%);
+  max-width: 100%;
+}
+.export-fold-overlay, .privacy-fold-overlay {
+  overscroll-behavior: contain;
+  min-width: 0;
+}
+.export-fold-overlay > *, .privacy-fold-overlay > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+@media (max-height: 480px) {
+  .export-fold-overlay { padding-block: .5rem; }
+  .privacy-fold-overlay { top: max(0px, env(safe-area-inset-top)); }
+}
