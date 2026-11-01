@@ -15,6 +15,29 @@ export function distinctSecondaryCameras(devices: readonly CameraOption[], prima
     return true;
   });
 }
+/** Reading camera track settings can throw while an Android fold/rebind
+ * destroys the native camera. Missing IDs must stay unknown, not verified. */
+export function liveWebViewCameraId(track: MediaStreamTrack | null): string | null {
+  if (!track || track.readyState !== "live") return null;
+  try {
+    const id = track.getSettings().deviceId;
+    return typeof id === "string" && id.length > 0 ? id : null;
+  } catch { return null; }
+}
+
+/** The exact deviceId requested is evidence only if WebView reports the
+ * very same ID on a DIFFERENT concurrently live track. */
+export function secondaryStreamMatchesSelection(
+  primary: MediaStreamTrack | null,
+  secondary: MediaStreamTrack | null,
+  requestedId: string,
+): boolean {
+  const primaryId=liveWebViewCameraId(primary);
+  const secondaryId=liveWebViewCameraId(secondary);
+  return !!primaryId && !!secondaryId && !!requestedId &&
+    primary!==secondary && primaryId!==secondaryId && secondaryId===requestedId &&
+    primary?.readyState==="live" && secondary?.readyState==="live";
+}
 const release = (stream: MediaStream) => stream.getTracks().forEach(track => track.stop());
 
 /**
@@ -25,7 +48,7 @@ const release = (stream: MediaStream) => stream.getTracks().forEach(track => tra
  */
 export function DualCameraPreview({ primaryStream, onSecondaryStream, recording, hidden }: { primaryStream: MediaStream | null; onSecondaryStream: (stream: MediaStream | null) => void; recording: boolean; hidden?: boolean }) {
   const mainTrack = primaryStream?.getVideoTracks()[0] ?? null;
-  const primaryId = mainTrack?.getSettings().deviceId ?? "";
+  const primaryId = liveWebViewCameraId(mainTrack) ?? "";
   const [devices, setDevices] = useState<CameraOption[]>([]);
   const [selected, setSelected] = useState("");
   const [secondStream, setSecondStream] = useState<MediaStream | null>(null);
@@ -75,13 +98,13 @@ export function DualCameraPreview({ primaryStream, onSecondaryStream, recording,
       audio: false,
     }), 7000, "Вторая камера", release).then(next => {
       if (!active) { release(next); return; }
-      const secondTrack = next.getVideoTracks()[0];
-      const actualId = secondTrack?.getSettings().deviceId;
-      if (!secondTrack || secondTrack.readyState !== "live" ||
-        mainTrack.readyState !== "live" || (actualId && actualId === primaryId)) {
+      let secondTrack: MediaStreamTrack | null = null;
+      try { secondTrack = next.getVideoTracks()[0] ?? null; }
+      catch { /* OEM closed the stream during folded-window rebind */ }
+      if (!secondaryStreamMatchesSelection(mainTrack, secondTrack, selected)) {
         release(next);
         setStatus("unavailable");
-        setDetails("Android/WebView не предоставил два независимых живых видеопотока");
+        setDetails("Android/WebView не подтвердил отдельный выбранный объектив: второй поток отсутствует, заменён или без идентификатора");
         return;
       }
       open = next;
