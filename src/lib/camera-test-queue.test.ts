@@ -16,7 +16,7 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(tasks.some(t=>t.cameraId==="front")).toBe(false);
     expect(tasks.filter(t=>t.cameraId==="rear").map(t=>t.key))
       .toEqual([cameraTaskKey("rear",hd)]);
-    expect(quickCameraCandidatePlans(["rear"],{rear:[hd]},[base],0).rear).toEqual([]);
+    expect(quickCameraCandidatePlans(["rear"],{rear:[hd]},[base],0)["rear"]).toEqual([]);
   });
   it("keeps per-camera candidate lists isolated and retains only current modes",()=>{
     const tele={width:3840,height:2160,fps:30};
