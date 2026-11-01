@@ -136,10 +136,18 @@ export async function probeDevice(
     // A timed-out first-run check must not start *new* camera/microphone
     // requests after the app UI has already opened or ownership changed.
     if(!signal?.aborted){
-      try { const s = await gum({ video: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; } catch { /* camera refused */ }
+      try {
+        const s=await gum({video:true,audio:false});
+        try{if(s.getVideoTracks().some(t=>t.readyState==="live"))permissions.camera="granted";}
+        finally{s.getTracks().forEach(t=>t.stop());}
+      }catch{/* camera refused */}
     }
     if(!signal?.aborted){
-      try { const s = await gum({ audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.microphone = "granted"; } catch { /* mic refused */ }
+      try {
+        const s=await gum({audio:true,video:false});
+        try{if(s.getAudioTracks?.().some(t=>t.readyState==="live"))permissions.microphone="granted";}
+        finally{s.getTracks().forEach(t=>t.stop());}
+      }catch{/* mic refused */}
     }
   }
   // If an OEM returns only one media track for the combined request, never
