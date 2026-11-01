@@ -710,3 +710,26 @@ button:disabled { cursor: not-allowed; opacity: .45; }
     max-height: min(calc(100dvh - 1rem), var(--fold-work-height, 100dvh));
   }
 }
+
+/* Readable export controls with large Android font scaling and a narrow
+   WindowManager pane. Three rigid columns otherwise clip labels and hide
+   tap targets on mini cover screens or resized multi-window activities. */
+.export-action-grid {
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr));
+  min-width:0;
+}
+.export-action-grid > * {
+  min-width:0;
+  height:auto;
+  min-height:2.75rem;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.connect-fold-modal button,.export-fold-overlay button,
+.privacy-fold-overlay button { flex-shrink:0; }
+@media (max-width:360px) {
+  .connect-fold-modal { padding-inline:.5rem; }
+  .connect-fold-modal .glass-panel { padding:.75rem; }
+  .export-fold-overlay { padding-inline:.5rem; }
+  .privacy-fold-overlay > header { padding-inline:.75rem; }
+}
