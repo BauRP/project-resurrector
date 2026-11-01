@@ -317,7 +317,7 @@ export function startDisplayAdaptation(): () => void {
     root.dataset["foldRegions"]="0";root.dataset["foldWorkspace"]="unknown";
     root.dataset["cameraSplit"]="none";root.dataset["cameraTabletop"]="false";
     workspaceTarget=null;workspaceYOffset=0;
-    const vars=["--fold-work-left","--fold-work-width","--fold-work-height",
+    const vars=["--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top",
       "--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left",
       "--camera-right-pane-width","--camera-control-pane-left",
       "--camera-control-pane-width","--camera-upper-height","--camera-lower-top"];
@@ -379,6 +379,10 @@ export function startDisplayAdaptation(): () => void {
     root.style.setProperty("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
     root.style.setProperty("--fold-work-width",(workspace?.width??shellWidth)+"px");
     root.style.setProperty("--fold-work-height",(workspace?.height??contentBounds.height)+"px");
+    // Fixed-position modal siblings need the pane's absolute viewport top.
+    // --fold-work-y-offset is relative to scroll content and is NOT suitable
+    // for fixed dialogs. A horizontal hinge may otherwise hide the close/QR.
+    root.style.setProperty("--fold-work-top",Math.max(0,workspace?.top??contentBounds.top)+"px");
     const target=document.querySelector(".editor-fold-workspace, .settings-fold-workspace");
     if(target!==workspaceTarget){workspaceTarget=target;workspaceYOffset=0;}
     // position:relative top offsets can be measured without accumulating
@@ -568,7 +572,7 @@ export function startDisplayAdaptation(): () => void {
     if (activeAdaptation === token) {
       activeAdaptation = null;
       ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-      ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
+      ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
     }
   };
 }

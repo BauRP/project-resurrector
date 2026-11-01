@@ -655,6 +655,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
    occluding fold divides the current WebView window. Never guess a hinge. */
 [data-fold-workspace="pane"] .connect-fold-modal {
   left: var(--fold-work-left, 0px);
+  top: var(--fold-work-top, 0px);
+  bottom: auto;
+  height: var(--fold-work-height, 100dvh);
   right: auto;
   width: min(var(--fold-work-width, 100%), 100%);
   max-width: 100%;
@@ -678,6 +681,9 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 [data-fold-workspace="pane"] .export-fold-overlay,
 [data-fold-workspace="pane"] .privacy-fold-overlay {
   left: var(--fold-work-left, 0px);
+  top: var(--fold-work-top, 0px);
+  bottom: auto;
+  height: var(--fold-work-height, 100dvh);
   right: auto;
   width: min(var(--fold-work-width, 100%), 100%);
   max-width: 100%;

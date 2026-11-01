@@ -10,6 +10,11 @@ describe("fullscreen editor export and privacy in real fold panes",()=>{
     expect(css).toContain('[data-fold-workspace="pane"] .export-fold-overlay');
     expect(css).toContain('[data-fold-workspace="pane"] .privacy-fold-overlay');
     expect(css).toContain("left: var(--fold-work-left, 0px)");
+    expect(css).toContain("top: var(--fold-work-top, 0px)");
+    expect(css).toContain("height: var(--fold-work-height, 100dvh)");
+    const topology=readFileSync("src/lib/display-topology.ts","utf8");
+    expect(topology).toContain('root.style.setProperty("--fold-work-top"');
+    expect(topology).toContain('"--fold-work-top","--fold-work-y-offset"');
     expect(css).toContain("width: min(var(--fold-work-width, 100%), 100%)");
   });
 });

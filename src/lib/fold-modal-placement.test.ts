@@ -7,6 +7,8 @@ describe("real fold-safe pairing and QR dialogs",()=>{
   expect(modal).toContain("connect-fold-modal fixed inset-0");
   expect(css).toContain('[data-fold-workspace="pane"] .connect-fold-modal');
   expect(css).toContain("left: var(--fold-work-left, 0px)");
+  expect(css).toContain("top: var(--fold-work-top, 0px)");
+  expect(css).toContain("height: var(--fold-work-height, 100dvh)");
   expect(css).toContain("width: min(var(--fold-work-width, 100%), 100%)");
   expect(css).toContain("overflow-wrap: anywhere;");
  });
