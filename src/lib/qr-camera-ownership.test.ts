@@ -39,8 +39,8 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
     const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
     const scanner=source.slice(source.indexOf("function Scanner("));
     expect(scanner).toContain('const owner=Symbol("qr-scanner")');
-    expect(scanner).toContain("cameraController.acquire(owner,");
-    expect(scanner).toContain("{preempt:false}");
+    expect(scanner).toContain("acquireWebViewPreviewWithNativeGuard(owner,");
+    expect(scanner).toContain("{preempt:false,isCurrent:()=>alive}");
     expect(scanner).toContain("cameraController.release(owner)");
     expect(scanner).not.toContain("navigator.mediaDevices?.getUserMedia(");
     expect(scanner).toContain("return ()=>{alive=false;release();};");
@@ -49,15 +49,19 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
     const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
     const scanner=source.slice(source.indexOf("function Scanner("));
     expect(scanner).toContain("if(isNative())");
-    expect(scanner).toContain('const status=await bounded(nativeCapture.status(),2000,"Native Camera2 status")');
-    expect(scanner).toContain("!nativeCameraStateSafeForWebView(status.state)");
-    expect(scanner.indexOf("!nativeCameraStateSafeForWebView(status.state)"))
-      .toBeLessThan(scanner.indexOf("cameraController.acquire(owner,"));
+    expect(scanner).toContain("acquireWebViewPreviewWithNativeGuard(owner,");
+    expect(scanner).toContain("isNative()?()=>nativeCapture.status():null");
+    expect(scanner).toContain("{preempt:false,isCurrent:()=>alive}");
+    // The shared acquisition helper rechecks native ownership after GUM.
+    const helper=readFileSync("src/lib/camera-preview-acquisition.ts","utf8");
+    expect(helper).toContain("await check();");
+    expect(helper).toContain("cameraController.release(owner);");
   });
   it("bounds native ownership checks and QR decode CPU frequency",()=>{
     const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
     const scanner=source.slice(source.indexOf("function Scanner("));
-    expect(scanner).toContain('bounded(nativeCapture.status(),2000,"Native Camera2 status")');
+    const helper=readFileSync("src/lib/camera-preview-acquisition.ts","utf8");
+    expect(helper).toContain('bounded(nativeStatus(),2000,"Native Camera2 owner")');
     expect(scanner).toContain('if(now-lastScanAt<150 || document.visibilityState==="hidden"){');
     expect(scanner).toContain("lastScanAt=now;");
     expect(scanner).toContain("qrScanDimensions(v.videoWidth,v.videoHeight)");
