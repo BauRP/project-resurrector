@@ -40,7 +40,9 @@ export function candidateWebViewModes(
   if(Number.isSafeInteger(current?.width) && Number.isSafeInteger(current?.height) &&
       current!.width!>0 && current!.height!>0)
     sizes.unshift([current!.width!,current!.height!]);
-  const fpsCandidates=[30,24,25,60,50,120];
+  // Under the 24-mode cap, prioritize standard 30/60 FPS coverage across
+  // all resolutions before optional cinema/broadcast rates.
+  const fpsCandidates=[30,60,24,25,50,120];
   if(typeof current?.frameRate==="number" && Number.isFinite(current.frameRate) &&
       current.frameRate>0 && !fpsCandidates.some(f=>Math.abs(f-current.frameRate!)<0.5))
     fpsCandidates.unshift(Math.round(current.frameRate));
