@@ -148,10 +148,26 @@ export function quickCameraCandidatePlans(
  */
 export function preserveUnavailableCameraHistory(
   active:readonly CameraTestTask[], previous:readonly CameraTestTask[],
-  unavailable:ReadonlySet<string>,
+  unavailable:ReadonlySet<string>, evidence:readonly ModeEvidence[],
 ):CameraTestTask[]{
   const seen=new Set(active.map(task=>task.key));
-  const retained=previous.filter(task=>unavailable.has(task.cameraId)&&!seen.has(task.key));
+  // A stored queue label is not proof. Offline lenses keep their history,
+  // but only their current passport can certify an exact recording mode.
+  const keys=(state:"verified"|"recorded")=>new Set(evidence.filter(isModeEvidence)
+    .filter(row=>row.api==="webview"&&row.state===state)
+    .map(row=>cameraTaskKey(row.cameraId,row.requested)));
+  const verified=keys("verified"),recorded=keys("recorded");
+  const retained=previous.filter(task=>unavailable.has(task.cameraId)&&!seen.has(task.key))
+    .map(task=>{
+      const status:CameraQueueStatus=verified.has(task.key)?"verified":
+        recorded.has(task.key)?"recorded":
+        task.status==="verified"||task.status==="recorded"?"retry":
+        task.status==="running"?"deferred":task.status;
+      return {...task,status,
+        message:status==="retry"?"Актуальное подтверждение отсутствует; требуется повторная проверка":
+        status==="deferred"&&task.status==="running"?
+          "Открытие было прервано; ожидает безопасного повторного запуска":task.message};
+    });
   return [...active,...retained].slice(0,500);
 }
 /** Quick scan tests at most one pending mode per lens per invocation.

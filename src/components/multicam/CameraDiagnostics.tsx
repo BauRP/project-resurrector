@@ -144,7 +144,7 @@ export function CameraDiagnostics() {
         if(mounted.current)setCameraModePlans(perCamera);
         const oldQueue=loadCameraTestQueue();
         const activeQueue=prepareCameraTestQueueByDevice(perCamera,oldQueue,loadModeEvidence());
-        persist(preserveUnavailableCameraHistory(activeQueue,oldQueue,unavailableIds));
+        persist(preserveUnavailableCameraHistory(activeQueue,oldQueue,unavailableIds,loadModeEvidence()));
       }
       const candidates = queue.filter(task => !unavailableIds.has(task.cameraId) &&
         queueIds.includes(task.cameraId) &&

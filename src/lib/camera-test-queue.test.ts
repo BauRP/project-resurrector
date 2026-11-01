@@ -22,11 +22,26 @@ describe("per-lens resumable diagnostic queue", () => {
     const previous=prepareCameraTestQueue(["rear","front"],[base],[],[proof]);
     const active=prepareCameraTestQueueByDevice({front:[base],rear:[]},previous,[proof]);
     expect(active.some(t=>t.cameraId==="rear")).toBe(false);
-    const restored=preserveUnavailableCameraHistory(active,previous,new Set(["rear"]));
+    const restored=preserveUnavailableCameraHistory(active,previous,new Set(["rear"]),[proof]);
     expect(restored.find(t=>t.cameraId==="rear")?.status).toBe("verified");
     expect(restored.filter(t=>t.cameraId==="rear")).toHaveLength(1);
     expect(restored.filter(t=>t.cameraId==="front")).toHaveLength(1);
-    expect(preserveUnavailableCameraHistory(active,previous,new Set())).toEqual(active);
+    expect(preserveUnavailableCameraHistory(active,previous,new Set(),[proof])).toEqual(active);
+  });
+  it("requires current passport proof before trusting an offline verified label",()=>{
+    const prior=prepareCameraTestQueue(["rear"],[base],[],[proof]);
+    const withoutProof=preserveUnavailableCameraHistory([],prior,new Set(["rear"]),[]);
+    expect(withoutProof[0]?.status).toBe("retry");
+    expect(withoutProof[0]?.message).toContain("повторная");
+    expect(preserveUnavailableCameraHistory([],prior,new Set(["rear"]),[proof])[0]?.status)
+      .toBe("verified");
+  });
+  it("marks a process-killed camera test as deferred, never running forever",()=>{
+    const prior=prepareCameraTestQueue(["rear"],[base],[],[]);
+    const running=updateCameraTestTask(prior,prior[0]!.key,"running","Открывается камера");
+    const resumed=preserveUnavailableCameraHistory([],running,new Set(["rear"]),[]);
+    expect(resumed[0]?.status).toBe("deferred");
+    expect(resumed[0]?.message).toContain("прервано");
   });
   it("never drops newly eligible tasks behind stale queue history at its cap",()=>{
     const modes=Array.from({length:24},(_,i)=>({width:640+i,height:480,fps:30}));
@@ -34,7 +49,7 @@ describe("per-lens resumable diagnostic queue", () => {
     const active=prepareCameraTestQueueByDevice(plans,[],[]);
     expect(active).toHaveLength(500);
     const old=prepareCameraTestQueue(["offline"],[base],[],[proof]);
-    expect(preserveUnavailableCameraHistory(active,old,new Set(["offline"]))).toEqual(active);
+    expect(preserveUnavailableCameraHistory(active,old,new Set(["offline"]),[proof])).toEqual(active);
   });
   it("keeps per-camera candidate lists isolated and retains only current modes",()=>{
     const tele={width:3840,height:2160,fps:30};
