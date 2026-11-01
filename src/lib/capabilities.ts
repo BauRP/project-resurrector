@@ -81,8 +81,15 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
 }
 
 /** Runs real permission requests and hardware probes, reporting each stage. Duration = real execution time. */
-export async function probeDevice(onStage: (stage: number, progress: number) => void): Promise<CapabilityMatrix> {
-  onStage(0, 5);
+export async function probeDevice(
+  onStage: (stage: number, progress: number) => void, signal?: AbortSignal,
+): Promise<CapabilityMatrix> {
+  // The startup splash may already have timed out/unmounted. A late probe
+  // must never publish old camera results over the active session's passport.
+  const stage=(index:number,percent:number)=>{
+    if(!signal?.aborted)onStage(index,percent);
+  };
+  stage(0, 5);
   const permissions = { camera: "denied", microphone: "denied", storage: "denied" };
   try { const s = await gum({ video: true, audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; permissions.microphone = "granted"; }
   catch {
@@ -90,12 +97,15 @@ export async function probeDevice(onStage: (stage: number, progress: number) => 
     try { const s = await gum({ audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.microphone = "granted"; } catch { /* mic refused */ }
   }
   try { const persisted = await withTimeout(Promise.resolve(navigator.storage?.persist?.()), 2000, "storage.persist"); permissions.storage = persisted ? "granted" : "prompt"; if (!persisted) permissions.storage = "granted-temporary"; } catch { permissions.storage = "unavailable"; }
-  onStage(1, 30);
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
+  stage(1, 30);
   const rear = permissions.camera === "granted" ? await probeCamera("environment") : empty();
-  onStage(2, 60);
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
+  stage(2, 60);
   const front = permissions.camera === "granted" ? await probeCamera("user") : empty();
   if (front.available && rear.available && front.deviceId && front.deviceId === rear.deviceId) Object.assign(front, empty());
-  onStage(3, 80);
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
+  stage(3, 80);
   const devices = await withTimeout(navigator.mediaDevices?.enumerateDevices?.() ?? Promise.resolve([] as MediaDeviceInfo[]), 2000, "enumerateDevices").catch(() => [] as MediaDeviceInfo[]);
   const codecs = typeof MediaRecorder === "undefined" ? [] : Object.entries(CODEC_MIMES).filter(([, m]) => MediaRecorder.isTypeSupported(m)).map(([k]) => k);
   let hardwareCameras: NativeCameraProfile[] = [];
@@ -112,8 +122,11 @@ export async function probeDevice(onStage: (stage: number, progress: number) => 
     } catch { /* native plugin unavailable */ }
   }
   const matrix: CapabilityMatrix = { probedAt: Date.now(), permissions, rear, front, codecs, microphones: devices.filter((d) => d.kind === "audioinput").length, native: isNative(), hardwareCameras };
+  // A stale response from Android/WebView is never allowed to overwrite
+  // the current cached passport after a splash timeout or unmount.
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
   try { window.localStorage.setItem(KEY, JSON.stringify(matrix)); } catch { /* memory only */ }
-  onStage(3, 100);
+  stage(3, 100);
   return matrix;
 }
 
@@ -123,14 +136,25 @@ export async function probeDevice(onStage: (stage: number, progress: number) => 
  * On timeout/failure it returns the cached matrix if one exists, else an all-unavailable matrix,
  * so Camera (simulated feed), Editor and Settings unlock immediately.
  */
-export async function probeDeviceSafe(onStage: (stage: number, progress: number) => void, timeoutMs = PROBE_TIMEOUT_MS): Promise<CapabilityMatrix> {
+export async function probeDeviceSafe(
+  onStage: (stage: number, progress: number) => void,
+  timeoutMs = PROBE_TIMEOUT_MS, externalSignal?: AbortSignal,
+): Promise<CapabilityMatrix> {
+  const controller=new AbortController();
+  const onExternalAbort=()=>controller.abort();
+  externalSignal?.addEventListener("abort",onExternalAbort,{once:true});
+  if(externalSignal?.aborted)controller.abort();
   try {
-    return await withTimeout(probeDevice(onStage), timeoutMs, "device probe");
+    if(controller.signal.aborted)throw new ProbeTimeoutError("startup probe cancelled");
+    return await withTimeout(probeDevice(onStage,controller.signal), timeoutMs, "device probe");
   } catch (e) {
+    controller.abort();
     console.warn("[capabilities] probe fallback:", e instanceof Error ? e.message : e);
     const cached = loadMatrix();
     const m = cached ?? emptyCapabilityMatrix({ camera: e instanceof ProbeTimeoutError ? "timeout" : "denied", microphone: "unavailable", storage: "unavailable" });
-    onStage(3, 100);
+    if(!externalSignal?.aborted)onStage(3, 100);
     return m;
+  } finally {
+    externalSignal?.removeEventListener("abort",onExternalAbort);
   }
 }
