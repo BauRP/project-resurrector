@@ -209,9 +209,17 @@ class Mesh {
     } catch (error) { pc.close(); this.connections.delete(pc); if (this.pending === pc) this.pending = null; throw error; }
   }
   async acceptAnswer(code: string) {
-    const data = await bounded(decode<{ k: string; sdp: string }>(code), 3000, "Answer decoding");
-    if (data.k !== "a" || !this.pending) throw new Error("Not an answer");
-    await bounded(this.pending.setRemoteDescription({ type: "answer", sdp: data.sdp }), 4000, "Answer description"); this.pending = null;
+    const generation=this.generation;
+    const pc=this.pending;
+    const data=await bounded(decode<{k:string;sdp:string}>(code),3000,"Answer decoding");
+    // A replacement QR session or leave() may have invalidated this offer
+    // while an async answer was being decoded. Never mutate the new offer.
+    if(data.k!=="a"||!pc||this.pending!==pc||generation!==this.generation)
+      throw new Error("Устаревший или недействительный ответ подключения");
+    await bounded(pc.setRemoteDescription({type:"answer",sdp:data.sdp}),4000,"Answer description");
+    if(this.pending!==pc||generation!==this.generation)
+      throw new Error("Сеанс подключения сменился во время подтверждения");
+    this.pending=null;
   }
   /** Camera: answer the director's offer. Returns the reply code + session id. */
   async answerOffer(code: string) {
