@@ -123,7 +123,15 @@ export async function probeDevice(
   };
   stage(0, 5);
   const permissions = { camera: "denied", microphone: "denied", storage: "denied" };
-  try { const s = await gum({ video: true, audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; permissions.microphone = "granted"; }
+  try {
+    const s=await gum({video:true,audio:true});
+    try{
+      // A resolved stream is not proof that an OEM supplied both tracks.
+      // Device permissions and functionality must be recorded separately.
+      if(s.getVideoTracks().some(t=>t.readyState==="live"))permissions.camera="granted";
+      if(s.getAudioTracks?.().some(t=>t.readyState==="live"))permissions.microphone="granted";
+    }finally{s.getTracks().forEach(t=>t.stop());}
+  }
   catch {
     // A timed-out first-run check must not start *new* camera/microphone
     // requests after the app UI has already opened or ownership changed.
@@ -133,6 +141,22 @@ export async function probeDevice(
     if(!signal?.aborted){
       try { const s = await gum({ audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.microphone = "granted"; } catch { /* mic refused */ }
     }
+  }
+  // If an OEM returns only one media track for the combined request, never
+  // mark the missing track granted just from the HTTP/API resolution.
+  if(permissions.camera!=="granted"&&!signal?.aborted){
+    try{
+      const s=await gum({video:true,audio:false});
+      try{if(s.getVideoTracks().some(t=>t.readyState==="live"))permissions.camera="granted";}
+      finally{s.getTracks().forEach(t=>t.stop());}
+    }catch{/* unavailable or denied; never fabricate a granted permission */}
+  }
+  if(permissions.microphone!=="granted"&&!signal?.aborted){
+    try{
+      const s=await gum({audio:true,video:false});
+      try{if(s.getAudioTracks?.().some(t=>t.readyState==="live"))permissions.microphone="granted";}
+      finally{s.getTracks().forEach(t=>t.stop());}
+    }catch{/* unavailable or denied */}
   }
   try { const persisted = await withTimeout(Promise.resolve(navigator.storage?.persist?.()), 2000, "storage.persist"); permissions.storage = persisted ? "granted" : "prompt"; if (!persisted) permissions.storage = "granted-temporary"; } catch { permissions.storage = "unavailable"; }
   if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
