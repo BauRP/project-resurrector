@@ -69,6 +69,13 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
     if(!track || track.readyState!=="live")return empty();
     const tc=(track.getCapabilities?.() ?? {}) as Record<string,unknown>;
     const settings=track.getSettings?.() ?? {};
+    // If the requested rear stream fell back to video:true, WebView may
+    // actually have opened a selfie camera. Never assign that camera the
+    // rear passport or lens capabilities when the observed facing disagrees.
+    const actualFacing=settings.facingMode;
+    if((facingMode==="environment" && actualFacing==="user") ||
+       (facingMode==="user" && actualFacing==="environment"))
+      return empty();
     const range=(k:string):[number,number]|null=>{
       const r=tc[k] as {min?:number;max?:number}|undefined;
       const min=r?.min,max=r?.max;

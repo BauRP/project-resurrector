@@ -42,6 +42,18 @@ describe("camera startup probes use actual opened tracks",()=>{
    expect(m.front.available).toBe(false);
    expect(broken.stop).toHaveBeenCalled();
  });
+ it("rejects a front camera mistakenly opened by fallback rear video:true",async()=>{
+   const permission=fakeStream({readyState:"live",getCapabilities:()=>({})});
+   const frontInstead=fakeStream({
+     readyState:"live",getSettings:()=>({deviceId:"selfie",facingMode:"user"}),
+     getCapabilities:()=>({width:{min:640,max:1920}})
+   });
+   setup([permission.stream,frontInstead.stream]);
+   const m=await probeDevice(()=>{});
+   expect(m.rear.available).toBe(false);
+   expect(m.rear.deviceId).toBeNull();
+   expect(frontInstead.stop).toHaveBeenCalled();
+ });
  it("keeps a working lens available but does not invent verified recording modes",async()=>{
    const permission=fakeStream({readyState:"live",getCapabilities:()=>({})});
    const opened=fakeStream({readyState:"live",label:"Back",getSettings:()=>({deviceId:"back"}),
