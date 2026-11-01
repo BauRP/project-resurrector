@@ -57,11 +57,15 @@ export function loadMatrix(): CapabilityMatrix | null {
 
 async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCaps> {
   let stream: MediaStream | null = null;
+  let usedUnspecifiedFallback=false;
   try {
     stream = await gum({ video: { facingMode: { exact: facingMode } }, audio: false });
   } catch {
     if (facingMode === "user") return empty();
-    try { stream = await gum({ video: true, audio: false }); } catch { return empty(); }
+    try {
+      stream = await gum({ video: true, audio: false });
+      usedUnspecifiedFallback=true;
+    } catch { return empty(); }
   }
   try {
     const track=stream.getVideoTracks()[0];
@@ -73,7 +77,10 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
     // actually have opened a selfie camera. Never assign that camera the
     // rear passport or lens capabilities when the observed facing disagrees.
     const actualFacing=settings.facingMode;
-    if((facingMode==="environment" && actualFacing==="user") ||
+    // A generic video:true fallback does not establish rear lens identity.
+    // If the browser does not disclose facingMode, preserve unknown instead.
+    if((usedUnspecifiedFallback && actualFacing!=="environment") ||
+       (facingMode==="environment" && actualFacing==="user") ||
        (facingMode==="user" && actualFacing==="environment"))
       return empty();
     const range=(k:string):[number,number]|null=>{
