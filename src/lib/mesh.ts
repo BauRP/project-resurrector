@@ -80,7 +80,19 @@ class Mesh {
   send(msg: MeshMessage) {
     this.bc?.postMessage(msg);
     const raw = JSON.stringify(msg);
-    this.channels.forEach((_, ch) => { if (ch.readyState === "open") ch.send(raw); });
+    this.channels.forEach((id, ch) => {
+      if(ch.readyState!=="open")return;
+      try{ch.send(raw);}
+      catch{
+        // When Wi-Fi drops between readyState check and send(), don't crash
+        // the entire director session or leave a phantom connected camera.
+        this.channels.delete(ch);
+        if(id && !Array.from(this.channels.values()).includes(id))
+          this.peers.delete(id);
+        try{ch.close();}catch{/* channel is already lost */}
+        this.emit();
+      }
+    });
   }
   private handle(msg: MeshMessage, via: PeerInfo["via"], ch?: RTCDataChannel) {
     if (msg.from === this.selfId) return;
@@ -98,7 +110,14 @@ class Mesh {
     this.channels.set(ch, null);
     ch.onopen = () => { void this.sendTelemetry(); this.emit(); };
     ch.onmessage = (e) => { try { this.handle(JSON.parse(String(e.data)) as MeshMessage, "webrtc", ch); } catch { /* ignore malformed frame */ } };
-    ch.onclose = () => { const id = this.channels.get(ch); this.channels.delete(ch); if (id) this.peers.delete(id); this.emit(); };
+    ch.onclose = () => {
+      const id=this.channels.get(ch);this.channels.delete(ch);
+      // A reconnect may already have established a new channel for the
+      // same peer. A late close must not make that healthy peer disappear.
+      if(id && !Array.from(this.channels.values()).includes(id))
+        this.peers.delete(id);
+      this.emit();
+    };
     this.start();
   }
 
