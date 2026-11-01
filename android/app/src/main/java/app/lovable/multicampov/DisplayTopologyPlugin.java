@@ -40,6 +40,7 @@ public class DisplayTopologyPlugin extends Plugin {
     private static final Object SURFACE_LOCK=new Object();
     private static String surfaceLease="";
     private static boolean surfaceTopologyObserved=false;
+    private static int surfaceWindowWidth=0, surfaceWindowHeight=0;
     // Once native hinge observation has started, an absent observer is
     // UNKNOWN safety, not proof that there is no hinge in the new Activity.
     private static boolean surfaceObservationRequired=false;
@@ -50,6 +51,7 @@ public class DisplayTopologyPlugin extends Plugin {
             surfaceLease=lease;
             surfaceObservationRequired=true;
             surfaceTopologyObserved=false;
+            surfaceWindowWidth=0;surfaceWindowHeight=0;
             surfaceHinges.clear();
         }
     }
@@ -63,6 +65,11 @@ public class DisplayTopologyPlugin extends Plugin {
         boolean changed=false;
         synchronized(SURFACE_LOCK){
             if(!lease.equals(surfaceLease))return;
+            // A real Activity may shrink from unfolded to cover display
+            // while a TextureView placement from the old viewport is queued.
+            boolean windowChanged=surfaceWindowWidth!=windowWidth ||
+                surfaceWindowHeight!=windowHeight;
+            surfaceWindowWidth=windowWidth;surfaceWindowHeight=windowHeight;
             ArrayList<Rect> nextHinges=new ArrayList<>();
             for(DisplayFeature feature:layout.getDisplayFeatures()){
                 if(!(feature instanceof FoldingFeature))continue;
@@ -93,7 +100,8 @@ public class DisplayTopologyPlugin extends Plugin {
                 if(a.right!=b.right)return Integer.compare(a.right,b.right);
                 return Integer.compare(a.bottom,b.bottom);
             });
-            changed=!surfaceTopologyObserved || !surfaceHinges.equals(nextHinges);
+            changed=windowChanged || !surfaceTopologyObserved ||
+                !surfaceHinges.equals(nextHinges);
             surfaceHinges.clear();
             surfaceHinges.addAll(nextHinges);
             surfaceTopologyObserved=true;
@@ -106,6 +114,11 @@ public class DisplayTopologyPlugin extends Plugin {
         synchronized(SURFACE_LOCK){
             if(rect==null||rect.width()<=0||rect.height()<=0)return true;
             if(surfaceObservationRequired&&!surfaceTopologyObserved)return true;
+            if(surfaceObservationRequired &&
+               (surfaceWindowWidth<=0||surfaceWindowHeight<=0 ||
+                rect.left<0||rect.top<0 ||
+                rect.right>surfaceWindowWidth||rect.bottom>surfaceWindowHeight))
+                return true;
             for(Rect hinge:surfaceHinges)
                 if(Rect.intersects(rect,hinge))return true;
             return false;
@@ -116,6 +129,7 @@ public class DisplayTopologyPlugin extends Plugin {
             if(!lease.equals(surfaceLease))return false;
             surfaceLease="";
             surfaceTopologyObserved=false;
+            surfaceWindowWidth=0;surfaceWindowHeight=0;
             surfaceHinges.clear();
             return true;
         }

@@ -55,7 +55,10 @@ export function candidateWebViewModes(
       if(result.length>=24)return result;
     }
   }
-  return result.length ? result : [...TEST_MODES];
+  // All reported bounds are valid. If they contain no known size/FPS, do
+  // NOT reintroduce generic 1080p/4K modes outside those measured bounds.
+  // Leave this device untested until an actual compatible mode is known.
+  return result;
 }
 
 /** Inspect the specific WebView deviceId without evicting active recording.
@@ -74,18 +77,25 @@ export async function discoverWebViewModeCandidates(
     if(signal.aborted)return {modes:[],source:"fallback",message:"Проверка отменена"};
     const track=stream.getVideoTracks()[0];
     if(!track || track.readyState!=="live" || track.getSettings().deviceId!==deviceId)
-      return {modes:[...TEST_MODES],source:"fallback",
-        message:"Идентификатор WebView не подтверждён; только кандидаты"};
+      return {modes:[],source:"fallback",
+        message:"Идентификатор WebView не подтверждён; очередь отложена"};
     const caps=track.getCapabilities?.();
+    const candidates=candidateWebViewModes(caps,track.getSettings());
+    // Empty list with genuine numeric bounds means no safely proposed mode.
+    // Do not silently reinterpret it as a WebView API failure.
     const recognized=!!caps?.width && !!caps?.height && !!caps?.frameRate;
-    return {modes:candidateWebViewModes(caps,track.getSettings()),
+    return {modes:candidates,
       source:recognized?"track":"fallback",
-      message:recognized?"Кандидаты из getCapabilities(), ожидают проверки записи":
+      message:recognized?(candidates.length?
+        "Кандидаты из getCapabilities(), ожидают проверки записи":
+        "Измеренные диапазоны не содержат совместимых кандидатов; режимы отложены"):
         "WebView не раскрыл диапазоны; режимы пока не подтверждены"};
   }catch(error){
     if(signal.aborted)return {modes:[],source:"fallback",message:"Проверка отменена"};
-    return {modes:[...TEST_MODES],source:"fallback",
-      message:"Получить диапазоны объектива не удалось: "+String(error)};
+    // A busy or failing camera cannot prove its available recording modes.
+    // Return no tasks rather than taking over the user's live camera.
+    return {modes:[],source:"fallback",
+      message:"Диапазоны объектива временно недоступны; диагностика отложена: "+String(error)};
   }finally{cameraController.release(owner);}
 }
 

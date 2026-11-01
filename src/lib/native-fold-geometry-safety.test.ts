@@ -16,6 +16,13 @@ describe("native WindowManager hinge safety gate",()=>{
  it("rejects a zero-size native preview target",()=>{
   expect(code).toContain("if(rect==null||rect.width()<=0||rect.height()<=0)return true;");
  });
+ it("blocks stale native TextureView placement when the actual Activity window shrinks",()=>{
+  expect(code).toContain("private static int surfaceWindowWidth=0, surfaceWindowHeight=0;");
+  expect(code).toContain("surfaceWindowWidth=windowWidth;surfaceWindowHeight=windowHeight;");
+  expect(code).toContain("changed=windowChanged || !surfaceTopologyObserved ||");
+  expect(code).toContain("rect.right>surfaceWindowWidth||rect.bottom>surfaceWindowHeight");
+  expect(code).toContain("surfaceWindowWidth=0;surfaceWindowHeight=0;");
+ });
  it("does not invent folds and maintains native observer leases",()=>{
   expect(code).toContain("if(!fold.isSeparating())continue;");
   expect(code).toContain("if(!lease.equals(surfaceLease))return;");

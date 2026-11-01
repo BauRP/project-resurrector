@@ -16,6 +16,15 @@ describe("per-lens resumable diagnostic queue", () => {
     ]);
     expect(next.filter(t=>t.cameraId==="front"&&t.mode.width===3840)).toHaveLength(0);
   });
+  it("does not starve later cameras when an expanded candidate queue reaches 500 tasks",()=>{
+    const modes=Array.from({length:24},(_,i)=>({width:640+i,height:480,fps:30}));
+    const plans=Object.fromEntries(Array.from({length:30},(_,i)=>["camera-"+i,modes]));
+    const queued=prepareCameraTestQueueByDevice(plans,[],[]);
+    expect(queued).toHaveLength(500);
+    expect(new Set(queued.map(t=>t.cameraId)).size).toBe(30);
+    expect(queued[0]?.cameraId).toBe("camera-0");
+    expect(queued[1]?.cameraId).toBe("camera-1");
+  });
   it("only marks the exact tested camera, size and frame rate verified", () => {
     const tasks = prepareCameraTestQueue(["rear","front"],[base,{ ...base, fps:60 }],[],[proof]);
     expect(tasks).toHaveLength(4);

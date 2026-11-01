@@ -100,14 +100,24 @@ export function prepareCameraTestQueueByDevice(
   previous:readonly CameraTestTask[],
   evidence:readonly ModeEvidence[],
 ):CameraTestTask[]{
-  const all:CameraTestTask[]=[];
+  // Round-robin at the persistence cap: with many external cameras, a
+  // first-camera-first 500-task cutoff could starve later real devices.
+  const groups:CameraTestTask[][]=[];
   for(const [deviceId,modes] of Object.entries(plans)){
     if(!deviceId || !Array.isArray(modes))continue;
     const keys=new Set(modes.map(mode=>cameraTaskKey(deviceId,mode)));
-    for(const task of prepareCameraTestQueue([deviceId],modes,previous,evidence)){
-      if(keys.has(task.key))all.push(task);
-      if(all.length>=500)return all;
+    groups.push(prepareCameraTestQueue([deviceId],modes,previous,evidence)
+      .filter(task=>keys.has(task.key)));
+  }
+  const all:CameraTestTask[]=[];
+  for(let index=0;all.length<500;index++){
+    let found=false;
+    for(const group of groups){
+      if(index>=group.length)continue;
+      all.push(group[index]!);found=true;
+      if(all.length>=500)break;
     }
+    if(!found)break;
   }
   return all;
 }

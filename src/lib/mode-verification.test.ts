@@ -133,6 +133,13 @@ describe("per-WebView-lens mode discovery without false verification",()=>{
   expect(modes.length).toBeLessThanOrEqual(24);
   expect(new Set(modes.map(m=>[m.width,m.height,m.fps].join("|"))).size).toBe(modes.length);
  });
+ it("never proposes unsupported generic modes outside a reported valid capability range",()=>{
+  expect(candidateWebViewModes({width:{min:100,max:160},height:{min:100,max:160},
+    frameRate:{min:7,max:12}})).toEqual([]);
+  expect(candidateWebViewModes({width:{min:100,max:160},height:{min:100,max:160},
+    frameRate:{min:7,max:12}},{width:144,height:144,frameRate:10}))
+    .toEqual([{width:144,height:144,fps:10}]);
+ });
  it("never opens a camera when discovery was cancelled",async()=>{
   const cancel=new AbortController();cancel.abort();
   const result=await discoverWebViewModeCandidates("rear",cancel.signal);
