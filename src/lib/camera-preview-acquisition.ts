@@ -30,7 +30,7 @@ export async function acquireWebViewPreviewWithNativeGuard(
   await check();
   let stream:MediaStream;
   try{
-    stream=await cameraController.acquire(owner,constraints,{preempt:options.preempt});
+    stream=await cameraController.acquire(owner,constraints,options.preempt===undefined?{}:{preempt:options.preempt});
   }catch(error){
     // An Android bridge error or active native owner never goes through
     // this catch: those are checked above. Camera busy/cancelled and a
@@ -41,7 +41,7 @@ export async function acquireWebViewPreviewWithNativeGuard(
        error instanceof CameraUnavailableError)throw error;
     await check();
     stream=await cameraController.acquire(owner,
-      {...constraints,audio:false},{preempt:options.preempt});
+      {...constraints,audio:false},options.preempt===undefined?{}:{preempt:options.preempt});
   }
   try{
     // Native Camera2 may have started while the WebView permission dialog
