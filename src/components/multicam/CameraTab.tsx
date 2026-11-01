@@ -94,6 +94,8 @@ export function CameraTab() {
   }, [s.meterMode, stream]);
   useEffect(() => { if (s.eyeAF && !s.aiEnabled) void applyAdvanced(stream, { focusMode: "continuous" }); }, [s.eyeAF, s.aiEnabled, stream]);
   const faceBox = useFaceTracking(videoRef, stream, s.eyeAF || s.aiEnabled, s.aiEnabled && s.focusModeAI === "hybrid_nearest_priority");
+  const mountedRef = useRef(true); const photoBusy = useRef(false); const [capturing, setCapturing] = useState(false);
+  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [countdown, setCountdown] = useState(0); const [flash, setFlash] = useState(0); const [photoMsg, setPhotoMsg] = useState("");
   const [lastPhoto, setLastPhoto] = useState<string | null>(null); const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
   useEffect(() => () => { if (intervalRef.current) window.clearInterval(intervalRef.current); }, []);
@@ -171,6 +173,7 @@ export function CameraTab() {
   const previewFilter = [s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ");
   const notify = (m: string) => { setPhotoMsg(m); window.setTimeout(() => setPhotoMsg(""), 2500); };
   const shootOnce = async () => {
+    if (!mountedRef.current) return;
     const v = videoRef.current; if (!v || cameraState !== "live" || !v.videoWidth) { notify("Камера недоступна — снимок невозможен"); return; }
     const sh = s.shoot; const shots: Blob[] = []; let mode = "single";
     if (sh.bracket) {
@@ -187,11 +190,15 @@ export function CameraTab() {
     notify(shots.length > 1 ? `Сохранено ${shots.length} фото` : "Фото сохранено");
   };
   const capturePhoto = async () => {
+    if (photoBusy.current) return; photoBusy.current = true; setCapturing(true);
+    try {
     if (intervalRef.current) { window.clearInterval(intervalRef.current); intervalRef.current = null; setIntervalOn(false); notify("Интервальная съёмка остановлена"); return; }
     if (countdown) return;
-    if (s.shoot.timer) { for (let k = s.shoot.timer; k > 0; k--) { setCountdown(k); await wait(1000); } setCountdown(0); }
+    if (s.shoot.timer) { for (let k = s.shoot.timer; k > 0; k--) { if (!mountedRef.current) return; setCountdown(k); await wait(1000); } setCountdown(0); }
     await shootOnce();
-    if (s.shoot.interval) { intervalRef.current = window.setInterval(() => void shootOnce(), s.shoot.interval * 1000); setIntervalOn(true); }
+    if (s.shoot.interval && mountedRef.current) { intervalRef.current = window.setInterval(() => { if (photoBusy.current) return; photoBusy.current = true; void shootOnce().catch(() => { if (mountedRef.current) notify("Не удалось сохранить фото"); }).finally(() => { photoBusy.current = false; }); }, s.shoot.interval * 1000); setIntervalOn(true); }
+    } catch { if (mountedRef.current) notify("Не удалось сохранить фото"); }
+    finally { photoBusy.current = false; if (mountedRef.current) setCapturing(false); }
   };
   const meterIcon = s.meterMode === "matrix" ? <Grid3x3 className="size-3.5" /> : s.meterMode === "center" ? <Circle className="size-3.5" /> : <Crosshair className="size-3.5" />;
   const meterLabel = s.meterMode === "matrix" ? "Матричный" : s.meterMode === "center" ? "Центральный" : "Точечный";
@@ -299,7 +306,7 @@ export function CameraTab() {
           <div className="flex flex-col items-center pt-1"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span></div>
           <div className="segmented-mini" role="radiogroup" aria-label="Фото или видео">{(["photo", "video"] as const).map((k) => <button key={k} role="radio" aria-checked={s.captureKind === k} disabled={s.recording || intervalOn} onClick={() => s.set({ captureKind: k })} className={s.captureKind === k ? "active" : ""}>{k === "photo" ? "ФОТО" : "ВИДЕО"}</button>)}</div>
         </>}
-          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
+          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || capturing} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
         </div>
         <div className="mb-4 flex justify-end gap-1.5">{!clean && <>
           {s.captureKind === "photo" ? (lastPhoto ? <a href={lastPhoto} download={`multicam-photo-${Date.now()}.jpg`} aria-label="Скачать последнее фото" className="size-9 overflow-hidden rounded-md border border-border"><img src={lastPhoto} alt="Последнее фото" className="h-full w-full object-cover" /></a> : <Button size="icon" variant="secondary" disabled aria-label="Нет фото"><Download /></Button>) :
