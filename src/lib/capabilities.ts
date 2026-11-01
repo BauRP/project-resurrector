@@ -63,22 +63,46 @@ async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCa
     if (facingMode === "user") return empty();
     try { stream = await gum({ video: true, audio: false }); } catch { return empty(); }
   }
-  const track = stream.getVideoTracks()[0];
-  const tc = (track?.getCapabilities?.() ?? {}) as Record<string, unknown>;
-  stream.getTracks().forEach((t) => t.stop());
-  const range = (k: string): [number, number] | null => { const r = tc[k] as { min?: number; max?: number } | undefined; return r && typeof r.max === "number" && r.max > (r.min ?? 0) ? [r.min ?? 0, r.max] : null; };
-  const w = (tc["width"] as { max?: number })?.max ?? 0; const h = (tc["height"] as { max?: number })?.max ?? 0; const f = (tc["frameRate"] as { max?: number })?.max ?? 0;
-  const wbModes = (tc["whiteBalanceMode"] as string[] | undefined) ?? [];
-  return {
-    available: true, deviceId: (tc["deviceId"] as string) ?? track?.getSettings().deviceId ?? null, label: track?.label ?? "",
-    maxWidth: w, maxHeight: h, maxFps: f,
-    // A maximum width/FPS does NOT establish that individual width+height+FPS modes work.
-    resolutions: [], candidateResolutions: Object.entries(RES).filter(([, [rw, rh]]) => !w || (rw <= Math.max(w, h) && rh <= Math.min(w, h) + 1)).map(([k]) => k),
-    fps: [], candidateFps: [24, 30, 60].filter((x) => !f || x <= f), highSpeed: [],
-    iso: range("iso"), exposure: range("exposureTime"), focus: range("focusDistance"),
-    whiteBalance: wbModes.includes("manual"), colorTemperature: range("colorTemperature"), torch: tc["torch"] === true, zoom: range("zoom"),
-  };
-}
+  try {
+    const track=stream.getVideoTracks()[0];
+    // getUserMedia resolving is NOT proof that a usable lens was opened.
+    if(!track || track.readyState!=="live")return empty();
+    const tc=(track.getCapabilities?.() ?? {}) as Record<string,unknown>;
+    const settings=track.getSettings?.() ?? {};
+    const range=(k:string):[number,number]|null=>{
+      const r=tc[k] as {min?:number;max?:number}|undefined;
+      const min=r?.min,max=r?.max;
+      return typeof min==="number" && typeof max==="number" &&
+        Number.isFinite(min) && Number.isFinite(max) && min>=0 && max>min ?
+          [min,max] : null;
+    };
+    const max=(k:string)=>{
+      const raw=(tc[k] as {max?:number}|undefined)?.max;
+      return typeof raw==="number" && Number.isFinite(raw) && raw>0 ? raw : 0;
+    };
+    const w=max("width"),h=max("height"),f=max("frameRate");
+    const wbModes=tc["whiteBalanceMode"];
+    const id=typeof settings.deviceId==="string"&&settings.deviceId ?
+      settings.deviceId : null;
+    return {
+      available:true,deviceId:id,label:track.label??"",
+      maxWidth:w,maxHeight:h,maxFps:f,
+      // Capability maxima are candidates, never proof of decoded recording.
+      resolutions:[],candidateResolutions:Object.entries(RES)
+        .filter(([, [rw,rh]])=>!w||!h||(rw<=Math.max(w,h)&&rh<=Math.min(w,h)+1))
+        .map(([k])=>k),
+      fps:[],candidateFps:[24,30,60].filter(x=>!f||x<=f),highSpeed:[],
+      iso:range("iso"),exposure:range("exposureTime"),focus:range("focusDistance"),
+      whiteBalance:Array.isArray(wbModes)&&wbModes.includes("manual"),
+      colorTemperature:range("colorTemperature"),torch:tc["torch"]===true,zoom:range("zoom"),
+    };
+  }catch{
+    // Broken OEM getCapabilities/getSettings calls are unknown, not success.
+    return empty();
+  }finally{
+    // Including a missing-track stream or a throwing OEM capability getter.
+    stream.getTracks().forEach(t=>t.stop());
+  }
 
 /** Runs real permission requests and hardware probes, reporting each stage. Duration = real execution time. */
 export async function probeDevice(
