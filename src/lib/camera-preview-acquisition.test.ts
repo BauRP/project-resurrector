@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
-import {acquireWebViewPreviewWithNativeGuard,NativeCameraBusyError} from "./camera-preview-acquisition";
+import {acquireWebViewPreviewWithNativeGuard,NativeCameraBusyError,nativeCameraStateSafeForWebView} from "./camera-preview-acquisition";
 import {cameraController,CameraSupersededError,CameraUnavailableError} from "./camera-controller";
 
 const live=()=>{
@@ -8,6 +8,12 @@ const live=()=>{
 };
 afterEach(()=>{cameraController.release();vi.unstubAllGlobals();});
 describe("safe WebView camera acquisition across Camera2 and fold lifecycle",()=>{
+ it("accepts only verified released states, not interrupted/error or unknown",()=>{
+  for(const state of ["idle","saved"])expect(nativeCameraStateSafeForWebView(state)).toBe(true);
+  for(const state of ["starting","previewing","recording","paused","stopping",
+    "error","interrupted","unknown","",null,undefined])
+    expect(nativeCameraStateSafeForWebView(state)).toBe(false);
+ });
  it("never attempts getUserMedia when native Camera2 is recording",async()=>{
   const gum=vi.fn();vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
   await expect(acquireWebViewPreviewWithNativeGuard(Symbol("ui"),{video:true,audio:true},

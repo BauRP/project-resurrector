@@ -50,8 +50,8 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
     const scanner=source.slice(source.indexOf("function Scanner("));
     expect(scanner).toContain("if(isNative())");
     expect(scanner).toContain('const status=await bounded(nativeCapture.status(),2000,"Native Camera2 status")');
-    expect(scanner).toContain("nativeRecorderOwnsCamera(status.state)");
-    expect(scanner.indexOf("nativeRecorderOwnsCamera(status.state)"))
+    expect(scanner).toContain("!nativeCameraStateSafeForWebView(status.state)");
+    expect(scanner.indexOf("!nativeCameraStateSafeForWebView(status.state)"))
       .toBeLessThan(scanner.indexOf("cameraController.acquire(owner,"));
   });
   it("bounds native ownership checks and QR decode CPU frequency",()=>{

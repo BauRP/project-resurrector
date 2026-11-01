@@ -1,6 +1,11 @@
 import {bounded} from "./async";
 import {cameraController,CameraBusyError,CameraSupersededError,CameraUnavailableError} from "./camera-controller";
-import {nativeRecorderOwnsCamera} from "./native-capture";
+/** Only proved released Camera2 states allow WebView to compete for a lens.
+ * error/interrupted/unknown states may still retain native sensor ownership.
+ */
+export function nativeCameraStateSafeForWebView(state:unknown):boolean {
+  return state==="idle" || state==="saved";
+}
 
 /** Native Camera2 and WebView getUserMedia have different owners. A failed
  * status bridge is *not* evidence that Camera2 is idle. Check before opening,
@@ -23,9 +28,8 @@ export async function acquireWebViewPreviewWithNativeGuard(
     if(!nativeStatus)return;
     const state=(await bounded(nativeStatus(),2000,"Native Camera2 owner")).state;
     if(!current())throw new CameraSupersededError();
-    if(typeof state!=="string"||!state.trim())
-      throw new Error("Состояние нативной камеры неизвестно");
-    if(nativeRecorderOwnsCamera(state))throw new NativeCameraBusyError();
+    if(!nativeCameraStateSafeForWebView(state))
+      throw new NativeCameraBusyError();
   };
   await check();
   let stream:MediaStream;

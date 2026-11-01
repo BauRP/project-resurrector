@@ -11,7 +11,8 @@ import { useMeshPeers } from "./useMesh";
 import { bounded, retry } from "@/lib/async";
 import { cameraController } from "@/lib/camera-controller";
 import { qrScanDimensions } from "@/lib/qr-scan-frame";
-import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
+import { nativeCapture } from "@/lib/native-capture";
+import { nativeCameraStateSafeForWebView } from "@/lib/camera-preview-acquisition";
 import { isNative } from "@/lib/native";
 
 type Step = "choose" | "id" | "qr";
@@ -152,7 +153,7 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
       // to open another device; an unknown native state fails closed.
       if(isNative()){
         const status=await bounded(nativeCapture.status(),2000,"Native Camera2 status");
-        if(nativeRecorderOwnsCamera(status.state))
+        if(!nativeCameraStateSafeForWebView(status.state))
           throw new Error("Native capture owns the camera");
       }
       if(!alive)throw new Error("QR scanner already closed");
