@@ -45,6 +45,15 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
     expect(scanner).not.toContain("navigator.mediaDevices?.getUserMedia(");
     expect(scanner).toContain("return ()=>{alive=false;release();};");
   });
+  it("does not take WebView camera while Android Camera2 owns a native preview or recording",()=>{
+    const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
+    const scanner=source.slice(source.indexOf("function Scanner("));
+    expect(scanner).toContain("if(isNative())");
+    expect(scanner).toContain("const status=await nativeCapture.status()");
+    expect(scanner).toContain("nativeRecorderOwnsCamera(status.state)");
+    expect(scanner.indexOf("nativeRecorderOwnsCamera(status.state)"))
+      .toBeLessThan(scanner.indexOf("cameraController.acquire(owner,"));
+  });
   it("keeps pairing dialog height valid CSS on short folded windows",()=>{
     const source=readFileSync("src/styles.css","utf8");
     expect(source).toContain("min(calc(100dvh - 2rem), var(--fold-work-height, 100dvh))");
