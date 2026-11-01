@@ -54,6 +54,13 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
     expect(scanner.indexOf("nativeRecorderOwnsCamera(status.state)"))
       .toBeLessThan(scanner.indexOf("cameraController.acquire(owner,"));
   });
+  it("bounds native ownership checks and QR decode CPU frequency",()=>{
+    const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
+    const scanner=source.slice(source.indexOf("function Scanner("));
+    expect(scanner).toContain('bounded(nativeCapture.status(),2000,"Native Camera2 status")');
+    expect(scanner).toContain("if(now-lastScanAt<150){raf=requestAnimationFrame(tick);return;}");
+    expect(scanner).toContain("lastScanAt=now;");
+  });
   it("keeps pairing dialog height valid CSS on short folded windows",()=>{
     const source=readFileSync("src/styles.css","utf8");
     expect(source).toContain("min(calc(100dvh - 2rem), var(--fold-work-height, 100dvh))");
