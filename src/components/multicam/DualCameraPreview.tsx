@@ -56,6 +56,17 @@ export function DualCameraPreview({ primaryStream, onSecondaryStream, recording,
   const [details, setDetails] = useState("");
   const videoRef = useRef<HTMLVideoElement>(null);
   const secondaryChanged = useRef(onSecondaryStream); secondaryChanged.current = onSecondaryStream;
+  // The camera-opening effect does not depend on recording: a change here
+  // must not reinitialize the secondary stream while an encoder uses it.
+  const recordingNow=useRef(recording);recordingNow.current=recording;
+  const pendingRelease=useRef(new Set<MediaStream>());
+  useEffect(()=>{
+    if(recording)return;
+    for(const held of pendingRelease.current)release(held);
+    pendingRelease.current.clear();
+  },[recording]);
+  useEffect(()=>()=>{for(const held of pendingRelease.current)release(held);
+    pendingRelease.current.clear();},[]);
   useEffect(() => { secondaryChanged.current(secondStream); return () => secondaryChanged.current(null); }, [secondStream]);
   const candidates = distinctSecondaryCameras(devices, primaryId);
 
@@ -88,7 +99,10 @@ export function DualCameraPreview({ primaryStream, onSecondaryStream, recording,
       if (!active) return;
       setStatus("unavailable");
       setDetails("Первая камера остановилась при открытии второй. Одновременный предпросмотр не подтверждён.");
-      if (open && !recording) release(open);
+      if(open) {
+        if(recordingNow.current)pendingRelease.current.add(open);
+        else release(open);
+      }
       open = null;
       setSecondStream(null);
     };
@@ -118,7 +132,10 @@ export function DualCameraPreview({ primaryStream, onSecondaryStream, recording,
     return () => {
       active = false;
       mainTrack.removeEventListener("ended", onMainEnded);
-      if (open) release(open);
+      if(open){
+        if(recordingNow.current)pendingRelease.current.add(open);
+        else release(open);
+      }
     };
   }, [selected, primaryId, mainTrack]);
 

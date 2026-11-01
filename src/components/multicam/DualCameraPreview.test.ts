@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import {readFileSync} from "node:fs";
 import { distinctSecondaryCameras,liveWebViewCameraId,secondaryStreamMatchesSelection } from "./DualCameraPreview";
 const devices = [
   { deviceId: "main", label: "Camera 1" },
@@ -25,6 +26,12 @@ describe("separate camera preview candidates", () => {
     expect(secondaryStreamMatchesSelection(main,track(undefined),"front")).toBe(false);
     expect(secondaryStreamMatchesSelection(main,track("front","ended"),"front")).toBe(false);
     expect(secondaryStreamMatchesSelection(main,main,"main")).toBe(false);
+  });
+  it("retains secondary media until recording is over when camera layout changes",()=>{
+    const source=readFileSync("src/components/multicam/DualCameraPreview.tsx","utf8");
+    expect(source).toContain("const recordingNow=useRef(recording);recordingNow.current=recording;");
+    expect(source).toContain("if(recordingNow.current)pendingRelease.current.add(open)");
+    expect(source).toContain("for(const held of pendingRelease.current)release(held)");
   });
   it("fails safely when the Android track getter throws after fold/rebind",()=>{
     const broken={readyState:"live",getSettings:()=>{throw Error("Camera2 disconnected");}} as unknown as MediaStreamTrack;
