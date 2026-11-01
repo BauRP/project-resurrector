@@ -479,10 +479,18 @@ export function startDisplayAdaptation(): () => void {
     }
   };
   const apply = (state: DisplayTopology) => {
-    if (disposed || activeAdaptation !== token || !Number.isSafeInteger(state.revision) || state.revision < 0 ||
-      state.revision < lastRevision ||
-      !Number.isFinite(state.widthPx) || !Number.isFinite(state.heightPx) ||
-      state.widthPx <= 0 || state.heightPx <= 0 || !Array.isArray(state.foldingFeatures)) return;
+    if (disposed || activeAdaptation !== token || !Number.isSafeInteger(state.revision) ||
+        state.revision < 0 || state.revision < lastRevision) return;
+    if(!Number.isFinite(state.widthPx) || !Number.isFinite(state.heightPx) ||
+       state.widthPx<=0 || state.heightPx<=0 || !Array.isArray(state.foldingFeatures)){
+      // An Activity that disappeared may report 0x0 after a fold. Do not
+      // preserve the old measured pane layout or its TextureView placement.
+      // An older revision is discarded by the earlier guard above.
+      lastNative=null;
+      lastRevision=state.revision;
+      resetUntrustedLayout();
+      return;
+    }
     lastRevision = state.revision;
     lastNative = state;
     measure();
