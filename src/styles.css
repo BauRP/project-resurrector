@@ -649,3 +649,25 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   left: var(--camera-quad-controls-left) !important;
   width: var(--camera-quad-controls-width) !important;
 }
+
+/* Pairing and QR acquisition are real dialogs, not scaled screenshots.
+   Restrict the interactive modal to the measured usable pane whenever an
+   occluding fold divides the current WebView window. Never guess a hinge. */
+[data-fold-workspace="pane"] .connect-fold-modal {
+  left: var(--fold-work-left, 0px);
+  right: auto;
+  width: min(var(--fold-work-width, 100%), 100%);
+  max-width: 100%;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.connect-fold-modal > * {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(100dvh - 2rem, var(--fold-work-height, 100dvh));
+  overflow-wrap: anywhere;
+}
+@media (max-height: 480px) {
+  .connect-fold-modal { place-items: start center; padding-block: .5rem; }
+  .connect-fold-modal > * { max-height: calc(100dvh - 1rem); }
+}

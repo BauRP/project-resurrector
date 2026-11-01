@@ -19,7 +19,7 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
   const [step, setStep] = useState<Step>("choose");
   const leave = () => { mesh.leave(); s.set({ role: "solo", sessionCode: "POV-842" }); };
 
-  return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] grid place-items-center bg-overlay p-4" onClick={onClose}>
+  return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="connect-fold-modal fixed inset-0 z-[60] grid place-items-center overflow-y-auto overscroll-contain bg-overlay p-4" onClick={onClose}>
     <motion.div initial={{ scale: .94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .96, opacity: 0 }} transition={{ type: "spring", damping: 26, stiffness: 320 }}
       onClick={(e) => e.stopPropagation()} className="glass-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-5">
       <div className="mb-4 flex items-center justify-between gap-2">
