@@ -52,6 +52,21 @@ describe("peer connection loss must not hide healthy remote cameras",()=>{
   expect(internal.peers.has("peer1")).toBe(true);
   expect(internal.channels.has(next)).toBe(true);
  });
+ it("cannot rebind an authenticated data channel to another remote camera",()=>{
+  const ch=channel();internal.channels.set(ch,"phone1");
+  internal.handle({type:"telemetry",from:"phone2",name:"spoof",
+    battery:70,storageMB:200,recording:false},"webrtc",ch);
+  expect(internal.peers.has("phone2")).toBe(false);
+  expect(internal.channels.get(ch)).toBe("phone1");
+ });
+ it("a stale bye must not hide the active replacement camera channel",()=>{
+  const old=channel(),next=channel();
+  internal.channels.set(old,"phone1");internal.channels.set(next,"phone1");
+  internal.peers.set("phone1",peer("phone1"));
+  internal.handle({type:"bye",from:"phone1"},"webrtc",old);
+  expect(internal.peers.has("phone1")).toBe(true);
+  expect(internal.channels.has(next)).toBe(true);
+ });
  it("closing a stale connection cannot remove a reconnected peer",()=>{
   const old=channel(),next=channel();
   internal.wire(old);internal.wire(next);

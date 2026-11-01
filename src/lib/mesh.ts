@@ -122,8 +122,21 @@ class Mesh {
     // or trigger recording commands from invalid network input.
     if(!isValidMeshMessage(msg))return;
     if (msg.from === this.selfId) return;
-    if (ch) this.channels.set(ch, msg.from);
-    if (msg.type === "bye") { this.peers.delete(msg.from); this.emit(); return; }
+    if (ch) {
+      // WebRTC data channels belong to one peer identity. A malformed or
+      // delayed packet from a reused channel cannot impersonate a second
+      // phone or kick out a newly reconnected recorder.
+      const boundId=this.channels.get(ch);
+      if(boundId && boundId!==msg.from)return;
+      if(!this.channels.has(ch))return;
+      this.channels.set(ch,msg.from);
+    }
+    if (msg.type === "bye") {
+      // A retiring channel may say bye after a replacement was paired.
+      if(ch && Array.from(this.channels.entries()).some(([other,id])=>
+        other!==ch && id===msg.from && other.readyState==="open"))return;
+      this.peers.delete(msg.from);this.emit();return;
+    }
     if (msg.type === "ping") { this.send({ type: "pong", from: this.selfId, t: msg.t, to: msg.from }); }
     const existing = this.peers.get(msg.from) ?? { id: msg.from, name: "Camera", battery: null, storageMB: null, latency: null, via, lastSeen: 0, recording: false };
     const next: PeerInfo = { ...existing, via, lastSeen: Date.now() };
