@@ -204,6 +204,19 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => { const el = tlRef.current; if (!el) return; const ro = new ResizeObserver(() => setTlW(el.clientWidth)); ro.observe(el); setTlW(el.clientWidth); return () => ro.disconnect(); }, []);
   const [vTracks, setVTracks] = useState(1); const [aTracks, setATracks] = useState(1);
   const [transitions, setTransitions] = useState<Transition[]>([]); const [selTr, setSelTr] = useState<string | null>(null);
+  const [layoutReady, setLayoutReady] = useState(false);
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("multicam-pov-project-layout") ?? "null") as { items?: Item[]; overlays?: Overlay[]; transitions?: Transition[]; muted?: Record<string, boolean>; hidden?: Record<string, boolean>; vTracks?: number; aTracks?: number } | null;
+      if (saved) { if (Array.isArray(saved.items)) setItems(saved.items); if (Array.isArray(saved.overlays)) setOverlays(saved.overlays); if (Array.isArray(saved.transitions)) setTransitions(saved.transitions); setMuted(saved.muted ?? {}); setHidden(saved.hidden ?? {}); setVTracks(saved.vTracks ?? 1); setATracks(saved.aTracks ?? 1); }
+    } catch { /* Restricted storage preserves session editing. */ }
+    setLayoutReady(true);
+  }, []);
+  useEffect(() => {
+    if (!layoutReady) return;
+    const timer = setTimeout(() => { try { localStorage.setItem("multicam-pov-project-layout", JSON.stringify({ items, overlays, transitions, muted, hidden, vTracks, aTracks })); } catch { /* Originals remain intact. */ } }, 150);
+    return () => clearTimeout(timer);
+  }, [layoutReady, items, overlays, transitions, muted, hidden, vTracks, aTracks]);
   const [trCat, setTrCat] = useState("basic"); const [ghost, setGhost] = useState<{ type: string; x: number; y: number } | null>(null); const [dropErr, setDropErr] = useState("");
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
   const monRef = useRef<HTMLDivElement>(null); const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
