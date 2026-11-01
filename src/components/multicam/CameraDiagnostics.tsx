@@ -7,7 +7,7 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES, discoverWebViewModeCandidates, type TestMode } from "@/lib/mode-verification";
-import { prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
+import { prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, preserveUnavailableCameraHistory, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
@@ -120,6 +120,7 @@ export function CameraDiagnostics() {
     };
     if(!full)persist(queue);
     try {
+      const unavailableIds=new Set<string>();
       if(full){
         const perCamera:Record<string,TestMode[]>={};
         // Full discovery is explicit user action and sequential: never take
@@ -133,11 +134,20 @@ export function CameraDiagnostics() {
           const found=await discoverWebViewModeCandidates(id,current.signal);
           if(current.signal.aborted)return;
           perCamera[id]=found.modes;
+          if(!found.modes.length){
+            unavailableIds.add(id);
+            setSafetyNotice("Объектив временно недоступен: "+
+              (devices.find(d=>d.deviceId===id)?.label||"Камера")+
+              ". Предыдущий паспорт сохранён.");
+          }
         }
         if(mounted.current)setCameraModePlans(perCamera);
-        persist(prepareCameraTestQueueByDevice(perCamera,loadCameraTestQueue(),loadModeEvidence()));
+        const oldQueue=loadCameraTestQueue();
+        const activeQueue=prepareCameraTestQueueByDevice(perCamera,oldQueue,loadModeEvidence());
+        persist(preserveUnavailableCameraHistory(activeQueue,oldQueue,unavailableIds));
       }
-      const candidates = queue.filter(task => queueIds.includes(task.cameraId) &&
+      const candidates = queue.filter(task => !unavailableIds.has(task.cameraId) &&
+        queueIds.includes(task.cameraId) &&
         (["pending","retry","deferred"].includes(task.status) ||
           (full && ["error","recorded"].includes(task.status))));
       const eligible = full ? candidates : selectQuickCameraTasks(candidates,2,queue);

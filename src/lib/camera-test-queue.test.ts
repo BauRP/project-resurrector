@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
+import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, preserveUnavailableCameraHistory, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
 import type { ModeEvidence } from "./camera-passport";
 
 const base = { width:1920, height:1080, fps:30 };
@@ -17,6 +17,24 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(tasks.filter(t=>t.cameraId==="rear").map(t=>t.key))
       .toEqual([cameraTaskKey("rear",hd)]);
     expect(quickCameraCandidatePlans(["rear"],{rear:[hd]},[base],0)["rear"]).toEqual([]);
+  });
+  it("keeps prior proof when the OEM temporarily refuses camera discovery",()=>{
+    const previous=prepareCameraTestQueue(["rear","front"],[base],[],[proof]);
+    const active=prepareCameraTestQueueByDevice({front:[base],rear:[]},previous,[proof]);
+    expect(active.some(t=>t.cameraId==="rear")).toBe(false);
+    const restored=preserveUnavailableCameraHistory(active,previous,new Set(["rear"]));
+    expect(restored.find(t=>t.cameraId==="rear")?.status).toBe("verified");
+    expect(restored.filter(t=>t.cameraId==="rear")).toHaveLength(1);
+    expect(restored.filter(t=>t.cameraId==="front")).toHaveLength(1);
+    expect(preserveUnavailableCameraHistory(active,previous,new Set())).toEqual(active);
+  });
+  it("never drops newly eligible tasks behind stale queue history at its cap",()=>{
+    const modes=Array.from({length:24},(_,i)=>({width:640+i,height:480,fps:30}));
+    const plans=Object.fromEntries(Array.from({length:24},(_,i)=>["active-"+i,modes]));
+    const active=prepareCameraTestQueueByDevice(plans,[],[]);
+    expect(active).toHaveLength(500);
+    const old=prepareCameraTestQueue(["offline"],[base],[],[proof]);
+    expect(preserveUnavailableCameraHistory(active,old,new Set(["offline"]))).toEqual(active);
   });
   it("keeps per-camera candidate lists isolated and retains only current modes",()=>{
     const tele={width:3840,height:2160,fps:30};

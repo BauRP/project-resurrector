@@ -70,8 +70,10 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
     reported.right > reported.left && reported.bottom > reported.top
   );
   if (!validWebView)
-    return {regions:[{left:0,top:0,width:cssWidth,height:cssHeight}],
-      split:"none",occluded:false,hinges:[]};
+    // A malformed measured WebView origin is not evidence of a safe
+    // fullscreen pane. Keep the last valid layout until Android reports
+    // actual coordinates rather than covering a hinge or control surface.
+    return {regions:[],split:"none",occluded:false,hinges:[]};
   const viewport = reported ?? fullWindow;
   const sx = cssWidth / (viewport.right - viewport.left);
   const sy = cssHeight / (viewport.bottom - viewport.top);

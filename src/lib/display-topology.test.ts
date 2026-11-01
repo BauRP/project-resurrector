@@ -202,11 +202,22 @@ describe("native window pixels to an inset WebView viewport",()=>{
       webViewBoundsPx:{left:700,top:0,right:1200,bottom:900}};
     expect(calculateDisplayRegions(state,500,900).regions).toHaveLength(1);
   });
+  it("never substitutes a full-screen pane for a misplaced/infinite native WebView",()=>{
+    const state={...topology([hinge(590,610)])};
+    for(const bounds of [
+      {left:-1,top:0,right:1200,bottom:900},
+      {left:0,top:0,right:Infinity,bottom:900},
+      {left:500,top:0,right:400,bottom:900},
+      {left:0,top:200,right:1200,bottom:100},
+    ]){
+      expect(calculateDisplayRegions({...state,webViewBoundsPx:bounds},600,450).regions).toEqual([]);
+    }
+  });
   it("fails safe for impossible native WebView rectangles",()=>{
     const state={...topology([hinge(590,610)]),
       webViewBoundsPx:{left:200,top:10,right:150,bottom:900}};
     const r=calculateDisplayRegions(state,600,450);
-    expect(r.regions).toHaveLength(1);
+    expect(r.regions).toHaveLength(0);
     expect(r.hinges).toHaveLength(0);
   });
 });

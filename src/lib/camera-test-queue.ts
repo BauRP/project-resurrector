@@ -141,6 +141,19 @@ export function quickCameraCandidatePlans(
   }
   return result;
 }
+/** Preserve durable diagnostic queue entries for cameras that could not be
+ * opened during the current capability discovery. A busy lens is UNKNOWN,
+ * not a reason to erase previously measured results or test generic modes.
+ * Current eligible tasks have priority within the 500-task persistence cap.
+ */
+export function preserveUnavailableCameraHistory(
+  active:readonly CameraTestTask[], previous:readonly CameraTestTask[],
+  unavailable:ReadonlySet<string>,
+):CameraTestTask[]{
+  const seen=new Set(active.map(task=>task.key));
+  const retained=previous.filter(task=>unavailable.has(task.cameraId)&&!seen.has(task.key));
+  return [...active,...retained].slice(0,500);
+}
 /** Quick scan tests at most one pending mode per lens per invocation.
  * Spreads bounded recording effort over distinct cameras. Remaining tasks
  * stay queued for a future quick pass or user-approved full verification.
