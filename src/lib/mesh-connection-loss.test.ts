@@ -1,13 +1,40 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
-import {mesh} from "./mesh";
+import {mesh,isValidMeshMessage} from "./mesh";
 const internal=mesh as unknown as {
   channels:Map<RTCDataChannel,string|null>;
   peers:Map<string,{id:string;name:string;via:string;lastSeen:number;recording:boolean;battery:null;storageMB:null;latency:null}>;
   wire:(ch:RTCDataChannel)=>void;
+  handle:(message:unknown,via:"webrtc"|"local",channel?:RTCDataChannel)=>void;
 };
 const peer=(id:string)=>({id,name:"Camera",via:"webrtc",lastSeen:Date.now(),recording:false,battery:null,storageMB:null,latency:null});
 const channel=(send=vi.fn())=>({readyState:"open",send,close:vi.fn()} as unknown as RTCDataChannel);
 afterEach(()=>{internal.channels.clear();internal.peers.clear();});
+describe("multi-phone mesh message trust and isolation",()=>{
+ it("rejects unknown/oversized IDs and impossible telemetry",()=>{
+   for(const m of [
+     null,{type:"ping",from:"",t:1},{type:"ping",from:"x".repeat(100),t:1},
+     {type:"ping",from:"bad peer",t:1},{type:"ping",from:"phone",t:NaN},
+     {type:"record",from:"phone",on:"yes",at:1},
+     {type:"telemetry",from:"phone",name:"A",recording:true,battery:200,storageMB:0},
+     {type:"dangerous",from:"phone"}]){
+     expect(isValidMeshMessage(m)).toBe(false);
+     internal.handle(m,"local");
+   }
+   expect(internal.peers.size).toBe(0);
+ });
+ it("maintains multiple distinct remote phones without collapsing their identities",()=>{
+   const m=(from:string)=>({type:"telemetry",from,name:from,
+     battery:75,storageMB:1024,recording:false});
+   internal.handle(m("phone1"),"webrtc");
+   internal.handle(m("phone2"),"webrtc");
+   expect(internal.peers.size).toBe(2);
+   expect(internal.peers.has("phone1")).toBe(true);
+   expect(internal.peers.has("phone2")).toBe(true);
+   internal.handle({type:"bye",from:"phone1"},"webrtc");
+   expect(internal.peers.has("phone2")).toBe(true);
+   expect(internal.peers.has("phone1")).toBe(false);
+ });
+});
 describe("peer connection loss must not hide healthy remote cameras",()=>{
  it("drops a failed send without throwing into the recording UI",()=>{
   const broken=channel(vi.fn(()=>{throw Error("NetworkLost")}));

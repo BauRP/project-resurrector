@@ -9,6 +9,28 @@ export type MeshMessage =
   | { type: "pong"; from: string; t: number; to: string }
   | { type: "bye"; from: string };
 
+export function isValidMeshMessage(message:unknown):message is MeshMessage{
+  if(!message||typeof message!=="object")return false;
+  const m=message as Record<string,unknown>;
+  if(typeof m["from"]!=="string"||m["from"].length<1||
+     m["from"].length>64||!/^[a-zA-Z0-9_-]+$/.test(m["from"]))return false;
+  switch(m["type"]){
+    case "bye":return true;
+    case "ping":return Number.isFinite(m["t"])&&typeof m["t"]==="number"&&m["t"]>=0;
+    case "pong":return typeof m["to"]==="string"&&m["to"].length>0&&
+      m["to"].length<=64&&typeof m["t"]==="number"&&
+      Number.isFinite(m["t"])&&m["t"]>=0;
+    case "record":return typeof m["on"]==="boolean"&&
+      typeof m["at"]==="number"&&Number.isFinite(m["at"])&&m["at"]>=0;
+    case "telemetry":return typeof m["name"]==="string"&&m["name"].length<=128&&
+      typeof m["recording"]==="boolean"&&
+      (m["battery"]===null||(typeof m["battery"]==="number"&&
+        Number.isFinite(m["battery"])&&m["battery"]>=0&&m["battery"]<=100))&&
+      (m["storageMB"]===null||(typeof m["storageMB"]==="number"&&
+        Number.isFinite(m["storageMB"])&&m["storageMB"]>=0));
+    default:return false;
+  }
+}
 const deviceName = () => {
   if (typeof navigator === "undefined") return "Device";
   const ua = navigator.userAgent;
@@ -95,6 +117,10 @@ class Mesh {
     });
   }
   private handle(msg: MeshMessage, via: PeerInfo["via"], ch?: RTCDataChannel) {
+    // A QR-linked peer or local BroadcastChannel is not a trusted parser.
+    // Refuse malformed/unbounded messages before they create phantom peers
+    // or trigger recording commands from invalid network input.
+    if(!isValidMeshMessage(msg))return;
     if (msg.from === this.selfId) return;
     if (ch) this.channels.set(ch, msg.from);
     if (msg.type === "bye") { this.peers.delete(msg.from); this.emit(); return; }
