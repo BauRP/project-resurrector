@@ -250,7 +250,8 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(capturePlugin).toContain("if(owner.equals(directOwner))detachDirectView()");
  });
  it("coalesces duplicate WindowManager callbacks but checks first actual topology",()=>{
-   expect(foldObserver).toContain("changed=!surfaceTopologyObserved || !surfaceHinges.equals(nextHinges)");
+   expect(foldObserver).toContain("changed=windowChanged || !surfaceTopologyObserved ||");
+   expect(foldObserver).toContain("!surfaceHinges.equals(nextHinges);");
    expect(foldObserver).toContain("Collections.sort(nextHinges");
    expect(foldObserver).toContain("if(changed)NativeCapturePlugin.onFoldGeometryChanged()");
  });

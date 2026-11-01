@@ -12,7 +12,7 @@ describe("per-lens resumable diagnostic queue", () => {
     const prior=prepareCameraTestQueue(["rear","front"],[base],[],[]);
     const next=prepareCameraTestQueueByDevice(plans,prior,[]);
     expect(next.map(t=>t.key)).toEqual([
-      cameraTaskKey("rear",base),cameraTaskKey("rear",tele),cameraTaskKey("front",front),
+      cameraTaskKey("rear",base),cameraTaskKey("front",front),cameraTaskKey("rear",tele),
     ]);
     expect(next.filter(t=>t.cameraId==="front"&&t.mode.width===3840)).toHaveLength(0);
   });
