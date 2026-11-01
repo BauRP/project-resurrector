@@ -180,7 +180,7 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
           <div className="vu-fill absolute inset-x-0 bottom-0 transition-[height] duration-75" style={{ height: `${level}%` }} />
         </div>
       </div>
-      <input type="range" className="gain-range" aria-label="Усиление микрофона" aria-valuetext={`+${knob.toFixed(1)} дБ`} min={0} max={KNOB_MAX} step={0.1} value={knob} onInput={onSlide} onChange={onSlide} />
+      <div className="gain-range-slot"><input type="range" className="gain-range" aria-label="Усиление микрофона" aria-valuetext={`+${knob.toFixed(1)} дБ`} min={0} max={KNOB_MAX} step={0.1} value={knob} onInput={onSlide} onChange={onSlide} /></div>
       <div className="relative w-8 py-[24px]" aria-hidden>
         <div className="relative h-full">{SCALE.map((l, i) => <span key={l} className={`absolute start-0 -translate-y-1/2 whitespace-nowrap font-mono text-[8px] leading-none ${i === 3 ? "font-bold text-foreground" : "text-muted-foreground"}`} style={{ bottom: `calc(${(i / (SCALE.length - 1)) * 100}% - 4px)` }}>{l}</span>)}</div>
       </div>

@@ -402,3 +402,9 @@ button:not([class*="bg-"]):not(.active):not(.record-shutter) { background-color:
 .studio-monitor { border: 1px solid var(--border); box-shadow: var(--shadow-soft); }
 .studio-timecode { border: 1px solid var(--border); background: var(--glass); color: var(--foreground); }
 button:disabled { cursor: not-allowed; opacity: .45; }
+
+.gain-range-slot { position: relative; width: 48px; height: 192px; flex-shrink: 0; }
+.gain-range { position: absolute; left: 50%; top: 50%; width: 192px; height: 48px; writing-mode: horizontal-tb; direction: ltr; transform: translate(-50%, -50%) rotate(-90deg); }
+.gain-range::-webkit-slider-runnable-track { width: 100%; height: 48px; background: linear-gradient(to bottom, transparent 22px, var(--track) 22px 26px, transparent 26px); }
+.gain-range::-webkit-slider-thumb { width: 48px; height: 48px; margin: 0; }
+.gain-range::-moz-range-track { width: 100%; height: 4px; }
