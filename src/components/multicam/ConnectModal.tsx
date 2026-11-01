@@ -10,6 +10,8 @@ import { useT } from "@/lib/i18n";
 import { useMeshPeers } from "./useMesh";
 import { bounded, retry } from "@/lib/async";
 import { cameraController } from "@/lib/camera-controller";
+import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
+import { isNative } from "@/lib/native";
 
 type Step = "choose" | "id" | "qr";
 
@@ -143,9 +145,21 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
     };
     // QR pairing is an auxiliary reader: never evict a real preview/recording
     // session. The same controller handles late getUserMedia and leases.
-    void cameraController.acquire(owner,{
-      video:{facingMode:{ideal:"environment"}},audio:false,
-    },{preempt:false}).then(st=>{
+    const acquireQr=async()=>{
+      // The JS camera lease is independent from Android Camera2. Respect
+      // foreground native recording/preview ownership before asking WebView
+      // to open another device; an unknown native state fails closed.
+      if(isNative()){
+        const status=await nativeCapture.status();
+        if(nativeRecorderOwnsCamera(status.state))
+          throw new Error("Native capture owns the camera");
+      }
+      if(!alive)throw new Error("QR scanner already closed");
+      return cameraController.acquire(owner,{
+        video:{facingMode:{ideal:"environment"}},audio:false,
+      },{preempt:false});
+    };
+    void acquireQr().then(st=>{
       if(!alive){release();return;}
       if(!st.getVideoTracks().some(track=>track.readyState==="live")){
         setBlocked(true);release();return;
