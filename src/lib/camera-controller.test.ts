@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cameraController, CameraBusyError, CameraUnavailableError, checkAppliedCameraSetting, focusPoint } from "./camera-controller";
+import { cameraController, CameraBusyError, CameraUnavailableError, checkAppliedCameraSetting, focusPoint, focusPointInVideoPreview } from "./camera-controller";
 
 function camera() {
   const track = {
@@ -17,6 +17,34 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
+describe("touch-to-focus follows scaled live preview coordinates",()=>{
+  const element=(left:number,top:number,width:number,height:number,
+      logicalWidth:number,logicalHeight:number,videoWidth:number,videoHeight:number)=>
+    ({getBoundingClientRect:()=>({left,top,width,height}),
+      clientWidth:logicalWidth,clientHeight:logicalHeight,
+      videoWidth,videoHeight}) as Pick<HTMLVideoElement,
+      "getBoundingClientRect"|"clientWidth"|"clientHeight"|"videoWidth"|"videoHeight">;
+  it("keeps 1.33x and 1.55x stretched preview taps consistent with the unstretched view",()=>{
+    const normal=element(20,40,400,300,400,300,1920,1080);
+    const wide=element(-46,40,532,300,400,300,1920,1080);
+    const stretched=element(-90,40,620,300,400,300,1920,1080);
+    expect(focusPointInVideoPreview(wide,87,190).x).toBeCloseTo(
+      focusPointInVideoPreview(normal,120,190).x,5);
+    expect(focusPointInVideoPreview(stretched,65,190).x).toBeCloseTo(
+      focusPointInVideoPreview(normal,120,190).x,5);
+  });
+  it("converts top-left and bottom-right touch into clamped physical sensor points",()=>{
+    const wide=element(-46,40,532,300,400,300,1920,1080);
+    const left=focusPointInVideoPreview(wide,-46,40);
+    const right=focusPointInVideoPreview(wide,486,340);
+    expect(left.x).toBe(0);expect(left.y).toBe(0);
+    expect(right.x).toBe(1);expect(right.y).toBe(1);
+  });
+  it("rejects unmeasured post-fold viewport dimensions",()=>{
+    const missing=element(0,0,0,300,0,300,1920,1080);
+    expect(focusPointInVideoPreview(missing,100,100)).toEqual({x:.5,y:.5});
+  });
+});
 describe("camera ownership and serialized settings", () => {
   it("distinguishes a requested setting from a device-confirmed one", () => {
     const c=camera();

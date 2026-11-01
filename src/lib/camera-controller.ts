@@ -59,6 +59,22 @@ export function focusPoint(rect: { left: number; top: number; width: number; hei
   const y = (clientY - rect.top + (height * scale - rect.height) / 2) / (height * scale);
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
 }
+/** Map touches through CSS-scaled object-fit:cover preview without changing
+ * camera sensor orientation or claiming mirror when WebView does not show it.
+ */
+export function focusPointInVideoPreview(
+  video:Pick<HTMLVideoElement,"getBoundingClientRect"|"clientWidth"|"clientHeight"|"videoWidth"|"videoHeight">,
+  clientX:number,clientY:number,
+):{x:number;y:number}{
+  const rect=video.getBoundingClientRect();
+  const {clientWidth:w,clientHeight:h,videoWidth:vw,videoHeight:vh}=video;
+  if(![rect.left,rect.top,rect.width,rect.height,w,h,vw,vh,clientX,clientY]
+    .every(Number.isFinite)||rect.width<=0||rect.height<=0||
+    w<=0||h<=0||vw<=0||vh<=0) return {x:.5,y:.5};
+  const logicalX=(clientX-rect.left)*w/rect.width;
+  const logicalY=(clientY-rect.top)*h/rect.height;
+  return focusPoint({left:0,top:0,width:w,height:h},vw,vh,logicalX,logicalY);
+}
 class CameraController {
   private stream: MediaStream | null = null;
   private owner: symbol | null = null;

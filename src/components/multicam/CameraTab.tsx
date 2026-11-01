@@ -21,7 +21,7 @@ import { CaptureProPanel, codecMime, toneFilter } from "./CaptureProPanel";
 import { AudioRail, ColorTuning, FalseColorOverlay, FocusRail, LensZoomBlock, ShootingModes, applyAdvanced, capRange, faceDetectorAvailable, grabFrames, kelvinFilter, savePhoto, trackCaps, tuneActive, tuneFilter, useFaceTracking } from "./CameraPro";
 import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native";
 import { createLimiter } from "@/lib/audio-limiter";
-import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
+import { cameraController, focusPointInVideoPreview, focusSupport } from "@/lib/camera-controller";
 import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
@@ -126,7 +126,7 @@ export function CameraTab() {
     }
     const video = event.currentTarget;
     if (!video.videoWidth || !video.videoHeight) return;
-    const point = focusPoint(video.getBoundingClientRect(), video.videoWidth, video.videoHeight, event.clientX, event.clientY);
+    const point = focusPointInVideoPreview(video,event.clientX,event.clientY);
     const ok = await cameraController.apply(stream, { focusMode: "continuous", pointsOfInterest: [point] });
     if (!ok) setFocusError("Камера не применила фокус по точке");
   };
