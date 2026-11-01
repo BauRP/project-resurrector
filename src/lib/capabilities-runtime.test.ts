@@ -6,7 +6,8 @@ const originalStorage=Object.getOwnPropertyDescriptor(navigator,"storage");
 function fakeStream(track?:Partial<MediaStreamTrack>){
   const stop=vi.fn();
   const tracks=track?[{stop,...track} as unknown as MediaStreamTrack]:[];
-  return {stream:{getVideoTracks:()=>tracks,getTracks:()=>tracks} as unknown as MediaStream,stop};
+  return {stream:{getVideoTracks:()=>tracks,getAudioTracks:()=>tracks,
+    getTracks:()=>tracks} as unknown as MediaStream,stop};
 }
 function setup(streams:MediaStream[]){
   let calls=0;
@@ -25,6 +26,15 @@ afterEach(()=>{
   else Reflect.deleteProperty(navigator,"storage");
 });
 describe("camera startup probes use actual opened tracks",()=>{
+ it("does not grant camera or microphone merely because getUserMedia resolved",async()=>{
+   const empty=fakeStream();
+   setup([empty.stream]);
+   const m=await probeDevice(()=>{});
+   expect(m.permissions.camera).not.toBe("granted");
+   expect(m.permissions.microphone).not.toBe("granted");
+   expect(m.rear.available).toBe(false);
+   expect(m.front.available).toBe(false);
+ });
  it("never advertises a camera from a stream with zero video tracks",async()=>{
    const noVideo=fakeStream();
    setup([noVideo.stream]);
