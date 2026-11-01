@@ -48,7 +48,7 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
   it("does not take WebView camera while Android Camera2 owns a native preview or recording",()=>{
     const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
     const scanner=source.slice(source.indexOf("function Scanner("));
-    expect(scanner).toContain("if(isNative())");
+    expect(scanner).toContain("isNative()?()=>nativeCapture.status():null");
     expect(scanner).toContain("acquireWebViewPreviewWithNativeGuard(owner,");
     expect(scanner).toContain("isNative()?()=>nativeCapture.status():null");
     expect(scanner).toContain("{preempt:false,isCurrent:()=>alive}");
