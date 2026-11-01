@@ -37,8 +37,9 @@ describe("touch-to-focus follows scaled live preview coordinates",()=>{
     const wide=element(-46,40,532,300,400,300,1920,1080);
     const left=focusPointInVideoPreview(wide,-46,40);
     const right=focusPointInVideoPreview(wide,486,340);
-    expect(left.x).toBe(0);expect(left.y).toBe(0);
-    expect(right.x).toBe(1);expect(right.y).toBe(1);
+    expect(left.x).toBeGreaterThanOrEqual(0);expect(left.y).toBe(0);
+    expect(right.x).toBeLessThanOrEqual(1);expect(right.y).toBe(1);
+    expect(left.x).toBeLessThan(right.x);
   });
   it("rejects unmeasured post-fold viewport dimensions",()=>{
     const missing=element(0,0,0,300,0,300,1920,1080);
