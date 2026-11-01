@@ -20,6 +20,8 @@ describe("Camera2 preview during Android fold transitions",()=>{
   const fold=readFileSync(resolve(process.cwd(),"src/lib/display-topology.ts"),"utf8");
   expect(fold).toContain("if (!geometry.regions.length){resetUntrustedLayout();return;}");
   expect(fold).toContain('root.dataset["foldWorkspace"]="unknown"');
+  expect(fold).toContain("lastNative=null;");
+  expect(fold).toContain("state.revision < lastRevision");
   expect(fold).toContain("forgetActiveFoldSnapshot(token);");
   expect(fold).toContain("window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{invalid:true}}))");
  });
