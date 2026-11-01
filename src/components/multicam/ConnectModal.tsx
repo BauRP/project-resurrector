@@ -9,6 +9,7 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
 import { useMeshPeers } from "./useMesh";
 import { bounded, retry } from "@/lib/async";
+import { cameraController } from "@/lib/camera-controller";
 
 type Step = "choose" | "id" | "qr";
 
@@ -132,21 +133,54 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
   const [blocked, setBlocked] = useState(false);
   const callback = useRef(onCode); callback.current = onCode;
   useEffect(() => {
-    let stream: MediaStream | null = null; let raf = 0; let alive = true;
-    bounded(navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? Promise.reject(new Error("Camera unavailable")), 6000, "QR camera", (late) => late.getTracks().forEach((track) => track.stop())).then((st) => {
-      if (!alive) { st.getTracks().forEach((x) => x.stop()); return; }
-      stream = st; if (video.current) { video.current.srcObject = st; void video.current.play().catch(() => { if (alive) setBlocked(true); }); }
-      const tick = () => {
-        const v = video.current; const c = canvas.current;
-        if (v && c && v.videoWidth) {
-          c.width = v.videoWidth; c.height = v.videoHeight; const ctx = c.getContext("2d", { willReadFrequently: true });
-          if (ctx) { ctx.drawImage(v, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height); const hit = jsQR(img.data, img.width, img.height); if (hit?.data) { alive = false; stream?.getTracks().forEach((track) => track.stop()); callback.current(hit.data); return; } }
+    const owner=Symbol("qr-scanner");
+    let raf=0, alive=true;
+    const release=()=>{
+      cancelAnimationFrame(raf);
+      // This owner may have been superseded. Never release another camera.
+      cameraController.release(owner);
+      if(video.current)video.current.srcObject=null;
+    };
+    // QR pairing is an auxiliary reader: never evict a real preview/recording
+    // session. The same controller handles late getUserMedia and leases.
+    void cameraController.acquire(owner,{
+      video:{facingMode:{ideal:"environment"}},audio:false,
+    },{preempt:false}).then(st=>{
+      if(!alive){release();return;}
+      if(!st.getVideoTracks().some(track=>track.readyState==="live")){
+        setBlocked(true);release();return;
+      }
+      if(video.current){
+        video.current.srcObject=st;
+        void video.current.play().catch(()=>{
+          if(alive){setBlocked(true);release();}
+        });
+      }
+      const tick=()=>{
+        if(!alive)return;
+        const v=video.current,c=canvas.current;
+        if(v&&c&&v.videoWidth&&v.videoHeight){
+          c.width=v.videoWidth;c.height=v.videoHeight;
+          const ctx=c.getContext("2d",{willReadFrequently:true});
+          if(ctx){
+            try{
+              ctx.drawImage(v,0,0);
+              const img=ctx.getImageData(0,0,c.width,c.height);
+              const hit=jsQR(img.data,img.width,img.height);
+              if(hit?.data){
+                alive=false;release();callback.current(hit.data);return;
+              }
+            }catch{
+              // An OEM can invalidate the video surface during fold/resize.
+              setBlocked(true);alive=false;release();return;
+            }
+          }
         }
-        if (alive) raf = requestAnimationFrame(tick);
+        if(alive)raf=requestAnimationFrame(tick);
       };
-      raf = requestAnimationFrame(tick);
-    }).catch(() => { if (alive) setBlocked(true); });
-    return () => { alive = false; cancelAnimationFrame(raf); stream?.getTracks().forEach((x) => x.stop()); if (video.current) video.current.srcObject = null; };
+      raf=requestAnimationFrame(tick);
+    }).catch(()=>{if(alive){setBlocked(true);release();}});
+    return ()=>{alive=false;release();};
   }, []);
   return <div><p className="mb-2 text-center text-xs text-muted-foreground">{label}</p>
     {blocked ? <p className="rounded-xl bg-card p-4 text-center text-sm text-warning">{t("cameraBlocked")}</p>

@@ -664,7 +664,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .connect-fold-modal > * {
   min-width: 0;
   max-width: 100%;
-  max-height: min(100dvh - 2rem, var(--fold-work-height, 100dvh));
+  max-height: min(calc(100dvh - 2rem), var(--fold-work-height, 100dvh));
   overflow-wrap: anywhere;
 }
 @media (max-height: 480px) {
