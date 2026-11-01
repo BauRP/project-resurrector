@@ -1,5 +1,5 @@
 import { expect, describe, it } from "vitest";
-import { independentStreamsReady, isCleanDualRecording, compareDualFileDurations } from "./dual-live-recording";
+import { independentStreamsReady, isCleanDualRecording, compareDualFileDurations, isDualEncoderStillFinishing } from "./dual-live-recording";
 const track = (id: string, state: "live"|"ended"="live") =>
   ({readyState:state, getSettings:()=>({deviceId:id})}) as unknown as MediaStreamTrack;
 const stream = (t: MediaStreamTrack) =>
@@ -43,4 +43,13 @@ describe("dual recording file duration evidence", () => {
     expect(compareDualFileDurations(60, 12)).toBe("mismatch");
     expect(compareDualFileDurations(60, 58)).toBe("consistent");
   });
+});
+
+describe("dual preview survives recorder stop/finalization",()=>{
+ it("retains secondary track through starting/stopping/saving phases",()=>{
+  for(const phase of ["starting","recording","stopping","saving"])
+    expect(isDualEncoderStillFinishing(phase)).toBe(true);
+  for(const phase of ["idle","saved","error",null,undefined])
+    expect(isDualEncoderStillFinishing(phase)).toBe(false);
+ });
 });

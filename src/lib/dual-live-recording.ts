@@ -5,6 +5,13 @@ import { readPersistedClip, saveRecordedClipsAtomically, type RecordedClip } fro
 import { assessSavedVideoDuration, verifyDecodedVideoBlob } from "./clip-playback";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "./fold-recording-evidence";
 
+/** The UI's recording=false may mean a recorder is still stopping or
+ * writing its last media chunks. Never tear down the second source until
+ * both streams have exited their asynchronous MediaRecorder lifecycle. */
+export function isDualEncoderStillFinishing(phase:string|null|undefined):boolean {
+  return phase==="starting"||phase==="recording"||
+    phase==="stopping"||phase==="saving";
+}
 export interface DualRecordingResult {
   savedIds: string[];
   paired: boolean;

@@ -30,7 +30,7 @@ import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "@/lib/fold-recording-evidence";
-import { startDualRecording, independentStreamsReady, type DualRecordingSession } from "@/lib/dual-live-recording";
+import { startDualRecording, independentStreamsReady, isDualEncoderStillFinishing, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 const tools = [
@@ -629,7 +629,7 @@ export function CameraTab() {
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
     <section className={`camera-live-view absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center bg-viewfinder px-5 text-center text-sm text-muted-foreground" role="status">{cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</div>}
-      {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording} hidden={clean} />}
+      {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording || isDualEncoderStillFinishing(s.recordingPhase)} hidden={clean} />}
       {!clean && <>
         {s.dualCamera && s.recording && <div className="absolute end-3 top-10 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Dual Camera · две отдельные дорожки (без покадровой синхронизации)</div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
