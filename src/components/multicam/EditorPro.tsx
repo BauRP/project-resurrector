@@ -91,18 +91,20 @@ function readClips(): Promise<StoredClip[]> {
 /** Extracts evenly spaced JPEG frames for the filmstrip; cached per clip id. */
 async function makeThumbs(url: string, duration: number, n = 10): Promise<string[]> {
   const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; v.src = url;
-  await new Promise<void>((res) => { v.onloadeddata = () => res(); v.onerror = () => res(); window.setTimeout(res, 4000); });
-  if (!v.videoWidth || !v.videoHeight) return [];
-  const c = document.createElement("canvas"); c.height = 54; c.width = Math.round((54 * v.videoWidth) / v.videoHeight);
-  const ctx = c.getContext("2d"); if (!ctx) return [];
-  const out: string[] = [];
-  for (let k = 0; k < n; k++) {
-    const time = Math.min(Math.max(0, duration - 0.05), ((k + 0.5) * duration) / n);
-    await new Promise<void>((res) => { let done = false; const fin = () => { if (done) return; done = true; v.removeEventListener("seeked", fin); res(); }; v.addEventListener("seeked", fin); v.currentTime = time; window.setTimeout(fin, 1500); });
-    ctx.drawImage(v, 0, 0, c.width, c.height); out.push(c.toDataURL("image/jpeg", 0.6));
-  }
-  v.removeAttribute("src"); v.load();
-  return out;
+  try {
+    await bounded(new Promise<void>((resolve, reject) => { v.onloadeddata = () => resolve(); v.onerror = () => reject(new Error("Frame decoding failed")); }), 4000, "Filmstrip metadata");
+    if (!v.videoWidth || !v.videoHeight) return [];
+    const c = document.createElement("canvas"); c.height = 54; c.width = Math.round((54 * v.videoWidth) / v.videoHeight);
+    const ctx = c.getContext("2d"); if (!ctx) return [];
+    const out: string[] = [];
+    for (let k = 0; k < n; k++) {
+      const time = Math.min(Math.max(0, duration - 0.05), ((k + 0.5) * duration) / n);
+      await bounded(new Promise<void>((resolve, reject) => { v.onseeked = () => resolve(); v.onerror = () => reject(new Error("Frame seek failed")); v.currentTime = time; }), 1500, "Filmstrip seek");
+      ctx.drawImage(v, 0, 0, c.width, c.height); out.push(c.toDataURL("image/jpeg", 0.6));
+    }
+    return out;
+  } catch { return []; }
+  finally { v.onloadeddata = null; v.onseeked = null; v.onerror = null; v.removeAttribute("src"); v.load(); }
 }
 async function analyse(clip: StoredClip): Promise<Media> {
   const url = URL.createObjectURL(clip.blob);
@@ -215,7 +217,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => {
     if (!layoutReady) return;
     const timer = setTimeout(() => { try { localStorage.setItem("multicam-pov-project-layout", JSON.stringify({ items, overlays, transitions, muted, hidden, vTracks, aTracks })); } catch { /* Originals remain intact. */ } }, 150);
-    return () => clearTimeout(timer);
+    return () => { clearTimeout(timer); try { localStorage.setItem("multicam-pov-project-layout", JSON.stringify({ items, overlays, transitions, muted, hidden, vTracks, aTracks })); } catch { /* Restricted storage. */ } };
   }, [layoutReady, items, overlays, transitions, muted, hidden, vTracks, aTracks]);
   const [trCat, setTrCat] = useState("basic"); const [ghost, setGhost] = useState<{ type: string; x: number; y: number } | null>(null); const [dropErr, setDropErr] = useState("");
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
