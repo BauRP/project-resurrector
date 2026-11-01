@@ -9,9 +9,9 @@ describe("per-lens resumable diagnostic queue", () => {
     const hd={width:1280,height:720,fps:30};
     const plans=quickCameraCandidatePlans(["rear","front","tele"],
       {rear:[hd],front:[]},[base,{...base,fps:60}],2);
-    expect(plans.rear).toEqual([hd]);
-    expect(plans.front).toEqual([]);
-    expect(plans.tele).toEqual([base,{...base,fps:60}]);
+    expect(plans["rear"]).toEqual([hd]);
+    expect(plans["front"]).toEqual([]);
+    expect(plans["tele"]).toEqual([base,{...base,fps:60}]);
     const tasks=prepareCameraTestQueueByDevice(plans,[],[]);
     expect(tasks.some(t=>t.cameraId==="front")).toBe(false);
     expect(tasks.filter(t=>t.cameraId==="rear").map(t=>t.key))
