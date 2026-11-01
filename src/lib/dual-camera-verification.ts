@@ -126,8 +126,11 @@ export async function verifyDualCameraRecording(firstId: string, secondId: strin
     const tracks = [first, second].map(s => s.getVideoTracks()[0]);
     if (tracks.some(track => !track || track.readyState !== "live")) throw new Error("Один видеопоток остановился при открытии второго");
     const settings = tracks.map(t => t!.getSettings());
-    if (settings[0]?.deviceId && settings[1]?.deviceId && settings[0].deviceId === settings[1].deviceId)
-      throw new Error("Оба потока переключились на один и тот же объектив");
+    // Never label a diagnostic successful just because the requested
+    // device IDs differ. The *actual* running tracks must report the exact
+    // identities; WebView may substitute another lens during concurrency.
+    if(settings[0]?.deviceId !== firstId || settings[1]?.deviceId !== secondId)
+      throw new Error("WebView подменил объектив или не подтвердил реальные ID двух камер");
     const mime = preferredMime();
     const a = new MediaRecorder(first, { mimeType: mime });
     const b = new MediaRecorder(second, { mimeType: mime });
