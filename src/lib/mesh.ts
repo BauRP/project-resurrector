@@ -162,6 +162,11 @@ class Mesh {
       if(!this.channels.has(ch))return;
       this.channels.set(ch,msg.from);
     }
+    // A new packet must not register itself as a trusted connected camera
+    // merely by claiming to be a remote RECORD command. Require an existing
+    // live peer established by earlier telemetry/pairing traffic.
+    if (msg.type === "record" && (!this.peers.has(msg.from) ||
+      Date.now() - this.peers.get(msg.from)!.lastSeen >= 12000)) return;
     if (msg.type === "bye") {
       // A retiring channel may say bye after a replacement was paired.
       if(ch && Array.from(this.channels.entries()).some(([other,id])=>
