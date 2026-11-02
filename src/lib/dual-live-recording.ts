@@ -123,7 +123,14 @@ export function startDualRecording(
       // Ignore duplicated topology notifications and post-encoder UI changes.
       if (finished.some(value => !value)) {
         const updated = appendFoldTransition(folds, reading);
-        if (updated.length !== folds.length) topologyChangedDuringEncoderStop = true;
+        if (updated !== folds && (updated.length !== folds.length ||
+          updated.some((entry, index) => entry !== folds[index] &&
+            (entry.posture !== folds[index]?.posture ||
+             entry.regionGeometry !== folds[index]?.regionGeometry ||
+             entry.usableRegions !== folds[index]?.usableRegions ||
+             entry.hingeCount !== folds[index]?.hingeCount ||
+             entry.layout !== folds[index]?.layout))))
+          topologyChangedDuringEncoderStop = true;
         folds = updated;
       }
       return;
