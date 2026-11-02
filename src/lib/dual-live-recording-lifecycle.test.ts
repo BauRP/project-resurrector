@@ -2,12 +2,20 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { salvageBufferedEncoderChunks, startDualRecording } from "./dual-live-recording";
 import { readPersistedClip, saveRecordedClipsAtomically } from "./clip-persistence";
 import { verifyDecodedVideoBlob } from "./clip-playback";
+import { probeVideoBlobCheckpoints } from "./clip-checkpoints";
 import { FOLD_EVENT } from "./fold-recording-evidence";
 
 vi.mock("./clip-persistence", () => ({
   saveRecordedClipsAtomically: vi.fn(async () => undefined),
   readPersistedClip: vi.fn(async (id: string) => ({
     id, blob: new Blob(["x".repeat(2048)], { type: "video/webm" }),
+  })),
+}));
+vi.mock("./clip-checkpoints", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./clip-checkpoints")>()),
+  probeVideoBlobCheckpoints: vi.fn(async () => ({
+    status: "unavailable" as const, expected: 0, observed: 0,
+    message: "WebView does not support seeking",
   })),
 }));
 vi.mock("./clip-playback", async (importOriginal) => ({
@@ -89,6 +97,18 @@ describe("two live MediaRecorder lifecycle recovery", () => {
     const clips=vi.mocked(saveRecordedClipsAtomically).mock.calls[0]![0];
     expect(clips.map(c=>c.cameraDeviceId)).toEqual(["rear","front"]);
     expect(clips.every(c=>c.synchronizationVerified===false)).toBe(true);
+  });
+  it("does not misreport unreadable first frames when optional late-frame seek fails", async () => {
+    vi.mocked(probeVideoBlobCheckpoints).mockRejectedValueOnce(new Error("WebView seek unsupported"));
+    const one=camera("rear"), two=camera("front");
+    const session=startDualRecording(one.stream,two.stream,vi.fn());
+    session.stop();
+    const result=await session.done;
+    expect(result.savedIds).toHaveLength(2);
+    expect(result.paired).toBe(true);
+    expect(result.message).toContain("Проверка поздних кадров частично недоступна");
+    expect(result.message).not.toContain("сохранённый кадр не декодирован");
+    expect(verifyDecodedVideoBlob).toHaveBeenCalledTimes(2);
   });
   it("keeps the original camera ID even if driver getSettings fails during finalization", async () => {
     const one=camera("rear"), two=camera("front");
