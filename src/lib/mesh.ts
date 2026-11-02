@@ -53,7 +53,7 @@ async function decode<T>(code: string): Promise<T> {
   if (typeof code !== "string" || code.length > 65536)
     throw new Error("Код подключения слишком большой");
   const [prefix, body = ""] = code.trim().split(".");
-  if (!["P0", "P1"].includes(prefix) || !/^[A-Za-z0-9_-]{1,65530}$/.test(body))
+  if ((prefix !== "P0" && prefix !== "P1") || !/^[A-Za-z0-9_-]{1,65530}$/.test(body))
     throw new Error("Недействительный код подключения");
   const bin = atob(body.replace(/-/g, "+").replace(/_/g, "/"));
   let bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
