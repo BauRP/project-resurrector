@@ -26,3 +26,11 @@ describe("fullscreen editor export and privacy in real fold panes",()=>{
     expect(css).toContain('max-height: min(calc(100dvh - 1rem), var(--fold-work-height, 100dvh));');
   });
 });
+
+describe("keyboard-constrained real fold panes", () => {
+  it("never expands editor or privacy overlays across a hinge when no safe pane remains", () => {
+    const source = readFileSync("src/lib/display-topology.ts", "utf8");
+    expect(source).toContain("const paneUnavailable = geometry.regions.length > 1 && !workspace");
+    expect(source).toMatch(/if \(paneUnavailable\) \{\s*resetUntrustedLayout\(\);\s*return;/);
+  });
+});
