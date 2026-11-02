@@ -30,7 +30,7 @@ describe("fullscreen editor export and privacy in real fold panes",()=>{
 describe("keyboard-constrained real fold panes", () => {
   it("never expands editor or privacy overlays across a hinge when no safe pane remains", () => {
     const source = readFileSync("src/lib/display-topology.ts", "utf8");
-    expect(source).toContain("const paneUnavailable = geometry.regions.length > 1 && !workspace");
-    expect(source).toMatch(/if \(paneUnavailable\) \{\s*resetUntrustedLayout\(\);\s*return;/);
+    expect(source).toContain("selectSafeFoldWorkspace(geometry.regions,contentBounds,1,1)");
+    expect(source).toMatch(/if \(multiPane && !workspace\) \{\s*resetUntrustedLayout\(\);\s*return;/);
   });
 });
