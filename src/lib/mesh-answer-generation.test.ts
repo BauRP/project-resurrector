@@ -5,6 +5,13 @@ const state=mesh as unknown as State;
 const answer=(sdp:string)=>"P0."+btoa(JSON.stringify({k:"a",sdp})).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 afterEach(()=>{state.pending=null;});
 describe("remote camera answer does not corrupt a newer QR handshake",()=>{
+ it("rejects oversized and malformed pairing input before applying a remote SDP",async()=>{
+  const pc={setRemoteDescription:vi.fn(async()=>{})} as unknown as RTCPeerConnection;
+  state.pending=pc;
+  await expect(mesh.acceptAnswer("P0."+"A".repeat(70000))).rejects.toThrow("слишком большой");
+  await expect(mesh.acceptAnswer("P0.invalid!")).rejects.toThrow("Недействительный");
+  expect(pc.setRemoteDescription).not.toHaveBeenCalled();
+ });
  it("accepts the matching pending connection",async()=>{
   const pc={setRemoteDescription:vi.fn(async()=>{})} as unknown as RTCPeerConnection;
   state.pending=pc;
