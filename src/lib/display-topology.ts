@@ -336,9 +336,12 @@ export function startDisplayAdaptation(): () => void {
     if (!geometry.regions.length){resetUntrustedLayout();return;}
     // Explicit active surface avoids CSS :has(), which is missing from older
     // Android WebViews (including supported legacy Android versions).
-    root.dataset["foldSurface"] = document.querySelector(".camera-screen") ? "camera" :
-      document.querySelector(".editor-fold-workspace") ? "editor" :
-      document.querySelector(".settings-fold-workspace") ? "settings" : "none";
+    const currentTab = root.dataset["activeMulticamTab"];
+    root.dataset["foldSurface"] = currentTab === "camera" || currentTab === "editor" || currentTab === "settings"
+      ? currentTab
+      : document.querySelector(".camera-screen") ? "camera" :
+        document.querySelector(".editor-fold-workspace") ? "editor" :
+        document.querySelector(".settings-fold-workspace") ? "settings" : "none";
     // A viewport resize can change the usable panes without a fresh native
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());
