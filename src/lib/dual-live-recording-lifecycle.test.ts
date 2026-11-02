@@ -196,6 +196,36 @@ describe("two live MediaRecorder lifecycle recovery", () => {
       MockRecorder.prototype.stop=originalStop;
     }
   });
+  it("does not miss a fold during finalization when the 120-event journal is full", async () => {
+    vi.useFakeTimers();
+    const a=camera("rear"), b=camera("front");
+    const originalStop=MockRecorder.prototype.stop;
+    MockRecorder.prototype.stop=function(this:MockRecorder) {
+      if (MockRecorder.instances.indexOf(this) !== 1) return originalStop.call(this);
+      window.setTimeout(()=>originalStop.call(this),250);
+    };
+    try {
+      const session=startDualRecording(a.stream,b.stream,vi.fn());
+      for(let revision=1; revision<=125;revision++) {
+        window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{
+          revision,posture:revision%2===0?"FLAT":"HALF_OPENED",
+          hingeCount:1,usableRegions:2,layout:"vertical",
+        }}));
+      }
+      session.stop();
+      window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{
+        revision:126,posture:"FLAT",hingeCount:1,usableRegions:2,layout:"vertical",
+      }}));
+      await vi.advanceTimersByTimeAsync(300);
+      const result=await session.done;
+      expect(result.savedIds).toHaveLength(2);
+      expect(result.paired).toBe(false);
+      expect(result.message).toContain("до завершения обоих кодировщиков");
+      const clips=vi.mocked(saveRecordedClipsAtomically).mock.calls[0]![0];
+      expect(clips.every(clip=>clip.foldTransitions && clip.foldTransitions.length<=120)).toBe(true);
+      expect(clips.every(clip=>clip.foldContinuityVerified===false)).toBe(true);
+    } finally { MockRecorder.prototype.stop=originalStop; }
+  });
   it("rejects failed persistence and does not leave old recording event handlers active", async () => {
     vi.mocked(saveRecordedClipsAtomically).mockRejectedValueOnce(new Error("disk full"));
     const one=camera("rear"),two=camera("front");
