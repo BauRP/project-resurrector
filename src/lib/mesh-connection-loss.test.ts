@@ -22,6 +22,20 @@ describe("multi-phone mesh message trust and isolation",()=>{
    }
    expect(internal.peers.size).toBe(0);
  });
+ it("never elevates an unpaired first record packet into a connected director",()=>{
+   const received=vi.fn();
+   const off=mesh.onMessage(received);
+   try {
+     internal.handle({type:"record",from:"rogue",on:true,at:Date.now()},"local");
+     expect(internal.peers.has("rogue")).toBe(false);
+     expect(received).not.toHaveBeenCalled();
+     internal.handle({type:"telemetry",from:"director",name:"Phone",
+       battery:75,storageMB:500,recording:false},"local");
+     received.mockClear();
+     internal.handle({type:"record",from:"director",on:true,at:Date.now()},"local");
+     expect(received).toHaveBeenCalledOnce();
+   } finally { off(); }
+ });
  it("maintains multiple distinct remote phones without collapsing their identities",()=>{
    const m=(from:string)=>({type:"telemetry",from,name:from,
      battery:75,storageMB:1024,recording:false});
