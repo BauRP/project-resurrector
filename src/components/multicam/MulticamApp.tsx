@@ -21,13 +21,14 @@ const labels: Record<string, string[]> = { kk: ["Камера", "Редакто�
 function useMeshBridge() {
   const role = useMulticamStore((x) => x.role);
   const recording = useMulticamStore((x) => x.recording);
+  const sessionCode = useMulticamStore((x) => x.sessionCode);
   const store = useMulticamStore((x) => x);
   const current = useRef(store); current.current = store;
   const guard = useRef(new RemoteRecordGuard());
   const outgoingTimestamp = useRef(0);
-  useEffect(() => {
-    if (role !== "slave") guard.current.reset();
-  }, [role]);
+  // An old director must not hold the newly paired slave indefinitely.
+  // Keep replay protection within one session, but reset it on role/pairing.
+  useEffect(() => { guard.current.reset(); }, [role, sessionCode]);
   useEffect(() => mesh.onMessage((msg) => {
     if (msg.type !== "record") return;
     const state = current.current;
