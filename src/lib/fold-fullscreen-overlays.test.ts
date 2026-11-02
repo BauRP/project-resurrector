@@ -47,3 +47,12 @@ describe("keyboard-constrained real fold panes", () => {
     expect(source).toMatch(/if \(multiPane && !workspace\) \{\s*resetUntrustedLayout\(\);\s*return;/);
   });
 });
+
+describe("repeated invalid fold callbacks", () => {
+  it("clears pane offsets on every invalid observation rather than skipping repeat resets", () => {
+    const adapter=readFileSync("src/lib/display-topology.ts","utf8");
+    expect(adapter).not.toContain('if(root.dataset["foldWorkspace"]==="unknown")return;');
+    expect(adapter).toContain('root.dataset["foldWorkspace"]="unknown";');
+    expect(adapter).toContain('root.style.removeProperty(name)');
+  });
+});
