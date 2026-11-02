@@ -24,6 +24,7 @@ function useMeshBridge() {
   const store = useMulticamStore((x) => x);
   const current = useRef(store); current.current = store;
   const guard = useRef(new RemoteRecordGuard());
+  const outgoingTimestamp = useRef(0);
   useEffect(() => {
     if (role !== "slave") guard.current.reset();
   }, [role]);
@@ -36,9 +37,12 @@ function useMeshBridge() {
     if (patch) state.set(patch);
   }), []);
   useEffect(() => {
-    if (role === "host") mesh.send({
-      type: "record", from: mesh.selfId, on: recording, at: Date.now(),
-    });
+    if (role !== "host") return;
+    // Start and stop may happen inside the same millisecond. Timestamp
+    // ordering must stay strict without relying on wall-clock granularity.
+    outgoingTimestamp.current = Math.max(Date.now(), outgoingTimestamp.current + 1);
+    mesh.send({ type: "record", from: mesh.selfId, on: recording,
+      at: outgoingTimestamp.current });
   }, [role, recording]);
 }
 
