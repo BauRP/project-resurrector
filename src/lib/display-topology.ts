@@ -375,6 +375,14 @@ export function startDisplayAdaptation(): () => void {
     );
     const contentTop=contentBounds.top;
     const workspace = selectSafeFoldWorkspace(geometry.regions,contentBounds);
+    // Two real panes may remain after the keyboard opens, yet neither may
+    // have the minimum safe editing area. Do not then expand a dialog across
+    // the physical hinge as though this were a normal single-window display.
+    const paneUnavailable = geometry.regions.length > 1 && !workspace;
+    if (paneUnavailable) {
+      resetUntrustedLayout();
+      return;
+    }
     root.dataset["foldWorkspace"] = workspace ? "pane" : "normal";
     root.style.setProperty("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
     root.style.setProperty("--fold-work-width",(workspace?.width??shellWidth)+"px");
