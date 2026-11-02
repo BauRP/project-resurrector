@@ -501,6 +501,8 @@ export function CameraTab() {
     if (!s.dualCamera || s.captureKind !== "video") return;
     if (!s.recording) {
       if (dualSession.current) dualSession.current.stop();
+      else if (!dualSessionStarting.current && s.recordingPhase === "stopping")
+        s.set({ recordingPhase: "idle", recordingStartedAt: null });
       return;
     }
     if (dualSession.current || dualSessionStarting.current) return;
