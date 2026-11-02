@@ -108,13 +108,27 @@ export function startDualRecording(
   let startedConfirmed = false;
   let endedUnexpectedly = false;
   let stopReason = "";
+  // A topology change before both encoders emit onstop is not evidence
+  // that their final chunks survived the screen transition.
+  let topologyChangedDuringEncoderStop = false;
   let startupTimer = 0, stopTimer = 0;
   const startTime = Date.now();
   let folds: FoldTransitionEvidence[] = [];
   const onFold = (event: Event) => {
-    if (!startedConfirmed || stopRequested) return;
+    if (!startedConfirmed) return;
     const reading = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
-    if (reading) folds = appendFoldTransition(folds, reading);
+    if (!reading) return;
+    if (stopRequested) {
+      // Keep observations only until both onstop callbacks have arrived.
+      // Ignore duplicated topology notifications and post-encoder UI changes.
+      if (finished.some(value => !value)) {
+        const updated = appendFoldTransition(folds, reading);
+        if (updated.length !== folds.length) topologyChangedDuringEncoderStop = true;
+        folds = updated;
+      }
+      return;
+    }
+    folds = appendFoldTransition(folds, reading);
   };
   window.addEventListener(FOLD_EVENT, onFold);
   const finishers: ((value: Blob | null) => void)[] = [];
@@ -255,6 +269,8 @@ export function startDualRecording(
       message: "Файлы сохранены, но их воспроизведение из медиатеки не подтверждено. " + failures.join("; "),
     };
     const durationRelation = compareDualFileDurations(fileDurations[0] ?? null, fileDurations[1] ?? null);
+    if (topologyChangedDuringEncoderStop)
+      failures.push("Изменение геометрии экрана произошло до завершения обоих кодировщиков; непрерывность последних кадров не подтверждена");
     if (durationRelation === "mismatch")
       failures.push("Длительность двух видеоклипов сильно различается; совместная запись не подтверждена");
     // A disappearing stream or forced recording stop is not equivalent
