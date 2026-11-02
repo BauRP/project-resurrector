@@ -11,6 +11,7 @@ import { ConnectModal } from "./ConnectModal";
 import { useMeshPeers } from "./useMesh";
 import { MulticamStoreProvider, useMulticamStore, type AppTab } from "@/lib/multicam-store";
 import { mesh } from "@/lib/mesh";
+import { RemoteRecordGuard } from "@/lib/remote-record-guard";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
 
@@ -18,13 +19,27 @@ const nav: { id: AppTab; icon: typeof Camera }[] = [{ id: "camera", icon: Camera
 const labels: Record<string, string[]> = { kk: ["Камера", "Редактор", "Баптаулар"], pt: ["Câmera", "Editor", "Ajustes"], es: ["Cámara", "Editor", "Ajustes"], fr: ["Caméra", "Montage", "Réglages"], ar: ["الكاميرا", "المحرر", "الإعدادات"], zh: ["相机", "编辑", "设置"], ko: ["카메라", "편집기", "설정"], ja: ["カメラ", "編集", "設定"], de: ["Kamera", "Editor", "Einstellungen"], it: ["Camera", "Editor", "Impostazioni"], tr: ["Kamera", "Kurgu", "Ayarlar"], pl: ["Kamera", "Edytor", "Ustawienia"], hi: ["कैमरा", "संपादक", "सेटिंग्स"], vi: ["Máy quay", "Biên tập", "Cài đặt"], id: ["Kamera", "Editor", "Pengaturan"] };
 
 function useMeshBridge() {
-  const role = useMulticamStore((x) => x.role); const recording = useMulticamStore((x) => x.recording); const set = useMulticamStore((x) => x.set);
-  const roleRef = useRef(role); roleRef.current = role;
-  const setRef = useRef(set); setRef.current = set;
+  const role = useMulticamStore((x) => x.role);
+  const recording = useMulticamStore((x) => x.recording);
+  const store = useMulticamStore((x) => x);
+  const current = useRef(store); current.current = store;
+  const guard = useRef(new RemoteRecordGuard());
+  useEffect(() => {
+    if (role !== "slave") guard.current.reset();
+  }, [role]);
   useEffect(() => mesh.onMessage((msg) => {
-    if (msg.type === "record" && roleRef.current === "slave") setRef.current({ recording: msg.on, recordingStartedAt: msg.on ? Date.now() : null });
+    if (msg.type !== "record") return;
+    const state = current.current;
+    const peer = mesh.peers.get(msg.from);
+    const knownPeer = !!peer && Date.now() - peer.lastSeen < 12000;
+    const patch = guard.current.accept(msg, state, knownPeer);
+    if (patch) state.set(patch);
   }), []);
-  useEffect(() => { if (role === "host") mesh.send({ type: "record", from: mesh.selfId, on: recording, at: Date.now() }); }, [role, recording]);
+  useEffect(() => {
+    if (role === "host") mesh.send({
+      type: "record", from: mesh.selfId, on: recording, at: Date.now(),
+    });
+  }, [role, recording]);
 }
 
 function MulticamAppContent() {
