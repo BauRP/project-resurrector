@@ -57,8 +57,26 @@ async function decode<T>(code: string): Promise<T> {
     throw new Error("Недействительный код подключения");
   const bin = atob(body.replace(/-/g, "+").replace(/_/g, "/"));
   let bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
-  if (prefix === "P1") bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
-  else if (prefix !== "P0") throw new Error("Unknown code");
+  if (prefix === "P1") {
+    const reader = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw")).getReader();
+    const parts: Uint8Array[] = [];
+    let size = 0;
+    try {
+      while (true) {
+        const next = await reader.read();
+        if (next.done) break;
+        size += next.value.byteLength;
+        if (size > 65536) throw new Error("Слишком большой ответ подключения");
+        parts.push(next.value);
+      }
+    } finally {
+      void reader.cancel().catch(() => undefined);
+      reader.releaseLock();
+    }
+    bytes = new Uint8Array(size);
+    let offset = 0;
+    for (const part of parts) { bytes.set(part, offset); offset += part.byteLength; }
+  }
   if (bytes.byteLength > 65536) throw new Error("Слишком большой ответ подключения");
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
