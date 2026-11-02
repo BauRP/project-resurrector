@@ -316,6 +316,7 @@ export function startDisplayAdaptation(): () => void {
     root.dataset["separatingFold"]="false";root.dataset["occludingFold"]="false";
     root.dataset["foldRegions"]="0";root.dataset["foldWorkspace"]="unknown";
     root.dataset["cameraSplit"]="none";root.dataset["cameraTabletop"]="false";
+    root.dataset["foldSurface"]="none";
     workspaceTarget=null;workspaceYOffset=0;
     const vars=["--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top",
       "--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left",
@@ -331,6 +332,11 @@ export function startDisplayAdaptation(): () => void {
     if (disposed || activeAdaptation !== token) return;
     const geometry = calculateDisplayRegions(state, width(), height());
     if (!geometry.regions.length){resetUntrustedLayout();return;}
+    // Explicit active surface avoids CSS :has(), which is missing from older
+    // Android WebViews (including supported legacy Android versions).
+    root.dataset["foldSurface"] = document.querySelector(".camera-screen") ? "camera" :
+      document.querySelector(".editor-fold-workspace") ? "editor" :
+      document.querySelector(".settings-fold-workspace") ? "settings" : "none";
     // A viewport resize can change the usable panes without a fresh native
     // WindowManager revision. Persist real observed transitions during capture.
     const details = foldEventDetails(state, width(), height());
@@ -580,7 +586,7 @@ export function startDisplayAdaptation(): () => void {
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving({ ownerId }).catch(() => {});
     if (activeAdaptation === token) {
       activeAdaptation = null;
-      ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
+      ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","foldSurface","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
       ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
     }
   };
