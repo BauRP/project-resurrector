@@ -1,9 +1,9 @@
 # MULTI-CAM POV roadmap
 ## Compact studio restoration — 2 November 2026
-- [ ] Restore compact controls, subtle borders and single-line header
-- [ ] Restore default Video/Audio lanes and functional attachment slots
-- [ ] Add lane-specific track actions and correct scroll boundaries
-- [ ] Test track mutation, media attachment and both themes; update inventory
+- [x] Restore compact controls, subtle borders and single-line header
+- [x] Restore default Video/Audio lanes and functional attachment slots
+- [x] Add lane-specific track actions and correct scroll boundaries
+- [x] Test track mutation, media attachment and both themes; update inventory
 - [x] Shared offline state and Android packaging foundation
 - [x] Camera and recording workflow
 - [x] Multicam editor and timeline tools
