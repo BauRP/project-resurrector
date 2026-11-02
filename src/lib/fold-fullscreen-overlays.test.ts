@@ -35,7 +35,10 @@ describe("old Android WebView navigation without :has()", () => {
     expect(css).toContain('[data-fold-surface="editor"] .app-shell .app-header');
     expect(css).toContain('[data-fold-surface="settings"] .app-shell > .bottom-nav');
     expect(css).toContain('[data-fold-surface="camera"] .app-shell > .bottom-nav');
-    expect(adapter).toContain('root.dataset["foldSurface"] = document.querySelector(".camera-screen")');
+    expect(adapter).toContain('const currentTab = root.dataset["activeMulticamTab"]');
+    expect(adapter).toContain('root.dataset["foldSurface"] = currentTab === "camera"');
+    const app=readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
+    expect(app).toContain('document.documentElement.dataset["activeMulticamTab"] = tab');
     expect(adapter).toContain('"foldWorkspace","foldSurface","cameraSplit"');
   });
 });
