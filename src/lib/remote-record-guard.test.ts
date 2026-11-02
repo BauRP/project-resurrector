@@ -39,6 +39,14 @@ describe("guard for director remote record commands", () => {
     expect(guard.accept(command("host", true, 401),state(),false)).toBeNull();
     expect(guard.accept(command("host", true, 402),state(),true)).not.toBeNull();
   });
+  it("accepts the next director only after the pairing context resets", () => {
+    const guard=new RemoteRecordGuard();
+    guard.accept(command("old",true,10),state(),true);
+    expect(guard.accept(command("new",true,11),state(),true)).toBeNull();
+    guard.reset();
+    expect(guard.accept(command("new",true,11),state(),true))
+      .toMatchObject({ recording:true, recordingPhase:"starting" });
+  });
   it("retains the paired director until a deliberate reset", () => {
     const guard=new RemoteRecordGuard();
     guard.accept(command("A",true,1),state(),true);
