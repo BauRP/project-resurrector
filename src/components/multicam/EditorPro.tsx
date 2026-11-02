@@ -212,7 +212,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem("multicam-pov-project-layout") ?? "null") as { items?: Item[]; overlays?: Overlay[]; transitions?: Transition[]; muted?: Record<string, boolean>; hidden?: Record<string, boolean>; vTracks?: number; aTracks?: number } | null;
-      if (saved) { if (Array.isArray(saved.items)) setItems(saved.items); if (Array.isArray(saved.overlays)) setOverlays(saved.overlays); if (Array.isArray(saved.transitions)) setTransitions(saved.transitions); setMuted(saved.muted ?? {}); setHidden(saved.hidden ?? {}); setVTracks(saved.vTracks ?? 1); setATracks(saved.aTracks ?? 1); }
+      if (saved) { if (Array.isArray(saved.items)) setItems(saved.items); if (Array.isArray(saved.overlays)) setOverlays(saved.overlays); if (Array.isArray(saved.transitions)) setTransitions(saved.transitions); setMuted(saved.muted ?? {}); setHidden(saved.hidden ?? {}); setVTracks(Math.max(saved.vTracks ?? 1, ...((saved.items ?? []).filter((i) => i.kind === "video").map((i) => i.track)))); setATracks(Math.max(saved.aTracks ?? 1, ...((saved.items ?? []).filter((i) => i.kind === "audio").map((i) => i.track)))); }
     } catch { /* Restricted storage preserves session editing. */ }
     setLayoutReady(true);
   }, []);
@@ -451,7 +451,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) { moved = true; window.clearTimeout(hold); }
       if (!moved) return;
       const start = Math.max(0, orig.start + (ev.clientX - sx) / zoom);
-      const track = Math.min(it.kind === "audio" ? aTracks : vTracks, Math.max(1, orig.track + Math.round((ev.clientY - sy) / ROW)));
+      const destination = Object.entries(laneRefs.current).find(([key, lane]) => { if (!lane || !key.startsWith(it.kind === "audio" ? "a" : "v")) return false; const rect = lane.getBoundingClientRect(); return ev.clientY >= rect.top && ev.clientY <= rect.bottom; });
+      const track = destination ? Number(destination[0].slice(1)) : orig.track;
       setItems((cur) => cur.map((x) => x.id === it.id ? { ...x, start, track } : x));
     };
     const up = () => { window.clearTimeout(hold); if (!moved) { setSelected(it.id); setSelTr(null); } window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
@@ -570,10 +571,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
 
     <div className={pinTl ? "sticky z-10 -mx-4 bg-background px-4 pb-1" : "relative"} style={pinTl ? { top: headerH + (pinMon ? monH : 0) } : undefined}>
-    <div ref={tlRef} onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
+    <div ref={tlRef} onScroll={(e) => setScrollX(Math.max(0, e.currentTarget.scrollLeft))} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
       <div className="relative" style={{ width: timelineContentWidth(tlW, HEAD, mediaEnd, zoom) }}>
         <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`absolute left-0 top-0 z-20 flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
-        <div ref={rulerRef} className="relative h-5 overflow-hidden cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
+        <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
           <span className="timeline-zero text-[9px] font-semibold" onPointerDown={(e) => { e.stopPropagation(); setPlaying(false); setT(0); if (tlRef.current) tlRef.current.scrollLeft = 0; }}>0s</span>
           {Array.from({ length: Math.ceil(total) }, (_, k) => k + 1).map((s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
         </div>
