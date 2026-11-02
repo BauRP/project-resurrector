@@ -10,6 +10,7 @@ import { Slider } from "@/components/ui/slider";
 import { bounded, retry } from "@/lib/async";
 import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
+import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, type TrackKind } from "@/lib/timeline-tracks";
 import { timelineMinZoom, timelineTime, visibleTiles } from "@/lib/timeline";
 
 interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
@@ -66,7 +67,7 @@ const LOOKS: Record<string, string> = { "Без цвета": "none", Тёплы�
 const FONT_NAMES = ["Montserrat","Roboto","Open Sans","Raleway","Nunito","Rubik","Manrope","Jost","Exo 2","Ubuntu","Fira Sans","IBM Plex Sans","PT Sans","PT Serif","Playfair Display","Lora","Merriweather","Cormorant Garamond","Alice","Yeseva One","Oswald","Russo One","Unbounded","Comfortaa","Philosopher","Lobster","Pacifico","Caveat","Marck Script","Press Start 2P"];
 export const FONTS = FONT_NAMES.map((f) => `"${f}", sans-serif`);
 const ASPECTS: [string, string, number][] = [["16:9", "YouTube", 16 / 9], ["9:16", "Reels / TikTok", 9 / 16], ["1:1", "Квадрат", 1], ["4:3", "Классика", 4 / 3], ["4:5", "Instagram", 4 / 5], ["21:9", "Кино", 21 / 9]];
-const ROW = 44; const FRAME = 1 / 30; const HEAD = 72; const TILE = 64;
+const ROW = 44; const FRAME = 1 / 30; const HEAD = 108; const TILE = 64;
 const uid = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 const len = (i: Item) => (i.out - i.in) / i.speed;
 const fmt = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${(t % 60).toFixed(2).padStart(5, "0")}`;
@@ -200,11 +201,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, [media]);
   useEffect(() => { setStore({ exportMix: { excludedAudio: Object.keys(muted).filter((k) => muted[k]), hiddenVideo: Object.keys(hidden).filter((k) => hidden[k]) } }); }, [muted, hidden, setStore]);
 
-  const total = useMemo(() => Math.max(10, ...items.map((i) => i.start + len(i))), [items]);
+  const mediaEnd = useMemo(() => Math.max(0, ...items.map((i) => i.start + len(i))), [items]);
+  const total = Math.max(10, mediaEnd);
   const first = 0;
   const [aspOpen, setAspOpen] = useState(false); const [snap, setSnap] = useState<{ v: boolean; h: boolean }>({ v: false, h: false }); const tlRef = useRef<HTMLDivElement>(null); const [tlW, setTlW] = useState(0);
   useEffect(() => { const el = tlRef.current; if (!el) return; const ro = new ResizeObserver(() => setTlW(el.clientWidth)); ro.observe(el); setTlW(el.clientWidth); return () => ro.disconnect(); }, []);
-  const [vTracks, setVTracks] = useState(1); const [aTracks, setATracks] = useState(1);
+  const { vTracks, aTracks, setVTracks, setATracks, addTrack } = useTimelineTracks();
   const [transitions, setTransitions] = useState<Transition[]>([]); const [selTr, setSelTr] = useState<string | null>(null);
   const [layoutReady, setLayoutReady] = useState(false);
   useEffect(() => {
@@ -223,6 +225,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
   const monRef = useRef<HTMLDivElement>(null); const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [cropFor, setCropFor] = useState<string | null>(null); const [cropDraft, setCropDraft] = useState<CropBox | null>(null); const [addOpen, setAddOpen] = useState(false); const [importErr, setImportErr] = useState("");
+  const attachRef = useRef<{ kind: TrackKind; track: number } | null>(null);
+  const [attaching, setAttaching] = useState(false);
+  const attachMedia = useCallback((kind: TrackKind, track: number) => { attachRef.current = { kind, track }; if (fileRef.current) { fileRef.current.accept = `${kind}/*`; fileRef.current.click(); } }, []);
   const fileRef = useRef<HTMLInputElement>(null); const pendingRef = useRef<{ id: string; track: number } | null>(null);
   useEffect(() => {
     const h = document.querySelector<HTMLElement>(".app-header"); const m = monRef.current;
@@ -247,10 +252,13 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     setAddOpen(false); setImportErr(""); if (!file) return;
     const kind = file.type.startsWith("audio") ? "audio" : file.type.startsWith("video") ? "video" : null;
     if (!kind) { setImportErr("Поддерживаются только видео и аудио файлы"); return; }
-    const track = selItem && selItem.kind === kind ? selItem.track : 1;
-    const id = `import-${Date.now()}`;
+    const target = attachRef.current; attachRef.current = null;
+    if (target && target.kind !== kind) { setImportErr("Тип файла не соответствует дорожке"); return; }
+    const track = target?.track ?? (selItem && selItem.kind === kind ? selItem.track : 1);
+    const id = `import-${uid()}`; setAttaching(true);
     try { await saveClip({ id, createdAt: Date.now(), camera: track, blob: file, kind, name: file.name }); pendingRef.current = { id, track }; window.dispatchEvent(new Event("multicam-clips-changed")); }
     catch { setImportErr("Не удалось сохранить файл в хранилище"); }
+    finally { setAttaching(false); }
   };
 
   // The indicator runs independently at display refresh rate; heavy preview state runs at 30 Hz.
@@ -261,7 +269,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     let raf = 0; let last = performance.now(); let publish = last; let clock = timeRef.current;
     const tick = (now: number) => {
       clock = Math.min(total, clock + (now - last) / 1000); last = now;
-      const left = `${HEAD + clock * zoom}px`;
+      const left = `${pinnedPlayhead(clock, zoom, tlRef.current?.scrollLeft ?? 0, HEAD)}px`;
       if (playheadLine.current) playheadLine.current.style.left = left;
       if (playheadHandle.current) playheadHandle.current.style.left = left;
       if (now - publish >= 33 || clock >= total) { publish = now; setT(clock); }
@@ -452,7 +460,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
   const editOverlay = overlays.find((o) => o.id === editing) ?? null;
   const patchOverlay = (patch: Partial<Overlay>) => setOverlays((o) => o.map((x) => x.id === editing || (editOverlay?.subtitle && x.subtitle && !("text" in patch)) ? { ...x, ...patch } : x));
-  const lanes = [...Array.from({ length: vTracks }, (_, k) => k + 1).map((n) => ({ key: `v${n}`, kind: "video" as const, track: n, label: "Video" })), ...Array.from({ length: aTracks }, (_, k) => k + 1).map((n) => ({ key: `a${n}`, kind: "audio" as const, track: n, label: "Audio" }))];
+  const lanes = trackLanes({ video: vTracks, audio: aTracks });
 
   const aspect = useMulticamStore((x) => x.aspect);
   const ratio = ASPECTS.find((a) => a[0] === aspect)?.[2] ?? 16 / 9;
@@ -481,7 +489,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
-  const minZoom = timelineMinZoom(tlW, total);
+  const minZoom = timelineMinZoom(tlW, total, HEAD);
   useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
   const zoomPos = Math.round((Math.log(Math.max(zoom, minZoom) / minZoom) / Math.log(600 / minZoom || 1.0001)) * 100);
   const scrub = (e: React.PointerEvent) => {
@@ -493,13 +501,15 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
   // Lanes do not depend on the playhead, so they are memoised and skipped during 60 fps playback re-renders.
-  const laneEls = useMemo(() => lanes.filter((lane) => items.some((i) => i.kind === lane.kind && i.track === lane.track)).map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
+  const laneEls = useMemo(() => lanes.map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
     <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
-      <span className="w-8 truncate text-[9px] font-semibold">{lane.label}</span>
+      <span>{lane.label}</span>
+      <Button size="icon" variant="ghost" title={`Добавить ${lane.label} дорожку`} aria-label={`Добавить ${lane.label} дорожку ${lane.track}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => addTrack(lane.kind)}><Plus className="size-3" /></Button>
       {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
       <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={muted[lane.key] ? "text-record" : "text-muted-foreground"}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
     </div>
-    <div className="relative flex-1" ref={(el) => { laneRefs.current[lane.key] = el; }}>
+    <div className="relative min-w-0 flex-1" data-lane={lane.key} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); attachRef.current = { kind: lane.kind, track: lane.track }; void importFile(e.dataTransfer.files[0]); }} ref={(el) => { laneRefs.current[lane.key] = el; }}>
+      {!items.some((i) => i.track === lane.track && i.kind === lane.kind) && <Button variant="outline" className="timeline-slot" disabled={attaching} aria-label={`Прикрепить медиа ${lane.label} ${lane.track}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => attachMedia(lane.kind, lane.track)}>{lane.kind === "video" ? <ListVideo /> : <ListMusic />}<span>{attaching ? "Загрузка…" : "+ Медиа"}</span></Button>}
       {items.filter((i) => i.track === lane.track && i.kind === lane.kind).map((i) => {
         const m = mediaById.get(i.mediaId); const w = Math.max(6, len(i) * zoom);
         const tiles = visibleTiles(HEAD + i.start * zoom, w, scrollX, tlW);
@@ -513,7 +523,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     </div>
   </div>),
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks, scrollX, tlW]);
+  [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks, scrollX, tlW, addTrack, attachMedia, attaching]);
 
   return <section className="mb-4 min-w-0 space-y-3 overflow-x-hidden px-4 pt-3 text-xs">
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
@@ -561,14 +571,15 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
     <div className={pinTl ? "sticky z-10 -mx-4 bg-background px-4 pb-1" : "relative"} style={pinTl ? { top: headerH + (pinMon ? monH : 0) } : undefined}>
     <div ref={tlRef} onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
-      <div className="relative" style={{ width: items.length ? Math.max(tlW, HEAD + total * zoom + 8) : tlW }}>
-        <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
-        <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
-          {Array.from({ length: Math.ceil(total) + 1 }, (_, s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
+      <div className="relative" style={{ width: timelineContentWidth(tlW, HEAD, mediaEnd, zoom) }}>
+        <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`absolute left-0 top-0 z-20 flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
+        <div ref={rulerRef} className="relative h-5 overflow-hidden cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
+          <span className="timeline-zero text-[9px] font-semibold" onPointerDown={(e) => { e.stopPropagation(); setPlaying(false); setT(0); if (tlRef.current) tlRef.current.scrollLeft = 0; }}>0s</span>
+          {Array.from({ length: Math.ceil(total) }, (_, k) => k + 1).map((s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
         </div>
         {laneEls}
-        <div ref={playheadLine} className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: HEAD + t * zoom }} />
-        <div ref={playheadHandle} role="slider" aria-label="Курсор воспроизведения" aria-valuemin={0} aria-valuemax={Math.round(total * 100) / 100} aria-valuenow={Math.round(t * 100) / 100} onPointerDown={scrub} className="absolute top-0 z-30 -translate-x-1/2 cursor-ew-resize px-2 pb-2 [touch-action:none]" style={{ left: HEAD + t * zoom }}><div className="playhead-handle" /></div>
+        <div ref={playheadLine} className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: pinnedPlayhead(t, zoom, scrollX, HEAD) }} />
+        <div ref={playheadHandle} role="slider" aria-label="Курсор воспроизведения" aria-valuemin={0} aria-valuemax={Math.round(total * 100) / 100} aria-valuenow={Math.round(t * 100) / 100} onPointerDown={scrub} className="absolute top-0 z-30 -translate-x-1/2 cursor-ew-resize px-2 pb-2 [touch-action:none]" style={{ left: pinnedPlayhead(t, zoom, scrollX, HEAD) }}><div className="playhead-handle" /></div>
       </div>
     </div>
     </div>
@@ -583,9 +594,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
     <input ref={fileRef} type="file" accept="video/*,audio/*" className="sr-only" onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} />
     <AnimatePresence>{addOpen && <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="glass-panel grid gap-1 rounded-xl p-1.5" role="menu">
-      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => fileRef.current?.click()}><FilePlus2 className="size-4" />Добавить</button>
-      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { setVTracks((n) => n + 1); setAddOpen(false); }}><ListVideo className="size-4" />Добавить видео дорожку</button>
-      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { setATracks((n) => n + 1); setAddOpen(false); }}><ListMusic className="size-4" />Добавить аудио дорожку</button>
+      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { attachRef.current = null; if (fileRef.current) { fileRef.current.accept = "video/*,audio/*"; fileRef.current.click(); } }}><FilePlus2 className="size-4" />Добавить</button>
+      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { addTrack("video"); setAddOpen(false); }}><ListVideo className="size-4" />Добавить видео дорожку</button>
+      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { addTrack("audio"); setAddOpen(false); }}><ListMusic className="size-4" />Добавить аудио дорожку</button>
     </motion.div>}</AnimatePresence>
     {importErr && <p role="alert" className="text-[10px] text-warning">{importErr}</p>}
     <AnimatePresence>{selItem && <motion.div initial={{ opacity: 0, y: 12, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} transition={{ type: "spring", stiffness: 420, damping: 34 }} className="glass-panel space-y-3 rounded-xl p-3">
