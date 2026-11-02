@@ -374,12 +374,13 @@ export function startDisplayAdaptation(): () => void {
         :null,
     );
     const contentTop=contentBounds.top;
-    const workspace = selectSafeFoldWorkspace(geometry.regions,contentBounds);
-    // Two real panes may remain after the keyboard opens, yet neither may
-    // have the minimum safe editing area. Do not then expand a dialog across
-    // the physical hinge as though this were a normal single-window display.
-    const paneUnavailable = geometry.regions.length > 1 && !workspace;
-    if (paneUnavailable) {
+    // Keep the preferred comfortably sized pane. If the keyboard leaves
+    // only small visible pieces, use the largest ACTUAL intersected pane and
+    // let its contents scroll, never silently span the physical hinge.
+    const multiPane = geometry.regions.length > 1;
+    const workspace = selectSafeFoldWorkspace(geometry.regions,contentBounds) ??
+      (multiPane ? selectSafeFoldWorkspace(geometry.regions,contentBounds,1,1) : null);
+    if (multiPane && !workspace) {
       resetUntrustedLayout();
       return;
     }
