@@ -48,11 +48,18 @@ async function encode(obj: unknown): Promise<string> {
   return `${prefix}.${btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "")}`;
 }
 async function decode<T>(code: string): Promise<T> {
+  // QR/copy-paste data is untrusted. Bound input before allocating decoded
+  // blobs or inflating compressed SDP, including on old Android WebViews.
+  if (typeof code !== "string" || code.length > 65536)
+    throw new Error("Код подключения слишком большой");
   const [prefix, body = ""] = code.trim().split(".");
+  if (!["P0", "P1"].includes(prefix) || !/^[A-Za-z0-9_-]{1,65530}$/.test(body))
+    throw new Error("Недействительный код подключения");
   const bin = atob(body.replace(/-/g, "+").replace(/_/g, "/"));
   let bytes = Uint8Array.from(bin, (c) => c.charCodeAt(0));
   if (prefix === "P1") bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
   else if (prefix !== "P0") throw new Error("Unknown code");
+  if (bytes.byteLength > 65536) throw new Error("Слишком большой ответ подключения");
   return JSON.parse(new TextDecoder().decode(bytes)) as T;
 }
 const waitIce = (pc: RTCPeerConnection) => new Promise<void>((resolve) => {
