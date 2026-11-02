@@ -279,6 +279,17 @@ describe("editor and settings use a real safe fold pane",()=>{
     expect(selectSafeFoldWorkspace(regions,{left:0,top:60,width:600,height:400}))
       .toEqual({left:0,top:235,width:600,height:225});
   });
+  it("uses a real tiny pane under keyboard pressure rather than crossing the physical hinge",()=>{
+    const regions=[
+      {left:0,top:0,width:250,height:170},
+      {left:270,top:0,width:250,height:170},
+    ];
+    const visible={left:0,top:40,width:520,height:120};
+    expect(selectSafeFoldWorkspace(regions,visible)).toBeNull();
+    const fallback=selectSafeFoldWorkspace(regions,visible,1,1);
+    expect(fallback).toEqual({left:0,top:40,width:250,height:120});
+    expect(fallback!.left+fallback!.width).toBeLessThanOrEqual(270);
+  });
   it("refuses inaccessible, tiny or invalid panes without fabricating safe space",()=>{
     const regions=[
       {left:0,top:0,width:200,height:200},
