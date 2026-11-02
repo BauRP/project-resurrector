@@ -310,7 +310,9 @@ export function startDisplayAdaptation(): () => void {
     // book/tabletop pane coordinates available for an Android TextureView.
     forgetActiveFoldSnapshot(token);
     lastFoldSignature="untrusted";lastFoldRevision=-1;
-    if(root.dataset["foldWorkspace"]==="unknown")return;
+    // Always clear stale CSS geometry, even after repeated invalid native
+    // callbacks. A previous interrupted reset must not preserve pane offsets.
+    root.dataset["foldWorkspace"]="unknown";
     root.dataset["foldInfo"]="unknown";
     root.dataset["foldCount"]="0";root.dataset["foldSplit"]="none";
     root.dataset["separatingFold"]="false";root.dataset["occludingFold"]="false";
