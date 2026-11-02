@@ -27,6 +27,19 @@ describe("fullscreen editor export and privacy in real fold panes",()=>{
   });
 });
 
+describe("old Android WebView navigation without :has()", () => {
+  it("uses explicit observed camera/editor/settings surfaces for fold layouts", () => {
+    const css=readFileSync("src/styles.css","utf8");
+    const adapter=readFileSync("src/lib/display-topology.ts","utf8");
+    expect(css).not.toContain(":has(");
+    expect(css).toContain('[data-fold-surface="editor"] .app-shell .app-header');
+    expect(css).toContain('[data-fold-surface="settings"] .app-shell > .bottom-nav');
+    expect(css).toContain('[data-fold-surface="camera"] .app-shell > .bottom-nav');
+    expect(adapter).toContain('root.dataset["foldSurface"] = document.querySelector(".camera-screen")');
+    expect(adapter).toContain('"foldWorkspace","foldSurface","cameraSplit"');
+  });
+});
+
 describe("keyboard-constrained real fold panes", () => {
   it("never expands editor or privacy overlays across a hinge when no safe pane remains", () => {
     const source = readFileSync("src/lib/display-topology.ts", "utf8");
