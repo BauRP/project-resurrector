@@ -245,6 +245,10 @@ export function CameraTab() {
   const recordingStopWatch = useRef<(() => void) | null>(null);
   const recordingStartCancel = useRef<(() => void) | null>(null);
   const recordingSessionGeneration = useRef(0);
+  // Event handlers fire later than the render that created their recorder.
+  // Read the latest user/remote STOP intent, never the captured old snapshot.
+  const recordingRequested = useRef(s.recording);
+  recordingRequested.current = s.recording;
   useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
     mesh.selfRecording = s.recording;
@@ -355,7 +359,18 @@ export function CameraTab() {
         if (recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
       };
       recorder.onstart = () => {
-        if (startGuard && !startGuard.started()) return;
+        const confirmed = startGuard?.started() ?? false;
+        if (!confirmed || !recordingRequested.current || !cameraMounted.current ||
+            recordingSessionGeneration.current !== sessionGeneration) {
+          // A late OEM onstart after STOP/watchdog/remount must never
+          // resurrect recording=true or leave a live orphaned encoder.
+          stopReasonRef.current ||= "Запуск кодировщика подтверждён после отмены записи";
+          requestStop();
+          if (recorder.state !== "inactive") {
+            try { recorder.stop(); } catch { /* bounded onstop salvage remains armed */ }
+          } else guard.finish();
+          return;
+        }
         markUnfinishedCapture("single", startedAt);
         durationClock.startedAt(performance.now());
         const initialFold = getActiveFoldBaseline();
