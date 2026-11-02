@@ -245,10 +245,16 @@ export function startDualRecording(
         const stored = await readPersistedClip(clip.id);
         const decoded = await verifyDecodedVideoBlob(stored.blob, undefined, 5000);
         fileDurations[clip.camera - 1] = decoded.durationSeconds;
-        const laterFrames = await probeVideoBlobCheckpoints(stored.blob, decoded.durationSeconds, 4500);
-        // Seek-based checks can be unavailable on WebView/WebM. In that
-        // case do not treat the video as corrupt or fabricate completeness.
-        if (laterFrames.status === "sampled") sampledLaterClips++;
+        // The first frame was actually decoded. A failure of OPTIONAL late
+        // seeking on an OEM WebView must not falsely say that this first frame
+        // was unreadable or discard a successfully persisted camera.
+        // Later-frame completeness remains explicitly unverified.
+        try {
+          const laterFrames = await probeVideoBlobCheckpoints(stored.blob, decoded.durationSeconds, 4500);
+          if (laterFrames.status === "sampled") sampledLaterClips++;
+        } catch {
+          // Unknown late-frame evidence is distinct from a broken first frame.
+        }
         if (stopAt !== null && starts[clip.camera - 1] !== null) {
           const expected = Math.max(0, stopAt - starts[clip.camera - 1]!);
           const evidence = assessSavedVideoDuration(expected, decoded.durationSeconds);
