@@ -252,6 +252,12 @@ export function CameraTab() {
     // A separate two-encoder recording session owns both live camera streams.
     if (s.dualCamera && s.captureKind === "video") return;
     if (!s.recording) {
+      // A remote STOP can arrive before the first recorder exists. In that
+      // case there is no onstop callback to clear the transient "stopping"
+      // phase; settle it without inventing a saved video.
+      if (!active && s.recordingPhase === "stopping" && !dualSession.current) {
+        s.set({ recordingPhase: "idle", recordingStartedAt: null });
+      }
       if (active && active.state !== "inactive") {
         s.set({ recordingPhase: "stopping" });
         recordingStartCancel.current?.();
