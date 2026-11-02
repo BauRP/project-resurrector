@@ -59,6 +59,12 @@ function MulticamAppContent() {
     if (interrupted) setNavigationNotice("Предыдущая запись могла прерваться. Проверьте сохранённые клипы; запись автоматически не продолжалась.");
   }, [interrupted]);
   useMeshBridge();
+  // Keep the logical screen authoritative while Framer Motion temporarily
+  // keeps both old and new tab DOM trees mounted during a fold transition.
+  useEffect(() => {
+    document.documentElement.dataset["activeMulticamTab"] = tab;
+    return () => { delete document.documentElement.dataset["activeMulticamTab"]; };
+  }, [tab]);
   // Window changes only rearrange UI; they never restart the camera pipeline.
   useEffect(() => startDisplayAdaptation(), []);
   const setStore = useMulticamStore((x) => x.set);
