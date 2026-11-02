@@ -515,7 +515,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   inset-inline-start: var(--camera-right-pane-left) !important;
   inset-inline-end: .5rem !important;
 }
-[data-camera-split="side"] .app-shell:has(.camera-screen) > .bottom-nav {
+[data-camera-split="side"][data-fold-surface="camera"] .app-shell > .bottom-nav {
   left: var(--camera-right-pane-left) !important;
   width: var(--camera-right-pane-width) !important;
 }
@@ -550,7 +550,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 [data-camera-split="tri"] .camera-record-dock > div {
   max-width: min(100%, var(--camera-control-pane-width));
 }
-[data-camera-split="tri"] .app-shell:has(.camera-screen) > .bottom-nav {
+[data-camera-split="tri"][data-fold-surface="camera"] .app-shell > .bottom-nav {
   left: var(--camera-control-pane-left) !important;
   width: var(--camera-control-pane-width) !important;
 }
@@ -578,8 +578,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 /* Keep the persistent header and navigation on a real, usable pane in
    editor/settings. The camera gets its own per-pane preview/shutter layout.
    Non-folding windows remain fully unchanged. */
-[data-fold-workspace="pane"] .app-shell:has(.editor-fold-workspace) .app-header,
-[data-fold-workspace="pane"] .app-shell:has(.settings-fold-workspace) .app-header {
+[data-fold-workspace="pane"][data-fold-surface="editor"] .app-shell .app-header,
+[data-fold-workspace="pane"][data-fold-surface="settings"] .app-shell .app-header {
   position: relative;
   margin-inline-start: var(--fold-work-left);
   width: min(100%, var(--fold-work-width));
@@ -587,8 +587,8 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   min-width: 0;
   flex-wrap: wrap;
 }
-[data-fold-workspace="pane"] .app-shell:has(.editor-fold-workspace) > .bottom-nav,
-[data-fold-workspace="pane"] .app-shell:has(.settings-fold-workspace) > .bottom-nav {
+[data-fold-workspace="pane"][data-fold-surface="editor"] .app-shell > .bottom-nav,
+[data-fold-workspace="pane"][data-fold-surface="settings"] .app-shell > .bottom-nav {
   left: var(--fold-work-left) !important;
   width: min(100%, var(--fold-work-width)) !important;
   max-width: 100%;
@@ -645,7 +645,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   width: 100%;
   max-width: 100%;
 }
-[data-camera-split="quad"] .app-shell:has(.camera-screen) > .bottom-nav {
+[data-camera-split="quad"][data-fold-surface="camera"] .app-shell > .bottom-nav {
   left: var(--camera-quad-controls-left) !important;
   width: var(--camera-quad-controls-width) !important;
 }
