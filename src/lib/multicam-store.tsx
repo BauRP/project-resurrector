@@ -170,6 +170,13 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
   }, [store]);
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
 }
+/** Read the freshest store state during network callbacks without React subscribing
+ * the entire app tree to every camera/editor state mutation. */
+export function useMulticamGetSnapshot(): () => MulticamState {
+  const store = useContext(StoreContext);
+  if (!store) throw new Error("MulticamStoreProvider is missing");
+  return store.getSnapshot;
+}
 const identity = (state: MulticamState) => state;
 export function useMulticamStore(): MulticamState;
 export function useMulticamStore<T>(selector: (state: MulticamState) => T): T;

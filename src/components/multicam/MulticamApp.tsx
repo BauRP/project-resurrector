@@ -10,7 +10,7 @@ import { SettingsTab } from "./SettingsTab";
 import { SplashScreen } from "./SplashScreen";
 import { ConnectModal } from "./ConnectModal";
 import { useMeshPeers } from "./useMesh";
-import { MulticamStoreProvider, useMulticamStore, type AppTab } from "@/lib/multicam-store";
+import { MulticamStoreProvider, useMulticamStore, useMulticamGetSnapshot, type AppTab } from "@/lib/multicam-store";
 import { mesh, type RemoteRecordStatus } from "@/lib/mesh";
 import { RemoteRecordGuard } from "@/lib/remote-record-guard";
 import { nextRemoteReceiptStatus } from "@/lib/remote-record-receipts";
@@ -26,8 +26,8 @@ function useMeshBridge() {
   const recording = useMulticamStore((x) => x.recording);
   const recordingPhase = useMulticamStore((x) => x.recordingPhase);
   const sessionCode = useMulticamStore((x) => x.sessionCode);
-  const store = useMulticamStore((x) => x);
-  const current = useRef(store); current.current = store;
+  const getSnapshot = useMulticamGetSnapshot();
+  const current = useRef(getSnapshot); current.current = getSnapshot;
   const guard = useRef(new RemoteRecordGuard());
   const outgoingTimestamp = useRef(0);
   const remoteReceipt = useRef<{to:string;at:number;status:RemoteRecordStatus}|null>(null);
@@ -39,7 +39,7 @@ function useMeshBridge() {
   }, [role, sessionCode]);
   useEffect(() => mesh.onMessage((msg) => {
     if (msg.type !== "record") return;
-    const state = current.current;
+    const state = current.current();
     const peer = mesh.peers.get(msg.from);
     const knownPeer = !!peer && Date.now() - peer.lastSeen < 12000;
     const patch = guard.current.accept(msg, state, knownPeer);
@@ -63,7 +63,7 @@ function useMeshBridge() {
     if (phase === "saved" || phase === "error") remoteReceipt.current = null;
   }, [role, recordingPhase, recording]);
   useEffect(() => mesh.subscribe(() => {
-    const state = current.current;
+    const state = current.current();
     const now = Date.now();
     const stopped = guard.current.onDirectorDisconnected(state, id => {
       const peer = mesh.peers.get(id);

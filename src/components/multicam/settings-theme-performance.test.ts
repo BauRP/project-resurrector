@@ -38,6 +38,10 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(css).toContain("/* MULTI-CAM POV 111/222 theme reference:");
     expect(css).toContain("/* Settings entry performance and 111/222 brand identity */");
     expect(css).toContain(".app-navigation-notice {");
+    const store = read("src/lib/multicam-store.tsx");
+    expect(store).toContain("export function useMulticamGetSnapshot()");
+    expect(app).toContain("useMulticamGetSnapshot()");
+    expect(app).not.toContain("useMulticamStore((x) => x);");
     const camera = read("src/components/multicam/CameraTab.tsx");
     expect(camera).toContain('camera-preview-placeholder');
     expect(camera).toContain('camera-preview-retry');
