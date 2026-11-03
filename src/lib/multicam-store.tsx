@@ -1,4 +1,5 @@
 import { restoreViewState, saveViewState } from "./fold-ui-recovery";
+import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
 import type React from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
 import type { CapabilityMatrix, Facing } from "./capabilities";
@@ -71,7 +72,7 @@ export function createMulticamStore(): StoreApi {
     set: (patch) => setData((current) => patchState(current, patch)),
     setTab: (tab) => setData((current) => patchState(current, { tab })),
     startSession: (role) => setData((current) => ({ ...current, role, sessionCode: `POV-${Math.floor(100 + Math.random() * 900)}` })),
-    toggleRecording: () => setData((current) => (current.role === "slave" || current.recordingPhase === "starting" || current.recordingPhase === "stopping" || current.recordingPhase === "saving") ? current : ({ ...current, recording: !current.recording, paused: false, recordingPhase: current.recording ? "stopping" : "starting", captureSaveError: "", recordingStartedAt: null, duration: current.recording ? Math.max(current.duration, 68) : current.duration })),
+    toggleRecording: () => setData((current) => (current.role === "slave" || (!current.recording && diagnosticCaptureGate.activeOperation() !== null) || current.recordingPhase === "starting" || current.recordingPhase === "stopping" || current.recordingPhase === "saving") ? current : ({ ...current, recording: !current.recording, paused: false, recordingPhase: current.recording ? "stopping" : "starting", captureSaveError: "", recordingStartedAt: null, duration: current.recording ? Math.max(current.duration, 68) : current.duration })),
     addMarker: () => setData((current) => ({ ...current, markers: [...current.markers, { id: makeId(), time: current.recordingStartedAt ? (Date.now() - current.recordingStartedAt) / 1000 : current.playhead, label: `Marker ${current.markers.length + 1}` }] })),
     switchCamera: (camera) => setData((current) => ({ ...current, activeCamera: camera, cuts: [...current.cuts, { id: makeId(), time: current.playhead, camera }] })),
     setEqBand: (index, bandValue) => setData((current) => ({ ...current, eq: current.eq.map((item, itemIndex) => itemIndex === index ? bandValue : item) })),
