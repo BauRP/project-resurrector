@@ -1,9 +1,18 @@
+import {readFileSync} from "node:fs";
 import {afterEach,describe,expect,it,vi} from "vitest";
 import {mesh} from "./mesh";
 type State={pending:RTCPeerConnection|null;generation:number};
 const state=mesh as unknown as State;
 const answer=(sdp:string)=>"P0."+btoa(JSON.stringify({k:"a",sdp})).replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/g,"");
 afterEach(()=>{state.pending=null;});
+describe("QR offer concurrency contract",()=>{
+ it("rejects an older offer both before and after async QR encoding",()=>{
+   const source=readFileSync("src/lib/mesh.ts","utf8");
+   expect(source).toContain('generation !== this.generation || this.pending !== pc');
+   expect(source).toMatch(/const code = await bounded\(encode\(\{ k: "o", s: session, sdp \}/);
+   expect(source).toMatch(/const code = await bounded[\s\S]*if \(generation !== this.generation \|\| this.pending !== pc\)/);
+ });
+});
 describe("remote camera answer does not corrupt a newer QR handshake",()=>{
  it("rejects oversized and malformed pairing input before applying a remote SDP",async()=>{
   const pc={setRemoteDescription:vi.fn(async()=>{})} as unknown as RTCPeerConnection;
