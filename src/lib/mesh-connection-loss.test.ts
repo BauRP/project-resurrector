@@ -77,6 +77,24 @@ describe("peer connection loss must not hide healthy remote cameras",()=>{
   expect(internal.peers.has("peer1")).toBe(true);
   expect(internal.channels.has(next)).toBe(true);
  });
+ it("cannot impersonate an existing director with the first packet on an unbound channel",()=>{
+  const rogue=channel();
+  internal.channels.set(rogue,null);
+  internal.peers.set("director",peer("director"));
+  const listener=vi.fn();
+  const off=mesh.onMessage(listener);
+  try {
+    internal.handle({type:"record",from:"director",on:true,at:Date.now()},"webrtc",rogue);
+    expect(listener).not.toHaveBeenCalled();
+    expect(internal.channels.get(rogue)).toBeNull();
+    internal.handle({type:"telemetry",from:"director",name:"Director",battery:70,
+      storageMB:500,recording:false},"webrtc",rogue);
+    expect(internal.channels.get(rogue)).toBe("director");
+    listener.mockClear();
+    internal.handle({type:"record",from:"director",on:true,at:Date.now()},"webrtc",rogue);
+    expect(listener).toHaveBeenCalledOnce();
+  } finally {off();}
+ });
  it("cannot rebind an authenticated data channel to another remote camera",()=>{
   const ch=channel();internal.channels.set(ch,"phone1");
   internal.handle({type:"telemetry",from:"phone2",name:"spoof",
