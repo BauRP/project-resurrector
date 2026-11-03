@@ -108,7 +108,7 @@ function MulticamAppContent() {
     }
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(() => restorer.retry(tab, port));
+      observer = new ResizeObserver(() => restorer.onViewportReflow(tab, port));
       observer.observe(port);
       if (port.firstElementChild instanceof HTMLElement)
         observer.observe(port.firstElementChild);
@@ -117,7 +117,7 @@ function MulticamAppContent() {
     // Watch content additions rather than guessing a fixed load duration.
     const contentObserver = typeof MutationObserver === "undefined" ? null :
       new MutationObserver(() => {
-        if (restorer.pending(tab)) restorer.retry(tab, port);
+        restorer.onViewportReflow(tab, port);
       });
     contentObserver?.observe(port, {childList: true, subtree: true});
     const onPageHide = () => restorer.capture(port);
