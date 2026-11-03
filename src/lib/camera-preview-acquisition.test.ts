@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
-import {acquireWebViewPreviewWithNativeGuard,NativeCameraBusyError,nativeCameraStateSafeForWebView,CameraDeviceMismatchError,explicitVideoDeviceId} from "./camera-preview-acquisition";
+import {acquireWebViewPreviewWithNativeGuard,NativeCameraBusyError,nativeCameraStateSafeForWebView,CameraDeviceMismatchError,explicitVideoDeviceId,MicrophoneDeviceMismatchError,explicitAudioDeviceId} from "./camera-preview-acquisition";
 import {cameraController,CameraSupersededError,CameraUnavailableError} from "./camera-controller";
 import {diagnosticCaptureGate} from "./diagnostic-capture-gate";
 import {readFileSync} from "node:fs";
@@ -80,6 +80,35 @@ describe("safe WebView camera acquisition across Camera2 and fold lifecycle",()=
    await expect(acquireWebViewPreviewWithNativeGuard(owner,
      {video:{deviceId:{exact:"usb-A"}},audio:false},null)).resolves.toBe(stream);
    cameraController.release(owner);
+ });
+ it("does not fall back to silent video when an exact external microphone is selected",async()=>{
+   expect(explicitAudioDeviceId({audio:{deviceId:{exact:"usb-mic"}}})).toBe("usb-mic");
+   expect(explicitAudioDeviceId({audio:true})).toBeNull();
+   const gum=vi.fn(async()=>{throw new Error("USB microphone disconnected");});
+   vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
+   await expect(acquireWebViewPreviewWithNativeGuard(Symbol("mic"),
+     {video:true,audio:{deviceId:{exact:"usb-mic"}}},null))
+     .rejects.toThrow("USB microphone disconnected");
+   expect(gum).toHaveBeenCalledOnce();
+ });
+ it("rejects a live video stream that omitted or substituted the selected audio source",async()=>{
+   const {stream,stop}=live();
+   const gum=vi.fn(async()=>stream);
+   vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
+   await expect(acquireWebViewPreviewWithNativeGuard(Symbol("mic"),
+     {video:true,audio:{deviceId:{exact:"usb-mic"}}},null))
+     .rejects.toBeInstanceOf(MicrophoneDeviceMismatchError);
+   expect(stop).toHaveBeenCalledOnce();
+   const audio={readyState:"live",getSettings:()=>({deviceId:"internal-mic"}),stop:vi.fn()};
+   const {stream:second,stop:secondStop}=live();
+   Object.defineProperty(second,"getAudioTracks",{value:()=>[audio]});
+   Object.defineProperty(second,"getTracks",{value:()=>[second.getVideoTracks()[0],audio]});
+   gum.mockImplementation(async()=>second);
+   await expect(acquireWebViewPreviewWithNativeGuard(Symbol("mic2"),
+     {video:true,audio:{deviceId:{exact:"usb-mic"}}},null))
+     .rejects.toBeInstanceOf(MicrophoneDeviceMismatchError);
+   expect(secondStop).toHaveBeenCalledOnce();
+   expect(audio.stop).toHaveBeenCalledOnce();
  });
  it("never attempts getUserMedia when native Camera2 is recording",async()=>{
   const gum=vi.fn();vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
