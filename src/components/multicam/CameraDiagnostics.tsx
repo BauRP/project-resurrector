@@ -13,6 +13,7 @@ import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
 import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-camera-verification";
 import { diagnosticProbeLimit, checkDiagnosticSafety } from "@/lib/diagnostic-safety";
+import { DiagnosticCaptureGate, type DiagnosticLease } from "@/lib/diagnostic-capture-gate";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -49,7 +50,22 @@ export function CameraDiagnostics() {
   const job = useRef<AbortController | null>(null);
   const dualJob = useRef<AbortController | null>(null);
   const mounted = useRef(true);
-  useEffect(() => { if (recording) job.current?.abort(); }, [recording]);
+  const gate = useRef(new DiagnosticCaptureGate());
+  const highSpeedLease = useRef<DiagnosticLease | null>(null);
+  const latestRecording = useRef(recording);
+  latestRecording.current = recording;
+  useEffect(() => { if (recording) { job.current?.abort(); dualJob.current?.abort(); } }, [recording]);
+  const safeToProbe = async (lease: DiagnosticLease, extended: boolean): Promise<boolean> => {
+    const safety = await checkDiagnosticSafety(extended);
+    if (!lease.isCurrent() || !mounted.current || document.hidden || latestRecording.current) return false;
+    if (!safety.proceed) {
+      setSafetyNotice("Диагностика отложена: " + safety.reason);
+      return false;
+    }
+    if (safety.thermal === "unknown" || safety.battery === "unknown" || safety.storage === "unknown")
+      setSafetyNotice(safety.reason);
+    return true;
+  };
   useEffect(() => {
     mounted.current = true;
     const refresh = () => {
@@ -87,6 +103,9 @@ export function CameraDiagnostics() {
       .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
       mounted.current = false; job.current?.abort(); dualJob.current?.abort();
+      highSpeedLease.current?.release();
+      highSpeedLease.current = null;
+      gate.current.reset();
       if (highSpeedSession.current) {
         highSpeedSession.current = false;
         void MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
@@ -104,6 +123,8 @@ export function CameraDiagnostics() {
   const run = async (full: boolean) => {
     if (job.current || running || recording || dualBusy || rawBusy || stabilizationBusy || highSpeedState !== "idle" || !devices.length) return;
     if (full && !window.confirm("Продолжить незавершённые испытания всех камер? Возможны нагрев и расход заряда.")) return;
+    const lease = gate.current.acquire("mode-scan");
+    if (!lease) return;
     const current = new AbortController();
     job.current = current;
     setRunning(true); setError(""); setSafetyNotice("");
@@ -191,6 +212,7 @@ export function CameraDiagnostics() {
     } finally {
       if (mounted.current) { setRunning(false); setProgress(current.signal.aborted ? "Проверка приостановлена" : "Очередь обработана"); }
       if (job.current === current) job.current = null;
+      lease.release();
     }
   };
   const highSpeedOptions = nativeCameras.flatMap(cam => cam.highSpeed.flatMap(mode =>
@@ -205,14 +227,27 @@ export function CameraDiagnostics() {
     if (!window.confirm("Открыть настоящую Camera2 high-speed запись " + option.size + "@" + option.fps + " на камере " + option.cameraId + "? Экран предпросмотра WebView отключён в этой сессии. Устройство может ограничивать такой режим.")) return;
     const [width, height] = option.size.split("x").map(Number);
     if (!width || !height) { setError("Некорректный размер native high-speed"); return; }
+    const lease = gate.current.acquire("high-speed");
+    if (!lease) return;
+    highSpeedLease.current = lease;
     setHighSpeedState("starting"); setHighSpeedMessage("Запуск Camera2 high-speed…");
     try {
+      if (!await safeToProbe(lease, true)) {
+        if (mounted.current) setHighSpeedMessage("Проверка безопасности не разрешила запуск high-speed.");
+        return;
+      }
       await MultiCamNative.startHighSpeedRecording({ cameraId: option.cameraId, width, height, fps: option.fps });
       highSpeedSession.current = true;
       if (mounted.current) { setHighSpeedCamera(option.cameraId); setHighSpeedState("recording"); setHighSpeedMessage("Запись началась, остановите её вручную"); }
       else { highSpeedSession.current = false; void MultiCamNative.stopHighSpeedRecording().catch(() => undefined); }
     } catch (e) {
-      if (mounted.current) { setHighSpeedState("idle"); setHighSpeedMessage("Ошибка запуска: " + String(e)); }
+      if (mounted.current) setHighSpeedMessage("Ошибка запуска: " + String(e));
+    } finally {
+      if (!highSpeedSession.current) {
+        lease.release();
+        if (highSpeedLease.current === lease) highSpeedLease.current = null;
+        if (mounted.current) setHighSpeedState("idle");
+      }
     }
   };
   const finishHighSpeed = async () => {
@@ -248,6 +283,8 @@ export function CameraDiagnostics() {
     } catch (e) {
       if (mounted.current) setHighSpeedMessage("Ошибка сохранения: " + String(e));
     } finally {
+      highSpeedLease.current?.release();
+      highSpeedLease.current = null;
       if (mounted.current) { setHighSpeedState("idle"); setHighSpeedCamera(""); }
     }
   };
@@ -264,22 +301,35 @@ export function CameraDiagnostics() {
   const testRaw = async (cameraId: string) => {
     if (rawBusy || recording || running || highSpeedState !== "idle") return;
     if (!window.confirm("Сделать настоящий RAW/DNG кадр через Camera2? Камера должна быть свободна; пробный файл сохранится во внутренней папке Android.")) return;
+    const lease = gate.current.acquire("raw");
+    if (!lease) return;
     setRawBusy(true); setRawMessage("Открывается Camera2 RAW_SENSOR…");
     try {
+      if (!await safeToProbe(lease, false)) {
+        if (mounted.current) setRawMessage("RAW отложен: камера или ресурсы заняты.");
+        return;
+      }
       const result = await captureRealDng(cameraId);
       if (mounted.current) setRawMessage("Настоящий DNG сохранён: " + result.width + "×" + result.height + ", " + result.bytes + " байт. Путь: " + result.path);
     } catch (e) {
       if (mounted.current) setRawMessage("RAW не подтверждён: " + String(e));
     } finally {
+      lease.release();
       if (mounted.current) setRawBusy(false);
     }
   };
   const checkStabilization = async (cameraId: string) => {
     if (stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle") return;
     if (!window.confirm("Проверить реальную EIS/OIS через Camera2 CaptureResult на " + cameraId + " в тестовой YUV 1280×720 сессии? Файл не записывается, WebView-камера должна быть свободна.")) return;
+    const lease = gate.current.acquire("stabilization");
+    if (!lease) return;
     setStabilizationBusy(true);
     setStabilizationMessage("Открытие Camera2 для проверки стабилизации…");
     try {
+      if (!await safeToProbe(lease, false)) {
+        if (mounted.current) setStabilizationMessage("Проверка EIS/OIS отложена: камера или ресурсы заняты.");
+        return;
+      }
       const result = await probeStabilization(cameraId, 1280, 720, 30);
       if (mounted.current) {
         setStabilizationResults(previous => [...previous.filter(p => p.cameraId !== cameraId), result]);
@@ -287,7 +337,10 @@ export function CameraDiagnostics() {
       }
     } catch (e) {
       if (mounted.current) setStabilizationMessage("Camera2 стабилизация не подтверждена: " + String(e));
-    } finally { if (mounted.current) setStabilizationBusy(false); }
+    } finally {
+      lease.release();
+      if (mounted.current) setStabilizationBusy(false);
+    }
   };
   const testDual = async () => {
     if (dualBusy || recording || running || rawBusy || stabilizationBusy || highSpeedState !== "idle") return;
@@ -295,9 +348,15 @@ export function CameraDiagnostics() {
       setDualMessage("Выберите две разные камеры WebView"); return;
     }
     if (!window.confirm("Проверить одновременную короткую запись ДВУХ камер и двух кодировщиков? Тест может нагреть телефон. Оба файла сохраняются в медиатеку только при общем успехе.")) return;
+    const lease = gate.current.acquire("dual");
+    if (!lease) return;
     const test = new AbortController(); dualJob.current = test;
     setDualBusy(true); setDualMessage("Проверяю две независимые камеры и два видеокодировщика…");
     try {
+      if (!await safeToProbe(lease, false) || test.signal.aborted) {
+        if (mounted.current) setDualMessage("Проверка двух камер отложена: камера или ресурсы заняты.");
+        return;
+      }
       const result = await verifyDualCameraRecording(dualFirst, dualSecond, test.signal);
       if (mounted.current) {
         setDualEvidence(prev => [...prev, result]);
@@ -310,6 +369,7 @@ export function CameraDiagnostics() {
     } finally {
       if (mounted.current) setDualBusy(false);
       if (dualJob.current === test) dualJob.current = null;
+      lease.release();
     }
   };
   const download = () => {
