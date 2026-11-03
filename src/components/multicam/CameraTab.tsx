@@ -101,7 +101,10 @@ export function CameraTab() {
   const diagnosticRevision = useSyncExternalStore(
     diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
   useEffect(() => {
-    let alive = true; const token = owner.current;
+    // Each lens/fold/diagnostic refresh gets its OWN owner identity. An older
+    // pending getUserMedia completion cannot release a newer camera stream.
+    let alive = true; const token = Symbol("camera-preview-generation");
+    owner.current = token;
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
     const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
     const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
