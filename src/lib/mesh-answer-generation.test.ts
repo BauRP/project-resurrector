@@ -28,6 +28,42 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
   expect(pc.setRemoteDescription).toHaveBeenCalledOnce();
   expect(state.pending).toBeNull();
  });
+ it("closes superseded slave handshakes without dropping established peers",async()=>{
+   let resume!:()=>void;
+   const created:Array<{close:ReturnType<typeof vi.fn>;index:number}> = [];
+   const FakeConnection=class {
+     index=created.length+1;
+     iceGatheringState="complete";
+     localDescription={sdp:"v=0"};
+     close=vi.fn();
+     addEventListener=vi.fn();
+     removeEventListener=vi.fn();
+     ondatachannel:((e:{channel:{close:ReturnType<typeof vi.fn>}})=>void)|null=null;
+     setRemoteDescription=vi.fn(async()=>{
+       if(this.index===1)await new Promise<void>(resolve=>{resume=resolve;});
+     });
+     createAnswer=vi.fn(async()=>({type:"answer",sdp:"v=0"}));
+     setLocalDescription=vi.fn(async()=>{});
+     constructor(){created.push(this);}
+   };
+   vi.stubGlobal("CompressionStream",undefined);
+   vi.stubGlobal("RTCPeerConnection",FakeConnection);
+   const offer=(name:string)=>"P0."+btoa(JSON.stringify({k:"o",s:name,sdp:"v=0"}))
+     .split("+").join("-").split("/").join("_").replace(/=+$/g,"");
+   try {
+     const first=mesh.answerOffer(offer("old"));
+     await vi.waitFor(()=>expect(resume).toBeTypeOf("function"));
+     const second=mesh.answerOffer(offer("new"));
+     expect(created[0]?.close).toHaveBeenCalledOnce();
+     const rogue={close:vi.fn()};
+     created[0]?.ondatachannel?.({channel:rogue});
+     expect(rogue.close).toHaveBeenCalledOnce();
+     resume();
+     await expect(first).rejects.toThrow("Устаревшее приглашение");
+     await expect(second).resolves.toMatchObject({session:"new"});
+     expect(created[1]?.close).not.toHaveBeenCalled();
+   } finally {mesh.leave();vi.unstubAllGlobals();}
+ });
  it("rejects a delayed slave reply when a later QR invitation wins",async()=>{
    let releaseOld!:()=>void;
    let created=0;
