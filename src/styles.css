@@ -1058,3 +1058,201 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   justify-content: center;
   overflow-wrap: anywhere;
 }
+
+
+/* Reference 111/222 precision skin: global layout and camera surfaces */
+/* The screen composition is shared; only glass pigment changes with .dark. */
+:root {
+  --reference-rim: oklch(.77 .066 274 / .77);
+  --reference-top: oklch(.997 .014 279 / .84);
+  --reference-bottom: oklch(.90 .035 283 / .63);
+  --reference-surface: linear-gradient(155deg,var(--reference-top),var(--reference-bottom));
+  --reference-shadow: 0 11px 26px oklch(.46 .09 269 / .20),inset 0 1.5px 0 oklch(1 0 0 / .87),inset 0 -1px 0 oklch(.64 .05 280 / .24);
+  --reference-glow: 0 9px 19px oklch(.52 .18 293 / .28),inset 0 1px 0 oklch(1 0 0 / .7);
+  --reference-backdrop:
+    radial-gradient(ellipse 80% 57% at -18% 25%,oklch(.78 .10 238 / .34),transparent 80%),
+    radial-gradient(ellipse 78% 70% at 112% 53%,oklch(.81 .09 298 / .36),transparent 84%),
+    linear-gradient(153deg,oklch(.967 .016 278),oklch(.891 .044 258) 49%,oklch(.915 .04 290));
+}
+:root.dark {
+  --reference-rim: oklch(.71 .067 255 / .57);
+  --reference-top: oklch(.35 .048 249 / .75);
+  --reference-bottom: oklch(.18 .040 247 / .77);
+  --reference-surface: linear-gradient(155deg,var(--reference-top),var(--reference-bottom));
+  --reference-shadow: 0 12px 24px oklch(.018 .022 246 / .52),inset 0 1px 0 oklch(.88 .027 254 / .27),inset 0 -1px 0 oklch(.10 .02 247 / .43);
+  --reference-glow: 0 9px 23px oklch(.53 .16 297 / .33),inset 0 1px 0 oklch(.86 .03 262 / .27);
+  --reference-backdrop:
+    radial-gradient(ellipse 98% 55% at -16% 28%,oklch(.29 .092 235 / .54),transparent 83%),
+    radial-gradient(ellipse 90% 62% at 110% 53%,oklch(.23 .094 286 / .51),transparent 82%),
+    linear-gradient(153deg,oklch(.07 .026 245),oklch(.105 .037 246) 49%,oklch(.075 .027 257));
+}
+.app-stage, .app-shell { background:var(--reference-backdrop); }
+.app-shell { isolation:isolate; }
+.app-shell::before,.app-shell::after {
+  content:"";position:absolute;z-index:-1;pointer-events:none;
+  width:142%;height:57%;border-radius:50%;transform:rotate(-30deg);
+}
+.app-shell::before {
+  left:-76%;top:-11%;
+  border-bottom:1px solid oklch(.73 .115 236 / .60);
+  background:linear-gradient(160deg,transparent 35%,oklch(.78 .08 231 / .15),transparent 91%);
+}
+.app-shell::after {
+  right:-83%;bottom:-10%;
+  border-top:1px solid oklch(.70 .11 287 / .58);
+  background:linear-gradient(40deg,transparent 40%,oklch(.80 .10 290 / .12),transparent 93%);
+}
+.dark .app-shell::before {border-color:oklch(.64 .17 233 / .66);background:linear-gradient(160deg,transparent 34%,oklch(.38 .11 232 / .20),transparent 92%);}
+.dark .app-shell::after {border-color:oklch(.59 .16 290 / .60);background:linear-gradient(40deg,transparent 40%,oklch(.31 .12 290 / .22),transparent 92%);}
+.app-scroll {position:relative;z-index:1;}
+.app-header {
+  min-height:3.55rem;
+  background:linear-gradient(176deg,oklch(.99 .014 280 / .34),transparent);
+  border-bottom:1px solid oklch(.83 .05 258 / .36);
+  box-shadow:0 6px 20px oklch(.36 .07 276 / .07);
+}
+.dark .app-header {background:linear-gradient(176deg,oklch(.17 .032 247 / .46),transparent);border-bottom-color:oklch(.59 .064 252 / .18);}
+.app-header .multicam-brand {gap:.55rem;}
+.app-header .multicam-brand p {font-weight:700;letter-spacing:.17em;color:var(--foreground);}
+.app-header .connect-pill:not(.active) {
+  color:oklch(1 0 0);background:var(--gradient-primary);
+  border:1px solid oklch(.93 .05 230 / .83);
+  box-shadow:0 0 11px oklch(.63 .17 287 / .33),0 7px 17px oklch(.50 .16 275 / .24),inset 0 1px 0 oklch(1 0 0 / .7);
+}
+/* Only draw the reference stage when the video is not live. */
+.camera-screen.camera-offline,
+.camera-screen.camera-offline .camera-preview-placeholder { background:transparent; }
+.camera-screen.camera-offline .camera-live-view::before,
+.camera-screen.camera-offline .camera-live-view::after {
+  content:"";position:absolute;pointer-events:none;border-radius:50%;transform:rotate(-27deg);
+}
+.camera-screen.camera-offline .camera-live-view::before {
+  width:138%;height:66%;left:-90%;top:-8%;
+  border-bottom:1.1px solid oklch(.67 .14 235 / .55);
+}
+.camera-screen.camera-offline .camera-live-view::after {
+  width:145%;height:60%;right:-90%;bottom:-14%;
+  border-top:1.1px solid oklch(.70 .14 289 / .59);
+}
+.grid-thirds::before {background:linear-gradient(to right,transparent 33.14%,oklch(.63 .063 250 / .55) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.63 .063 250 / .55) 66.6%,transparent 66.77%);}
+.grid-thirds::after {background:linear-gradient(to bottom,transparent 33.14%,oklch(.63 .063 250 / .55) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.63 .063 250 / .55) 66.6%,transparent 66.77%);}
+.dark .grid-thirds::before {background:linear-gradient(to right,transparent 33.14%,oklch(.81 .065 240 / .41) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.81 .065 240 / .41) 66.6%,transparent 66.77%);}
+.dark .grid-thirds::after {background:linear-gradient(to bottom,transparent 33.14%,oklch(.81 .065 240 / .41) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.81 .065 240 / .41) 66.6%,transparent 66.77%);}
+/* Four parts of the central lens-status card follow the reference geometry. */
+.camera-preview-status {
+  display:grid;grid-template-columns:3.75rem minmax(0,1fr);
+  grid-template-rows:auto auto;align-content:center;
+  gap:.65rem .9rem;
+  width:min(94%,32rem);max-width:100%;
+  border:1.5px solid var(--reference-rim);
+  border-radius:1.85rem;
+  background:var(--reference-surface);
+  box-shadow:var(--reference-shadow);
+  color:var(--foreground);
+  padding:1.1rem 1rem;
+}
+.camera-preview-status::before {
+  content:"";position:absolute;left:5.5rem;top:16%;bottom:16%;width:1px;
+  background:var(--reference-rim);
+}
+.camera-preview-status .camera-preview-symbol {
+  grid-column:1;grid-row:1/3;
+  width:3.65rem;height:3.65rem;
+  padding:.82rem;border-radius:1.2rem;
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);box-shadow:var(--reference-shadow);
+}
+.camera-preview-status p {
+  grid-column:2;grid-row:1;
+  text-align:left;font-size:clamp(.74rem,3.3vw,1rem);
+  font-weight:500;line-height:1.42;color:var(--foreground);
+}
+.camera-preview-retry {
+  grid-column:2;grid-row:2;justify-self:center;
+  width:100%;min-width:0;min-height:2.5rem;
+  border:1px solid oklch(.92 .055 235 / .85);
+  border-radius:999px;background:var(--gradient-primary);
+  box-shadow:var(--reference-glow);color:white;
+  font-size:clamp(.71rem,3.1vw,.88rem);
+  white-space:nowrap;
+}
+/* HUD, transport controls and persistent tab bar share the same rim treatment. */
+.camera-hud .hud-chip {
+  min-height:2rem;padding-inline:.56rem;
+  color:var(--foreground);font-weight:650;font-size:clamp(.62rem,2.4vw,.79rem);
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);box-shadow:var(--reference-shadow);
+}
+.camera-hud .hud-chip.active {background:var(--gradient-primary);color:white;}
+.camera-record-dock {bottom:1.35rem;}
+.camera-record-dock .glass-panel,
+.camera-record-dock .segmented-mini,
+.studio-timecode {
+  background:var(--reference-surface);
+  border:1px solid var(--reference-rim);
+  box-shadow:var(--reference-shadow);
+}
+.camera-record-dock .record-shutter {
+  border:3px solid var(--reference-rim);outline:2px solid oklch(.67 .14 282 / .63);
+  outline-offset:3px;box-shadow:0 0 11px oklch(.59 .16 278 / .25),var(--reference-shadow);
+}
+.camera-record-dock .record-shutter span {
+  background:oklch(.66 .255 25);
+  box-shadow:inset 0 2px 3px oklch(.95 .09 20 / .5);
+}
+.camera-record-dock button:not(.record-shutter) {
+  background:var(--reference-surface);border:1px solid var(--reference-rim);
+  border-radius:999px;box-shadow:var(--reference-shadow);
+}
+.camera-record-dock .segmented-mini button {border:0;box-shadow:none;}
+.camera-record-dock .segmented-mini button.active {
+  color:white;background:var(--gradient-primary);box-shadow:var(--reference-glow);
+}
+.bottom-nav {
+  border:1px solid var(--reference-rim);border-bottom:0;
+  border-radius:1.85rem 1.85rem 0 0;
+  background:var(--reference-surface);
+  box-shadow:0 -6px 24px oklch(.43 .10 264 / .16),inset 0 1px 0 oklch(1 0 0 / .29);
+}
+.bottom-nav button {height:100%;gap:.22rem;color:var(--foreground);}
+.bottom-nav button.active {
+  color:var(--primary);
+  background:linear-gradient(120deg,oklch(.82 .088 239 / .43),oklch(.74 .13 305 / .34));
+  border:1px solid oklch(.72 .15 290 / .47);
+  border-radius:1.65rem;box-shadow:var(--reference-glow);
+}
+.bottom-nav button i {height:.13rem;top:.3rem;background:var(--gradient-primary);}
+.editor-fold-workspace,
+.settings-fold-workspace {background:transparent;color:var(--foreground);}
+.editor-fold-workspace :is(.glass-panel,.bg-card,.bg-secondary,.editor-tab),
+.settings-fold-workspace :is(.glass-panel,.bg-card,.bg-secondary,.settings-tool-trigger) {
+  border-color:var(--reference-rim);box-shadow:var(--reference-shadow);
+}
+.editor-fold-workspace .editor-tab,
+.settings-fold-workspace .theme-seg,
+.settings-fold-workspace .settings-tool-trigger {
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);
+  box-shadow:var(--reference-shadow);
+}
+.editor-fold-workspace .editor-tab.active,
+.settings-fold-workspace .theme-seg button.active {
+  color:white;background:var(--gradient-primary);box-shadow:var(--reference-glow);
+}
+.editor-fold-workspace .bg-timeline {background:var(--reference-surface);}
+.settings-fold-workspace .settings-item {border-bottom:1px solid var(--reference-rim);box-shadow:none;}
+.settings-fold-workspace section > div {background:var(--reference-surface);}
+.app-splash {background:var(--reference-backdrop);color:var(--foreground);}
+.app-splash-progress {background:var(--reference-surface);border:1px solid var(--reference-rim);box-shadow:var(--reference-shadow);}
+.app-splash-progress > div {background:var(--gradient-primary);}
+.app-splash-logo {width:2.7rem;height:2.1rem;}
+@media (max-width:440px) {
+  .app-header .multicam-brand {gap:.35rem;}
+  .app-header .multicam-brand p {font-size:.66rem;letter-spacing:.12em;}
+  .camera-preview-status {width:94%;grid-template-columns:3.1rem minmax(0,1fr);padding:.85rem;gap:.45rem;}
+  .camera-preview-status::before {left:4.5rem;}
+  .camera-preview-status .camera-preview-symbol {width:3.1rem;height:3.1rem;padding:.72rem;}
+}
+@media (prefers-reduced-motion:reduce) {
+  .app-shell::before,.app-shell::after,.camera-live-view::before,.camera-live-view::after {animation:none;}
+}
