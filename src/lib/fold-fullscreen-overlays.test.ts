@@ -80,3 +80,17 @@ describe("editor measuring on older Android WebViews", () => {
     expect(editor).not.toContain('new ResizeObserver(() => setTlW(el.clientWidth))');
   });
 });
+
+describe("legacy WebView viewport fallback on fold and phone displays", () => {
+  it("keeps shell heights and measured fold dialogs usable without 100dvh", () => {
+    const css=readFileSync("src/styles.css","utf8");
+    const fallback=css.split("@supports not (height: 100dvh) {")[1];
+    expect(fallback).toBeDefined();
+    expect(fallback).toContain(".app-stage, .app-shell");
+    expect(fallback).toContain("var(--app-viewport-height, 100vh)");
+    expect(fallback).toContain('height: var(--fold-work-height, var(--app-viewport-height, 100vh))');
+    expect(fallback).toContain(".connect-fold-modal");
+    expect(fallback).toContain(".export-fold-overlay");
+    expect(fallback).toContain(".privacy-fold-overlay");
+  });
+});
