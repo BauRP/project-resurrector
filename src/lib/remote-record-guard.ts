@@ -1,4 +1,5 @@
 import type { MeshMessage } from "./mesh";
+import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
 import type { MulticamState } from "./multicam-store";
 
 /** A network command only REQUESTS recording; MediaRecorder.onstart is the
@@ -44,6 +45,8 @@ export class RemoteRecordGuard {
         message.at <= this.lastTimestamp) return null;
 
     if (message.on) {
+      // Remote director commands cannot preempt an active camera test.
+      if (diagnosticCaptureGate.activeOperation() !== null) return null;
       // Never restart a capture that is still preparing, recording or saving.
       if (state.recording || ["starting", "recording", "stopping", "saving"].includes(state.recordingPhase))
         return null;
