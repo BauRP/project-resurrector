@@ -35,7 +35,7 @@ const copy: Record<string, { title:string; language:string; network:string; stor
  hi:{title:"सेटिंग्स",language:"भाषा",network:"मेश निदान",storage:"स्टोरेज और कैश",engine:"रेंडर इंजन",privacy:"गोपनीयता नीति",clear:"कैश साफ़ करें"},vi:{title:"Cài đặt",language:"Ngôn ngữ",network:"Chẩn đoán mạng",storage:"Bộ nhớ và bộ đệm",engine:"Bộ máy kết xuất",privacy:"Chính sách quyền riêng tư",clear:"Xóa bộ đệm"},id:{title:"Pengaturan",language:"Bahasa",network:"Diagnostik jaringan",storage:"Penyimpanan dan cache",engine:"Mesin render",privacy:"Kebijakan Privasi",clear:"Hapus cache"},
 };
 export function SettingsTab() {
- const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers(); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
+ const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers(); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);
  useEffect(()=>{
    if(!privacy||!privacyDialog.current)return;
@@ -58,14 +58,28 @@ export function SettingsTab() {
  };
  const tc=themeCopy[s.language] ?? { theme:"Theme", light:"Light", dark:"Dark" };
   return <div className="settings-fold-workspace pb-[calc(4rem+env(safe-area-inset-bottom))] text-foreground"><header className="px-4 pb-2 pt-3"><h1 className="text-lg font-semibold">{t.title}</h1></header><main className="mx-auto max-w-2xl space-y-2.5 px-3">
-  <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>s.set({theme:"light"})}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>s.set({theme:"dark"})}><Moon/>{tc.dark}</Button></div></div></Group>
+  <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
  <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
  <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{s.cacheMB.toFixed(2)} MB · превью</small></span></span><Button size="sm" variant="secondary" disabled={clearing} onClick={()=>void clearCache()}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>s.resetProject()}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
- <NativeRecordingPanel />
- <CameraDiagnostics />
+ {/* Camera2 polling and camera discovery are expensive. Keep both fully
+      unmounted until opened; CSS-hidden panels would still run native work. */}
+ <section className="settings-advanced-tools" aria-label="Дополнительные инструменты">
+  <div className="settings-advanced-actions">
+   <button type="button" className={"settings-tool-trigger" + (advancedPanel === "native" ? " active" : "")}
+     aria-expanded={advancedPanel === "native"} onClick={() => setAdvancedPanel(p => p === "native" ? null : "native")}>
+     <Database aria-hidden="true"/><span>Нативная запись Camera2</span><ChevronRight aria-hidden="true"/>
+   </button>
+   <button type="button" className={"settings-tool-trigger" + (advancedPanel === "diagnostics" ? " active" : "")}
+     aria-expanded={advancedPanel === "diagnostics"} onClick={() => setAdvancedPanel(p => p === "diagnostics" ? null : "diagnostics")}>
+     <Activity aria-hidden="true"/><span>Проверка камер</span><ChevronRight aria-hidden="true"/>
+   </button>
+  </div>
+  {advancedPanel === "native" && <NativeRecordingPanel />}
+  {advancedPanel === "diagnostics" && <CameraDiagnostics />}
+ </section>
  {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main><AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} ref={privacyDialog} role="dialog" aria-modal="true" aria-label={t.privacy} tabIndex={-1} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="min-h-[65dvh] rounded-lg border border-dashed border-border bg-card p-6" /></div></motion.div>}</AnimatePresence></div>;
 }
 function Group({title,help,children}:{title?:string;help?:string;children:ReactNode}){return <section><h2 className="mb-1 flex items-center gap-1 px-2 text-[11px] font-semibold uppercase text-muted-foreground">{title}{help&&<HelpDot id={help}/>}</h2><div className="overflow-hidden rounded-lg bg-card">{children}</div></section>}
