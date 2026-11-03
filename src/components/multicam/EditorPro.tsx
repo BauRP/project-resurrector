@@ -2,6 +2,7 @@ import { EditorVideoLayer } from "./EditorVideoLayer";
 import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
+import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -150,7 +151,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const [zoom, setZoom] = useState(8);
   const zoomTouched = useRef(false); const [scrollX, setScrollX] = useState(0);
   const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
-  const [t, setT] = useState(0);
+  // Activity recreation must restore the last safe playhead, not restart the
+  // editor at zero after every fold. The view-state sanitizer rejects NaN and
+  // out-of-range positions and does not restore an active recorder.
+  const [t, setT] = useState(() => restoreViewState().playhead ?? 0);
   const [playing, setPlaying] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
@@ -296,6 +300,21 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
   // The indicator runs independently at display refresh rate; heavy preview state runs at 30 Hz.
   const timeRef = useRef(t); timeRef.current = t;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setStore({ playhead: t }), 400);
+    return () => window.clearTimeout(timer);
+  }, [t, setStore]);
+  useEffect(() => {
+    const flush = () => setStore({ playhead: timeRef.current });
+    const hidden = () => { if (document.hidden) flush(); };
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [setStore]);
   const playheadLine = useRef<HTMLDivElement>(null); const playheadHandle = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!playing) return;
