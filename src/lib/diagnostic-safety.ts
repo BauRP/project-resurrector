@@ -1,4 +1,5 @@
 import { isNative, MultiCamNative, type NativeThermal } from "./native";
+import { nativeCapture, nativeRecorderOwnsCamera } from "./native-capture";
 
 export interface DiagnosticSafety {
   proceed: boolean;
@@ -8,6 +9,12 @@ export interface DiagnosticSafety {
   storage: "safe" | "low" | "unknown";
 }
 interface BatterySnapshot { level: number; charging: boolean }
+/** Unknown native state is not permission to take an occupied Camera2 sensor. */
+export function nativeDiagnosticAvailability(state: string | null): "free" | "busy" | "unknown" {
+  if (state === null) return "unknown";
+  if (nativeRecorderOwnsCamera(state) || ["saving","finalizing"].includes(state)) return "busy";
+  return ["idle","stopped","error","completed"].includes(state) ? "free" : "unknown";
+}
 export function evaluateDiagnosticSafety(input: {
   thermalStatus: number | null; battery: BatterySnapshot | null;
   freeBytes: number | null; extended: boolean;
@@ -47,6 +54,19 @@ export function diagnosticProbeLimit(safety: DiagnosticSafety, requested: number
  * guessed battery/temperature metrics are silently treated as healthy.
  */
 export async function checkDiagnosticSafety(extended: boolean): Promise<DiagnosticSafety> {
+  if (isNative()) {
+    let state: string | null = null;
+    try { state = (await nativeCapture.status()).state; }
+    catch { /* unknown native ownership must fail closed */ }
+    const ownership = nativeDiagnosticAvailability(state);
+    if (ownership !== "free") return {
+      proceed: false,
+      reason: ownership === "busy"
+        ? "Нативная камера Camera2 занята просмотром, записью или сохранением. Диагностика отложена."
+        : "Состояние нативной камеры неизвестно. Диагностика отложена, чтобы не прервать запись.",
+      thermal: "unknown", battery: "unknown", storage: "unknown",
+    };
+  }
   let thermalStatus: number | null = null;
   if (isNative()) {
     try {
