@@ -79,6 +79,50 @@ describe("local session switch on fold or re-pair",()=>{
   }
  });
 });
+describe("truthful remote recording status acknowledgements",()=>{
+ it("rejects forged, malformed and misdirected results",()=>{
+   expect(isValidMeshMessage({type:"record-result",from:"camera",to:"host",
+     at:100,status:"saved"})).toBe(true);
+   for (const invalid of [
+     {type:"record-result",from:"camera",to:"host",at:0,status:"saved"},
+     {type:"record-result",from:"camera",to:"host",at:100,status:"success"},
+     {type:"record-result",from:"camera",to:"not a valid id",at:100,status:"saved"},
+   ]) expect(isValidMeshMessage(invalid)).toBe(false);
+   internal.handle({type:"record-result",from:"unknown",to:mesh.selfId,
+     at:100,status:"saved"},"webrtc");
+   expect(internal.peers.has("unknown")).toBe(false);
+ });
+ it("never lets late command receipts downgrade a saved or failed camera",()=>{
+   internal.handle({type:"telemetry",from:"cam-ack",name:"Cam",
+     battery:70,storageMB:500,recording:false},"webrtc");
+   const result=(at:number,status:string)=>({type:"record-result",
+     from:"cam-ack",to:mesh.selfId,at,status});
+   internal.handle(result(200,"received"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("received");
+   internal.handle(result(200,"recording"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("recording");
+   internal.handle(result(200,"saved"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
+   expect(mesh.peers.get("cam-ack")?.recording).toBe(false);
+   internal.handle(result(200,"received"),"webrtc");
+   internal.handle(result(199,"error"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
+   internal.handle(result(201,"error"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("error");
+   expect(mesh.peers.get("cam-ack")?.recordCommandAt).toBe(201);
+   internal.handle({ ...result(202,"saved"),to:"other-host"},"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordCommandAt).toBe(201);
+ });
+ it("requires a channel identity before accepting recording receipts",()=>{
+   const ch=channel();
+   internal.channels.set(ch,null);
+   internal.peers.set("remote",peer("remote"));
+   internal.handle({type:"record-result",from:"remote",to:mesh.selfId,at:100,
+     status:"saved"},"webrtc",ch);
+   expect(mesh.peers.get("remote")?.recordStatus).toBeUndefined();
+   expect(internal.channels.get(ch)).toBeNull();
+ });
+});
 describe("peer connection loss must not hide healthy remote cameras",()=>{
  it("rejects oversized and binary WebRTC messages before parsing",()=>{
   const ch=channel();
