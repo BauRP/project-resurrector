@@ -230,8 +230,15 @@ class Mesh {
 
   joinLocal(id: string) {
     this.bc?.close(); this.localId = id;
-    this.bc = new BroadcastChannel(`multicam-pov-${id}`);
-    this.bc.onmessage = (e) => this.handle(e.data as MeshMessage, "local");
+    const channel = new BroadcastChannel(`multicam-pov-${id}`);
+    this.bc = channel;
+    // Android may deliver queued messages from an old BroadcastChannel even
+    // after switching local sessions. Ignore them instead of allowing old
+    // director START/STOP to reach the newly paired camera.
+    channel.onmessage = (e) => {
+      if (this.bc !== channel || this.localId !== id) return;
+      this.handle(e.data as MeshMessage, "local");
+    };
     this.start(); void this.sendTelemetry();
   }
   leave() {
