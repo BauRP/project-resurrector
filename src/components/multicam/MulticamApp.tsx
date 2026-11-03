@@ -15,6 +15,7 @@ import { RemoteRecordGuard } from "@/lib/remote-record-guard";
 import { nextRemoteReceiptStatus } from "@/lib/remote-record-receipts";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
+import { FoldScrollRestorer } from "@/lib/fold-scroll-position";
 
 const nav: { id: AppTab; icon: typeof Camera }[] = [{ id: "camera", icon: Camera }, { id: "editor", icon: SlidersHorizontal }, { id: "settings", icon: Settings }];
 const labels: Record<string, string[]> = { kk: ["Камера", "Редактор", "Баптаулар"], pt: ["Câmera", "Editor", "Ajustes"], es: ["Cámara", "Editor", "Ajustes"], fr: ["Caméra", "Montage", "Réglages"], ar: ["الكاميرا", "المحرر", "الإعدادات"], zh: ["相机", "编辑", "设置"], ko: ["카메라", "편집기", "설정"], ja: ["カメラ", "編集", "設定"], de: ["Kamera", "Editor", "Einstellungen"], it: ["Camera", "Editor", "Impostazioni"], tr: ["Kamera", "Kurgu", "Ayarlar"], pl: ["Kamera", "Edytor", "Ustawienia"], hi: ["कैमरा", "संपादक", "सेटिंग्स"], vi: ["Máy quay", "Biên tập", "Cài đặt"], id: ["Kamera", "Editor", "Pengaturan"] };
@@ -87,6 +88,39 @@ function MulticamAppContent() {
   const [pendingTab, setPendingTab] = useState<AppTab | null>(null);
   const [navigationNotice, setNavigationNotice] = useState("");
   const [interrupted, setInterrupted] = useState(() => readUnfinishedCapture());
+  const appScrollRef = useRef<HTMLDivElement>(null);
+  const scrollRestorer = useRef(new FoldScrollRestorer());
+  const captureTabScroll = useCallback(() => {
+    if (appScrollRef.current) scrollRestorer.current.capture(appScrollRef.current);
+  }, []);
+  useEffect(() => {
+    const port = appScrollRef.current;
+    if (!port) return;
+    const restorer = scrollRestorer.current;
+    restorer.activate(tab, port);
+    const timers: number[] = [];
+    // AnimatePresence mode="wait" exits the old screen before entering the
+    // new one. A retry after the entry lets late media-library content settle.
+    timers.push(window.setTimeout(() => restorer.enter(tab, port), 260));
+    for (const delay of [450, 1100, 2400]) {
+      timers.push(window.setTimeout(() => restorer.retry(tab, port), delay));
+    }
+    let observer: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      observer = new ResizeObserver(() => restorer.retry(tab, port));
+      observer.observe(port);
+      if (port.firstElementChild instanceof HTMLElement)
+        observer.observe(port.firstElementChild);
+    }
+    const onPageHide = () => restorer.capture(port);
+    window.addEventListener("pagehide", onPageHide);
+    return () => {
+      timers.forEach(t => window.clearTimeout(t));
+      observer?.disconnect();
+      window.removeEventListener("pagehide", onPageHide);
+      restorer.capture(port);
+    };
+  }, [tab]);
   useEffect(() => {
     if (interrupted) setNavigationNotice("Предыдущая запись могла прерваться. Проверьте сохранённые клипы; запись автоматически не продолжалась.");
   }, [interrupted]);
@@ -118,26 +152,29 @@ function MulticamAppContent() {
     }
     setPendingTab(null);
     setNavigationNotice("");
+    captureTabScroll();
     setTab(next);
-  }, [tab, recording, recordingPhase, setStore, setTab]);
+  }, [tab, recording, recordingPhase, setStore, setTab, captureTabScroll]);
   useEffect(() => {
     if (!pendingTab) return;
     if (recordingPhase === "saved" && !recording) {
       setNavigationNotice("");
+      captureTabScroll();
       setTab(pendingTab);
       setPendingTab(null);
     } else if (recordingPhase === "error") {
       setNavigationNotice("Видео не сохранено. Исправьте ошибку перед переходом.");
       setPendingTab(null);
     }
-  }, [pendingTab, recordingPhase, recording, setTab]);
+  }, [pendingTab, recordingPhase, recording, setTab, captureTabScroll]);
   const ready = useMulticamStore((x) => x.capMatrix !== null); const mediaOpen = useMulticamStore((x) => x.mediaOpen);
   const onProbed = useCallback((capMatrix: import("@/lib/capabilities").CapabilityMatrix) => setStore({ capMatrix }), [setStore]);
   useEffect(() => { document.documentElement.dir = language === "ar" ? "rtl" : "ltr"; document.documentElement.lang = language; }, [language]);
   const theme = useMulticamStore((x) => x.theme);
   useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
   const current = labels[language] ?? [t("camera"), t("editor"), t("settings")];
-  return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
+  return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div ref={appScrollRef} onScroll={(event) => scrollRestorer.current.onScroll(tab, event.currentTarget)}
+    className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
     {!clean && <header className="app-header">
       <div className="min-w-0">{tab !== "settings" && <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">MULTI-CAM POV</p>}</div>
       <div className="flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
