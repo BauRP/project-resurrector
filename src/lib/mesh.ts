@@ -209,7 +209,13 @@ class Mesh {
   private wire(ch: RTCDataChannel) {
     this.channels.set(ch, null);
     ch.onopen = () => { void this.sendTelemetry(); this.emit(); };
-    ch.onmessage = (e) => { try { this.handle(JSON.parse(String(e.data)) as MeshMessage, "webrtc", ch); } catch { /* ignore malformed frame */ } };
+    ch.onmessage = (e) => {
+      // Reject oversized or binary frames before JSON.parse allocates large
+      // objects on low-memory WebViews during recording or folding.
+      if (typeof e.data !== "string" || e.data.length > 8192) return;
+      try { this.handle(JSON.parse(e.data) as MeshMessage, "webrtc", ch); }
+      catch { /* ignore malformed frame */ }
+    };
     ch.onclose = () => {
       if (!this.channels.has(ch)) return;
       const id=this.channels.get(ch);this.channels.delete(ch);
