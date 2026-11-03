@@ -12,6 +12,7 @@ import { useMeshPeers } from "./useMesh";
 import { MulticamStoreProvider, useMulticamStore, type AppTab } from "@/lib/multicam-store";
 import { mesh, type RemoteRecordStatus } from "@/lib/mesh";
 import { RemoteRecordGuard } from "@/lib/remote-record-guard";
+import { nextRemoteReceiptStatus } from "@/lib/remote-record-receipts";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
 
@@ -52,12 +53,8 @@ function useMeshBridge() {
   useEffect(() => {
     const receipt = remoteReceipt.current;
     if (!receipt || role !== "slave") return;
-    const phase:RemoteRecordStatus | null =
-      recordingPhase === "recording" ? "recording" :
-      recordingPhase === "stopping" ? "stopping" :
-      recordingPhase === "saved" ? "saved" :
-      recordingPhase === "error" ? "error" : null;
-    if (!phase || phase === receipt.status) return;
+    const phase = nextRemoteReceiptStatus(receipt.status, recordingPhase);
+    if (!phase) return;
     receipt.status = phase;
     mesh.send({type:"record-result",from:mesh.selfId,to:receipt.to,
       at:receipt.at,status:phase});
