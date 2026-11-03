@@ -29,6 +29,7 @@ import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
+import { REMOTE_DIRECTOR_LOST_REASON } from "@/lib/remote-record-guard";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "@/lib/fold-recording-evidence";
 import { startDualRecording, independentStreamsReady, isDualEncoderStillFinishing, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
@@ -251,7 +252,11 @@ export function CameraTab() {
   recordingRequested.current = s.recording;
   useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
-    mesh.selfRecording = s.recording;
+    // Telemetry is real recorder state, not an unconfirmed command intent.
+    mesh.selfRecording = s.recordingPhase === "recording";
+    return () => { mesh.selfRecording = false; };
+  }, [s.recordingPhase]);
+  useEffect(() => {
     const active = recorderRef.current;
     // A separate two-encoder recording session owns both live camera streams.
     if (s.dualCamera && s.captureKind === "video") return;
@@ -263,6 +268,8 @@ export function CameraTab() {
         s.set({ recordingPhase: "idle", recordingStartedAt: null });
       }
       if (active && active.state !== "inactive") {
+        if (s.captureSaveError === REMOTE_DIRECTOR_LOST_REASON)
+          stopReasonRef.current ||= REMOTE_DIRECTOR_LOST_REASON;
         s.set({ recordingPhase: "stopping" });
         recordingStartCancel.current?.();
         recordingStopWatch.current?.();
@@ -515,7 +522,8 @@ export function CameraTab() {
   useEffect(() => {
     if (!s.dualCamera || s.captureKind !== "video") return;
     if (!s.recording) {
-      if (dualSession.current) dualSession.current.stop();
+      if (dualSession.current) dualSession.current.stop(
+        s.captureSaveError === REMOTE_DIRECTOR_LOST_REASON ? REMOTE_DIRECTOR_LOST_REASON : "");
       else if (!dualSessionStarting.current && s.recordingPhase === "stopping")
         s.set({ recordingPhase: "idle", recordingStartedAt: null });
       return;
