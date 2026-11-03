@@ -142,9 +142,32 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       if (pendingView) saveViewState(pendingView);
       pendingView = null;
     };
-    const onVisibility = () => { if (document.hidden) flushView(); };
+    // Delay full editor snapshots, not tiny appearance preferences. Repeated
+    // timeline edits must not JSON.stringify a large project on every tap.
+    // pagehide/visibilitychange/cleanup still synchronously flush the latest
+    // state to avoid losing edits when Android destroys the Activity.
+    let projectTimer: ReturnType<typeof setTimeout> | null = null;
+    let projectDirty = false;
+    const flushProject = () => {
+      if (projectTimer !== null) clearTimeout(projectTimer);
+      projectTimer = null;
+      if (!projectDirty) return;
+      projectDirty = false;
+      const latest = store.getSnapshot();
+      try {
+        window.localStorage.setItem("multicam-pov-state-native",
+          JSON.stringify(Object.fromEntries(persistedKeys.map(k => [k, latest[k]]))));
+      } catch { /* In-memory project state remains available. */ }
+    };
+    const scheduleProject = () => {
+      projectDirty = true;
+      if (projectTimer !== null) clearTimeout(projectTimer);
+      projectTimer = setTimeout(flushProject, 320);
+    };
+    const onVisibility = () => { if (document.hidden) { flushView(); flushProject(); } };
+    const onPageHide = () => { flushView(); flushProject(); };
     // Activity destruction may dispatch pagehide without visibilitychange.
-    window.addEventListener("pagehide", flushView);
+    window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
     const unsubscribe = store.subscribe(() => {
       const state = store.getSnapshot(); const values = persistedKeys.map((k) => state[k]);
@@ -172,15 +195,15 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         } catch { /* In-memory UI state remains available. */ }
       }
       if (changedKeys.some(key => (projectPersistedKeys as readonly string[]).includes(key))) {
-        try { window.localStorage.setItem("multicam-pov-state-native", JSON.stringify(Object.fromEntries(persistedKeys.map((k) => [k, state[k]])))); }
-        catch { /* Memory remains available. */ }
+        scheduleProject();
       }
     });
     return () => {
       unsubscribe();
-      window.removeEventListener("pagehide", flushView);
+      window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
       flushView();
+      flushProject();
     };
   }, [store]);
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;

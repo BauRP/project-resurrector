@@ -6,12 +6,14 @@ function ThemeProbe() {
   const theme = useMulticamStore(s => s.theme);
   const language = useMulticamStore(s => s.language);
   const set = useMulticamStore(s => s.set);
+  const addMarker = useMulticamStore(s => s.addMarker);
   return <div>
     <output data-testid="theme">{theme}</output>
     <output data-testid="language">{language}</output>
     <button onClick={() => set({ theme: theme === "dark" ? "light" : "dark" })}>Switch theme</button>
     <button onClick={() => set({ language: "en" })}>Switch language</button>
     <button onClick={() => set({ selectedLut: "Cinematic" })}>Change LUT</button>
+    <button onClick={() => addMarker()}>Add marker</button>
   </div>;
 }
 
@@ -65,6 +67,23 @@ describe("lightweight appearance preferences", () => {
     render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
     fireEvent.click(screen.getByText("Change LUT"));
     await waitFor(() => expect(writes.mock.calls.some(args => args[0] === "multicam-pov-state-native")).toBe(true));
+  });
+
+  it("batches multiple editor changes into one safe project write", async () => {
+    const writes = vi.spyOn(Storage.prototype, "setItem");
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    for (let i = 0; i < 6; i++) fireEvent.click(screen.getByText("Add marker"));
+    expect(writes.mock.calls.filter(([key]) => key === "multicam-pov-state-native")).toHaveLength(0);
+    await waitFor(() => expect(writes.mock.calls.filter(([key]) => key === "multicam-pov-state-native")).toHaveLength(1));
+    const saved = JSON.parse(window.localStorage.getItem("multicam-pov-state-native") ?? "{}");
+    expect(saved.markers).toHaveLength(6);
+  });
+  it("flushes pending project changes when Android hides the activity", () => {
+    const writes = vi.spyOn(Storage.prototype, "setItem");
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    fireEvent.click(screen.getByText("Add marker"));
+    window.dispatchEvent(new Event("pagehide"));
+    expect(writes.mock.calls.filter(([key]) => key === "multicam-pov-state-native")).toHaveLength(1);
   });
 
   it("prefers the new stored theme over legacy appearance data", async () => {
