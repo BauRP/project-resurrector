@@ -459,6 +459,27 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .camera-screen { max-height: 100%; }
 }
 
+/* Android 7–10 WebViews may not implement dynamic viewport units.
+   Keep shell, stage and scroll measurable on these systems, instead of
+   silently dropping their height declaration and hiding navigation.
+   WindowManager measurements, when present, remain the authority. */
+@supports not (height: 100dvh) {
+  .app-stage, .app-shell {
+    height: var(--app-viewport-height, 100vh);
+    min-height: 0;
+  }
+  .connect-fold-modal,
+  .export-fold-overlay,
+  .privacy-fold-overlay {
+    max-height: var(--app-viewport-height, 100vh);
+  }
+  [data-fold-workspace="pane"] .connect-fold-modal,
+  [data-fold-workspace="pane"] .export-fold-overlay,
+  [data-fold-workspace="pane"] .privacy-fold-overlay {
+    height: var(--fold-work-height, var(--app-viewport-height, 100vh));
+  }
+}
+
 /* Safety: keep control hit targets clear of an actually occluding vertical hinge.
    A software fold crease with NONE occlusion gets no artificial black gap. */
 [data-separating-fold="true"] .app-header,
