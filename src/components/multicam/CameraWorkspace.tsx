@@ -4,6 +4,7 @@ import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
 import { mayFinishCameraOwnerSwitch } from "@/lib/camera-owner-handoff";
 import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
+import { bounded } from "@/lib/async";
 import { Button } from "@/components/ui/button";
 import { CameraTab } from "./CameraTab";
 import { NativeRecordingPanel } from "./NativeRecordingPanel";
@@ -35,7 +36,9 @@ export function CameraWorkspace() {
   useEffect(() => {
     if (!isNative()) return;
     let live = true;
-    void nativeCapture.status().then(status => {
+    // Android binder may never reply after Activity recreation. Fail closed
+    // into the native owner panel instead of freezing a blank camera page.
+    void bounded(nativeCapture.status(), 2200, "Camera2 startup ownership").then(status => {
       if (!live) return;
       let preference:Mode = "web";
       try { if (localStorage.getItem(PREF) === "native") preference = "native"; }
@@ -58,7 +61,7 @@ export function CameraWorkspace() {
     setSwitching(true);
     try {
       if (next === "web") {
-        const status = await nativeCapture.status();
+        const status = await bounded(nativeCapture.status(), 2200, "Camera2 mode handoff");
         if (nativeRecorderOwnsCamera(status.state))
           throw Error("Нативная запись ещё работает. Остановите её перед открытием обычного предпросмотра.");
       }
