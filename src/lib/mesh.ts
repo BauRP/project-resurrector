@@ -179,6 +179,10 @@ class Mesh {
       const boundId=this.channels.get(ch);
       if(boundId && boundId!==msg.from)return;
       if(!this.channels.has(ch))return;
+      // A just-opened WebRTC channel may not issue START/STOP by borrowing
+      // the identity of a peer seen on a different connection. Bind its
+      // identity from earlier non-control traffic on this SAME channel.
+      if(msg.type==="record" && boundId!==msg.from)return;
       this.channels.set(ch,msg.from);
     }
     // A new packet must not register itself as a trusted connected camera
