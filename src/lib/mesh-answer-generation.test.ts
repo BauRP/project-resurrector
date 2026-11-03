@@ -28,6 +28,36 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
   expect(pc.setRemoteDescription).toHaveBeenCalledOnce();
   expect(state.pending).toBeNull();
  });
+ it("does not return a superseded offer after another QR request replaces it",async()=>{
+  let releaseFirst!:()=>void;
+  let created=0;
+  const FakeConnection=class {
+    readonly index=++created;
+    iceGatheringState="complete";
+    localDescription={sdp:"v=0"};
+    close=vi.fn();
+    addEventListener=vi.fn();
+    removeEventListener=vi.fn();
+    createDataChannel=vi.fn(()=>({readyState:"connecting"}));
+    createOffer=vi.fn(async()=>({type:"offer",sdp:"v=0"}));
+    setLocalDescription=vi.fn(async()=>{
+      if(this.index===1) await new Promise<void>(resolve=>{releaseFirst=resolve;});
+    });
+  };
+  vi.stubGlobal("RTCPeerConnection",FakeConnection);
+  try {
+    const first=mesh.createOffer("session");
+    await vi.waitFor(()=>expect(releaseFirst).toBeTypeOf("function"));
+    const second=mesh.createOffer("session");
+    releaseFirst();
+    await expect(first).rejects.toThrow("Устаревшее предложение");
+    const latest=await second;
+    expect(latest.code).toMatch(/^P[01]\\./);
+  } finally {
+    mesh.leave();
+    vi.unstubAllGlobals();
+  }
+ });
  it("rejects an older pending connection after the offer was replaced",async()=>{
   let resolve!:()=>void;
   const pc={setRemoteDescription:vi.fn(()=>new Promise<void>(r=>{resolve=r;}))} as unknown as RTCPeerConnection;
