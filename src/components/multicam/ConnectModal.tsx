@@ -60,7 +60,22 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
         <Choice icon={<QrCode />} title={t("byQr")} sub={t("byQrHint")} onClick={() => setStep("qr")} />
         {s.role !== "solo" && <div className="rounded-xl bg-card p-3 text-sm">
           <p className="mb-2 text-xs text-muted-foreground">{t("peers")} · {peers.length}</p>
-          {peers.length === 0 ? <p className="text-muted-foreground">{t("noPeers")}</p> : peers.map((p) => <p key={p.id} className="flex justify-between"><span>{p.name}</span><span className="text-muted-foreground">{p.latency ?? "–"} ms</span></p>)}
+          {peers.length === 0 ? <p className="text-muted-foreground">{t("noPeers")}</p> : peers.map((p) =>
+            <p key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+              <span>{p.name}</span>
+              <span className="flex items-center gap-2 text-muted-foreground">
+                {s.role === "host" && p.recordStatus &&
+                  <span role="status" aria-label={`Remote recording status: ${p.recordStatus}`}
+                    className={p.recordStatus === "error" ? "font-semibold text-record" :
+                      p.recordStatus === "recording" ? "font-semibold text-status" : ""}>
+                    {p.recordStatus === "received" ? "ACK" :
+                      p.recordStatus === "recording" ? t("recording") :
+                      p.recordStatus === "stopping" ? "STOP…" :
+                      p.recordStatus === "saved" ? t("ready") : "ERROR"}
+                  </span>}
+                {p.latency ?? "–"} ms
+              </span>
+            </p>)}
           <Button className="mt-3 w-full" variant="outline" onClick={leave}><LogOut />{t("leave")}</Button>
           {leaveNotice && <p role="status" className="mt-2 text-xs text-muted-foreground">{leaveNotice}</p>}
         </div>}
