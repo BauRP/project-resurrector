@@ -23,10 +23,20 @@ export class NativeCameraBusyError extends CameraBusyError {
 export class CameraDeviceMismatchError extends Error {
   constructor(){super("WebView выбрал другой объектив вместо указанной камеры");this.name="CameraDeviceMismatchError";}
 }
+export class MicrophoneDeviceMismatchError extends Error {
+  constructor(){super("Выбранный микрофон недоступен или WebView подключил другое аудиоустройство");this.name="MicrophoneDeviceMismatchError";}
+}
 export function explicitVideoDeviceId(constraints: MediaStreamConstraints): string | null {
   const video=constraints.video;
   if (!video || typeof video !== "object") return null;
   const id=video.deviceId;
+  if (!id || typeof id !== "object" || !("exact" in id)) return null;
+  return typeof id.exact === "string" && !!id.exact ? id.exact : null;
+}
+export function explicitAudioDeviceId(constraints: MediaStreamConstraints): string | null {
+  const audio=constraints.audio;
+  if (!audio || typeof audio !== "object") return null;
+  const id=audio.deviceId;
   if (!id || typeof id !== "object" || !("exact" in id)) return null;
   return typeof id.exact === "string" && !!id.exact ? id.exact : null;
 }
@@ -60,7 +70,9 @@ export async function acquireWebViewPreviewWithNativeGuard(
     // An Android bridge error or active native owner never goes through
     // this catch: those are checked above. Camera busy/cancelled and a
     // stream without video are not evidence of an audio-only failure.
-    if(!current()||constraints.audio===false||
+    // An explicitly selected microphone must never silently become a
+    // soundless video. Audio-only fallback is for an optional default mic.
+    if(!current()||constraints.audio!==true||
        error instanceof CameraBusyError ||
        error instanceof CameraSupersededError ||
        error instanceof CameraUnavailableError)throw error;
@@ -75,6 +87,13 @@ export async function acquireWebViewPreviewWithNativeGuard(
     const exactId = explicitVideoDeviceId(constraints);
     if (exactId && checkAppliedCameraSetting(stream.getVideoTracks()[0], "deviceId", exactId) === "rejected")
       throw new CameraDeviceMismatchError();
+    const audioId = explicitAudioDeviceId(constraints);
+    if (audioId) {
+      const audioTracks = stream.getAudioTracks();
+      const track = audioTracks.find(track => track.readyState === "live");
+      if (!track || checkAppliedCameraSetting(track, "deviceId", audioId) === "rejected")
+        throw new MicrophoneDeviceMismatchError();
+    }
     return stream;
   }catch(error){
     cameraController.release(owner);
