@@ -103,10 +103,12 @@ export function CameraDiagnostics() {
       .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
       mounted.current = false; job.current?.abort(); dualJob.current?.abort();
-      const nativeLease = highSpeedLease.current;
-      highSpeedLease.current = null;
-      // Do not release the camera lease before Android actually finalizes its MP4.
+      // If a stop is already in flight, its own finally must release the
+      // lease. Clearing it here would leak the shared gate indefinitely.
+      // If capture is still running, this cleanup owns the stop and release.
       if (highSpeedSession.current) {
+        const nativeLease = highSpeedLease.current;
+        highSpeedLease.current = null;
         highSpeedSession.current = false;
         void MultiCamNative.stopHighSpeedRecording()
           .catch(() => undefined)
