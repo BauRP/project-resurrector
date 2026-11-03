@@ -148,8 +148,13 @@ export function NativeRecordingPanel(){
          // A fold may complete while Android processes the show call. A
          // successful response for the old pane is NOT permission to display
          // the TextureView over the new screen or any user controls.
+         const refreshed=measure();
+         const samePane=!!refreshed&&
+           samePreviewPlacement(placement,refreshed.placement)&&
+           refreshed.viewport.width===viewport.width&&
+           refreshed.viewport.height===viewport.height;
          if(!nativePreviewAckIsCurrent(submittedFoldEpoch,foldEpoch,live,
-           !document.hidden,measure()!==null)){
+           !document.hidden,samePane)){
            lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
            await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
            if(live)syncDirty=true;
