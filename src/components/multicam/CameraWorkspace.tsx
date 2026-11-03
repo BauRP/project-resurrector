@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
+import { mayFinishCameraOwnerSwitch } from "@/lib/camera-owner-handoff";
 import { Button } from "@/components/ui/button";
 import { CameraTab } from "./CameraTab";
 import { NativeRecordingPanel } from "./NativeRecordingPanel";
@@ -18,9 +19,11 @@ export function CameraWorkspace() {
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
   const blocked = recording || ["starting","recording","stopping","saving"].includes(phase);
-  const latestBlocked = useRef(blocked);
+  const latestRecording = useRef(recording);
+  const latestPhase = useRef(phase);
   const mounted = useRef(true);
-  latestBlocked.current = blocked;
+  latestRecording.current = recording;
+  latestPhase.current = phase;
   useEffect(() => {
     mounted.current = true;
     return () => { mounted.current = false; };
@@ -58,7 +61,7 @@ export function CameraWorkspace() {
       }
       // The native status request is async. A recording or fold remount may
       // have happened while it was pending: never steal camera ownership then.
-      if (!mounted.current || latestBlocked.current) return;
+      if (!mayFinishCameraOwnerSwitch(mounted.current, latestRecording.current, latestPhase.current)) return;
       setNotice("");
       setMode(next);
       try { localStorage.setItem(PREF, next); } catch { /* usable without storage */ }
