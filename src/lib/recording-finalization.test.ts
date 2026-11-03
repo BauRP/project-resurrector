@@ -1,6 +1,23 @@
-import { recordingInputLostReason } from "./recording-finalization";
+import { recordingInputLostReason, planConnectedCaptureDeparture } from "./recording-finalization";
 import { describe, expect, it, vi } from "vitest";
 import { planRecordingFinalization, canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard } from "./recording-finalization";
+describe("multi-phone disconnect while encoders own data", () => {
+  it("requests a stop rather than destroying peers during an active capture", () => {
+    expect(planConnectedCaptureDeparture(true,"recording")).toBe("request-stop");
+    expect(planConnectedCaptureDeparture(true,"starting")).toBe("request-stop");
+  });
+  it("holds the connection until saving or interruption reporting finishes", () => {
+    for (const phase of ["starting","recording","stopping","saving"]) {
+      expect(planConnectedCaptureDeparture(false,phase)).toBe("wait");
+    }
+  });
+  it("releases peers after a completed save, failure, or idle period", () => {
+    for (const phase of ["idle","saved","error"]) {
+      expect(planConnectedCaptureDeparture(false,phase)).toBe("leave");
+    }
+  });
+});
+
 describe("recording recovery and truthful completion", () => {
   it("does not claim an empty or tiny blob can be saved", () => {
     expect(planRecordingFinalization(0, "", "").attemptSave).toBe(false);
