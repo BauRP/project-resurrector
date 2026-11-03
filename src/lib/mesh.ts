@@ -169,8 +169,10 @@ class Mesh {
       Date.now() - this.peers.get(msg.from)!.lastSeen >= 12000)) return;
     if (msg.type === "bye") {
       // A retiring channel may say bye after a replacement was paired.
-      if(ch && Array.from(this.channels.entries()).some(([other,id])=>
-        other!==ch && id===msg.from && other.readyState==="open"))return;
+      if ((ch && Array.from(this.channels.entries()).some(([other,id])=>
+        other!==ch && id===msg.from && other.readyState==="open")) ||
+          (!ch && via === "local" && Array.from(this.channels.entries()).some(([channel,id])=>
+            id === msg.from && channel.readyState === "open"))) return;
       this.peers.delete(msg.from);this.emit();return;
     }
     if (msg.type === "ping") { this.send({ type: "pong", from: this.selfId, t: msg.t, to: msg.from }); }
@@ -186,6 +188,7 @@ class Mesh {
     ch.onopen = () => { void this.sendTelemetry(); this.emit(); };
     ch.onmessage = (e) => { try { this.handle(JSON.parse(String(e.data)) as MeshMessage, "webrtc", ch); } catch { /* ignore malformed frame */ } };
     ch.onclose = () => {
+      if (!this.channels.has(ch)) return;
       const id=this.channels.get(ch);this.channels.delete(ch);
       // A reconnect may already have established a new channel for the
       // same peer. A late close must not make that healthy peer disappear.
