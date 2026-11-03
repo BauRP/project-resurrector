@@ -10,13 +10,30 @@ type CaptureState = Pick<MulticamState, "role" | "tab" | "captureKind" |
 type CapturePatch = Partial<Pick<MulticamState, "recording" |
   "recordingPhase" | "recordingStartedAt" | "paused" | "captureSaveError">>;
 
+export const REMOTE_DIRECTOR_LOST_REASON =
+  "Связь с управляющим телефоном потеряна во время записи; текущий сегмент завершается, непрерывность не подтверждена.";
+
 export class RemoteRecordGuard {
   private directorId: string | null = null;
   private lastTimestamp = -1;
+  private disconnectReported = false;
 
   reset(): void {
     this.directorId = null;
     this.lastTimestamp = -1;
+    this.disconnectReported = false;
+  }
+
+  /** A lost director is an interruption, not permission to silently resume.
+   * Keep the pinned director ID and sequence until an explicit re-pairing.
+   */
+  onDirectorDisconnected(state: CaptureState, connected: (id: string) => boolean): CapturePatch | null {
+    if (!this.directorId || this.disconnectReported || state.role !== "slave" ||
+        connected(this.directorId) || !state.recording ||
+        !["starting", "recording"].includes(state.recordingPhase)) return null;
+    this.disconnectReported = true;
+    return { recording: false, recordingPhase: "stopping", paused: false,
+      captureSaveError: REMOTE_DIRECTOR_LOST_REASON };
   }
 
   accept(message: MeshMessage, state: CaptureState, knownPeer: boolean): CapturePatch | null {
@@ -32,6 +49,7 @@ export class RemoteRecordGuard {
         return null;
       this.directorId = message.from;
       this.lastTimestamp = message.at;
+      this.disconnectReported = false;
       return { recording: true, recordingPhase: "starting",
         recordingStartedAt: null, paused: false, captureSaveError: "" };
     }
