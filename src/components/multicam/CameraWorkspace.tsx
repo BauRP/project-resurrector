@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
@@ -18,6 +18,13 @@ export function CameraWorkspace() {
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
   const blocked = recording || ["starting","recording","stopping","saving"].includes(phase);
+  const latestBlocked = useRef(blocked);
+  const mounted = useRef(true);
+  latestBlocked.current = blocked;
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   useEffect(() => {
     if (!isNative()) return;
@@ -49,12 +56,18 @@ export function CameraWorkspace() {
         if (nativeRecorderOwnsCamera(status.state))
           throw Error("Нативная запись ещё работает. Остановите её перед открытием обычного предпросмотра.");
       }
+      // The native status request is async. A recording or fold remount may
+      // have happened while it was pending: never steal camera ownership then.
+      if (!mounted.current || latestBlocked.current) return;
       setNotice("");
       setMode(next);
       try { localStorage.setItem(PREF, next); } catch { /* usable without storage */ }
     } catch (error) {
-      setNotice(error instanceof Error ? error.message : "Камера ещё занята");
-    } finally { setSwitching(false); }
+      if (mounted.current)
+        setNotice(error instanceof Error ? error.message : "Камера ещё занята");
+    } finally {
+      if (mounted.current) setSwitching(false);
+    }
   }, [mode,switching,blocked]);
 
   if (mode === null) return <div role="status" className="flex min-h-[45vh] items-center justify-center p-4 text-center text-sm">
