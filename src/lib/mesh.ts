@@ -167,7 +167,13 @@ export class Mesh {
   }
   send(msg: MeshMessage) {
     if (msg.type === "record" && msg.from === this.selfId) {
-      this.peers.forEach((_, id) => this.expectedRecordAt.set(id, msg.at));
+      this.peers.forEach((peer, id) => {
+        this.expectedRecordAt.set(id, msg.at);
+        // Do not continue displaying "saved" from the PREVIOUS capture
+        // as the result of this fresh command.
+        this.peers.set(id, {...peer,recordCommandAt:msg.at,recordStatus:undefined});
+      });
+      this.emit();
     }
     try{this.bc?.postMessage(msg);}
     catch{
