@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { DiagnosticCaptureGate, type DiagnosticOperation } from "./diagnostic-capture-gate";
+import { DiagnosticCaptureGate, diagnosticCaptureGate, type DiagnosticOperation } from "./diagnostic-capture-gate";
+import { createMulticamStore } from "./multicam-store";
+import { RemoteRecordGuard } from "./remote-record-guard";
+import type { MulticamState } from "./multicam-store";
 import { readFileSync } from "node:fs";
 
 describe("exclusive camera diagnostic lease", () => {
@@ -29,6 +32,30 @@ describe("exclusive camera diagnostic lease", () => {
     next.release();
     next.release();
     expect(gate.activeOperation()).toBeNull();
+  });
+  it("blocks local and remote START while the shared gate owns a diagnostic camera", () => {
+    const lease = diagnosticCaptureGate.acquire("dual");
+    expect(lease).not.toBeNull();
+    try {
+      const store = createMulticamStore();
+      store.getSnapshot().toggleRecording();
+      expect(store.getSnapshot().recording).toBe(false);
+      const remote = new RemoteRecordGuard();
+      const slave = { role:"slave",tab:"camera",captureKind:"video",recording:false,
+        recordingPhase:"idle" } as MulticamState;
+      expect(remote.accept({type:"record",from:"host",on:true,at:123},slave,true)).toBeNull();
+    } finally {lease?.release();}
+    const store = createMulticamStore();
+    store.getSnapshot().toggleRecording();
+    expect(store.getSnapshot().recording).toBe(true);
+  });
+  it("keeps the shared lease during unmount and release happens after finalization", () => {
+    const diagnostics=readFileSync("src/components/multicam/CameraDiagnostics.tsx","utf8");
+    const camera=readFileSync("src/components/multicam/CameraWorkspace.tsx","utf8");
+    expect(diagnostics).toContain("const gate = useRef(diagnosticCaptureGate)");
+    expect(diagnostics).not.toContain("gate.current.reset()");
+    expect(diagnostics).toContain(".finally(() => nativeLease?.release())");
+    expect(camera).toContain("diagnosticCaptureGate.activeOperation() !== null");
   });
   it("all camera-opening diagnostic paths use one lease and recheck safety", () => {
     const code = readFileSync("src/components/multicam/CameraDiagnostics.tsx", "utf8");
