@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 vi.mock("./native",()=>({
   isNative:()=>true,
   MultiCamNative:{getThermalStatus:vi.fn(async()=>({available:true,status:0}))},
@@ -27,5 +27,36 @@ describe("native capture must remain sole owner during camera diagnostics",()=>{
     vi.mocked(nativeCapture.status).mockResolvedValue({state:"idle"} as Awaited<ReturnType<typeof nativeCapture.status>>);
     const safety=await checkDiagnosticSafety(false);
     expect(safety.proceed).toBe(true);
+  });
+});
+
+afterEach(()=>{
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+});
+describe("time-bounded safety checks cannot strand the shared camera lease",()=>{
+  it("fails closed after a hanging Android binder status request",async()=>{
+    vi.useFakeTimers();
+    vi.mocked(nativeCapture.status).mockImplementation(()=>new Promise(()=>undefined));
+    const safety=checkDiagnosticSafety(true);
+    await vi.advanceTimersByTimeAsync(2100);
+    const result=await safety;
+    expect(result.proceed).toBe(false);
+    expect(result.reason).toContain("неизвестно");
+  });
+  it("returns unknown battery and storage rather than hanging on OEM resource APIs",async()=>{
+    vi.useFakeTimers();
+    const never=new Promise<never>(()=>undefined);
+    vi.mocked(nativeCapture.status).mockResolvedValue({state:"idle"} as Awaited<ReturnType<typeof nativeCapture.status>>);
+    vi.stubGlobal("navigator",{
+      getBattery:()=>never,
+      storage:{estimate:()=>never},
+    });
+    const safety=checkDiagnosticSafety(true);
+    await vi.advanceTimersByTimeAsync(1700);
+    const result=await safety;
+    expect(result.proceed).toBe(true);
+    expect(result.battery).toBe("unknown");
+    expect(result.storage).toBe("unknown");
   });
 });
