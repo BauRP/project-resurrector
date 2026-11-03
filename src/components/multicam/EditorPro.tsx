@@ -19,6 +19,7 @@ import { readPersistedClip } from "@/lib/clip-persistence";
 import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
 import { timelineMinZoom, timelineTime, visibleTiles } from "@/lib/timeline";
+import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
 
 interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
 interface Media { id: string; camera: number; kind: "video" | "audio"; name: string; url: string; duration: number; peaks: number[] }
@@ -150,6 +151,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const setStore = useMulticamStore((x) => x.set); const mediaOpen = useMulticamStore((x) => x.mediaOpen); const setMediaOpen = (mediaOpen: boolean) => setStore({ mediaOpen });
   const [zoom, setZoom] = useState(8);
   const zoomTouched = useRef(false); const [scrollX, setScrollX] = useState(0);
+  const restoredScroll = useRef(false);
+  const scrollSaveTimer = useRef<number | null>(null);
   const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
   // Activity recreation must restore the last safe playhead, not restart the
   // editor at zero after every fold. The view-state sanitizer rejects NaN and
@@ -563,6 +566,25 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   };
   const minZoom = timelineMinZoom(tlW, total);
   useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
+  useEffect(() => {
+    if (restoredScroll.current || tlW <= 0 || zoom < minZoom) return;
+    const timeline = tlRef.current;
+    if (!timeline) return;
+    const savedTime = readTimelineAnchor();
+    const frame = requestAnimationFrame(() => {
+      if (!tlRef.current || restoredScroll.current) return;
+      if (savedTime !== null && items.length) {
+        timeline.scrollLeft = scrollForTimelineAnchor(savedTime, zoom, tlW,
+          Math.max(tlW, HEAD + total * zoom + 8));
+        setScrollX(timeline.scrollLeft);
+      }
+      restoredScroll.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [tlW, zoom, minZoom, total, items.length]);
+  useEffect(() => () => {
+    if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
+  }, []);
   const zoomPos = Math.round((Math.log(Math.max(zoom, minZoom) / minZoom) / Math.log(600 / minZoom || 1.0001)) * 100);
   const scrub = (e: React.PointerEvent) => {
     e.stopPropagation(); e.preventDefault(); setPlaying(false);
@@ -650,7 +672,13 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
 
     <div className={pinTl ? "sticky z-10 -mx-4 bg-background px-4 pb-1" : "relative"} style={pinTl ? { top: headerH + (pinMon ? monH : 0) } : undefined}>
-    <div ref={tlRef} onScroll={(e) => setScrollX(e.currentTarget.scrollLeft)} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
+    <div ref={tlRef} onScroll={(e) => {
+      const left = e.currentTarget.scrollLeft;
+      setScrollX(left);
+      if (!restoredScroll.current) return;
+      if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
+      scrollSaveTimer.current = window.setTimeout(() => saveTimelineAnchor(left, zoom), 160);
+    }} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
       <div className="relative" style={{ width: items.length ? Math.max(tlW, HEAD + total * zoom + 8) : tlW }}>
         <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
         <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
