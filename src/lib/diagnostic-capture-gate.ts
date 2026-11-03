@@ -13,12 +13,24 @@ export interface DiagnosticLease {
 export class DiagnosticCaptureGate {
   private current: symbol | null = null;
   private operation: DiagnosticOperation | null = null;
+  private revision = 0;
+  private listeners = new Set<() => void>();
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
+  getSnapshot = () => this.revision;
+  private notify(): void {
+    this.revision++;
+    this.listeners.forEach(listener => listener());
+  }
 
   acquire(operation: DiagnosticOperation): DiagnosticLease | null {
     if (this.current !== null) return null;
     const token = Symbol(operation);
     this.current = token;
     this.operation = operation;
+    this.notify();
     return {
       operation,
       isCurrent: () => this.current === token,
@@ -27,13 +39,19 @@ export class DiagnosticCaptureGate {
         if (this.current === token) {
           this.current = null;
           this.operation = null;
+          this.notify();
         }
       },
     };
   }
 
   activeOperation(): DiagnosticOperation | null { return this.operation; }
-  reset(): void { this.current = null; this.operation = null; }
+  reset(): void {
+    if (this.current === null) return;
+    this.current = null;
+    this.operation = null;
+    this.notify();
+  }
 }
 
 /** Shared across CameraTab, store and diagnostics, including React remounts.
