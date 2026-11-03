@@ -13,7 +13,7 @@ import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
 import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-camera-verification";
 import { diagnosticProbeLimit, checkDiagnosticSafety } from "@/lib/diagnostic-safety";
-import { DiagnosticCaptureGate, type DiagnosticLease } from "@/lib/diagnostic-capture-gate";
+import { diagnosticCaptureGate, type DiagnosticLease } from "@/lib/diagnostic-capture-gate";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -50,7 +50,7 @@ export function CameraDiagnostics() {
   const job = useRef<AbortController | null>(null);
   const dualJob = useRef<AbortController | null>(null);
   const mounted = useRef(true);
-  const gate = useRef(new DiagnosticCaptureGate());
+  const gate = useRef(diagnosticCaptureGate);
   const highSpeedLease = useRef<DiagnosticLease | null>(null);
   const latestRecording = useRef(recording);
   latestRecording.current = recording;
@@ -103,12 +103,14 @@ export function CameraDiagnostics() {
       .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
       mounted.current = false; job.current?.abort(); dualJob.current?.abort();
-      highSpeedLease.current?.release();
+      const nativeLease = highSpeedLease.current;
       highSpeedLease.current = null;
-      gate.current.reset();
+      // Do not release the camera lease before Android actually finalizes its MP4.
       if (highSpeedSession.current) {
         highSpeedSession.current = false;
-        void MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
+        void MultiCamNative.stopHighSpeedRecording()
+          .catch(() => undefined)
+          .finally(() => nativeLease?.release());
       }
       removeAvailability?.();
       if (isNative()) void MultiCamNative.stopCameraAvailability({ownerId:availabilityOwner}).catch(() => undefined);
@@ -239,7 +241,10 @@ export function CameraDiagnostics() {
       await MultiCamNative.startHighSpeedRecording({ cameraId: option.cameraId, width, height, fps: option.fps });
       highSpeedSession.current = true;
       if (mounted.current) { setHighSpeedCamera(option.cameraId); setHighSpeedState("recording"); setHighSpeedMessage("Запись началась, остановите её вручную"); }
-      else { highSpeedSession.current = false; void MultiCamNative.stopHighSpeedRecording().catch(() => undefined); }
+      else {
+        highSpeedSession.current = false;
+        await MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
+      }
     } catch (e) {
       if (mounted.current) setHighSpeedMessage("Ошибка запуска: " + String(e));
     } finally {
