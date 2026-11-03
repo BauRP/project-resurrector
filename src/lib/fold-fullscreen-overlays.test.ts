@@ -51,6 +51,17 @@ describe("keyboard-constrained real fold panes", () => {
   });
 });
 
+describe("fold-safe recording and recovery notices", () => {
+  it("keeps error, interrupted-recording and recovery controls inside a measured pane", () => {
+    const app=readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
+    const css=readFileSync("src/styles.css","utf8");
+    expect(app).toContain('className="app-navigation-notice absolute');
+    expect(css).toContain('[data-fold-workspace="pane"] .app-navigation-notice');
+    expect(css).toContain('transform: translateY(-100%)');
+    expect(css).toContain('var(--fold-work-top, 0px) + var(--fold-work-height, 100dvh)');
+    expect(css).toContain('overflow-y: auto;');
+  });
+});
 describe("repeated invalid fold callbacks", () => {
   it("clears pane offsets on every invalid observation rather than skipping repeat resets", () => {
     const adapter=readFileSync("src/lib/display-topology.ts","utf8");
