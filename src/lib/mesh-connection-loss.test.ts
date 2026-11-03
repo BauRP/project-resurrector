@@ -49,6 +49,36 @@ describe("multi-phone mesh message trust and isolation",()=>{
    expect(internal.peers.has("phone1")).toBe(false);
  });
 });
+describe("local session switch on fold or re-pair",()=>{
+ it("ignores delayed commands queued on the retired BroadcastChannel",()=>{
+  const all:Array<{onmessage:((e:{data:unknown})=>void)|null;close:ReturnType<typeof vi.fn>}>=[];
+  class FakeChannel {
+    onmessage:((e:{data:unknown})=>void)|null=null;
+    close=vi.fn();
+    postMessage=vi.fn();
+    constructor(_name:string){all.push(this);}
+  }
+  const handler=vi.fn(),off=mesh.onMessage(handler);
+  const old=globalThis.BroadcastChannel;
+  vi.stubGlobal("BroadcastChannel",FakeChannel);
+  try {
+    mesh.joinLocal("111");
+    mesh.joinLocal("222");
+    expect(all[0]?.close).toHaveBeenCalledOnce();
+    all[0]?.onmessage?.({data:{type:"telemetry",from:"stale",
+      name:"Old Camera",battery:50,storageMB:500,recording:false}});
+    expect(internal.peers.has("stale")).toBe(false);
+    all[1]?.onmessage?.({data:{type:"telemetry",from:"new",
+      name:"New Camera",battery:50,storageMB:500,recording:false}});
+    expect(internal.peers.has("new")).toBe(true);
+    expect(handler).toHaveBeenCalledOnce();
+  } finally {
+    mesh.leave();
+    off();
+    vi.stubGlobal("BroadcastChannel",old);
+  }
+ });
+});
 describe("peer connection loss must not hide healthy remote cameras",()=>{
  it("rejects oversized and binary WebRTC messages before parsing",()=>{
   const ch=channel();
