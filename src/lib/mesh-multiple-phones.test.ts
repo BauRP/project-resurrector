@@ -120,7 +120,8 @@ describe("independent two-camera director commands over actual Mesh message rout
 
       directorTwo.close();
       expect(director.peers.has("cam_two")).toBe(false);
-      expect(director.peers.get("cam_one")?.recordStatus).toBe("saved");
+      expect(director.peers.get("cam_one")?.recordStatus).toBe("received");
+      expect(director.peers.get("cam_one")?.recordCommandAt).toBe(101);
       expect((directorOne as RTCDataChannel).readyState).toBe("open");
     }finally{offOne();offTwo();}
   });
