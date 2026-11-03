@@ -24,13 +24,28 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
   const s = useMulticamStore();
   const peers = useMeshPeers();
   const [step, setStep] = useState<Step>("choose");
+  const [leaveNotice, setLeaveNotice] = useState("");
   const dialogRef=useRef<HTMLDivElement>(null);
   const latestClose=useRef(onClose);latestClose.current=onClose;
   useEffect(()=>{
     if(!dialogRef.current)return;
     return activateAccessibleDialog(dialogRef.current,()=>latestClose.current());
   },[]);
-  const leave = () => { mesh.leave(); s.set({ role: "solo", sessionCode: "POV-842" }); };
+  const leave = () => {
+    const action = planConnectedCaptureDeparture(s.recording, s.recordingPhase);
+    if (action === "request-stop") {
+      s.set({ recording: false, recordingPhase: "stopping" });
+      setLeaveNotice("Останавливаю запись. Дождитесь сохранения видео, затем нажмите «Выйти» ещё раз.");
+      return;
+    }
+    if (action === "wait") {
+      setLeaveNotice("Завершение файла ещё не подтверждено. Подключение сохраняется до окончания записи.");
+      return;
+    }
+    mesh.leave();
+    s.set({ role: "solo", sessionCode: "POV-842" });
+    setLeaveNotice("");
+  };
 
   return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="connect-fold-modal fixed inset-0 z-[60] grid place-items-center overflow-y-auto overscroll-contain bg-overlay p-4" onClick={onClose}>
     <motion.div initial={{ scale: .94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .96, opacity: 0 }} transition={{ type: "spring", damping: 26, stiffness: 320 }}
@@ -47,6 +62,7 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
           <p className="mb-2 text-xs text-muted-foreground">{t("peers")} · {peers.length}</p>
           {peers.length === 0 ? <p className="text-muted-foreground">{t("noPeers")}</p> : peers.map((p) => <p key={p.id} className="flex justify-between"><span>{p.name}</span><span className="text-muted-foreground">{p.latency ?? "–"} ms</span></p>)}
           <Button className="mt-3 w-full" variant="outline" onClick={leave}><LogOut />{t("leave")}</Button>
+          {leaveNotice && <p role="status" className="mt-2 text-xs text-muted-foreground">{leaveNotice}</p>}
         </div>}
       </div>}
       {step === "id" && <IdFlow />}
