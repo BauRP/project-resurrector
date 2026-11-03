@@ -613,7 +613,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
   // Lanes do not depend on the playhead, so they are memoised and skipped during 60 fps playback re-renders.
-  const laneEls = useMemo(() => lanes.filter((lane) => items.some((i) => i.kind === lane.kind && i.track === lane.track)).map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
+  const laneEls = useMemo(() => lanes.map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
     <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
       <span className="w-8 truncate text-[9px] font-semibold">{lane.label}</span>
       {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
