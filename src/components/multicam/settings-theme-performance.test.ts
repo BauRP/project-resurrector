@@ -41,7 +41,8 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(app).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
     expect(app).toContain('className="bottom-nav"');
     expect(app).toContain('lazy(() => import("./EditorTab")');
-    expect(app).toContain('tab === "settings" ? <div key="settings"><SettingsTab /></div>');
+    expect(app).toContain('tab === "settings" ? <SettingsCrashBoundary');
+    expect(app).toContain('useLayoutEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);');
     expect(app).not.toContain('mode={tab === "settings" ? "sync" : "wait"}');
     expect(app).toContain('<Suspense fallback=');
     expect(css).toContain("/* MULTI-CAM POV 111/222 theme reference:");
@@ -55,6 +56,9 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(camera).toContain('camera-preview-placeholder');
     expect(camera).toContain('camera-preview-retry');
     expect(css).toContain(".camera-screen.camera-offline");
+    expect(css).toContain(":root.dark { color-scheme: dark; --app-stage-backdrop:");
+    expect(css).toContain(".app-stage { background: var(--app-stage-backdrop); }");
+    expect(css).toContain(".settings-error-state {");
     expect(css).toContain(".multicam-brand-mark::before");
     expect(css).toContain('[data-multicam-native-webview="true"] .glass-panel');
   });

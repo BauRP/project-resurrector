@@ -44,6 +44,22 @@ export interface MulticamState extends StateData {
 }
 const makeId = () => `${Date.now()}-${Math.floor(Math.random() * 100000)}`;
 const projectDefaults = { markers: [] as Marker[], cuts: [] as Cut[], subtitles: [] as Subtitle[], playhead: 0, duration: 62, activeCamera: 1, playing: false };
+// Hydrate small appearance preferences before React's first paint. Do not
+// parse large editor project blobs in the synchronous render path.
+const UI_PREFS_KEY = "multicam-pov-ui-prefs-native";
+function readImmediateAppearance(): Partial<StateData> {
+  try {
+    if (typeof window === "undefined") return {};
+    const raw = window.localStorage.getItem(UI_PREFS_KEY);
+    if (!raw || raw.length > 2048) return {};
+    const prefs = JSON.parse(raw) as Partial<StateData>;
+    const patch: Partial<StateData> = {};
+    if (prefs.theme === "light" || prefs.theme === "dark") patch.theme = prefs.theme;
+    if (typeof prefs.language === "string" && prefs.language.length <= 12) patch.language = prefs.language;
+    if (typeof prefs.hardwareAcceleration === "boolean") patch.hardwareAcceleration = prefs.hardwareAcceleration;
+    return patch;
+  } catch { return {}; }
+}
 const defaults: StateData = {
   tab: "camera", role: "solo", sessionCode: "POV-842", recording: false, recordingStartedAt: null, recordingPhase: "idle", captureSaveError: "", theme: "light", ...projectDefaults,
   focusPeaking: false, zebras: false, wbLock: false, isoLock: false, grid: "thirds", shutter: "1/48", anamorphic: "off", distortion: 0, dualCamera: false, tracking: true,
@@ -61,7 +77,7 @@ export function patchState(current: StateData, patch: Partial<StateData>): State
   return Object.entries(patch).every(([key, value]) => Object.is(current[key as keyof StateData], value)) ? current : { ...current, ...patch };
 }
 export function createMulticamStore(): StoreApi {
-  let data: StateData = { ...defaults };
+  let data: StateData = { ...defaults, ...readImmediateAppearance() };
   const listeners = new Set<() => void>();
   const setData = (update: (current: StateData) => StateData) => {
     const next = update(data);
@@ -94,7 +110,6 @@ function viewSnapshot(state: MulticamState) {
 const persistedKeys = ["language", "hardwareAcceleration", "selectedLut", "exportConfig", "markers", "cuts", "subtitles", "teleprompterText", "teleprompterSpeed", "teleprompterSize", "theme"] as const;
 // Lightweight settings have their own storage: changing the theme must not
 // synchronously stringify an arbitrarily large editor project on the UI thread.
-const UI_PREFS_KEY = "multicam-pov-ui-prefs-native";
 const projectPersistedKeys = ["selectedLut", "exportConfig", "markers", "cuts", "subtitles", "teleprompterText", "teleprompterSpeed", "teleprompterSize"] as const;
 
 export function MulticamStoreProvider({ children }: { children: ReactNode }) {

@@ -1,12 +1,13 @@
 import { CameraWorkspace } from "./CameraWorkspace";
 import { readUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Download, FolderOpen, Link2, Settings, SlidersHorizontal } from "lucide-react";
 import { Capacitor } from "@capacitor/core";
 // Load the heavy editor only when opened; keep camera and settings light.
 const EditorTab = lazy(() => import("./EditorTab").then(mod => ({ default: mod.EditorTab })));
 import { SettingsTab } from "./SettingsTab";
+import { SettingsCrashBoundary } from "./SettingsCrashBoundary";
 import { SplashScreen } from "./SplashScreen";
 import { ConnectModal } from "./ConnectModal";
 import { useMeshPeers } from "./useMesh";
@@ -188,7 +189,7 @@ function MulticamAppContent() {
   const onProbed = useCallback((capMatrix: import("@/lib/capabilities").CapabilityMatrix) => setStore({ capMatrix }), [setStore]);
   useEffect(() => { document.documentElement.dir = language === "ar" ? "rtl" : "ltr"; document.documentElement.lang = language; }, [language]);
   const theme = useMulticamStore((x) => x.theme);
-  useEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
+  useLayoutEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);
   const current = labels[language] ?? [t("camera"), t("editor"), t("settings")];
   return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div ref={appScrollRef} onScroll={(event) => scrollRestorer.current.onScroll(tab, event.currentTarget)}
     className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
@@ -202,7 +203,7 @@ function MulticamAppContent() {
       </motion.button></div>
     </header>}
     {/* Settings mount directly: never keep a hidden live camera and the new settings DOM painting together. The recording-save guard above remains authoritative. */}
-    {tab === "settings" ? <div key="settings"><SettingsTab /></div> :
+    {tab === "settings" ? <SettingsCrashBoundary onExit={() => requestTab("camera")}><div key="settings"><SettingsTab /></div></SettingsCrashBoundary> :
       <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraWorkspace /> : <EditorTab />}</Suspense></motion.div></AnimatePresence>}
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
     {navigationNotice && <div role="status" className="app-navigation-notice absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}

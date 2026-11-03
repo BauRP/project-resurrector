@@ -999,3 +999,24 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   height: var(--fold-work-height,100dvh);
   max-height: 100dvh;
 }
+
+
+/* Full-viewport backing is part of both screenshot themes. It must not stay
+   lavender when the Android/WebView shell switches to midnight navy. */
+:root { color-scheme: light; --app-stage-backdrop: #dfe6f5; }
+:root.dark { color-scheme: dark; --app-stage-backdrop: #071324; }
+.app-stage { background: var(--app-stage-backdrop); }
+.settings-fold-workspace select { color: var(--foreground); }
+.settings-fold-workspace select option {
+  color: var(--foreground);
+  background: var(--popover);
+}
+.settings-fold-workspace :is(button,select,[role="switch"]):focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.settings-error-state {
+  background: var(--glass); color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-soft);
+}

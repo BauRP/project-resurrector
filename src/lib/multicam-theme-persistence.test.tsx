@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
-import { MulticamStoreProvider, useMulticamStore } from "./multicam-store";
+import { MulticamStoreProvider, createMulticamStore, useMulticamStore } from "./multicam-store";
 
 function ThemeProbe() {
   const theme = useMulticamStore(s => s.theme);
@@ -16,6 +16,23 @@ function ThemeProbe() {
 }
 
 describe("lightweight appearance preferences", () => {
+  it("hydrates small dark appearance on the very first store snapshot", () => {
+    window.localStorage.setItem("multicam-pov-ui-prefs-native", JSON.stringify({
+      theme: "dark", language: "kk", hardwareAcceleration: false,
+    }));
+    const first = createMulticamStore().getSnapshot();
+    expect(first.theme).toBe("dark");
+    expect(first.language).toBe("kk");
+    expect(first.hardwareAcceleration).toBe(false);
+  });
+
+  it("ignores malformed or oversized appearance preferences without breaking startup", () => {
+    window.localStorage.setItem("multicam-pov-ui-prefs-native", "{bad");
+    expect(createMulticamStore().getSnapshot().theme).toBe("light");
+    window.localStorage.setItem("multicam-pov-ui-prefs-native", "x".repeat(2500));
+    expect(createMulticamStore().getSnapshot().theme).toBe("light");
+  });
+
   beforeEach(() => window.localStorage.clear());
   afterEach(() => { cleanup(); vi.restoreAllMocks(); window.localStorage.clear(); });
 
