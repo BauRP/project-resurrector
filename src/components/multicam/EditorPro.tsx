@@ -214,6 +214,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => { setStore({ exportMix: { excludedAudio: Object.keys(muted).filter((k) => muted[k]), hiddenVideo: Object.keys(hidden).filter((k) => hidden[k]) } }); }, [muted, hidden, setStore]);
 
   const total = useMemo(() => Math.max(10, ...items.map((i) => i.start + len(i))), [items]);
+  // A recovered playhead can outlive a deleted/trimmed clip. Clamp against
+  // the restored timeline, never seek to a nonexistent media position.
+  useEffect(() => { setT((current) => Math.max(0, Math.min(current, total))); }, [total]);
   const first = 0;
   const [aspOpen, setAspOpen] = useState(false); const [snap, setSnap] = useState<{ v: boolean; h: boolean }>({ v: false, h: false }); const tlRef = useRef<HTMLDivElement>(null); const [tlW, setTlW] = useState(0);
   useEffect(() => {
