@@ -675,6 +675,19 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .connect-fold-modal > * { max-height: calc(100dvh - 1rem); }
 }
 
+/* Recovery/recording warnings must stay inside the measured editor pane.
+   The desktop and ordinary phone paths retain their existing placement. */
+[data-fold-workspace="pane"] .app-navigation-notice {
+  left: var(--fold-work-left, 0px) !important;
+  right: auto !important;
+  width: min(var(--fold-work-width, 100%), 100%);
+  top: calc(var(--fold-work-top, 0px) + var(--fold-work-height, 100dvh) - var(--nav-h) - .5rem);
+  bottom: auto !important;
+  transform: translateY(-100%);
+  max-height: max(0px, calc(var(--fold-work-height, 100dvh) - var(--nav-h) - 1rem));
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
 /* Dedicated editor/export and privacy overlays are fixed-position siblings of
    the workspace. Confine them separately to an ACTUAL Android usable pane so
    their close buttons and controls never cross an occluding fold/dual display. */
