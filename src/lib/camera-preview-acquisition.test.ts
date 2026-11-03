@@ -40,13 +40,16 @@ describe("safe WebView camera acquisition across Camera2 and fold lifecycle",()=
     return stream;
   });
   vi.stubGlobal("navigator",{mediaDevices:{getUserMedia}});
-  let lease:ReturnType<typeof diagnosticCaptureGate.acquire>=null;
-  acquireDiagnostic=()=>{lease=diagnosticCaptureGate.acquire("stabilization");};
+  const leases: Array<{ release: () => void }> = [];
+  acquireDiagnostic=()=>{
+    const lease=diagnosticCaptureGate.acquire("stabilization");
+    if (lease) leases.push(lease);
+  };
   try {
     await expect(acquireWebViewPreviewWithNativeGuard(Symbol("ui"),
       {video:true,audio:false},null)).rejects.toBeInstanceOf(NativeCameraBusyError);
     expect(stop).toHaveBeenCalledOnce();
-  } finally {lease?.release();}
+  } finally { leases.forEach(lease => lease.release()); }
  });
  it("subscribes live camera preview to diagnostic release after a fold remount",()=>{
   const source=readFileSync("src/components/multicam/CameraTab.tsx","utf8");
