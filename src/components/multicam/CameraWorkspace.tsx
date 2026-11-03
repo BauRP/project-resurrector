@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
@@ -7,7 +7,8 @@ import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { bounded } from "@/lib/async";
 import { Button } from "@/components/ui/button";
 import { CameraTab } from "./CameraTab";
-import { NativeRecordingPanel } from "./NativeRecordingPanel";
+// Native Camera2 viewer is excluded from the ordinary WebView startup bundle.
+const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
 
 type Mode = "web" | "native";
 const PREF = "multicam-user-camera-mode-v1";
@@ -104,7 +105,9 @@ export function CameraWorkspace() {
           отключён, чтобы не захватывать одну камеру дважды. Выберите объектив и начните съёмку.
           Системное уведомление позволяет остановить запись даже после изменения экрана.
         </p>
-        <NativeRecordingPanel />
+        <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка нативной камеры…</p>}>
+          <NativeRecordingPanel />
+        </Suspense>
       </div>}
   </div>;
 }
