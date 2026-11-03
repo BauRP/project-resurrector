@@ -112,11 +112,19 @@ function MulticamAppContent() {
       if (port.firstElementChild instanceof HTMLElement)
         observer.observe(port.firstElementChild);
     }
+    // Editor clips can finish loading long after the initial fold animation.
+    // Watch content additions rather than guessing a fixed load duration.
+    const contentObserver = typeof MutationObserver === "undefined" ? null :
+      new MutationObserver(() => {
+        if (restorer.pending(tab)) restorer.retry(tab, port);
+      });
+    contentObserver?.observe(port, {childList: true, subtree: true});
     const onPageHide = () => restorer.capture(port);
     window.addEventListener("pagehide", onPageHide);
     return () => {
       timers.forEach(t => window.clearTimeout(t));
       observer?.disconnect();
+      contentObserver?.disconnect();
       window.removeEventListener("pagehide", onPageHide);
       // A tab switch may have already rendered the next screen into this
       // scroll container. Capture happens before setTab, not in cleanup.
