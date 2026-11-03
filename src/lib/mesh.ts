@@ -138,7 +138,9 @@ export class Mesh {
     if (this.timer !== null || typeof window === "undefined") return;
     this.timer = window.setInterval(() => { void this.sendTelemetry(); this.send({ type: "ping", from: this.selfId, t: performance.now() });
       const now = Date.now(); let changed = false;
-      this.peers.forEach((p, id) => { if (now - p.lastSeen > 12000) { this.peers.delete(id); changed = true; } });
+      this.peers.forEach((p, id) => { if (now - p.lastSeen > 12000) {
+        this.peers.delete(id); this.expectedRecordAt.delete(id); changed = true;
+      } });
       if (changed) this.emit(); }, 2000);
   }
   async sendTelemetry() {
@@ -192,8 +194,10 @@ export class Mesh {
         // When Wi-Fi drops between readyState check and send(), don't crash
         // the entire director session or leave a phantom connected camera.
         this.channels.delete(ch);
-        if(id && !Array.from(this.channels.values()).includes(id))
+        if(id && !Array.from(this.channels.values()).includes(id)) {
           this.peers.delete(id);
+          this.expectedRecordAt.delete(id);
+        }
         try{ch.close();}catch{/* channel is already lost */}
         this.emit();
       }
