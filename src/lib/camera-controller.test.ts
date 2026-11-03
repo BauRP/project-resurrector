@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import { cameraController, CameraBusyError, CameraUnavailableError, checkAppliedCameraSetting, focusPoint, focusPointInVideoPreview } from "./camera-controller";
 
 function camera() {
@@ -79,6 +80,21 @@ describe("camera ownership and serialized settings", () => {
     expect(userCamera.track.stop).toHaveBeenCalledOnce();
   });
 
+  it("ignores late cleanup from a superseded fold preview owner", async () => {
+    const oldCamera = camera(), newCamera = camera();
+    vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:vi.fn()
+      .mockResolvedValueOnce(oldCamera.stream).mockResolvedValueOnce(newCamera.stream)}});
+    const oldOwner=Symbol("old-fold"), newOwner=Symbol("new-fold");
+    await cameraController.acquire(oldOwner,{video:true});
+    await cameraController.acquire(newOwner,{video:true});
+    cameraController.release(oldOwner);
+    expect(newCamera.track.stop).not.toHaveBeenCalled();
+    cameraController.release(newOwner);
+    expect(newCamera.track.stop).toHaveBeenCalledOnce();
+    const app=readFileSync("src/components/multicam/CameraTab.tsx","utf8");
+    expect(app).toContain('const token = Symbol("camera-preview-generation")');
+    expect(app).toContain('owner.current = token');
+  });
   it("rejects an empty camera stream and releases the lease for another request", async () => {
     const stopped=vi.fn();
     const missing={getVideoTracks:()=>[],getTracks:()=>[{stop:stopped}]} as unknown as MediaStream;
