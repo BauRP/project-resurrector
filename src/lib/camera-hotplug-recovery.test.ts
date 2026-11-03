@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
   CameraHotplugGeneration, verifyCameraPresence, selectedCameraWasRemoved, confirmSelectedCameraRemoved,
+  verifyMicrophonePresence, confirmSelectedMicrophoneRemoved,
 } from "./camera-hotplug-recovery";
 
 type Device = Pick<MediaDeviceInfo, "kind" | "deviceId">;
@@ -52,6 +53,30 @@ describe("camera unplug evidence during fold and recording",()=>{
     },()=>true,async()=>undefined);
     expect(gone).toBe(false);
     expect(calls).toBe(1);
+  });
+  it("distinguishes confirmed external audio loss from hidden microphone identities", async()=>{
+    expect(verifyMicrophonePresence("usb-mic",[mic("usb-mic"),mic("built-in")])).toBe("present");
+    expect(verifyMicrophonePresence("usb-mic",[mic("built-in")])).toBe("missing");
+    expect(verifyMicrophonePresence("usb-mic",[mic("")])).toBe("unknown");
+    expect(verifyMicrophonePresence("usb-mic",[video("front")])).toBe("unknown");
+    expect(await confirmSelectedMicrophoneRemoved("usb-mic",
+      async()=>[mic("built-in")],()=>true,async()=>undefined)).toBe(true);
+    let i=0;
+    expect(await confirmSelectedMicrophoneRemoved("usb-mic",
+      async()=>++i===1?[mic("built-in")]:[mic("usb-mic")],
+      ()=>true,async()=>undefined)).toBe(false);
+    let alive=true;
+    expect(await confirmSelectedMicrophoneRemoved("usb-mic",
+      async()=>[mic("built-in")],()=>alive,async()=>{alive=false;})).toBe(false);
+  });
+  it("preserves audio-loss reason through real recorder finalization instead of silent fallback",()=>{
+    const code=readFileSync("src/components/multicam/CameraTab.tsx","utf8");
+    expect(code).toContain("confirmSelectedMicrophoneRemoved(");
+    expect(code).toContain("missingSelectedMicrophone.current = true");
+    expect(code).toContain('stopReasonRef.current ||= reason');
+    expect(code).toContain('dualSession.current.stop(reason)');
+    expect(code).toContain('setHotplugRecoveryPending(true)');
+    expect(code).toContain('generation.invalidate()');
   });
   it("waits for a second confirmed missing enumeration and preserves the real recorder finalization",()=>{
     const camera=readFileSync("src/components/multicam/CameraTab.tsx","utf8");
