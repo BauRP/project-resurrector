@@ -1,6 +1,5 @@
-import { NativeRecordingPanel } from "./NativeRecordingPanel";
 import { HelpDot } from "./Help";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -10,9 +9,12 @@ import { useT } from "@/lib/i18n";
 import { mesh } from "@/lib/mesh";
 import { useMeshPeers } from "./useMesh";
 import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
-import { CameraDiagnostics } from "./CameraDiagnostics";
 import { bounded, retry } from "@/lib/async";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
+
+// Load native recording and camera diagnosis only if explicitly opened.
+const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
+const CameraDiagnostics = lazy(() => import("./CameraDiagnostics").then(m => ({ default: m.CameraDiagnostics })));
 
 const languages = [
   ["en","English"],["ru","Русский"],["kk","Қазақ тілі"],["pt","Português"],["es","Español"],["fr","Français"],["ar","العربية"],["zh","中文"],["ko","한국어"],["ja","日本語"],["de","Deutsch"],["it","Italiano"],["tr","Türkçe"],["pl","Polski"],["hi","हिन्दी"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],
@@ -42,7 +44,20 @@ export function SettingsTab() {
    return activateAccessibleDialog(privacyDialog.current,()=>setPrivacy(false));
  },[privacy]);
  const alive = useRef(true); const busy = useRef(false); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
- useEffect(() => { alive.current = true; void cacheBytes().then((bytes) => { if (alive.current) s.set({ cacheMB: bytes / 1048576 }); }).catch(() => { if (alive.current) setOperationError("Не удалось измерить кэш"); }); return () => { alive.current = false; }; }, [s.set]);
+ const [measuringCache, setMeasuringCache] = useState(false);
+ const [cacheMeasured, setCacheMeasured] = useState(false);
+ // IndexedDB can hold large video proxy blobs. Never enumerate them on entry
+ // to settings or during rapid theme changes. Measure only when requested.
+ useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+ const measureCache = async () => {
+   if (measuringCache) return;
+   setMeasuringCache(true); setOperationError("");
+   try {
+     const bytes = await cacheBytes();
+     if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); }
+   } catch { if (alive.current) setOperationError("Не удалось измерить кэш. Попробуйте повторить."); }
+   finally { if (alive.current) setMeasuringCache(false); }
+ };
  const diagnose = async () => {
    if (busy.current) return; busy.current = true; setChecking(true); setOperationError("");
    try { const result = await retry(() => bounded(mesh.diagnose(), 5000, "Network diagnostics")); if (alive.current) s.set({ diagnostics: result }); }
@@ -52,7 +67,7 @@ export function SettingsTab() {
  const clearCache = async () => {
    if (clearing || !window.confirm("Удалить только временные превью? Исходные клипы и проект останутся.")) return;
    setClearing(true); setOperationError("");
-   try { const bytes = await clearPreviewCache(); if (alive.current) s.set({ cacheMB: bytes / 1048576 }); }
+   try { const bytes = await clearPreviewCache(); if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); } }
    catch { if (alive.current) setOperationError("Не удалось очистить кэш. Исходные клипы не изменены."); }
    finally { if (alive.current) setClearing(false); }
  };
@@ -61,7 +76,7 @@ export function SettingsTab() {
   <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
  <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
- <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{s.cacheMB.toFixed(2)} MB · превью</small></span></span><Button size="sm" variant="secondary" disabled={clearing} onClick={()=>void clearCache()}><Trash2/>{t.clear}</Button></div></Group>
+ <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing} onClick={()=>void clearCache()}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>s.resetProject()}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  {/* Camera2 polling and camera discovery are expensive. Keep both fully
@@ -77,8 +92,10 @@ export function SettingsTab() {
      <Activity aria-hidden="true"/><span>Проверка камер</span><ChevronRight aria-hidden="true"/>
    </button>
   </div>
-  {advancedPanel === "native" && <NativeRecordingPanel />}
-  {advancedPanel === "diagnostics" && <CameraDiagnostics />}
+  <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка инструментов…</p>}>
+   {advancedPanel === "native" && <NativeRecordingPanel />}
+   {advancedPanel === "diagnostics" && <CameraDiagnostics />}
+  </Suspense>
  </section>
  {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main><AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} ref={privacyDialog} role="dialog" aria-modal="true" aria-label={t.privacy} tabIndex={-1} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="min-h-[65dvh] rounded-lg border border-dashed border-border bg-card p-6" /></div></motion.div>}</AnimatePresence></div>;
 }
