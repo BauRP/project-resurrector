@@ -32,6 +32,17 @@ describe("lightweight appearance preferences", () => {
     expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-state-native")).toHaveLength(0);
   });
 
+  it("stays responsive to 40 rapid theme toggles without writing bulky project storage", () => {
+    const writes = vi.spyOn(Storage.prototype, "setItem");
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    for (let i = 0; i < 40; i++) {
+      fireEvent.click(screen.getByText("Switch theme"));
+    }
+    expect(screen.getByTestId("theme")).toHaveTextContent("light");
+    expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-state-native")).toHaveLength(0);
+    expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-ui-prefs-native").length).toBeGreaterThan(0);
+  });
+
   it("retains legacy project serialization when project data actually changes", async () => {
     const writes = vi.spyOn(Storage.prototype, "setItem");
     render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
