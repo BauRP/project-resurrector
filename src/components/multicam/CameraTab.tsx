@@ -26,7 +26,8 @@ import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
-import { CameraHotplugGeneration, confirmSelectedCameraRemoved, verifyCameraPresence } from "@/lib/camera-hotplug-recovery";
+import { CameraHotplugGeneration, confirmSelectedCameraRemoved, verifyCameraPresence,
+  confirmSelectedMicrophoneRemoved, verifyMicrophonePresence } from "@/lib/camera-hotplug-recovery";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
@@ -98,6 +99,7 @@ export function CameraTab() {
   const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");
   const owner = useRef(Symbol("camera"));
   const missingSelectedLens = useRef(false);
+  const missingSelectedMicrophone = useRef(false);
   const [hotplugRecoveryPending, setHotplugRecoveryPending] = useState(false);
   const [hotplugRevision, setHotplugRevision] = useState(0);
   useEffect(() => {
@@ -191,6 +193,60 @@ export function CameraTab() {
       navigator.mediaDevices.removeEventListener?.("devicechange", onDeviceChange);
     };
   }, [stream, appliedDevice.lens, s.set]);
+  // Some USB audio drivers do not send MediaStreamTrack.ended on unplug.
+  // Confirm the exact chosen microphone twice before treating audio loss as
+  // an interrupted recording. A fold alone never proves microphone removal.
+  useEffect(() => {
+    const micId = appliedDevice.mic;
+    if (!micId || !stream || !navigator.mediaDevices?.enumerateDevices) return;
+    const generation = new CameraHotplugGeneration();
+    missingSelectedMicrophone.current = false;
+    const onMicrophoneChange = () => {
+      const token = generation.next();
+      void (async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (!generation.isCurrent(token)) return;
+          if (verifyMicrophonePresence(micId, devices) === "present") {
+            if (missingSelectedMicrophone.current) {
+              missingSelectedMicrophone.current = false;
+              setHotplugRecoveryPending(true);
+            }
+            return;
+          }
+          if (!await confirmSelectedMicrophoneRemoved(
+            micId,
+            () => navigator.mediaDevices.enumerateDevices(),
+            () => generation.isCurrent(token),
+            () => new Promise<void>(resolve => window.setTimeout(resolve, 250)),
+          )) return;
+          missingSelectedMicrophone.current = true;
+          const reason = "Выбранный внешний микрофон отключён. Запись остановлена; проверьте звук в сохранённом файле.";
+          if (dualSession.current) {
+            dualSession.current.stop(reason);
+            s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+          } else {
+            const active = recorderRef.current;
+            if (active && active.state !== "inactive") {
+              stopReasonRef.current ||= reason;
+              s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+              recordingStartCancel.current?.();
+              recordingStopWatch.current?.();
+              try { active.stop(); } catch (error) {
+                s.set({ recording: false, recordingPhase: "error",
+                  captureSaveError: reason + " Остановка кодировщика: " + String(error) });
+              }
+            }
+          }
+        } catch { /* Unknown microphone inventory is not proof of removal. */ }
+      })();
+    };
+    navigator.mediaDevices.addEventListener?.("devicechange", onMicrophoneChange);
+    return () => {
+      generation.invalidate();
+      navigator.mediaDevices.removeEventListener?.("devicechange", onMicrophoneChange);
+    };
+  }, [stream, appliedDevice.mic, s.set]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
     if (s.touchLocked) return;
     const caps = trackCaps(stream); const support = focusSupport(caps);
