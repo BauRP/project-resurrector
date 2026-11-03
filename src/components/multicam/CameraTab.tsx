@@ -26,6 +26,7 @@ import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
+import { ForegroundReturnEpoch } from "@/lib/camera-foreground-recovery";
 import { CameraHotplugGeneration, confirmSelectedCameraRemoved, verifyCameraPresence,
   confirmSelectedMicrophoneRemoved, verifyMicrophonePresence } from "@/lib/camera-hotplug-recovery";
 import { captureRealDng } from "@/lib/raw-dng";
@@ -102,6 +103,35 @@ export function CameraTab() {
   const missingSelectedMicrophone = useRef(false);
   const [hotplugRecoveryPending, setHotplugRecoveryPending] = useState(false);
   const [hotplugRevision, setHotplugRevision] = useState(0);
+  const foregroundReturn = useRef(new ForegroundReturnEpoch());
+  const [foregroundRecoveryRevision, setForegroundRecoveryRevision] = useState(0);
+  useEffect(() => {
+    const returned = () => {
+      if (document.hidden) return;
+      foregroundReturn.current.markReturned();
+      // This does not start recording. The follow-up effect waits for any
+      // active/saving recorder before permitting getUserMedia to run again.
+      setForegroundRecoveryRevision(revision => revision + 1);
+    };
+    document.addEventListener("visibilitychange", returned);
+    window.addEventListener("pageshow", returned);
+    return () => {
+      document.removeEventListener("visibilitychange", returned);
+      window.removeEventListener("pageshow", returned);
+    };
+  }, []);
+  useEffect(() => {
+    const status = {
+      visible: !document.hidden,
+      recording: s.recording,
+      phase: s.recordingPhase,
+      preview: cameraState,
+      stream,
+      selectedDeviceMissing: missingSelectedLens.current || missingSelectedMicrophone.current,
+    };
+    if (foregroundReturn.current.consumeWhenReady(status))
+      setHotplugRevision(revision => revision + 1);
+  }, [foregroundRecoveryRevision, s.recording, s.recordingPhase, cameraState, stream]);
   useEffect(() => {
     // Reacquire ONLY the preview, never the recorder, after the old file is
     // safely finalized. The selected physical lens must be available again.
