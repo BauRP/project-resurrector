@@ -85,6 +85,10 @@ describe("independent two-camera director commands over actual Mesh message rout
       twoCommands++;stateTwo={...stateTwo,...p};
     });
     try{
+      // Before START there is no valid request for a camera to acknowledge.
+      first.send({type:"record-result",from:first.selfId,to:director.selfId,
+        at:99,status:"saved"});
+      expect(director.peers.get("cam_one")?.recordStatus).toBeUndefined();
       director.send({type:"record",from:director.selfId,on:true,at:100});
       expect([oneCommands,twoCommands]).toEqual([1,1]);
       expect(director.peers.get("cam_one")?.recordStatus).toBe("received");
@@ -105,6 +109,13 @@ describe("independent two-camera director commands over actual Mesh message rout
         at:100,status:"received"});
       expect(director.peers.get("cam_one")?.recordStatus).toBe("saved");
       expect(director.peers.get("cam_two")?.recordStatus).toBe("error");
+      // A new command retires the old saved/error badges for BOTH cameras.
+      director.send({type:"record",from:director.selfId,on:false,at:101});
+      expect(director.peers.get("cam_one")?.recordStatus).toBeUndefined();
+      expect(director.peers.get("cam_two")?.recordStatus).toBeUndefined();
+      first.send({type:"record-result",from:first.selfId,to:director.selfId,
+        at:100,status:"saved"});
+      expect(director.peers.get("cam_one")?.recordStatus).toBeUndefined();
 
       directorTwo.close();
       expect(director.peers.has("cam_two")).toBe(false);
