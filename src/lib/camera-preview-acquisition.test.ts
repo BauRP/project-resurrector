@@ -6,7 +6,7 @@ import {readFileSync} from "node:fs";
 
 const live=()=>{
  const stop=vi.fn(),track={readyState:"live",stop};
- return {stop,stream:{getVideoTracks:()=>[track],getTracks:()=>[track]} as unknown as MediaStream};
+ return {stop,stream:{getVideoTracks:()=>[track],getAudioTracks:()=>[],getTracks:()=>[track]} as unknown as MediaStream};
 };
 afterEach(()=>{cameraController.release();vi.unstubAllGlobals();});
 describe("safe WebView camera acquisition across Camera2 and fold lifecycle",()=>{
