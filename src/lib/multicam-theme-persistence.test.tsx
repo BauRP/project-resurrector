@@ -1,0 +1,51 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { MulticamStoreProvider, useMulticamStore } from "./multicam-store";
+
+function ThemeProbe() {
+  const theme = useMulticamStore(s => s.theme);
+  const language = useMulticamStore(s => s.language);
+  const set = useMulticamStore(s => s.set);
+  return <div>
+    <output data-testid="theme">{theme}</output>
+    <output data-testid="language">{language}</output>
+    <button onClick={() => set({ theme: theme === "dark" ? "light" : "dark" })}>Switch theme</button>
+    <button onClick={() => set({ language: "en" })}>Switch language</button>
+    <button onClick={() => set({ selectedLut: "Cinematic" })}>Change LUT</button>
+  </div>;
+}
+
+describe("lightweight appearance preferences", () => {
+  beforeEach(() => window.localStorage.clear());
+  afterEach(() => { cleanup(); vi.restoreAllMocks(); window.localStorage.clear(); });
+
+  it("saves theme and language without serializing the project on every tap", async () => {
+    const writes = vi.spyOn(Storage.prototype, "setItem");
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    fireEvent.click(screen.getByText("Switch theme"));
+    expect(screen.getByTestId("theme")).toHaveTextContent("dark");
+    fireEvent.click(screen.getByText("Switch language"));
+    expect(screen.getByTestId("language")).toHaveTextContent("en");
+    await waitFor(() => expect(writes).toHaveBeenCalledWith(
+      "multicam-pov-ui-prefs-native", expect.stringContaining('"theme":"dark"')
+    ));
+    expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-state-native")).toHaveLength(0);
+  });
+
+  it("retains legacy project serialization when project data actually changes", async () => {
+    const writes = vi.spyOn(Storage.prototype, "setItem");
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    fireEvent.click(screen.getByText("Change LUT"));
+    await waitFor(() => expect(writes.mock.calls.some(args => args[0] === "multicam-pov-state-native")).toBe(true));
+  });
+
+  it("prefers the new stored theme over legacy appearance data", async () => {
+    window.localStorage.setItem("multicam-pov-state-native", JSON.stringify({ theme: "light", selectedLut: "Neutral" }));
+    window.localStorage.setItem("multicam-pov-ui-prefs-native", JSON.stringify({ theme: "dark", language: "en" }));
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    await waitFor(() => {
+      expect(screen.getByTestId("theme")).toHaveTextContent("dark");
+      expect(screen.getByTestId("language")).toHaveTextContent("en");
+    });
+  });
+});
