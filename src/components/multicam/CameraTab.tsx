@@ -54,7 +54,7 @@ function applyManual(stream: MediaStream | null, c: Record<string, unknown>) {
   void cameraController.apply(stream, adv);
 }
 
-export function CameraTab() {
+export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: () => void } = {}) {
   const s = useCameraStore();
   const { t } = useT();
   const peers = useMeshPeers();
@@ -63,7 +63,8 @@ export function CameraTab() {
   const stopReasonRef = useRef<string>("");
   const chunksRef = useRef<Blob[]>([]);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("loading");
+  const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
+  const [previewRequested, setPreviewRequested] = useState(false);
   const [nativeOwnsCamera,setNativeOwnsCamera] = useState(false);
   const [elapsed, setElapsed] = useState(0);
   const facingMode = s.facing === "front" ? "user" : "environment";
@@ -144,6 +145,7 @@ export function CameraTab() {
   const diagnosticRevision = useSyncExternalStore(
     diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
   useEffect(() => {
+    if (!previewRequested) return;
     // Each lens/fold/diagnostic refresh gets its OWN owner identity. An older
     // pending getUserMedia completion cannot release a newer camera stream.
     let alive = true; const token = Symbol("camera-preview-generation");
@@ -166,7 +168,7 @@ export function CameraTab() {
       setCameraState("unavailable");
     });
     return () => { alive = false; cameraController.release(token); };
-  }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision, hotplugRevision]);
+  }, [previewRequested, appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision, hotplugRevision]);
   // WebView may keep a USB-camera track "live" briefly after unplug.
   // Confirm actual removal from two successive device enumerations before
   // interrupting an active recording; never interpret a fold or hidden IDs
@@ -820,10 +822,10 @@ export function CameraTab() {
 
   return <div className={`camera-screen text-foreground ${clean ? "clean" : ""} ${cameraState !== "live" ? "camera-offline" : ""}`}>
     <section className={`camera-live-view absolute inset-0 overflow-hidden ${cameraState === "live" ? "bg-viewfinder" : "camera-preview-placeholder"} ${s.recording && !clean ? "tally-frame" : ""}`}>
-      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-foreground" role="status"><div className="camera-preview-status relative z-10 w-full max-w-md space-y-3 rounded-2xl px-4 py-5">
-        <Camera aria-hidden="true" className="mx-auto size-8 text-primary" />
-        <p>{cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</p>
-        {cameraState === "unavailable" && !nativeOwnsCamera && <button type="button" className="camera-preview-retry" onClick={() => setHotplugRevision(revision => revision + 1)}><Camera aria-hidden="true" className="size-4" />Включить камеру</button>}
+      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-foreground" role="status"><div className="camera-preview-status relative z-10 w-full max-w-md rounded-2xl px-4 py-5">
+        <Camera aria-hidden="true" className="camera-preview-symbol mx-auto size-8 text-primary" />
+        <p>{!previewRequested ? "Проверка завершена. Камера не открывалась." : cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</p>
+        {cameraState !== "loading" && !nativeOwnsCamera && <button type="button" className="camera-preview-retry" onClick={() => { setPreviewRequested(true); setHotplugRevision(revision => revision + 1); }}><Camera aria-hidden="true" className="size-4" />Включить камеру</button>}
        </div></div>}
       {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording || isDualEncoderStillFinishing(s.recordingPhase)} hidden={clean} />}
       {!clean && <>
@@ -844,7 +846,7 @@ export function CameraTab() {
     {/* HUD status bar */}
     <div className="camera-hud absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
       {!clean && <div className="scrollbar-none flex min-w-0 flex-1 gap-1 overflow-x-auto">
-        <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : cameraState === "loading" ? "…" : "НЕТ КАМЕРЫ"}</span>
+        <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : !previewRequested ? "СИМ" : cameraState === "loading" ? "…" : "НЕТ КАМЕРЫ"}</span>
         <button className={`hud-chip ${hud === "shutter" ? "active" : ""}`} onClick={() => toggleHud("shutter")}>{s.shutter}s</button>
         <button className={`hud-chip ${hud === "iso" ? "active" : ""} ${camCaps && !camCaps.iso ? "opacity-40" : ""}`} onClick={() => toggleHud("iso")}>ISO {s.capture.iso ?? "A"}</button>
         <button className={`hud-chip ${hud === "wb" ? "active" : ""}`} onClick={() => toggleHud("wb")}>WB {s.wbKelvin ? `${s.wbKelvin}K` : "A"}</button>
@@ -911,7 +913,8 @@ export function CameraTab() {
         <TeleprompterControls />
       </Accordion>
       <Accordion title="Профессиональная съёмка">
-        <CaptureProPanel stream={stream} videoRef={videoRef} />
+        {onOpenNativeMode && <Button type="button" size="sm" variant="outline" className="mb-3 w-full" onClick={onOpenNativeMode}>Перейти в Camera2</Button>}
+         <CaptureProPanel stream={stream} videoRef={videoRef} />
       </Accordion>
     </motion.div>}</AnimatePresence>
 

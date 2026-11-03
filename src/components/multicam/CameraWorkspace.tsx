@@ -86,7 +86,7 @@ export function CameraWorkspace() {
   </div>;
 
   return <div className="flex h-full min-h-0 flex-col">
-    {isNative() && <div className="camera-mode-switch flex shrink-0 items-center justify-end gap-1 border-b border-border/40 bg-card/50 px-2 py-1" role="group" aria-label="Режим камеры">
+    {isNative() && mode === "native" && <div className="camera-mode-switch flex shrink-0 items-center justify-end gap-1 border-b border-border/40 bg-card/50 px-2 py-1" role="group" aria-label="Режим камеры">
       <span className="mr-auto truncate text-[10px] text-muted-foreground">Режим</span>
       <Button size="sm" className="h-7 min-h-0 px-2 text-[10px]" variant={mode === "web" ? "default" : "outline"}
         disabled={switching || blocked || mode === "web"} onClick={() => void switchTo("web")}>
@@ -98,7 +98,7 @@ export function CameraWorkspace() {
       </Button>
     </div>}
     {notice && <p role="alert" className="shrink-0 bg-card p-2 text-xs text-destructive">{notice}</p>}
-    {mode === "web" ? <div className="relative min-h-0 flex-1"><CameraTab /></div> :
+    {mode === "web" ? <div className="relative min-h-0 flex-1"><CameraTab onOpenNativeMode={isNative() ? () => { void switchTo("native"); } : undefined} /></div> :
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
         <p className="text-xs text-muted-foreground">
           В этом режиме Android Camera2 владеет записью вне WebView. Предпросмотр WebView

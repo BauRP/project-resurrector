@@ -112,7 +112,7 @@ function MulticamAppContent() {
       }
     }
     let observer: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined") {
+    if (tab === "editor" && typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(() => restorer.onViewportReflow(tab, port));
       observer.observe(port);
       if (tab === "editor" && port.firstElementChild instanceof HTMLElement)
