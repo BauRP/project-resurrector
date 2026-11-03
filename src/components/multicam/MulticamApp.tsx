@@ -3,6 +3,7 @@ import { readUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-int
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, Download, FolderOpen, Link2, Settings, SlidersHorizontal } from "lucide-react";
+import { Capacitor } from "@capacitor/core";
 import { CameraTab } from "./CameraTab";
 import { EditorTab } from "./EditorTab";
 import { SettingsTab } from "./SettingsTab";
@@ -110,12 +111,12 @@ function MulticamAppContent() {
     if (typeof ResizeObserver !== "undefined") {
       observer = new ResizeObserver(() => restorer.onViewportReflow(tab, port));
       observer.observe(port);
-      if (port.firstElementChild instanceof HTMLElement)
+      if (tab === "editor" && port.firstElementChild instanceof HTMLElement)
         observer.observe(port.firstElementChild);
     }
     // Editor clips can finish loading long after the initial fold animation.
     // Watch content additions rather than guessing a fixed load duration.
-    const contentObserver = typeof MutationObserver === "undefined" ? null :
+    const contentObserver = tab !== "editor" || typeof MutationObserver === "undefined" ? null :
       new MutationObserver(() => {
         restorer.onViewportReflow(tab, port);
       });
@@ -143,6 +144,12 @@ function MulticamAppContent() {
   }, [tab]);
   // Window changes only rearrange UI; they never restart the camera pipeline.
   useEffect(() => startDisplayAdaptation(), []);
+  // Translucent theme surfaces remain, but native WebViews avoid full-panel
+  // backdrop blur on each settings repaint.
+  useEffect(() => {
+    document.documentElement.dataset["multicamNativeWebview"] = String(Capacitor.isNativePlatform());
+    return () => { delete document.documentElement.dataset["multicamNativeWebview"]; };
+  }, []);
   const setStore = useMulticamStore((x) => x.set);
   // Leaving the camera tears down its WebView MediaStream and recorder.
   // Never unmount CameraTab before MediaRecorder.onstop and the IndexedDB
@@ -186,7 +193,7 @@ function MulticamAppContent() {
   return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div ref={appScrollRef} onScroll={(event) => scrollRestorer.current.onScroll(tab, event.currentTarget)}
     className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
     {!clean && <header className="app-header">
-      <div className="min-w-0">{tab !== "settings" && <p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">MULTI-CAM POV</p>}</div>
+      <div className="multicam-brand min-w-0"><span className="multicam-brand-mark" aria-hidden="true" /><p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em]">MULTI-CAM POV</p></div>
       <div className="flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
       {tab === "editor" && <motion.button whileTap={{ scale: .94 }} onClick={() => setStore({ exportOpen: true, mediaOpen: false })} className="connect-pill active"><Download className="size-4" /><span>{t("export")}</span></motion.button>}
       <motion.button whileTap={{ scale: .94 }} onClick={() => setConnectOpen(true)} className={`connect-pill ${role !== "solo" ? "active" : ""}`}>
@@ -194,7 +201,7 @@ function MulticamAppContent() {
         {role !== "solo" && <span className={`h-2 w-2 shrink-0 rounded-full ${peers.length ? "bg-status" : "bg-warning"}`} />}
       </motion.button></div>
     </header>}
-    <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}>{tab === "camera" ? <CameraWorkspace /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</motion.div></AnimatePresence>
+    <AnimatePresence mode={tab === "settings" ? "sync" : "wait"}><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={tab === "settings" ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: tab === "settings" ? 0 : .18 }}>{tab === "camera" ? <CameraWorkspace /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</motion.div></AnimatePresence>
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
     {navigationNotice && <div role="status" className="app-navigation-notice absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}
       {interrupted && <div className="mt-2 flex flex-wrap gap-2">

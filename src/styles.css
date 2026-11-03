@@ -899,3 +899,45 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (prefers-reduced-motion: reduce) {
   .app-shell *, .app-shell *::before, .app-shell *::after { transition-duration: .01ms !important; }
 }
+
+
+/* Settings entry performance and 111/222 brand identity */
+.multicam-brand { display:flex; align-items:center; gap:.7rem; min-width:0; }
+.multicam-brand p { color:var(--foreground); font-weight:650; letter-spacing:.16em; flex:0 1 auto; }
+.multicam-brand-mark {
+  display:inline-block; position:relative; flex:none;
+  width:2rem; height:1.7rem;
+  filter:drop-shadow(0 2px 4px color-mix(in oklab,var(--primary) 45%,transparent));
+}
+.multicam-brand-mark::before, .multicam-brand-mark::after {
+  content:""; position:absolute; top:.18rem;
+  width:1.34rem; height:1.26rem; transform:skew(-32deg);
+  border-radius:.38rem; border:.25rem solid transparent;
+  background:linear-gradient(var(--background),var(--background)) padding-box,
+             linear-gradient(140deg,#00c5ea,#386ee9,#9853f4) border-box;
+}
+.multicam-brand-mark::before { left:.05rem; }
+.multicam-brand-mark::after {
+  left:.70rem;
+  background:linear-gradient(var(--background),var(--background)) padding-box,
+             linear-gradient(145deg,#398be9,#773af4,#b954e9) border-box;
+}
+.app-navigation-notice {
+  background:var(--glass); border:1px solid var(--border);
+  border-radius:1rem; box-shadow:var(--shadow-soft);
+}
+.settings-fold-workspace { contain:layout style; }
+/* Preserve the translucent paint but avoid GPU-heavy blur allocations on
+   Android WebViews where many panels repaint during theme changes. */
+[data-multicam-native-webview="true"] .glass-panel,
+[data-multicam-native-webview="true"] .hud-chip,
+[data-multicam-native-webview="true"] .studio-timecode,
+[data-multicam-native-webview="true"] .settings-fold-workspace section > div {
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+}
+@media (max-width:360px) {
+  .multicam-brand { gap:.35rem; }
+  .multicam-brand-mark { width:1.55rem; transform:scale(.82); transform-origin:left center; }
+  .multicam-brand p { letter-spacing:.1em; font-size:10px; }
+}
