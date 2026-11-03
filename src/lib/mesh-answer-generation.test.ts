@@ -47,7 +47,7 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
    vi.stubGlobal("CompressionStream",undefined);
    vi.stubGlobal("RTCPeerConnection",FakeConnection);
    const offer=(session:string)=>"P0."+btoa(JSON.stringify({k:"o",s:session,sdp:"v=0"}))
-     .replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
+     .split("+").join("-").split("/").join("_").replace(/=+$/g,"");
    try {
      const old=mesh.answerOffer(offer("old"));
      await vi.waitFor(()=>expect(releaseOld).toBeTypeOf("function"));
