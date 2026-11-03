@@ -1,0 +1,91 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
+import { FoldScrollRestorer, readFoldScrollTop, saveFoldScrollTop } from "./fold-scroll-position";
+
+const values = new Map<string,string>();
+beforeEach(() => {
+  values.clear();
+  vi.stubGlobal("localStorage", {
+    getItem: (key:string) => values.get(key) ?? null,
+    setItem: (key:string, value:string) => { values.set(key,value); },
+  });
+});
+afterEach(() => vi.unstubAllGlobals());
+const port=(top=0,height=1000,viewport=250) =>
+  ({scrollTop:top,scrollHeight:height,clientHeight:viewport});
+
+describe("fold/editor vertical scroll restoration", () => {
+  it("preserves distinct editor and settings positions across tab transitions", () => {
+    const port1=port(0,1000,250), restorer=new FoldScrollRestorer();
+    restorer.activate("editor",port1);
+    restorer.enter("editor",port1);
+    port1.scrollTop=480;
+    restorer.onScroll("editor",port1);
+    expect(readFoldScrollTop("editor")).toBe(480);
+    restorer.capture(port1);
+    restorer.activate("settings",port1);
+    restorer.enter("settings",port1);
+    port1.scrollTop=160;
+    restorer.onScroll("settings",port1);
+    expect(readFoldScrollTop("settings")).toBe(160);
+    restorer.capture(port1);
+    restorer.activate("editor",port1);
+    restorer.enter("editor",port1);
+    expect(port1.scrollTop).toBe(480);
+    expect(readFoldScrollTop("settings")).toBe(160);
+  });
+  it("waits for media library content rather than overwriting a restored position with zero", () => {
+    expect(saveFoldScrollTop("editor",930)).toBe(true);
+    const element=port(0,200,200);
+    const restorer=new FoldScrollRestorer();
+    restorer.activate("editor",element);
+    restorer.enter("editor",element);
+    expect(element.scrollTop).toBe(0);
+    expect(restorer.pending("editor")).toBe(true);
+    restorer.onScroll("editor",element);
+    expect(readFoldScrollTop("editor")).toBe(930);
+    element.scrollHeight=1800;
+    restorer.retry("editor",element);
+    expect(element.scrollTop).toBe(930);
+    expect(restorer.pending("editor")).toBe(false);
+    restorer.onScroll("editor",element);
+    expect(readFoldScrollTop("editor")).toBe(930);
+  });
+  it("clamps to available scroll while waiting and user input cancels delayed restoration", () => {
+    saveFoldScrollTop("editor",1500);
+    const el=port(0,700,200);
+    const restorer=new FoldScrollRestorer();
+    restorer.activate("editor",el);
+    restorer.enter("editor",el);
+    expect(el.scrollTop).toBe(500);
+    expect(restorer.pending("editor")).toBe(true);
+    el.scrollTop=25;
+    restorer.onScroll("editor",el);
+    expect(restorer.pending("editor")).toBe(false);
+    expect(readFoldScrollTop("editor")).toBe(25);
+    el.scrollHeight=2500;
+    restorer.retry("editor",el);
+    expect(el.scrollTop).toBe(25);
+  });
+  it("refuses corrupted, oversized, impossible, and camera-only scroll state", () => {
+    expect(saveFoldScrollTop("camera",200)).toBe(false);
+    expect(saveFoldScrollTop("editor",-1)).toBe(false);
+    expect(saveFoldScrollTop("editor",Number.NaN)).toBe(false);
+    expect(saveFoldScrollTop("settings",11_000_000)).toBe(false);
+    values.set("multicam-fold-scroll-v1:editor","Infinity");
+    expect(readFoldScrollTop("editor")).toBeNull();
+    values.set("multicam-fold-scroll-v1:editor","9".repeat(300));
+    expect(readFoldScrollTop("editor")).toBeNull();
+    values.set("multicam-fold-scroll-v1:editor","250.75");
+    expect(readFoldScrollTop("editor")).toBe(250.75);
+  });
+  it("is wired into actual tab navigation and observes changing panel height", () => {
+    const code=readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
+    expect(code).toContain("scrollRestorer.current.onScroll(tab, event.currentTarget)");
+    expect(code).toContain("restorer.activate(tab, port)");
+    expect(code).toContain("restorer.enter(tab, port)");
+    expect(code).toContain("captureTabScroll();");
+    expect(code).toContain("observer.observe(port)");
+    expect(code).toContain('window.addEventListener("pagehide", onPageHide)');
+  });
+});
