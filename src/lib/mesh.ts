@@ -236,9 +236,14 @@ class Mesh {
     try {
     this.wire(pc.createDataChannel("pov", { ordered: true }));
     await bounded(pc.setLocalDescription(await bounded(pc.createOffer(), 4000, "Offer")), 4000, "Offer description"); await waitIce(pc);
-    if (generation !== this.generation) throw new Error("Session closed");
+    if (generation !== this.generation || this.pending !== pc)
+      throw new Error("Устаревшее предложение подключения: создан новый QR-код");
     const sdp = pc.localDescription?.sdp ?? "";
-    return { code: await bounded(encode({ k: "o", s: session, sdp }), 3000, "Offer encoding"), addresses: candidateAddresses(sdp) };
+    const code = await bounded(encode({ k: "o", s: session, sdp }), 3000, "Offer encoding");
+    // Encoding/compression can also finish after another offer replaces this one.
+    if (generation !== this.generation || this.pending !== pc)
+      throw new Error("Устаревшее предложение подключения: создан новый QR-код");
+    return { code, addresses: candidateAddresses(sdp) };
     } catch (error) { pc.close(); this.connections.delete(pc); if (this.pending === pc) this.pending = null; throw error; }
   }
   async acceptAnswer(code: string) {
