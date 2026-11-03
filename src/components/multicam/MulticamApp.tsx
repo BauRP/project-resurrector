@@ -201,7 +201,9 @@ function MulticamAppContent() {
         {role !== "solo" && <span className={`h-2 w-2 shrink-0 rounded-full ${peers.length ? "bg-status" : "bg-warning"}`} />}
       </motion.button></div>
     </header>}
-    <AnimatePresence mode={tab === "settings" ? "sync" : "wait"}><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={tab === "settings" ? false : { opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: tab === "settings" ? 0 : .18 }}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraWorkspace /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</Suspense></motion.div></AnimatePresence>
+    {/* Settings mount directly: never keep a hidden live camera and the new settings DOM painting together. The recording-save guard above remains authoritative. */}
+    {tab === "settings" ? <div key="settings"><SettingsTab /></div> :
+      <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraWorkspace /> : <EditorTab />}</Suspense></motion.div></AnimatePresence>}
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
     {navigationNotice && <div role="status" className="app-navigation-notice absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}
       {interrupted && <div className="mt-2 flex flex-wrap gap-2">

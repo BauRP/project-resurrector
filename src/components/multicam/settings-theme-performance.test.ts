@@ -41,6 +41,8 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(app).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
     expect(app).toContain('className="bottom-nav"');
     expect(app).toContain('lazy(() => import("./EditorTab")');
+    expect(app).toContain('tab === "settings" ? <div key="settings"><SettingsTab /></div>');
+    expect(app).not.toContain('mode={tab === "settings" ? "sync" : "wait"}');
     expect(app).toContain('<Suspense fallback=');
     expect(css).toContain("/* MULTI-CAM POV 111/222 theme reference:");
     expect(css).toContain("/* Settings entry performance and 111/222 brand identity */");
