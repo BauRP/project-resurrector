@@ -47,7 +47,8 @@ export class FoldScrollRestorer {
 
   activate(tab: ScrollTab, port: ScrollPort): void {
     if (this.tab === tab) return;
-    if (this.tab) this.capture(port);
+    // The old tab is explicitly captured before state changes. At this point
+    // React may already have rendered the new tab into the same scroll port.
     this.tab = tab;
     this.desired = readFoldScrollTop(tab);
     this.entered = false;
