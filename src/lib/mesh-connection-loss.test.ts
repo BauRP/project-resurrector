@@ -50,6 +50,21 @@ describe("multi-phone mesh message trust and isolation",()=>{
  });
 });
 describe("peer connection loss must not hide healthy remote cameras",()=>{
+ it("rejects oversized and binary WebRTC messages before parsing",()=>{
+  const ch=channel();
+  internal.wire(ch);
+  const listener=vi.fn();
+  const off=mesh.onMessage(listener);
+  try {
+    ch.onmessage?.({data:"x".repeat(100000)} as MessageEvent);
+    ch.onmessage?.({data:new Uint8Array([1,2,3])} as unknown as MessageEvent);
+    expect(listener).not.toHaveBeenCalled();
+    expect(internal.peers.size).toBe(0);
+    ch.onmessage?.({data:JSON.stringify({type:"telemetry",from:"valid",name:"Camera",
+      battery:55,storageMB:700,recording:false})} as MessageEvent);
+    expect(internal.peers.has("valid")).toBe(true);
+  } finally {off();}
+ });
  it("does not break remote WebRTC peers when local BroadcastChannel closes mid-send",()=>{
   const ch=channel();internal.channels.set(ch,"phone1");internal.peers.set("phone1",peer("phone1"));
   const broken={postMessage:vi.fn(()=>{throw Error("closed")}),close:vi.fn()};
