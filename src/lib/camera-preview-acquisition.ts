@@ -1,6 +1,6 @@
 import {bounded} from "./async";
 import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
-import {cameraController,CameraBusyError,CameraSupersededError,CameraUnavailableError} from "./camera-controller";
+import {cameraController,CameraBusyError,CameraSupersededError,CameraUnavailableError,checkAppliedCameraSetting} from "./camera-controller";
 /** Only proved released Camera2 states allow WebView to compete for a lens.
  * error/interrupted/unknown states may still retain native sensor ownership.
  */
@@ -16,6 +16,19 @@ export function nativeCameraStateSafeForWebView(state:unknown):boolean {
  */
 export class NativeCameraBusyError extends CameraBusyError {
   constructor(){super();this.name="NativeCameraBusyError";}
+}
+/** Android WebView can return a different live lens despite exact deviceId.
+ * Do not silently present it as the requested physical camera.
+ */
+export class CameraDeviceMismatchError extends Error {
+  constructor(){super("WebView выбрал другой объектив вместо указанной камеры");this.name="CameraDeviceMismatchError";}
+}
+export function explicitVideoDeviceId(constraints: MediaStreamConstraints): string | null {
+  const video=constraints.video;
+  if (!video || typeof video !== "object") return null;
+  const id=video.deviceId;
+  if (!id || typeof id !== "object" || !("exact" in id)) return null;
+  return typeof id.exact === "string" && !!id.exact ? id.exact : null;
 }
 export async function acquireWebViewPreviewWithNativeGuard(
   owner:symbol,
@@ -59,6 +72,9 @@ export async function acquireWebViewPreviewWithNativeGuard(
     // Native Camera2 may have started while the WebView permission dialog
     // was open. Release only this acquired owner and never its successor.
     await check();
+    const exactId = explicitVideoDeviceId(constraints);
+    if (exactId && checkAppliedCameraSetting(stream.getVideoTracks()[0], "deviceId", exactId) === "rejected")
+      throw new CameraDeviceMismatchError();
     return stream;
   }catch(error){
     cameraController.release(owner);
