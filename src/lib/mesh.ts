@@ -1,10 +1,19 @@
 // Serverless P2P mesh: WebRTC data channels with QR/copy-paste signaling (LAN, no internet),
 // plus BroadcastChannel sessions for windows/tabs on the same device (numeric ID).
 import { bounded } from "./async";
-export interface PeerInfo { id: string; name: string; battery: number | null; storageMB: number | null; latency: number | null; via: "webrtc" | "local"; lastSeen: number; recording: boolean }
+export type RemoteRecordStatus = "received" | "recording" | "stopping" | "saved" | "error";
+export interface PeerInfo {
+  id: string; name: string; battery: number | null; storageMB: number | null;
+  latency: number | null; via: "webrtc" | "local"; lastSeen: number;
+  recording: boolean;
+  /** This is a reported stage, not proof of exact frame synchronization. */
+  recordStatus?: RemoteRecordStatus;
+  recordCommandAt?: number;
+}
 export type MeshMessage =
   | { type: "telemetry"; from: string; name: string; battery: number | null; storageMB: number | null; recording: boolean }
   | { type: "record"; from: string; on: boolean; at: number }
+  | { type: "record-result"; from: string; to: string; at: number; status: RemoteRecordStatus }
   | { type: "ping"; from: string; t: number; to?: string }
   | { type: "pong"; from: string; t: number; to: string }
   | { type: "bye"; from: string };
@@ -21,7 +30,11 @@ export function isValidMeshMessage(message:unknown):message is MeshMessage{
       m["to"].length<=64&&typeof m["t"]==="number"&&
       Number.isFinite(m["t"])&&m["t"]>=0;
     case "record":return typeof m["on"]==="boolean"&&
-      typeof m["at"]==="number"&&Number.isFinite(m["at"])&&m["at"]>=0;
+      typeof m["at"]==="number"&&Number.isSafeInteger(m["at"])&&m["at"]>0;
+    case "record-result":return typeof m["to"]==="string"&&
+      /^[a-zA-Z0-9_-]{1,64}$/.test(m["to"])&&
+      typeof m["at"]==="number"&&Number.isSafeInteger(m["at"])&&m["at"]>0&&
+      ["received","recording","stopping","saved","error"].includes(String(m["status"]));
     case "telemetry":return typeof m["name"]==="string"&&m["name"].length<=128&&
       typeof m["recording"]==="boolean"&&
       (m["battery"]===null||(typeof m["battery"]==="number"&&
@@ -30,6 +43,11 @@ export function isValidMeshMessage(message:unknown):message is MeshMessage{
         Number.isFinite(m["storageMB"])&&m["storageMB"]>=0));
     default:return false;
   }
+}
+/** A late lower-stage acknowledgement may not overwrite actual completion. */
+export function recordStatusOrder(status: RemoteRecordStatus | undefined): number {
+  return status === "received" ? 0 : status === "recording" ? 1 :
+    status === "stopping" ? 2 : status === "saved" || status === "error" ? 3 : -1;
 }
 const deviceName = () => {
   if (typeof navigator === "undefined") return "Device";
@@ -182,14 +200,23 @@ class Mesh {
       // A just-opened WebRTC channel may not issue START/STOP by borrowing
       // the identity of a peer seen on a different connection. Bind its
       // identity from earlier non-control traffic on this SAME channel.
-      if(msg.type==="record" && boundId!==msg.from)return;
+      if((msg.type==="record" || msg.type==="record-result") && boundId!==msg.from)return;
       this.channels.set(ch,msg.from);
     }
     // A new packet must not register itself as a trusted connected camera
     // merely by claiming to be a remote RECORD command. Require an existing
     // live peer established by earlier telemetry/pairing traffic.
-    if (msg.type === "record" && (!this.peers.has(msg.from) ||
-      Date.now() - this.peers.get(msg.from)!.lastSeen >= 12000)) return;
+    if ((msg.type === "record" || msg.type === "record-result") &&
+        (!this.peers.has(msg.from) ||
+         Date.now() - this.peers.get(msg.from)!.lastSeen >= 12000)) return;
+    if (msg.type === "record-result") {
+      if (msg.to !== this.selfId) return;
+      const peer = this.peers.get(msg.from)!;
+      if (peer.recordCommandAt !== undefined &&
+          (msg.at < peer.recordCommandAt ||
+           (msg.at === peer.recordCommandAt &&
+            recordStatusOrder(msg.status) <= recordStatusOrder(peer.recordStatus)))) return;
+    }
     if (msg.type === "bye") {
       // A retiring channel may say bye after a replacement was paired.
       if ((ch && Array.from(this.channels.entries()).some(([other,id])=>
@@ -202,6 +229,11 @@ class Mesh {
     const existing = this.peers.get(msg.from) ?? { id: msg.from, name: "Camera", battery: null, storageMB: null, latency: null, via, lastSeen: 0, recording: false };
     const next: PeerInfo = { ...existing, via, lastSeen: Date.now() };
     if (msg.type === "telemetry") Object.assign(next, { name: msg.name, battery: msg.battery, storageMB: msg.storageMB, recording: msg.recording });
+    if (msg.type === "record-result") Object.assign(next, {
+      recordStatus: msg.status, recordCommandAt: msg.at,
+      recording: msg.status === "recording" ? true :
+        ["saved","error"].includes(msg.status) ? false : next.recording,
+    });
     if (msg.type === "pong" && msg.to === this.selfId) next.latency = Math.max(1, Math.round((performance.now() - msg.t) / 2));
     this.peers.set(msg.from, next); this.emit();
     this.handlers.forEach((h) => h(msg));
