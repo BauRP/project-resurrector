@@ -88,7 +88,13 @@ export function CameraDiagnostics() {
       // and an in-progress scan must not finish for a disconnected lens.
       job.current?.abort();
       dualJob.current?.abort();
-      if(mounted.current)setCameraModePlans({});
+      if (mounted.current) {
+        // The old UI must not offer a lens that was just unplugged while
+        // Android/WebView enumerateDevices is still pending.
+        setDevices([]);
+        setNativeCameras([]);
+        setCameraModePlans({});
+      }
       refresh();
     };
     navigator.mediaDevices?.addEventListener?.("devicechange", deviceChanged);
