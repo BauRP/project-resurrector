@@ -60,3 +60,34 @@ export async function confirmSelectedCameraRemoved(
     return isCurrent() && verifyCameraPresence(expectedId, second) === "missing";
   } catch { return false; }
 }
+
+/** USB microphones can vanish while their MediaStreamTrack still reports
+ * "live". An empty/permission-redacted inventory is not evidence of removal.
+ */
+export function verifyMicrophonePresence(
+  expectedId: string,
+  devices: readonly Pick<MediaDeviceInfo, "kind" | "deviceId">[],
+): CameraPresence {
+  if (!expectedId || !Array.isArray(devices)) return "unknown";
+  const microphones = devices.filter(d => d?.kind === "audioinput");
+  if (microphones.some(d => d.deviceId === expectedId)) return "present";
+  if (!microphones.some(d => !!d.deviceId)) return "unknown";
+  return "missing";
+}
+
+export async function confirmSelectedMicrophoneRemoved(
+  expectedId: string,
+  enumerate: () => Promise<readonly Pick<MediaDeviceInfo, "kind" | "deviceId">[]>,
+  isCurrent: () => boolean,
+  delay: () => Promise<void>,
+): Promise<boolean> {
+  if (!expectedId || !isCurrent()) return false;
+  try {
+    const first = await enumerate();
+    if (!isCurrent() || verifyMicrophonePresence(expectedId, first) !== "missing") return false;
+    await delay();
+    if (!isCurrent()) return false;
+    const second = await enumerate();
+    return isCurrent() && verifyMicrophonePresence(expectedId, second) === "missing";
+  } catch { return false; }
+}
