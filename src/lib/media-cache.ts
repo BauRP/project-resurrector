@@ -42,5 +42,7 @@ export async function clearPreviewCache(): Promise<number> {
   finally { db.close(); }
   analysisCache.clear(); thumbCache.clear();
   window.dispatchEvent(new Event("multicam-preview-cache-cleared"));
-  return cacheBytes();
+  // The transaction above has already committed an empty proxy store.
+  // Avoid reopening and scanning IndexedDB right after a clear action.
+  return 0;
 }

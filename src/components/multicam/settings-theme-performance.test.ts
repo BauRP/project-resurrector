@@ -10,6 +10,10 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain("const measureCache = async");
     expect(settings).toContain("onClick={() => void measureCache()}");
     expect(settings).toContain("clearPreviewCache()");
+    const cache = read("src/lib/media-cache.ts");
+    expect(cache).toContain('window.dispatchEvent(new Event("multicam-preview-cache-cleared"))');
+    expect(cache).toContain("return 0;");
+    expect(cache).not.toContain("return cacheBytes();");
     expect(settings).not.toContain("window.confirm(");
     expect(settings).toContain('role="alertdialog"');
     expect(settings).toContain("activateAccessibleDialog(confirmationDialog.current");
