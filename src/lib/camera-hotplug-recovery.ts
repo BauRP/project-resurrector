@@ -39,3 +39,24 @@ export class CameraHotplugGeneration {
   isCurrent(token: number): boolean { return token === this.serial; }
   invalidate(): void { this.serial++; }
 }
+
+/** Two distinct device inventories are required to stop an active recording.
+ * The validity callback also rejects a result after Activity destruction,
+ * repeated devicechange or a user selecting another lens.
+ */
+export async function confirmSelectedCameraRemoved(
+  expectedId: string,
+  enumerate: () => Promise<readonly Pick<MediaDeviceInfo, "kind" | "deviceId">[]>,
+  isCurrent: () => boolean,
+  delay: () => Promise<void>,
+): Promise<boolean> {
+  if (!expectedId || !isCurrent()) return false;
+  try {
+    const first = await enumerate();
+    if (!isCurrent() || verifyCameraPresence(expectedId, first) !== "missing") return false;
+    await delay();
+    if (!isCurrent()) return false;
+    const second = await enumerate();
+    return isCurrent() && verifyCameraPresence(expectedId, second) === "missing";
+  } catch { return false; }
+}
