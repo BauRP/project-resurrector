@@ -207,7 +207,22 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const total = useMemo(() => Math.max(10, ...items.map((i) => i.start + len(i))), [items]);
   const first = 0;
   const [aspOpen, setAspOpen] = useState(false); const [snap, setSnap] = useState<{ v: boolean; h: boolean }>({ v: false, h: false }); const tlRef = useRef<HTMLDivElement>(null); const [tlW, setTlW] = useState(0);
-  useEffect(() => { const el = tlRef.current; if (!el) return; const ro = new ResizeObserver(() => setTlW(el.clientWidth)); ro.observe(el); setTlW(el.clientWidth); return () => ro.disconnect(); }, []);
+  useEffect(() => {
+    const el = tlRef.current; if (!el) return;
+    const measure = () => setTlW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
   const [vTracks, setVTracks] = useState(1); const [aTracks, setATracks] = useState(1);
   const [transitions, setTransitions] = useState<Transition[]>(() => loadEditorProject().transitions as unknown as Transition[]); const [selTr, setSelTr] = useState<string | null>(null);
   // Preserve the editor timeline across fold-driven Activity/WebView
@@ -241,7 +256,19 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => {
     const h = document.querySelector<HTMLElement>(".app-header"); const m = monRef.current;
     const measure = () => { setHeaderH(h?.offsetHeight ?? 0); setMonH(m?.offsetHeight ?? 0); };
-    measure(); const ro = new ResizeObserver(measure); if (h) ro.observe(h); if (m) ro.observe(m); return () => ro.disconnect();
+    measure();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(measure);
+      if (h) ro.observe(h);
+      if (m) ro.observe(m);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
   }, []);
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media]);
 
