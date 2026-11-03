@@ -107,7 +107,8 @@ const waitIce = (pc: RTCPeerConnection) => new Promise<void>((resolve) => {
 });
 export const candidateAddresses = (sdp: string) => Array.from(new Set(sdp.split("\n").filter((l) => l.startsWith("a=candidate")).map((l) => { const p = l.split(" "); return `${p[4]}:${p[5]}`; })));
 
-class Mesh {
+/** Independent per-phone instance, also used by the real global camera mesh. */
+export class Mesh {
   selfId = Math.random().toString(36).slice(2, 10);
   name = deviceName();
   peers = new Map<string, PeerInfo>();
