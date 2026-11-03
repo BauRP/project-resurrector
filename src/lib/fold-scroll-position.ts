@@ -92,6 +92,13 @@ export class FoldScrollRestorer {
         validTop(port.scrollTop)) saveFoldScrollTop(this.tab, port.scrollTop);
   }
 
+  /** Called after saving the old tab, before React renders the replacement.
+   * Layout-induced scroll events during the transition are not user input.
+   */
+  pauseForTransition(): void {
+    this.entered = false;
+  }
+
   pending(tab: ScrollTab): boolean {
     return tab === this.tab && this.desired !== null;
   }
