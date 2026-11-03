@@ -1020,3 +1020,28 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   border-radius: 1rem;
   box-shadow: var(--shadow-soft);
 }
+
+
+/* Settings interaction states share one glass language in themes 111/222.
+   Preserve native touch hit areas and readable controls when busy. */
+.settings-fold-workspace .settings-item > span { min-width: 0; }
+.settings-fold-workspace .settings-item select {
+  min-width: 5rem;
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  padding: .35rem .5rem;
+  background-color: var(--glass);
+  color: var(--foreground);
+}
+.settings-fold-workspace button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.settings-fold-workspace [role="alert"] {
+  background: color-mix(in oklab, var(--destructive) 9%, var(--glass));
+  border: 1px solid color-mix(in oklab, var(--destructive) 48%, var(--border));
+  border-radius: .8rem;
+  padding: .6rem .8rem;
+}
+.dark .settings-fold-workspace select option { background: #172137; color: #f3f4ff; }

@@ -9,7 +9,7 @@ import { useT } from "@/lib/i18n";
 import { mesh } from "@/lib/mesh";
 import { useMeshPeers } from "./useMesh";
 import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
-import { bounded, retry } from "@/lib/async";
+import { bounded } from "@/lib/async";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 
 // Load native recording and camera diagnosis only if explicitly opened.
@@ -42,6 +42,7 @@ export function SettingsTab() {
  const confirmationDialog=useRef<HTMLDivElement>(null);
  const [confirmAction,setConfirmAction]=useState<"cache"|"reset"|null>(null);
  const cacheBusy=useRef(false);
+ const measurementBusy=useRef(false);
  useEffect(()=>{
    if(!confirmAction||!confirmationDialog.current)return;
    return activateAccessibleDialog(confirmationDialog.current,()=>setConfirmAction(null));
@@ -57,22 +58,27 @@ export function SettingsTab() {
  // to settings or during rapid theme changes. Measure only when requested.
  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
  const measureCache = async () => {
-   if (measuringCache) return;
+   // State updates can be batched. A ref prevents repeated taps from starting
+   // parallel IndexedDB cursor scans before React has rendered "disabled".
+   if (measurementBusy.current || cacheBusy.current) return;
+   measurementBusy.current = true;
    setMeasuringCache(true); setOperationError("");
    try {
      const bytes = await cacheBytes();
      if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); }
    } catch { if (alive.current) setOperationError("Не удалось измерить кэш. Попробуйте повторить."); }
-   finally { if (alive.current) setMeasuringCache(false); }
+   finally { measurementBusy.current = false; if (alive.current) setMeasuringCache(false); }
  };
  const diagnose = async () => {
    if (busy.current) return; busy.current = true; setChecking(true); setOperationError("");
-   try { const result = await retry(() => bounded(mesh.diagnose(), 5000, "Network diagnostics")); if (alive.current) s.set({ diagnostics: result }); }
+   // mesh.diagnose already has a bounded peer-response window. Retrying a
+    // failed connection immediately doubles work but cannot repair it.
+    try { const result = await bounded(mesh.diagnose(), 3500, "Network diagnostics"); if (alive.current) s.set({ diagnostics: result }); }
    catch { if (alive.current) setOperationError("Нет ответа от устройств. Проверьте соединение и повторите тест."); }
    finally { busy.current = false; if (alive.current) setChecking(false); }
  };
  const clearCache = async () => {
-   if (cacheBusy.current) return;
+   if (cacheBusy.current || measurementBusy.current) return;
    cacheBusy.current=true;
    setClearing(true); setOperationError("");
    try { const bytes = await clearPreviewCache(); if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); } }
@@ -90,7 +96,7 @@ export function SettingsTab() {
   <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
  <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
- <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
+ <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>setConfirmAction("reset")}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  {/* Camera2 polling and camera discovery are expensive. Keep both fully
@@ -119,8 +125,8 @@ export function SettingsTab() {
      <h2 id="settings-confirm-title" className="text-base font-semibold">{confirmAction==="cache" ? "Очистить кэш?" : "Сбросить проект?"}</h2>
      <p className="mt-2 text-sm text-muted-foreground">{confirmAction==="cache" ? "Будут удалены только временные превью. Оригинальные видео и проект останутся." : "Будут сброшены параметры текущего проекта. Сохранённые видеоклипы не удаляются."}</p>
      <div className="mt-5 flex justify-end gap-2">
-       <Button variant="outline" onClick={()=>setConfirmAction(null)}>Отмена</Button>
-       <Button disabled={clearing} onClick={acceptConfirmation}>{confirmAction==="cache" ? "Очистить кэш" : "Сбросить"}</Button>
+       <Button type="button" variant="outline" onClick={()=>setConfirmAction(null)}>Отмена</Button>
+       <Button type="button" disabled={clearing || measuringCache} onClick={acceptConfirmation}>{confirmAction==="cache" ? "Очистить кэш" : "Сбросить"}</Button>
      </div>
    </div>
  </div>}

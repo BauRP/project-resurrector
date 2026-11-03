@@ -10,6 +10,10 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain("const measureCache = async");
     expect(settings).toContain("onClick={() => void measureCache()}");
     expect(settings).toContain("clearPreviewCache()");
+    expect(settings).toContain("measurementBusy.current || cacheBusy.current");
+    expect(settings).toContain("cacheBusy.current || measurementBusy.current");
+    expect(settings).not.toContain("retry(() => bounded(mesh.diagnose()");
+
     const cache = read("src/lib/media-cache.ts");
     expect(cache).toContain('window.dispatchEvent(new Event("multicam-preview-cache-cleared"))');
     expect(cache).toContain("return 0;");
