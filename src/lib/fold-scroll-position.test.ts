@@ -83,6 +83,40 @@ describe("fold/editor vertical scroll restoration", () => {
     restorer.retry("editor",el);
     expect(el.scrollTop).toBe(25);
   });
+  it("preserves the editor position when fold reflow temporarily collapses scroll height", () => {
+    const el=port(0,1800,300);
+    const restorer=new FoldScrollRestorer();
+    restorer.activate("editor",el);
+    restorer.enter("editor",el);
+    el.scrollTop=890;
+    restorer.onScroll("editor",el);
+    expect(readFoldScrollTop("editor")).toBe(890);
+    el.scrollHeight=300;
+    el.scrollTop=0; // Browser auto-clamps after a fold layout collapse.
+    restorer.onViewportReflow("editor",el);
+    expect(restorer.pending("editor")).toBe(true);
+    restorer.onScroll("editor",el);
+    expect(readFoldScrollTop("editor")).toBe(890);
+    el.scrollHeight=1900;
+    restorer.onViewportReflow("editor",el);
+    expect(el.scrollTop).toBe(890);
+    expect(restorer.pending("editor")).toBe(false);
+  });
+  it("detects an auto-clamped scroll event even before ResizeObserver fires", () => {
+    const el=port(0,1500,300),restorer=new FoldScrollRestorer();
+    restorer.activate("settings",el);
+    restorer.enter("settings",el);
+    el.scrollTop=650;
+    restorer.onScroll("settings",el);
+    el.scrollHeight=300;
+    el.scrollTop=0;
+    restorer.onScroll("settings",el);
+    expect(readFoldScrollTop("settings")).toBe(650);
+    expect(restorer.pending("settings")).toBe(true);
+    el.scrollHeight=2000;
+    restorer.onViewportReflow("settings",el);
+    expect(el.scrollTop).toBe(650);
+  });
   it("refuses corrupted, oversized, impossible, and camera-only scroll state", () => {
     expect(saveFoldScrollTop("camera",200)).toBe(false);
     expect(saveFoldScrollTop("editor",-1)).toBe(false);
