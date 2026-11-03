@@ -1,5 +1,6 @@
 import { isNative, MultiCamNative, type NativeThermal } from "./native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "./native-capture";
+import { bounded } from "./async";
 
 export interface DiagnosticSafety {
   proceed: boolean;
@@ -56,7 +57,7 @@ export function diagnosticProbeLimit(safety: DiagnosticSafety, requested: number
 export async function checkDiagnosticSafety(extended: boolean): Promise<DiagnosticSafety> {
   if (isNative()) {
     let state: string | null = null;
-    try { state = (await nativeCapture.status()).state; }
+    try { state = (await bounded(nativeCapture.status(), 2000, "Camera2 diagnostic ownership")).state; }
     catch { /* unknown native ownership must fail closed */ }
     const ownership = nativeDiagnosticAvailability(state);
     if (ownership !== "free") return {
@@ -70,7 +71,7 @@ export async function checkDiagnosticSafety(extended: boolean): Promise<Diagnost
   let thermalStatus: number | null = null;
   if (isNative()) {
     try {
-      const t: NativeThermal = await MultiCamNative.getThermalStatus();
+      const t: NativeThermal = await bounded(MultiCamNative.getThermalStatus(), 1500, "Camera2 thermal safety");
       thermalStatus = t.available !== false && t.status >= 0 ? t.status : null;
     } catch { /* unknown, not safe */ }
   }
@@ -80,13 +81,14 @@ export async function checkDiagnosticSafety(extended: boolean): Promise<Diagnost
       getBattery?: () => Promise<{ level: number; charging: boolean }>;
     };
     if (navigatorWithBattery.getBattery) {
-      const value = await navigatorWithBattery.getBattery();
+      const value = await bounded(navigatorWithBattery.getBattery(), 750, "Diagnostic battery safety");
       if (Number.isFinite(value.level)) battery = { level: value.level, charging: value.charging };
     }
   } catch { /* not supported by this WebView */ }
   let freeBytes: number | null = null;
   try {
-    const estimate = await navigator.storage?.estimate?.();
+    const estimatePromise = navigator.storage?.estimate?.();
+    const estimate = estimatePromise ? await bounded(estimatePromise, 750, "Diagnostic storage safety") : undefined;
     if (estimate && typeof estimate.quota === "number" && typeof estimate.usage === "number")
       freeBytes = Math.max(0, estimate.quota - estimate.usage);
   } catch { /* quota is unknown */ }
