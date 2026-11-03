@@ -85,15 +85,15 @@ export function CameraWorkspace() {
   </div>;
 
   return <div className="flex h-full min-h-0 flex-col">
-    {isNative() && <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border bg-card px-3 py-2">
-      <span className="text-xs font-medium">Режим камеры</span>
-      <Button size="sm" variant={mode === "web" ? "default" : "outline"}
+    {isNative() && <div className="camera-mode-switch flex shrink-0 items-center justify-end gap-1 border-b border-border/40 bg-card/50 px-2 py-1" role="group" aria-label="Режим камеры">
+      <span className="mr-auto truncate text-[10px] text-muted-foreground">Режим</span>
+      <Button size="sm" className="h-7 min-h-0 px-2 text-[10px]" variant={mode === "web" ? "default" : "outline"}
         disabled={switching || blocked || mode === "web"} onClick={() => void switchTo("web")}>
-        Обычная камера
+        Обычная
       </Button>
-      <Button size="sm" variant={mode === "native" ? "default" : "outline"}
+      <Button size="sm" className="h-7 min-h-0 px-2 text-[10px]" variant={mode === "native" ? "default" : "outline"}
         disabled={switching || blocked || mode === "native"} onClick={() => void switchTo("native")}>
-        Нативная запись
+        Camera2
       </Button>
     </div>}
     {notice && <p role="alert" className="shrink-0 bg-card p-2 text-xs text-destructive">{notice}</p>}
