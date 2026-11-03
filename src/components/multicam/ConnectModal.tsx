@@ -15,6 +15,7 @@ import { nativeCapture } from "@/lib/native-capture";
 import { acquireWebViewPreviewWithNativeGuard } from "@/lib/camera-preview-acquisition";
 import { isNative } from "@/lib/native";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
+import { planConnectedCaptureDeparture } from "@/lib/recording-finalization";
 
 type Step = "choose" | "id" | "qr";
 
