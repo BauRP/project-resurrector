@@ -1,5 +1,6 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
 import { nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, foldPreviewTopologySignature, type PreviewRect } from "@/lib/native-preview-placement";
+import { nativePreviewAckIsCurrent } from "@/lib/native-preview-epoch";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
@@ -144,6 +145,16 @@ export function NativeRecordingPanel(){
          // if the DOM box did not move. Re-submit only for a changed topology.
          const acknowledged=await bridge.setDirectPreview({ownerId,visible:true,...placement,
            viewportWidth:viewport.width,viewportHeight:viewport.height});
+         // A fold may complete while Android processes the show call. A
+         // successful response for the old pane is NOT permission to display
+         // the TextureView over the new screen or any user controls.
+         if(!nativePreviewAckIsCurrent(submittedFoldEpoch,foldEpoch,live,
+           !document.hidden,measure()!==null)){
+           lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
+           await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
+           if(live)syncDirty=true;
+           return;
+         }
          lastVisible=acknowledged?.visible===true;
          lastPosition=lastVisible?placement:null;
          lastViewport=lastVisible?viewport:null;
