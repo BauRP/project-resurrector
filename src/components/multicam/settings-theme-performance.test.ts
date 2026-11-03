@@ -18,6 +18,10 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain("<Suspense fallback=");
     expect(settings).toContain('{advancedPanel === "native" && <NativeRecordingPanel />}');
     expect(settings).toContain('{advancedPanel === "diagnostics" && <CameraDiagnostics />}');
+    const workspace = read("src/components/multicam/CameraWorkspace.tsx");
+    expect(workspace).toContain('lazy(() => import("./NativeRecordingPanel")');
+    expect(workspace).toContain('<Suspense fallback=');
+
   });
   it("keeps notification, header and nav visible across both themes", () => {
     const app = read("src/components/multicam/MulticamApp.tsx");
