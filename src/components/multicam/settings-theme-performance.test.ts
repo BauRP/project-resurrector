@@ -10,6 +10,11 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain("const measureCache = async");
     expect(settings).toContain("onClick={() => void measureCache()}");
     expect(settings).toContain("clearPreviewCache()");
+    expect(settings).not.toContain("window.confirm(");
+    expect(settings).toContain('role="alertdialog"');
+    expect(settings).toContain("activateAccessibleDialog(confirmationDialog.current");
+    expect(settings).toContain('setConfirmAction("cache")');
+    expect(settings).toContain('setConfirmAction("reset")');
   });
   it("keeps heavy Camera2 and diagnostics code out of the initial settings bundle", () => {
     const settings = read("src/components/multicam/SettingsTab.tsx");
@@ -35,6 +40,8 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(app).toContain('>MULTI-CAM POV</p>');
     expect(app).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
     expect(app).toContain('className="bottom-nav"');
+    expect(app).toContain('lazy(() => import("./EditorTab")');
+    expect(app).toContain('<Suspense fallback=');
     expect(css).toContain("/* MULTI-CAM POV 111/222 theme reference:");
     expect(css).toContain("/* Settings entry performance and 111/222 brand identity */");
     expect(css).toContain(".app-navigation-notice {");
@@ -57,5 +64,6 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(css).not.toContain(".settings-fold-workspace { contain:layout style; }");
     expect(css).toContain('[data-fold-workspace="pane"] .privacy-fold-overlay');
     expect(css).toContain("height: var(--fold-work-height, 100dvh)");
+    expect(css).toContain('[data-fold-workspace="pane"] .settings-confirm-overlay');
   });
 });

@@ -972,3 +972,30 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (prefers-reduced-motion:reduce) {
   .camera-preview-status, .camera-preview-retry { animation:none; transition:none; }
 }
+
+
+/* Native-friendly, nonblocking confirmation for Settings actions.
+   Both 111/222 themes use the same geometry and semantic surface tokens. */
+.settings-confirm-overlay {
+  background: color-mix(in oklab, var(--background) 72%, transparent);
+  overscroll-behavior: contain;
+}
+.settings-confirm-card {
+  background: var(--popover);
+  border-color: var(--border);
+  box-shadow: var(--shadow-soft), 0 16px 44px color-mix(in oklab,var(--foreground) 15%,transparent);
+}
+.studio-tab-loading {
+  min-height: 6rem;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  border-radius: 1rem;
+}
+[data-fold-workspace="pane"] .settings-confirm-overlay {
+  inset: auto;
+  left: var(--fold-work-left, 0px);
+  top: var(--fold-work-top, 0px);
+  width: min(var(--fold-work-width,100%),100%);
+  height: var(--fold-work-height,100dvh);
+  max-height: 100dvh;
+}
