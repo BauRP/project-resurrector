@@ -54,7 +54,7 @@ function applyManual(stream: MediaStream | null, c: Record<string, unknown>) {
   void cameraController.apply(stream, adv);
 }
 
-export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: () => void } = {}) {
+export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void) | undefined } = {}) {
   const s = useCameraStore();
   const { t } = useT();
   const peers = useMeshPeers();
