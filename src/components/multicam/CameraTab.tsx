@@ -26,7 +26,7 @@ import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
-import { CameraHotplugGeneration, verifyCameraPresence } from "@/lib/camera-hotplug-recovery";
+import { CameraHotplugGeneration, confirmSelectedCameraRemoved } from "@/lib/camera-hotplug-recovery";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
@@ -137,12 +137,12 @@ export function CameraTab() {
       const token = generation.next();
       void (async () => {
         try {
-          const first = await navigator.mediaDevices.enumerateDevices();
-          if (!generation.isCurrent(token) || verifyCameraPresence(deviceId, first) !== "missing") return;
-          await new Promise<void>(resolve => window.setTimeout(resolve, 250));
-          if (!generation.isCurrent(token)) return;
-          const second = await navigator.mediaDevices.enumerateDevices();
-          if (!generation.isCurrent(token) || verifyCameraPresence(deviceId, second) !== "missing") return;
+          if (!await confirmSelectedCameraRemoved(
+            deviceId,
+            () => navigator.mediaDevices.enumerateDevices(),
+            () => generation.isCurrent(token),
+            () => new Promise<void>(resolve => window.setTimeout(resolve, 250)),
+          )) return;
           setCameraState("unavailable");
           const reason = "Выбранная внешняя камера отключена. Запись прервана; проверьте сохранённый файл.";
           if (dualSession.current) {
