@@ -28,6 +28,36 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
   expect(pc.setRemoteDescription).toHaveBeenCalledOnce();
   expect(state.pending).toBeNull();
  });
+ it("rejects a delayed slave reply when a later QR invitation wins",async()=>{
+   let releaseOld!:()=>void;
+   let created=0;
+   const FakeConnection=class {
+     readonly index=++created;
+     iceGatheringState="complete";
+     localDescription={sdp:"v=0"};
+     close=vi.fn();
+     addEventListener=vi.fn();
+     removeEventListener=vi.fn();
+     setRemoteDescription=vi.fn(async()=>{
+       if(this.index===1)await new Promise<void>(resolve=>{releaseOld=resolve;});
+     });
+     createAnswer=vi.fn(async()=>({type:"answer",sdp:"v=0"}));
+     setLocalDescription=vi.fn(async()=>{});
+   };
+   vi.stubGlobal("CompressionStream",undefined);
+   vi.stubGlobal("RTCPeerConnection",FakeConnection);
+   const offer=(session:string)=>"P0."+btoa(JSON.stringify({k:"o",s:session,sdp:"v=0"}))
+     .replace(/\\+/g,"-").replace(/\\//g,"_").replace(/=+$/g,"");
+   try {
+     const old=mesh.answerOffer(offer("old"));
+     await vi.waitFor(()=>expect(releaseOld).toBeTypeOf("function"));
+     const next=mesh.answerOffer(offer("next"));
+     releaseOld();
+     await expect(old).rejects.toThrow("Устаревшее приглашение");
+     const latest=await next;
+     expect(latest.session).toBe("next");
+   } finally {mesh.leave();vi.unstubAllGlobals();}
+ });
  it("does not return a superseded offer after another QR request replaces it",async()=>{
   let releaseFirst!:()=>void;
   let created=0;
