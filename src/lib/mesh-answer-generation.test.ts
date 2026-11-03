@@ -38,7 +38,7 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
     close=vi.fn();
     addEventListener=vi.fn();
     removeEventListener=vi.fn();
-    createDataChannel=vi.fn(()=>({readyState:"connecting"}));
+    createDataChannel=vi.fn(()=>({readyState:"connecting",close:vi.fn()}));
     createOffer=vi.fn(async()=>({type:"offer",sdp:"v=0"}));
     setLocalDescription=vi.fn(async()=>{
       if(this.index===1) await new Promise<void>(resolve=>{releaseFirst=resolve;});
