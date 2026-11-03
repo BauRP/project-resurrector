@@ -44,6 +44,9 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
       if(this.index===1) await new Promise<void>(resolve=>{releaseFirst=resolve;});
     });
   };
+  // jsdom does not implement Blob.stream(): use the supported uncompressed
+  // QR representation in this concurrency test, not browser compression.
+  vi.stubGlobal("CompressionStream",undefined);
   vi.stubGlobal("RTCPeerConnection",FakeConnection);
   try {
     const first=mesh.createOffer("session");
