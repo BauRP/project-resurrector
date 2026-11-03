@@ -51,6 +51,22 @@ describe("fold/editor vertical scroll restoration", () => {
     restorer.onScroll("editor",element);
     expect(readFoldScrollTop("editor")).toBe(930);
   });
+  it("does not overwrite old editor scroll when tab exit animation briefly resets the container", () => {
+    const el=port(0,1200,300);
+    const restorer=new FoldScrollRestorer();
+    restorer.activate("editor",el);
+    restorer.enter("editor",el);
+    el.scrollTop=735;
+    restorer.onScroll("editor",el);
+    restorer.capture(el);
+    restorer.pauseForTransition();
+    el.scrollTop=0; // DOM now contains the incoming settings tab
+    restorer.onScroll("editor",el);
+    expect(readFoldScrollTop("editor")).toBe(735);
+    restorer.activate("settings",el);
+    restorer.enter("settings",el);
+    expect(readFoldScrollTop("editor")).toBe(735);
+  });
   it("clamps to available scroll while waiting and user input cancels delayed restoration", () => {
     saveFoldScrollTop("editor",1500);
     const el=port(0,700,200);
