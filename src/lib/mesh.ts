@@ -96,6 +96,7 @@ class Mesh {
   private channels = new Map<RTCDataChannel, string | null>();
   private bc: BroadcastChannel | null = null;
   private pending: RTCPeerConnection | null = null;
+  private pendingAnswer: RTCPeerConnection | null = null;
   private connections = new Set<RTCPeerConnection>();
   private generation = 0;
   private answerEpoch = 0;
@@ -230,6 +231,7 @@ class Mesh {
     this.bc?.close(); this.bc = null; this.localId = null;
     this.channels.forEach((_, ch) => ch.close()); this.channels.clear();
     this.pending?.close(); this.pending = null;
+    this.pendingAnswer?.close(); this.pendingAnswer = null;
     this.connections.forEach((pc) => pc.close()); this.connections.clear();
     if (this.timer !== null) clearInterval(this.timer); this.timer = null;
     this.peers.clear(); this.emit();
@@ -249,7 +251,12 @@ class Mesh {
 
   /** Director: create an offer code for one more camera (unlimited, one per camera). */
   async createOffer(session: string) {
-    this.pending?.close();
+    // A replaced offer is not an active camera; retire its connection now,
+    // without affecting other established director-to-camera channels.
+    if (this.pending) {
+      this.pending.close();
+      this.connections.delete(this.pending);
+    }
     const pc = new RTCPeerConnection({ iceServers: [] });
     this.pending = pc; this.connections.add(pc); const generation = this.generation;
     try {
@@ -282,14 +289,29 @@ class Mesh {
   async answerOffer(code: string) {
     const generation = this.generation;
     const answerEpoch = ++this.answerEpoch;
+    // A cancelled or superseded scan must not keep an orphan Camera-side
+    // RTCPeerConnection running in the background after an Activity remount.
+    if (this.pendingAnswer) {
+      this.pendingAnswer.close();
+      this.connections.delete(this.pendingAnswer);
+      this.pendingAnswer = null;
+    }
     const current = () => generation === this.generation && answerEpoch === this.answerEpoch;
     const data = await bounded(decode<{ k: string; s: string; sdp: string }>(code), 3000, "Offer decoding");
     if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
     if (data.k !== "o") throw new Error("Not an offer");
     const pc = new RTCPeerConnection({ iceServers: [] });
     this.connections.add(pc);
+    this.pendingAnswer = pc;
+    let established = false;
     try {
-    pc.ondatachannel = (e) => this.wire(e.channel);
+    pc.ondatachannel = (e) => {
+      if (!this.connections.has(pc) || (!established && !current())) {
+        e.channel.close();
+        return;
+      }
+      this.wire(e.channel);
+    };
     await bounded(pc.setRemoteDescription({ type: "offer", sdp: data.sdp }), 4000, "Offer description");
     if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
     const description = await bounded(pc.createAnswer(), 4000, "Answer");
@@ -300,8 +322,15 @@ class Mesh {
     const sdp = pc.localDescription?.sdp ?? "";
     const reply = await bounded(encode({ k: "a", sdp }), 3000, "Answer encoding");
     if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
+    established = true;
+    if (this.pendingAnswer === pc) this.pendingAnswer = null;
     return { code: reply, session: data.s, addresses: candidateAddresses(sdp) };
-    } catch (error) { pc.close(); this.connections.delete(pc); throw error; }
+    } catch (error) {
+      pc.close();
+      this.connections.delete(pc);
+      if (this.pendingAnswer === pc) this.pendingAnswer = null;
+      throw error;
+    }
   }
 }
 
