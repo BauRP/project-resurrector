@@ -97,6 +97,8 @@ describe("truthful remote recording status acknowledgements",()=>{
      battery:70,storageMB:500,recording:false},"webrtc");
    const result=(at:number,status:string)=>({type:"record-result",
      from:"cam-ack",to:mesh.selfId,at,status});
+   // Only receipts for actual director commands may affect camera state.
+   mesh.send({type:"record",from:mesh.selfId,on:true,at:200});
    internal.handle(result(200,"received"),"webrtc");
    expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("received");
    internal.handle(result(200,"recording"),"webrtc");
@@ -108,10 +110,27 @@ describe("truthful remote recording status acknowledgements",()=>{
    internal.handle(result(199,"error"),"webrtc");
    expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
    internal.handle(result(201,"error"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
+   mesh.send({type:"record",from:mesh.selfId,on:false,at:201});
+   internal.handle(result(201,"error"),"webrtc");
    expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("error");
    expect(mesh.peers.get("cam-ack")?.recordCommandAt).toBe(201);
    internal.handle({ ...result(202,"saved"),to:"other-host"},"webrtc");
    expect(mesh.peers.get("cam-ack")?.recordCommandAt).toBe(201);
+ });
+ it("rejects unsolicited completed/saved replies even from an already known camera",()=>{
+   internal.handle({type:"telemetry",from:"connected",name:"Cam",
+     battery:70,storageMB:500,recording:false},"webrtc");
+   internal.handle({type:"record-result",from:"connected",to:mesh.selfId,
+     at:500,status:"saved"},"webrtc");
+   expect(mesh.peers.get("connected")?.recordStatus).toBeUndefined();
+   mesh.send({type:"record",from:mesh.selfId,on:true,at:501});
+   internal.handle({type:"record-result",from:"connected",to:mesh.selfId,
+     at:500,status:"saved"},"webrtc");
+   expect(mesh.peers.get("connected")?.recordStatus).toBeUndefined();
+   internal.handle({type:"record-result",from:"connected",to:mesh.selfId,
+     at:501,status:"received"},"webrtc");
+   expect(mesh.peers.get("connected")?.recordStatus).toBe("received");
  });
  it("requires a channel identity before accepting recording receipts",()=>{
    const ch=channel();
