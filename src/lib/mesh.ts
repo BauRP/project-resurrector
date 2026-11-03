@@ -98,6 +98,7 @@ class Mesh {
   private pending: RTCPeerConnection | null = null;
   private connections = new Set<RTCPeerConnection>();
   private generation = 0;
+  private answerEpoch = 0;
   private listeners = new Set<() => void>();
   private handlers = new Set<(m: MeshMessage) => void>();
   private snapshot: PeerInfo[] = [];
@@ -207,6 +208,7 @@ class Mesh {
   }
   leave() {
     this.generation++;
+    this.answerEpoch++;
     this.send({ type: "bye", from: this.selfId });
     this.bc?.close(); this.bc = null; this.localId = null;
     this.channels.forEach((_, ch) => ch.close()); this.channels.clear();
@@ -261,17 +263,27 @@ class Mesh {
   }
   /** Camera: answer the director's offer. Returns the reply code + session id. */
   async answerOffer(code: string) {
+    const generation = this.generation;
+    const answerEpoch = ++this.answerEpoch;
+    const current = () => generation === this.generation && answerEpoch === this.answerEpoch;
     const data = await bounded(decode<{ k: string; s: string; sdp: string }>(code), 3000, "Offer decoding");
+    if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
     if (data.k !== "o") throw new Error("Not an offer");
     const pc = new RTCPeerConnection({ iceServers: [] });
-    this.connections.add(pc); const generation = this.generation;
+    this.connections.add(pc);
     try {
     pc.ondatachannel = (e) => this.wire(e.channel);
     await bounded(pc.setRemoteDescription({ type: "offer", sdp: data.sdp }), 4000, "Offer description");
-    await bounded(pc.setLocalDescription(await bounded(pc.createAnswer(), 4000, "Answer")), 4000, "Answer description"); await waitIce(pc);
-    if (generation !== this.generation) throw new Error("Session closed");
+    if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
+    const description = await bounded(pc.createAnswer(), 4000, "Answer");
+    if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
+    await bounded(pc.setLocalDescription(description), 4000, "Answer description");
+    await waitIce(pc);
+    if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
     const sdp = pc.localDescription?.sdp ?? "";
-    return { code: await bounded(encode({ k: "a", sdp }), 3000, "Answer encoding"), session: data.s, addresses: candidateAddresses(sdp) };
+    const reply = await bounded(encode({ k: "a", sdp }), 3000, "Answer encoding");
+    if (!current()) throw new Error("Устаревшее приглашение: начато новое подключение");
+    return { code: reply, session: data.s, addresses: candidateAddresses(sdp) };
     } catch (error) { pc.close(); this.connections.delete(pc); throw error; }
   }
 }
