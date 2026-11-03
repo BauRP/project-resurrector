@@ -118,7 +118,8 @@ function MulticamAppContent() {
       timers.forEach(t => window.clearTimeout(t));
       observer?.disconnect();
       window.removeEventListener("pagehide", onPageHide);
-      restorer.capture(port);
+      // A tab switch may have already rendered the next screen into this
+      // scroll container. Capture happens before setTab, not in cleanup.
     };
   }, [tab]);
   useEffect(() => {
