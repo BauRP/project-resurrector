@@ -1,5 +1,5 @@
 import {afterEach,describe,expect,it,vi} from "vitest";
-import {acquireWebViewPreviewWithNativeGuard,NativeCameraBusyError,nativeCameraStateSafeForWebView} from "./camera-preview-acquisition";
+import {acquireWebViewPreviewWithNativeGuard,NativeCameraBusyError,nativeCameraStateSafeForWebView,CameraDeviceMismatchError,explicitVideoDeviceId} from "./camera-preview-acquisition";
 import {cameraController,CameraSupersededError,CameraUnavailableError} from "./camera-controller";
 import {diagnosticCaptureGate} from "./diagnostic-capture-gate";
 import {readFileSync} from "node:fs";
@@ -56,6 +56,30 @@ describe("safe WebView camera acquisition across Camera2 and fold lifecycle",()=
   expect(source).toContain("useSyncExternalStore(");
   expect(source).toContain("diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot");
   expect(source).toContain("appliedDevice.lens, diagnosticRevision");
+ });
+ it("does not silently substitute another real camera for an exact selected USB lens",async()=>{
+   expect(explicitVideoDeviceId({video:{deviceId:{exact:"usb-A"}}})).toBe("usb-A");
+   expect(explicitVideoDeviceId({video:{facingMode:"environment"}})).toBeNull();
+   const {stream,stop}=live();
+   Object.defineProperty(stream.getVideoTracks()[0],"getSettings",{
+     value:()=>({deviceId:"internal-rear"}),configurable:true,
+   });
+   vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:vi.fn(async()=>stream)}});
+   await expect(acquireWebViewPreviewWithNativeGuard(Symbol("usb"),
+     {video:{deviceId:{exact:"usb-A"}},audio:false},null))
+      .rejects.toBeInstanceOf(CameraDeviceMismatchError);
+   expect(stop).toHaveBeenCalledOnce();
+ });
+ it("does not treat omitted OEM device identity as proof of a different lens",async()=>{
+   const {stream}=live();
+   Object.defineProperty(stream.getVideoTracks()[0],"getSettings",{
+     value:()=>({width:1280}),configurable:true,
+   });
+   vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:vi.fn(async()=>stream)}});
+   const owner=Symbol("usb");
+   await expect(acquireWebViewPreviewWithNativeGuard(owner,
+     {video:{deviceId:{exact:"usb-A"}},audio:false},null)).resolves.toBe(stream);
+   cameraController.release(owner);
  });
  it("never attempts getUserMedia when native Camera2 is recording",async()=>{
   const gum=vi.fn();vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
