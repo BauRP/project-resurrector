@@ -35,3 +35,9 @@ export class DiagnosticCaptureGate {
   activeOperation(): DiagnosticOperation | null { return this.operation; }
   reset(): void { this.current = null; this.operation = null; }
 }
+
+/** Shared across CameraTab, store and diagnostics, including React remounts.
+ * Never clear this gate on Activity recreation while an async probe may still
+ * be holding the physical camera. Only the owning probe releases its lease.
+ */
+export const diagnosticCaptureGate = new DiagnosticCaptureGate();
