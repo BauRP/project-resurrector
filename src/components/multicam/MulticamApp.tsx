@@ -37,6 +37,15 @@ function useMeshBridge() {
     const patch = guard.current.accept(msg, state, knownPeer);
     if (patch) state.set(patch);
   }), []);
+  useEffect(() => mesh.subscribe(() => {
+    const state = current.current;
+    const now = Date.now();
+    const stopped = guard.current.onDirectorDisconnected(state, id => {
+      const peer = mesh.peers.get(id);
+      return !!peer && now - peer.lastSeen < 12000;
+    });
+    if (stopped) state.set(stopped);
+  }), []);
   useEffect(() => {
     if (role !== "host") return;
     // Start and stop may happen inside the same millisecond. Timestamp
@@ -117,7 +126,7 @@ function MulticamAppContent() {
     </header>}
     <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}>{tab === "camera" ? <CameraWorkspace /> : tab === "editor" ? <EditorTab /> : <SettingsTab />}</motion.div></AnimatePresence>
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && <motion.i layoutId="nav-active" />}</button>)}</nav>}
-    {navigationNotice && <div role="status" className="absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}
+    {navigationNotice && <div role="status" className="app-navigation-notice absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}
       {interrupted && <div className="mt-2 flex flex-wrap gap-2">
         <button className="rounded-md bg-primary px-3 py-1.5 text-primary-foreground" onClick={() => { setTab("editor"); setStore({mediaOpen:true}); }}>Проверить клипы</button>
         <button className="rounded-md border border-border px-3 py-1.5" onClick={() => {
