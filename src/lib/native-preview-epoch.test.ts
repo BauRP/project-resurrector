@@ -32,5 +32,8 @@ describe("native TextureView acknowledgement during fold",()=>{
     expect(commit).toBeGreaterThan(hide);
     expect(source.slice(recheck,commit)).not.toContain("bridge.stop()");
     expect(source.slice(recheck,commit)).toContain("syncDirty=true");
+    expect(source.slice(start,commit)).toContain("samePreviewPlacement(placement,refreshed.placement)");
+    expect(source.slice(start,commit)).toContain("refreshed.viewport.width===viewport.width");
+    expect(source.slice(start,commit)).toContain("refreshed.viewport.height===viewport.height");
   });
 });
