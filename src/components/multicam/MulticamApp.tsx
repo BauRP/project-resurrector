@@ -92,6 +92,7 @@ function MulticamAppContent() {
   const scrollRestorer = useRef(new FoldScrollRestorer());
   const captureTabScroll = useCallback(() => {
     if (appScrollRef.current) scrollRestorer.current.capture(appScrollRef.current);
+    scrollRestorer.current.pauseForTransition();
   }, []);
   useEffect(() => {
     const port = appScrollRef.current;
