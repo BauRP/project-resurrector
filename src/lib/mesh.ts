@@ -119,6 +119,9 @@ export class Mesh {
   private connections = new Set<RTCPeerConnection>();
   private generation = 0;
   private answerEpoch = 0;
+  // The director accepts acknowledgements only for a command it actually
+  // sent to that connected camera, not an unsolicited forged success.
+  private expectedRecordAt = new Map<string,number>();
   private listeners = new Set<() => void>();
   private handlers = new Set<(m: MeshMessage) => void>();
   private snapshot: PeerInfo[] = [];
@@ -163,6 +166,9 @@ export class Mesh {
     return { battery, storageMB };
   }
   send(msg: MeshMessage) {
+    if (msg.type === "record" && msg.from === this.selfId) {
+      this.peers.forEach((_, id) => this.expectedRecordAt.set(id, msg.at));
+    }
     try{this.bc?.postMessage(msg);}
     catch{
       // Android WebView may close BroadcastChannel during background/fold
@@ -211,7 +217,8 @@ export class Mesh {
         (!this.peers.has(msg.from) ||
          Date.now() - this.peers.get(msg.from)!.lastSeen >= 12000)) return;
     if (msg.type === "record-result") {
-      if (msg.to !== this.selfId) return;
+      if (msg.to !== this.selfId ||
+          this.expectedRecordAt.get(msg.from) !== msg.at) return;
       const peer = this.peers.get(msg.from)!;
       if (peer.recordCommandAt !== undefined &&
           (msg.at < peer.recordCommandAt ||
@@ -224,6 +231,7 @@ export class Mesh {
         other!==ch && id===msg.from && other.readyState==="open")) ||
           (!ch && via === "local" && Array.from(this.channels.entries()).some(([channel,id])=>
             id === msg.from && channel.readyState === "open"))) return;
+      this.expectedRecordAt.delete(msg.from);
       this.peers.delete(msg.from);this.emit();return;
     }
     if (msg.type === "ping") { this.send({ type: "pong", from: this.selfId, t: msg.t, to: msg.from }); }
@@ -254,8 +262,10 @@ export class Mesh {
       const id=this.channels.get(ch);this.channels.delete(ch);
       // A reconnect may already have established a new channel for the
       // same peer. A late close must not make that healthy peer disappear.
-      if(id && !Array.from(this.channels.values()).includes(id))
+      if(id && !Array.from(this.channels.values()).includes(id)) {
+        this.expectedRecordAt.delete(id);
         this.peers.delete(id);
+      }
       this.emit();
     };
     this.start();
@@ -284,7 +294,7 @@ export class Mesh {
     this.pendingAnswer?.close(); this.pendingAnswer = null;
     this.connections.forEach((pc) => pc.close()); this.connections.clear();
     if (this.timer !== null) clearInterval(this.timer); this.timer = null;
-    this.peers.clear(); this.emit();
+    this.peers.clear(); this.expectedRecordAt.clear(); this.emit();
   }
 
   async diagnose(): Promise<{ latency: number; bandwidth: number; online: boolean }> {
