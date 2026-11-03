@@ -801,3 +801,101 @@ button:disabled { cursor: not-allowed; opacity: .45; }
     height:var(--fold-work-height,100dvh);
   }
 }
+
+
+/* MULTI-CAM POV 111/222 theme reference: shared premium glass surface */
+/* Only paint changes between themes. Existing dimensions, hinge geometry,
+   camera preview and editor track positions remain untouched. */
+:root {
+  --background: oklch(.951 .022 278);
+  --foreground: oklch(.22 .045 270);
+  --card: oklch(.970 .016 276 / .78);
+  --popover: oklch(.972 .018 277 / .96);
+  --secondary: oklch(.925 .026 279 / .82);
+  --muted: oklch(.925 .02 278);
+  --muted-foreground: oklch(.42 .042 274);
+  --border: oklch(.71 .052 273 / .72);
+  --glass: oklch(.98 .014 278 / .57);
+  --panel: oklch(.97 .018 274 / .76);
+  --primary: oklch(.55 .23 296);
+  --primary-glow: oklch(.66 .21 304);
+  --gradient-primary: linear-gradient(112deg, #05c7ef 0%, #3860e8 42%, #851cea 79%, #c622ed 100%);
+  --gradient-stage:
+    radial-gradient(95% 55% at 4% 25%, oklch(.86 .055 243 / .48), transparent 78%),
+    radial-gradient(80% 65% at 94% 56%, oklch(.86 .060 303 / .46), transparent 78%),
+    linear-gradient(152deg, #f0f1ff 0%, #dde5fb 48%, #e9e4fa 100%);
+  --shadow-soft: 0 5px 16px oklch(.40 .08 285 / .15), inset 0 1px 0 oklch(1 0 0 / .83);
+  --shadow-glow: 0 5px 17px oklch(.48 .18 294 / .29);
+}
+.dark {
+  --background: oklch(.115 .030 245);
+  --foreground: oklch(.94 .018 265);
+  --card: oklch(.27 .040 252 / .64);
+  --popover: oklch(.23 .039 253 / .94);
+  --secondary: oklch(.26 .038 255 / .77);
+  --muted: oklch(.24 .032 255);
+  --muted-foreground: oklch(.74 .024 263);
+  --border: oklch(.58 .045 252 / .58);
+  --glass: oklch(.31 .043 251 / .48);
+  --panel: oklch(.28 .042 252 / .58);
+  --primary: oklch(.70 .19 295);
+  --primary-glow: oklch(.69 .19 302);
+  --gradient-stage:
+    radial-gradient(90% 58% at 1% 26%, oklch(.30 .083 238 / .52), transparent 79%),
+    radial-gradient(85% 60% at 99% 54%, oklch(.26 .075 292 / .48), transparent 82%),
+    linear-gradient(143deg, #05101e 0%, #07192a 43%, #080e22 100%);
+  --shadow-soft: 0 5px 16px oklch(.015 .025 245 / .36), inset 0 1px 0 oklch(.87 .02 255 / .18);
+  --shadow-glow: 0 4px 18px oklch(.52 .20 294 / .36);
+}
+/* The single design system applies to the camera HUD, editor tools and settings. */
+.app-shell { background: var(--gradient-stage); color: var(--foreground); }
+.app-header {
+  background: linear-gradient(145deg, color-mix(in oklab, var(--glass) 62%, transparent), transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.app-header .connect-pill:not(.active),
+.theme-seg button.active,
+.editor-tab.active,
+.segmented-mini button.active,
+.hud-chip.active {
+  background: var(--gradient-primary);
+  border: 1px solid color-mix(in oklab, white 72%, transparent);
+  color: white;
+  box-shadow: var(--shadow-glow), inset 0 1px 1px oklch(1 0 0 / .42);
+}
+.glass-panel, .bottom-nav, .hud-chip, .studio-timecode,
+.settings-fold-workspace section > div,
+.settings-tool-trigger, .theme-seg,
+.editor-tab, .segmented, .segmented-mini {
+  background-color: var(--glass);
+  border-color: var(--border);
+  box-shadow: var(--shadow-soft);
+}
+.bottom-nav {
+  background: color-mix(in oklab, var(--glass) 88%, var(--background) 12%);
+  border-radius: 1.6rem 1.6rem 0 0;
+  border-top: 1px solid var(--border);
+}
+.bottom-nav button.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--glass));
+  color: var(--primary);
+  border: 1px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+  border-radius: 1.15rem;
+  box-shadow: var(--shadow-glow);
+}
+.settings-fold-workspace section > div { border: 1px solid var(--border); border-radius: 1rem; }
+.settings-fold-workspace .settings-item { background: transparent; }
+.settings-fold-workspace .theme-seg { border-radius: 999px; }
+.settings-fold-workspace .theme-seg button { border-radius: 999px; }
+.settings-fold-workspace .settings-tool-trigger { border: 1px solid var(--border); border-radius: .9rem; }
+/* Do not apply blurred glass to the full-screen editor/camera or the full
+   navigation surface: that can be costly in an Android WebView. */
+.glass-panel, .hud-chip, .studio-timecode,
+.settings-fold-workspace section > div {
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+.bottom-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .app-shell *::before, .app-shell *::after { transition-duration: .01ms !important; }
+}
