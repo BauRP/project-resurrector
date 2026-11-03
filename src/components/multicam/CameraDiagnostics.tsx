@@ -14,6 +14,7 @@ import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabili
 import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-camera-verification";
 import { diagnosticProbeLimit, checkDiagnosticSafety } from "@/lib/diagnostic-safety";
 import { diagnosticCaptureGate, type DiagnosticLease } from "@/lib/diagnostic-capture-gate";
+import { CameraDiscoveryEpoch } from "@/lib/camera-discovery-epoch";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -68,16 +69,25 @@ export function CameraDiagnostics() {
   };
   useEffect(() => {
     mounted.current = true;
+    const discovery = new CameraDiscoveryEpoch();
     const refresh = () => {
+      const revision = discovery.begin();
+      const current = () => mounted.current && discovery.valid(revision);
       void navigator.mediaDevices?.enumerateDevices?.()
-        .then(all => { if (mounted.current) setDevices(all.filter(d => d.kind === "videoinput" && !!d.deviceId)); })
-        .catch(() => { if (mounted.current) setError("Камеры WebView недоступны"); });
+        .then(all => {
+          if (current()) setDevices(all.filter(d => d.kind === "videoinput" && !!d.deviceId));
+        })
+        .catch(() => { if (current()) setError("Камеры WebView недоступны"); });
+      if (isNative()) void MultiCamNative.getCapabilities()
+        .then(result => { if (current()) setNativeCameras(result.cameras); })
+        .catch(() => { if (current()) setError("Информация Camera2 недоступна"); });
     };
     refresh();
     const deviceChanged=()=>{
       // A camera hotplug or WebView identity change invalidates old mode plans,
       // and an in-progress scan must not finish for a disconnected lens.
       job.current?.abort();
+      dualJob.current?.abort();
       if(mounted.current)setCameraModePlans({});
       refresh();
     };
@@ -98,11 +108,9 @@ export function CameraDiagnostics() {
         }).catch(() => { if (mounted.current) setError("События доступности Camera2 недоступны"); });
       }).catch(() => { if (mounted.current) setError("События доступности Camera2 недоступны"); });
     }
-    if (isNative()) void MultiCamNative.getCapabilities()
-      .then(result => { if (mounted.current) setNativeCameras(result.cameras); })
-      .catch(() => { if (mounted.current) setError("Информация Camera2 недоступна"); });
     return () => {
-      mounted.current = false; job.current?.abort(); dualJob.current?.abort();
+      mounted.current = false; discovery.invalidate();
+      job.current?.abort(); dualJob.current?.abort();
       // If a stop is already in flight, its own finally must release the
       // lease. Clearing it here would leak the shared gate indefinitely.
       // If capture is still running, this cleanup owns the stop and release.
