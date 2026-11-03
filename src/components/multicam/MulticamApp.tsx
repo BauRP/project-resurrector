@@ -102,11 +102,14 @@ function MulticamAppContent() {
     const restorer = scrollRestorer.current;
     restorer.activate(tab, port);
     const timers: number[] = [];
-    // AnimatePresence mode="wait" exits the old screen before entering the
-    // new one. A retry after the entry lets late media-library content settle.
-    timers.push(window.setTimeout(() => restorer.enter(tab, port), 260));
-    for (const delay of [450, 1100, 2400]) {
-      timers.push(window.setTimeout(() => restorer.retry(tab, port), delay));
+    // Settings mount directly and have no delayed media library. Restore on
+    // the next frame with one bounded retry. Only Editor requires the long
+    // retry window for gradually loaded media clips.
+    timers.push(window.setTimeout(() => restorer.enter(tab, port), tab === "settings" ? 0 : 260));
+    if (tab === "editor") {
+      for (const delay of [450, 1100, 2400]) {
+        timers.push(window.setTimeout(() => restorer.retry(tab, port), delay));
+      }
     }
     let observer: ResizeObserver | null = null;
     if (typeof ResizeObserver !== "undefined") {

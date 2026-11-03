@@ -78,6 +78,9 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     const css = read("src/styles.css");
     expect(app).toContain('const contentObserver = tab !== "editor"');
     expect(app).toContain('if (tab === "editor" && port.firstElementChild instanceof HTMLElement)');
+    expect(app).toContain('tab === "settings" ? 0 : 260');
+    expect(app).toContain('if (tab === "editor") {');
+
     expect(css).not.toContain(".settings-fold-workspace { contain:layout style; }");
     expect(css).toContain('[data-fold-workspace="pane"] .privacy-fold-overlay');
     expect(css).toContain("height: var(--fold-work-height, 100dvh)");
