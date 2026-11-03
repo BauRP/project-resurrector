@@ -153,6 +153,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const zoomTouched = useRef(false); const [scrollX, setScrollX] = useState(0);
   const restoredScroll = useRef(false);
   const scrollSaveTimer = useRef<number | null>(null);
+  const lastTimelineView = useRef({ left: 0, zoom: 8 });
+  lastTimelineView.current.zoom = zoom;
   const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
   // Activity recreation must restore the last safe playhead, not restart the
   // editor at zero after every fold. The view-state sanitizer rejects NaN and
@@ -578,12 +580,25 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           Math.max(tlW, HEAD + total * zoom + 8));
         setScrollX(timeline.scrollLeft);
       }
+      lastTimelineView.current = { left: timeline.scrollLeft, zoom };
       restoredScroll.current = true;
     });
     return () => cancelAnimationFrame(frame);
   }, [tlW, zoom, minZoom, total, items.length]);
-  useEffect(() => () => {
-    if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
+  useEffect(() => {
+    const flush = () => {
+      if (restoredScroll.current)
+        saveTimelineAnchor(lastTimelineView.current.left, lastTimelineView.current.zoom);
+    };
+    const hidden = () => { if (document.hidden) flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
+      flush();
+    };
   }, []);
   const zoomPos = Math.round((Math.log(Math.max(zoom, minZoom) / minZoom) / Math.log(600 / minZoom || 1.0001)) * 100);
   const scrub = (e: React.PointerEvent) => {
@@ -676,6 +691,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const left = e.currentTarget.scrollLeft;
       setScrollX(left);
       if (!restoredScroll.current) return;
+      lastTimelineView.current = { left, zoom };
       if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
       scrollSaveTimer.current = window.setTimeout(() => saveTimelineAnchor(left, zoom), 160);
     }} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
