@@ -52,7 +52,7 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
     releaseFirst();
     await expect(first).rejects.toThrow("Устаревшее предложение");
     const latest=await second;
-    expect(latest.code).toMatch(/^P[01]\\./);
+    expect(latest.code).toMatch(/^P[01]\./);
   } finally {
     mesh.leave();
     vi.unstubAllGlobals();
