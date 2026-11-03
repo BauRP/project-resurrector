@@ -1,4 +1,5 @@
 import {bounded} from "./async";
+import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
 import {cameraController,CameraBusyError,CameraSupersededError,CameraUnavailableError} from "./camera-controller";
 /** Only proved released Camera2 states allow WebView to compete for a lens.
  * error/interrupted/unknown states may still retain native sensor ownership.
@@ -25,9 +26,16 @@ export async function acquireWebViewPreviewWithNativeGuard(
   const current=options.isCurrent??(()=>true);
   const check=async()=>{
     if(!current())throw new CameraSupersededError();
+    // This single shared lease also survives React/Activity remounts. It
+    // prevents a preview from reopening while a diagnostic native operation
+    // still owns the sensor or finalizes a recorded test file.
+    if (diagnosticCaptureGate.activeOperation() !== null)
+      throw new NativeCameraBusyError();
     if(!nativeStatus)return;
     const state=(await bounded(nativeStatus(),2000,"Native Camera2 owner")).state;
     if(!current())throw new CameraSupersededError();
+    if (diagnosticCaptureGate.activeOperation() !== null)
+      throw new NativeCameraBusyError();
     if(!nativeCameraStateSafeForWebView(state))
       throw new NativeCameraBusyError();
   };
