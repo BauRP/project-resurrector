@@ -25,6 +25,18 @@ export function planRecordingFinalization(bytes: number, encoderError: string, s
   };
 }
 
+/** Disconnecting a multi-camera session must not destroy network peers
+ * while the local encoder still owns unfinished media chunks.
+ * The second leave press is only allowed once finalization has settled.
+ */
+export function planConnectedCaptureDeparture(
+  recording: boolean, phase: string,
+): "request-stop" | "wait" | "leave" {
+  if (recording) return "request-stop";
+  if (["starting", "recording", "stopping", "saving"].includes(phase)) return "wait";
+  return "leave";
+}
+
 /** The original microphone/video input disappearing is an interruption,
  * even if a canvas or audio processing output track remains "live".
  * Preserve already emitted media bytes but never label session complete.
