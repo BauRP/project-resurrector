@@ -10,7 +10,7 @@ import { SplashScreen } from "./SplashScreen";
 import { ConnectModal } from "./ConnectModal";
 import { useMeshPeers } from "./useMesh";
 import { MulticamStoreProvider, useMulticamStore, type AppTab } from "@/lib/multicam-store";
-import { mesh } from "@/lib/mesh";
+import { mesh, type RemoteRecordStatus } from "@/lib/mesh";
 import { RemoteRecordGuard } from "@/lib/remote-record-guard";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
@@ -21,22 +21,48 @@ const labels: Record<string, string[]> = { kk: ["Камера", "Редакто�
 function useMeshBridge() {
   const role = useMulticamStore((x) => x.role);
   const recording = useMulticamStore((x) => x.recording);
+  const recordingPhase = useMulticamStore((x) => x.recordingPhase);
   const sessionCode = useMulticamStore((x) => x.sessionCode);
   const store = useMulticamStore((x) => x);
   const current = useRef(store); current.current = store;
   const guard = useRef(new RemoteRecordGuard());
   const outgoingTimestamp = useRef(0);
+  const remoteReceipt = useRef<{to:string;at:number;status:RemoteRecordStatus}|null>(null);
   // An old director must not hold the newly paired slave indefinitely.
   // Keep replay protection within one session, but reset it on role/pairing.
-  useEffect(() => { guard.current.reset(); }, [role, sessionCode]);
+  useEffect(() => {
+    guard.current.reset();
+    remoteReceipt.current = null;
+  }, [role, sessionCode]);
   useEffect(() => mesh.onMessage((msg) => {
     if (msg.type !== "record") return;
     const state = current.current;
     const peer = mesh.peers.get(msg.from);
     const knownPeer = !!peer && Date.now() - peer.lastSeen < 12000;
     const patch = guard.current.accept(msg, state, knownPeer);
-    if (patch) state.set(patch);
+    if (patch) {
+      remoteReceipt.current = { to:msg.from, at:msg.at, status:"received" };
+      state.set(patch);
+      // Receipt means only the command passed validation. It is NOT proof
+      // MediaRecorder started or that a file was saved.
+      mesh.send({type:"record-result",from:mesh.selfId,to:msg.from,
+        at:msg.at,status:"received"});
+    }
   }), []);
+  useEffect(() => {
+    const receipt = remoteReceipt.current;
+    if (!receipt || role !== "slave") return;
+    const phase:RemoteRecordStatus | null =
+      recordingPhase === "recording" ? "recording" :
+      recordingPhase === "stopping" ? "stopping" :
+      recordingPhase === "saved" ? "saved" :
+      recordingPhase === "error" ? "error" : null;
+    if (!phase || phase === receipt.status) return;
+    receipt.status = phase;
+    mesh.send({type:"record-result",from:mesh.selfId,to:receipt.to,
+      at:receipt.at,status:phase});
+    if (phase === "saved" || phase === "error") remoteReceipt.current = null;
+  }, [role, recordingPhase, recording]);
   useEffect(() => mesh.subscribe(() => {
     const state = current.current;
     const now = Date.now();
