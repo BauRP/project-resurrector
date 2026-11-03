@@ -926,7 +926,10 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   background:var(--glass); border:1px solid var(--border);
   border-radius:1rem; box-shadow:var(--shadow-soft);
 }
-.settings-fold-workspace { contain:layout style; }
+/* Do not use CSS contain:layout on the entire settings workspace:
+   it would make fixed privacy dialogs relative to that ancestor, breaking
+   Android safe-area and fold-pane overlay positioning. */
+.settings-fold-workspace { contain:none; }
 /* Preserve the translucent paint but avoid GPU-heavy blur allocations on
    Android WebViews where many panels repaint during theme changes. */
 [data-multicam-native-webview="true"] .glass-panel,
