@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
@@ -19,6 +19,7 @@ export function CameraWorkspace() {
   const [mode, setMode] = useState<Mode | null>(isNative() ? null : "web");
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
+  useSyncExternalStore(diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
   const blocked = recording || diagnosticCaptureGate.activeOperation() !== null ||
     ["starting","recording","stopping","saving"].includes(phase);
   const latestRecording = useRef(recording);
