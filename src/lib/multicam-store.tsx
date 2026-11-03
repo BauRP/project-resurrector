@@ -92,6 +92,11 @@ function viewSnapshot(state: MulticamState) {
     aspect: state.aspect, captureKind: state.captureKind };
 }
 const persistedKeys = ["language", "hardwareAcceleration", "selectedLut", "exportConfig", "markers", "cuts", "subtitles", "teleprompterText", "teleprompterSpeed", "teleprompterSize", "theme"] as const;
+// Lightweight settings have their own storage: changing the theme must not
+// synchronously stringify an arbitrarily large editor project on the UI thread.
+const UI_PREFS_KEY = "multicam-pov-ui-prefs-native";
+const projectPersistedKeys = ["selectedLut", "exportConfig", "markers", "cuts", "subtitles", "teleprompterText", "teleprompterSpeed", "teleprompterSize"] as const;
+
 export function MulticamStoreProvider({ children }: { children: ReactNode }) {
   const ref = useRef<StoreApi | null>(null);
   if (!ref.current) ref.current = createMulticamStore();
@@ -103,6 +108,13 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
       if (patch.theme !== "light" && patch.theme !== "dark") delete patch.theme;
     } catch { /* Restricted/corrupt main preferences do not block view recovery. */ }
+    // New lightweight prefs override the legacy copy if both exist.
+    try {
+      const prefs = JSON.parse(window.localStorage.getItem(UI_PREFS_KEY) ?? "{}") as Partial<StateData>;
+      if (prefs.theme === "light" || prefs.theme === "dark") patch.theme = prefs.theme;
+      if (typeof prefs.language === "string" && prefs.language.length <= 12) patch.language = prefs.language;
+      if (typeof prefs.hardwareAcceleration === "boolean") patch.hardwareAcceleration = prefs.hardwareAcceleration;
+    } catch { /* A corrupt preference entry must never stop the UI. */ }
     store.getSnapshot().set({ ...patch, ...restoreViewState() });
     let previous = persistedKeys.map((k) => store.getSnapshot()[k]);
     let previousView = [store.getSnapshot().tab, store.getSnapshot().playhead,
@@ -131,9 +143,23 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         if (tabChanged) flushView();
         else if (viewTimer === null) viewTimer = setTimeout(flushView, 400);
       }
-      if (values.every((v, i) => Object.is(v, previous[i]))) return;
+      const changedKeys = persistedKeys.filter((key, index) => !Object.is(values[index], previous[index]));
+      if (changedKeys.length === 0) return;
       previous = values;
-      try { window.localStorage.setItem("multicam-pov-state-native", JSON.stringify(Object.fromEntries(persistedKeys.map((k) => [k, state[k]])))); } catch { /* Memory remains available. */ }
+      // Theme, language and hardware toggles write only a tiny value.
+      // Retain legacy full persistence for actual editor/project changes.
+      if (changedKeys.some(key => key === "theme" || key === "language" || key === "hardwareAcceleration")) {
+        try {
+          window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
+            theme: state.theme, language: state.language,
+            hardwareAcceleration: state.hardwareAcceleration,
+          }));
+        } catch { /* In-memory UI state remains available. */ }
+      }
+      if (changedKeys.some(key => (projectPersistedKeys as readonly string[]).includes(key))) {
+        try { window.localStorage.setItem("multicam-pov-state-native", JSON.stringify(Object.fromEntries(persistedKeys.map((k) => [k, state[k]])))); }
+        catch { /* Memory remains available. */ }
+      }
     });
     return () => {
       unsubscribe();
