@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import {
-  CameraHotplugGeneration, verifyCameraPresence, selectedCameraWasRemoved,
+  CameraHotplugGeneration, verifyCameraPresence, selectedCameraWasRemoved, confirmSelectedCameraRemoved,
 } from "./camera-hotplug-recovery";
 
 type Device = Pick<MediaDeviceInfo, "kind" | "deviceId">;
@@ -28,10 +28,35 @@ describe("camera unplug evidence during fold and recording",()=>{
     generation.invalidate();
     expect(generation.isCurrent(next)).toBe(false);
   });
+  it("requires two reliable missing lists and respects a camera coming back",async()=>{
+    let result=await confirmSelectedCameraRemoved("usb",
+      async()=>[video("front")],()=>true,async()=>undefined);
+    expect(result).toBe(true);
+    let calls=0;
+    result=await confirmSelectedCameraRemoved("usb",
+      async()=>++calls===1?[video("front")]:[video("usb"),video("front")],
+      ()=>true,async()=>undefined);
+    expect(result).toBe(false);
+    result=await confirmSelectedCameraRemoved("usb",
+      async()=>[video("")],()=>true,async()=>undefined);
+    expect(result).toBe(false);
+  });
+  it("does not let a stale fold/selection query interrupt a newer recorder",async()=>{
+    let valid=true;
+    const result=await confirmSelectedCameraRemoved("usb",
+      async()=>[video("front")],()=>valid,async()=>{valid=false;});
+    expect(result).toBe(false);
+    let calls=0;
+    const gone=await confirmSelectedCameraRemoved("usb",async()=>{
+      calls++; throw new Error("permissions changed");
+    },()=>true,async()=>undefined);
+    expect(gone).toBe(false);
+    expect(calls).toBe(1);
+  });
   it("waits for a second confirmed missing enumeration and preserves the real recorder finalization",()=>{
     const camera=readFileSync("src/components/multicam/CameraTab.tsx","utf8");
-    expect(camera).toContain('verifyCameraPresence(deviceId, first) !== "missing"');
-    expect(camera).toContain('verifyCameraPresence(deviceId, second) !== "missing"');
+    expect(camera).toContain('confirmSelectedCameraRemoved(');
+    expect(camera).toContain('generation.isCurrent(token)');
     expect(camera).toContain('window.setTimeout(resolve, 250)');
     expect(camera).toContain('generation.invalidate()');
     expect(camera).toContain('recordingStopWatch.current?.()');
