@@ -635,7 +635,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks, scrollX, tlW]);
 
-  return <section className="mb-4 min-w-0 space-y-3 overflow-x-hidden px-4 pt-3 text-xs">
+  return <section className="mb-2 min-w-0 space-y-2 overflow-x-hidden px-3 pt-2 text-xs">
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
     <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
