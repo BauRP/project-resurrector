@@ -61,6 +61,11 @@ describe("camera unplug evidence during fold and recording",()=>{
     expect(camera).toContain('generation.invalidate()');
     expect(camera).toContain('recordingStopWatch.current?.()');
     expect(camera).toContain('dualSession.current.stop(reason)');
+    expect(camera).toContain('verifyCameraPresence(deviceId, first) === "present"');
+    expect(camera).toContain('setHotplugRecoveryPending(true)');
+    expect(camera).toContain('if (!hotplugRecoveryPending || cameraSwitchBlocked) return;');
+    expect(camera).toContain('setHotplugRevision(revision => revision + 1)');
+    expect(camera).toContain('diagnosticRevision, hotplugRevision');
     expect(camera).not.toContain('cameraController.release(owner.current);\n          const reason');
   });
 });
