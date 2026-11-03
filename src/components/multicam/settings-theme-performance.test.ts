@@ -10,6 +10,9 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain("const measureCache = async");
     expect(settings).toContain("onClick={() => void measureCache()}");
     expect(settings).toContain("clearPreviewCache()");
+    expect(settings).toContain("settings-privacy-empty");
+    expect(settings).toContain("Текст политики конфиденциальности пока не добавлен");
+
     expect(settings).toContain("measurementBusy.current || cacheBusy.current");
     expect(settings).toContain("cacheBusy.current || measurementBusy.current");
     expect(settings).not.toContain("retry(() => bounded(mesh.diagnose()");

@@ -61,6 +61,15 @@ describe("settings actions remain interactive", () => {
     await waitFor(() => expect(clearButton).not.toBeDisabled());
     expect(screen.getByText(/1.00 MB/)).toBeInTheDocument();
   });
+  it("shows a real privacy empty-state and keeps the close button usable", async () => {
+    view();
+    fireEvent.click(screen.getByRole("button", { name: "Политика конфиденциальности" }));
+    expect(screen.getByRole("dialog")).toHaveTextContent("Текст политики конфиденциальности пока не добавлен");
+    fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getByRole("radio", { name: "Светлая" })).toBeInTheDocument();
+  });
+
   it("reports one failed network check instead of retrying immediately", async () => {
     fakes.diagnose.mockRejectedValue(new Error("no peers"));
     view();
