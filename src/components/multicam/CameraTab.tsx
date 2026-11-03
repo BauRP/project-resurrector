@@ -26,7 +26,7 @@ import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
-import { CameraHotplugGeneration, confirmSelectedCameraRemoved } from "@/lib/camera-hotplug-recovery";
+import { CameraHotplugGeneration, confirmSelectedCameraRemoved, verifyCameraPresence } from "@/lib/camera-hotplug-recovery";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
@@ -97,6 +97,16 @@ export function CameraTab() {
 
   const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");
   const owner = useRef(Symbol("camera"));
+  const missingSelectedLens = useRef(false);
+  const [hotplugRecoveryPending, setHotplugRecoveryPending] = useState(false);
+  const [hotplugRevision, setHotplugRevision] = useState(0);
+  useEffect(() => {
+    // Reacquire ONLY the preview, never the recorder, after the old file is
+    // safely finalized. The selected physical lens must be available again.
+    if (!hotplugRecoveryPending || cameraSwitchBlocked) return;
+    setHotplugRecoveryPending(false);
+    setHotplugRevision(revision => revision + 1);
+  }, [hotplugRecoveryPending, cameraSwitchBlocked]);
   // When a diagnostic releases its camera after a fold/remount, retry the
   // preview. On acquisition the same revision invalidates a racing preview.
   const diagnosticRevision = useSyncExternalStore(
@@ -124,7 +134,7 @@ export function CameraTab() {
       setCameraState("unavailable");
     });
     return () => { alive = false; cameraController.release(token); };
-  }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision]);
+  }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision, hotplugRevision]);
   // WebView may keep a USB-camera track "live" briefly after unplug.
   // Confirm actual removal from two successive device enumerations before
   // interrupting an active recording; never interpret a fold or hidden IDs
@@ -133,16 +143,27 @@ export function CameraTab() {
     const deviceId = appliedDevice.lens;
     if (!deviceId || !stream || !navigator.mediaDevices?.enumerateDevices) return;
     const generation = new CameraHotplugGeneration();
+    missingSelectedLens.current = false;
     const onDeviceChange = () => {
       const token = generation.next();
       void (async () => {
         try {
+          const first = await navigator.mediaDevices.enumerateDevices();
+          if (!generation.isCurrent(token)) return;
+          if (verifyCameraPresence(deviceId, first) === "present") {
+            if (missingSelectedLens.current) {
+              missingSelectedLens.current = false;
+              setHotplugRecoveryPending(true);
+            }
+            return;
+          }
           if (!await confirmSelectedCameraRemoved(
             deviceId,
             () => navigator.mediaDevices.enumerateDevices(),
             () => generation.isCurrent(token),
             () => new Promise<void>(resolve => window.setTimeout(resolve, 250)),
           )) return;
+          missingSelectedLens.current = true;
           setCameraState("unavailable");
           const reason = "Выбранная внешняя камера отключена. Запись прервана; проверьте сохранённый файл.";
           if (dualSession.current) {
