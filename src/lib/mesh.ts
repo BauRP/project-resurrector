@@ -120,8 +120,25 @@ class Mesh {
   }
   async sendTelemetry() {
     let battery: number | null = null; let storageMB: number | null = null;
-    try { const b = await (navigator as Navigator & { getBattery?: () => Promise<{ level: number }> }).getBattery?.(); if (b) battery = Math.round(b.level * 100); } catch { battery = null; }
-    try { const e = await navigator.storage?.estimate(); if (e?.quota) storageMB = Math.round(((e.quota ?? 0) - (e.usage ?? 0)) / 1048576); } catch { storageMB = null; }
+    // OEM WebViews can hang getBattery()/storage.estimate() while Activity
+    // changes. Telemetry must still arrive so the remote controller can
+    // identify its peer; unknown metrics are valid and never fabricated.
+    try {
+      const getBattery = (navigator as Navigator & { getBattery?: () => Promise<{level:number}> }).getBattery;
+      if (getBattery) {
+        const value = await bounded(getBattery.call(navigator), 750, "Battery telemetry");
+        if (Number.isFinite(value.level))
+          battery = Math.round(Math.max(0, Math.min(1, value.level)) * 100);
+      }
+    } catch { battery = null; }
+    try {
+      const estimate = navigator.storage?.estimate?.();
+      if (estimate) {
+        const value = await bounded(estimate, 750, "Storage telemetry");
+        if (Number.isFinite(value.quota) && Number.isFinite(value.usage))
+          storageMB = Math.max(0, Math.round(((value.quota ?? 0) - (value.usage ?? 0)) / 1048576));
+      }
+    } catch { storageMB = null; }
     this.send({ type: "telemetry", from: this.selfId, name: this.name, battery, storageMB, recording: this.selfRecording });
     return { battery, storageMB };
   }
