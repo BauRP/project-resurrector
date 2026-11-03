@@ -3,6 +3,7 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
 import { mayFinishCameraOwnerSwitch } from "@/lib/camera-owner-handoff";
+import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { Button } from "@/components/ui/button";
 import { CameraTab } from "./CameraTab";
 import { NativeRecordingPanel } from "./NativeRecordingPanel";
@@ -18,7 +19,8 @@ export function CameraWorkspace() {
   const [mode, setMode] = useState<Mode | null>(isNative() ? null : "web");
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
-  const blocked = recording || ["starting","recording","stopping","saving"].includes(phase);
+  const blocked = recording || diagnosticCaptureGate.activeOperation() !== null ||
+    ["starting","recording","stopping","saving"].includes(phase);
   const latestRecording = useRef(recording);
   const latestPhase = useRef(phase);
   const mounted = useRef(true);
@@ -61,7 +63,8 @@ export function CameraWorkspace() {
       }
       // The native status request is async. A recording or fold remount may
       // have happened while it was pending: never steal camera ownership then.
-      if (!mayFinishCameraOwnerSwitch(mounted.current, latestRecording.current, latestPhase.current)) return;
+      if (!mayFinishCameraOwnerSwitch(mounted.current, latestRecording.current, latestPhase.current) ||
+          diagnosticCaptureGate.activeOperation() !== null) return;
       setNotice("");
       setMode(next);
       try { localStorage.setItem(PREF, next); } catch { /* usable without storage */ }
