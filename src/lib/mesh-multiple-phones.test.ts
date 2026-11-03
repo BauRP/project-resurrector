@@ -111,11 +111,12 @@ describe("independent two-camera director commands over actual Mesh message rout
       expect(director.peers.get("cam_two")?.recordStatus).toBe("error");
       // A new command retires the old saved/error badges for BOTH cameras.
       director.send({type:"record",from:director.selfId,on:false,at:101});
-      expect(director.peers.get("cam_one")?.recordStatus).toBeUndefined();
-      expect(director.peers.get("cam_two")?.recordStatus).toBeUndefined();
+      // The fake transport delivers the newly accepted STOP receipt immediately.
+      expect(director.peers.get("cam_one")?.recordStatus).toBe("received");
+      expect(director.peers.get("cam_two")?.recordStatus).toBe("received");
       first.send({type:"record-result",from:first.selfId,to:director.selfId,
         at:100,status:"saved"});
-      expect(director.peers.get("cam_one")?.recordStatus).toBeUndefined();
+      expect(director.peers.get("cam_one")?.recordStatus).toBe("received");
 
       directorTwo.close();
       expect(director.peers.has("cam_two")).toBe(false);
