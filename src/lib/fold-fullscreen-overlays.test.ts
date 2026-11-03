@@ -70,3 +70,13 @@ describe("repeated invalid fold callbacks", () => {
     expect(adapter).toContain('root.style.removeProperty(name)');
   });
 });
+
+describe("editor measuring on older Android WebViews", () => {
+  it("keeps timeline and pinned monitor measurement functional when ResizeObserver is absent", () => {
+    const editor=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
+    expect(editor).toContain('if (typeof ResizeObserver !== "undefined")');
+    expect(editor).toContain('window.addEventListener("orientationchange", measure)');
+    expect(editor).toContain('window.removeEventListener("orientationchange", measure)');
+    expect(editor).not.toContain('new ResizeObserver(() => setTlW(el.clientWidth))');
+  });
+});
