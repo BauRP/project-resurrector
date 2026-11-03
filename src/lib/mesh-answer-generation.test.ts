@@ -30,7 +30,11 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
  });
  it("closes superseded slave handshakes without dropping established peers",async()=>{
    let resume!:()=>void;
-   const created:Array<{close:ReturnType<typeof vi.fn>;index:number}> = [];
+   const created:Array<{
+     close:ReturnType<typeof vi.fn>;
+     index:number;
+     ondatachannel:((e:{channel:{close:ReturnType<typeof vi.fn>}})=>void)|null;
+   }> = [];
    const FakeConnection=class {
      index=created.length+1;
      iceGatheringState="complete";
