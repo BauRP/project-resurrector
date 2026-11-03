@@ -5,7 +5,7 @@ import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-int
 import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { CaptureDurationClock } from "@/lib/recording-duration";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, ChevronDown, CircleDot, Eye, EyeOff, Focus, Lock, Maximize, Pause, Play, ScanFace, SlidersHorizontal, Video, X, Zap, Sparkles, Grid3x3, Circle, Crosshair, Palette, AudioLines, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -30,6 +30,7 @@ import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
 import { REMOTE_DIRECTOR_LOST_REASON } from "@/lib/remote-record-guard";
+import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "@/lib/fold-recording-evidence";
 import { startDualRecording, independentStreamsReady, isDualEncoderStillFinishing, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
@@ -95,6 +96,10 @@ export function CameraTab() {
 
   const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");
   const owner = useRef(Symbol("camera"));
+  // When a diagnostic releases its camera after a fold/remount, retry the
+  // preview. On acquisition the same revision invalidates a racing preview.
+  const diagnosticRevision = useSyncExternalStore(
+    diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
   useEffect(() => {
     let alive = true; const token = owner.current;
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
@@ -115,7 +120,7 @@ export function CameraTab() {
       setCameraState("unavailable");
     });
     return () => { alive = false; cameraController.release(token); };
-  }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens]);
+  }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
     if (s.touchLocked) return;
     const caps = trackCaps(stream); const support = focusSupport(caps);
