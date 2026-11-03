@@ -18,5 +18,6 @@ describe("Camera2 and WebView ownership during async fold and record transitions
     expect(source.indexOf("mayFinishCameraOwnerSwitch(mounted.current"))
       .toBeLessThan(source.indexOf("setMode(next);"));
     expect(source).toContain("return () => { mounted.current = false; };");
+    expect(source).toContain("useSyncExternalStore(diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot)");
   });
 });
