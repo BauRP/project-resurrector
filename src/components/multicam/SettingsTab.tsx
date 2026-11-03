@@ -1,5 +1,5 @@
 import { HelpDot } from "./Help";
-import { Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -92,12 +92,27 @@ export function SettingsTab() {
      <Activity aria-hidden="true"/><span>Проверка камер</span><ChevronRight aria-hidden="true"/>
    </button>
   </div>
-  <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка инструментов…</p>}>
-   {advancedPanel === "native" && <NativeRecordingPanel />}
-   {advancedPanel === "diagnostics" && <CameraDiagnostics />}
-  </Suspense>
+  <SettingsToolsBoundary key={advancedPanel ?? "closed"} onClose={() => setAdvancedPanel(null)}>
+   <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка инструментов…</p>}>
+    {advancedPanel === "native" && <NativeRecordingPanel previewIntervalMs={850} />}
+    {advancedPanel === "diagnostics" && <CameraDiagnostics />}
+   </Suspense>
+  </SettingsToolsBoundary>
  </section>
  {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main><AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} ref={privacyDialog} role="dialog" aria-modal="true" aria-label={t.privacy} tabIndex={-1} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="min-h-[65dvh] rounded-lg border border-dashed border-border bg-card p-6" /></div></motion.div>}</AnimatePresence></div>;
 }
+/** A broken Camera2/diagnostics module must not crash Settings or navigation. */
+class SettingsToolsBoundary extends Component<{ children: ReactNode; onClose: () => void }, { failed: boolean }> {
+ state = { failed: false };
+ static getDerivedStateFromError() { return { failed: true }; }
+ render() {
+   if (this.state.failed) return <div role="alert" className="glass-panel m-2 space-y-2 rounded-xl p-3 text-sm">
+     <p>Не удалось открыть инструмент. Остальные настройки продолжают работать.</p>
+     <button type="button" className="connect-pill" onClick={this.props.onClose}>Закрыть инструмент</button>
+   </div>;
+   return this.props.children;
+ }
+}
+
 function Group({title,help,children}:{title?:string;help?:string;children:ReactNode}){return <section><h2 className="mb-1 flex items-center gap-1 px-2 text-[11px] font-semibold uppercase text-muted-foreground">{title}{help&&<HelpDot id={help}/>}</h2><div className="overflow-hidden rounded-lg bg-card">{children}</div></section>}
 function Stat({label,value}:{label:string;value:string}){return <div className="bg-card p-3 text-center"><p className="text-[9px] text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>}

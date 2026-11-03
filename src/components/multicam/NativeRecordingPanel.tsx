@@ -13,7 +13,7 @@ import { useEffect, useRef, useState, type MouseEvent } from "react";
 import { isNative, MultiCamNative, type NativeCameraProfile } from "@/lib/native";
 import { Button } from "@/components/ui/button";
 
-export function NativeRecordingPanel(){
+export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewIntervalMs?: number } = {}){
  const [cameras,setCameras]=useState<NativeCameraProfile[]>([]);
  const [camera,setCamera]=useState(()=>{
    try{return localStorage.getItem("multicam-native-last-camera-v1")??"";}catch{return "";}
@@ -358,13 +358,15 @@ export function NativeRecordingPanel(){
   setVisible(visible);
   if(visible)void read();
   // Bounded JPEG transport, not a 30/60 FPS native SurfaceView.
-  const timer=window.setInterval(()=>{void read();},250);
+  // In Settings lower the JPEG-to-base64 bridge load. Normal Camera2 mode
+  // keeps the faster original preview when no interval override is supplied.
+  const timer=window.setInterval(()=>{void read();},Math.max(250,Math.min(previewIntervalMs,2000)));
   return ()=>{
     live=false;window.clearInterval(timer);
     document.removeEventListener("visibilitychange",onVisibility);
     setVisible(false);
   };
- },[]);
+ },[previewIntervalMs]);
  const current=cameras.find(x=>x.cameraId===camera);
  const sizes=(current?.sizes??[]).filter((x:string)=>/^\d{3,4}x\d{3,4}$/.test(x)).slice(0,60);
  const mode=validNativeSelection(current,resolution,fps);

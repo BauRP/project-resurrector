@@ -16,11 +16,16 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain('lazy(() => import("./NativeRecordingPanel")');
     expect(settings).toContain('lazy(() => import("./CameraDiagnostics")');
     expect(settings).toContain("<Suspense fallback=");
-    expect(settings).toContain('{advancedPanel === "native" && <NativeRecordingPanel />}');
+    expect(settings).toContain("<SettingsToolsBoundary key=");
+    expect(settings).toContain("static getDerivedStateFromError()");
+    expect(settings).toContain('{advancedPanel === "native" && <NativeRecordingPanel previewIntervalMs={850} />}');
     expect(settings).toContain('{advancedPanel === "diagnostics" && <CameraDiagnostics />}');
     const workspace = read("src/components/multicam/CameraWorkspace.tsx");
     expect(workspace).toContain('lazy(() => import("./NativeRecordingPanel")');
     expect(workspace).toContain('<Suspense fallback=');
+    const native = read("src/components/multicam/NativeRecordingPanel.tsx");
+    expect(native).toContain("previewIntervalMs = 250");
+    expect(native).toContain("Math.max(250,Math.min(previewIntervalMs,2000))");
 
   });
   it("keeps notification, header and nav visible across both themes", () => {
@@ -33,6 +38,10 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(css).toContain("/* MULTI-CAM POV 111/222 theme reference:");
     expect(css).toContain("/* Settings entry performance and 111/222 brand identity */");
     expect(css).toContain(".app-navigation-notice {");
+    const camera = read("src/components/multicam/CameraTab.tsx");
+    expect(camera).toContain('camera-preview-placeholder');
+    expect(camera).toContain('camera-preview-retry');
+    expect(css).toContain(".camera-screen.camera-offline");
     expect(css).toContain(".multicam-brand-mark::before");
     expect(css).toContain('[data-multicam-native-webview="true"] .glass-panel');
   });

@@ -944,3 +944,31 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .multicam-brand-mark { width:1.55rem; transform:scale(.82); transform-origin:left center; }
   .multicam-brand p { letter-spacing:.1em; font-size:10px; }
 }
+
+
+/* 111 / 222: camera placeholder uses the active theme without tinting
+   live frames. Retry requests an actual new camera acquisition. */
+.camera-screen.camera-offline { background: var(--gradient-stage); }
+.camera-screen.camera-offline .camera-live-view.camera-preview-placeholder { background: transparent; }
+.camera-preview-status {
+  border: 1px solid var(--border);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft);
+  color: var(--foreground);
+}
+.camera-preview-retry {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .55rem; min-height: 2.4rem; padding: .4rem 1.15rem;
+  border-radius: 999px;
+  background: var(--gradient-primary);
+  border: 1px solid color-mix(in oklab, white 70%, transparent);
+  color: #fff; box-shadow: var(--shadow-glow);
+}
+.camera-preview-retry:focus-visible,
+.theme-seg button:focus-visible,
+.settings-tool-trigger:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 3px;
+}
+@media (prefers-reduced-motion:reduce) {
+  .camera-preview-status, .camera-preview-retry { animation:none; transition:none; }
+}
