@@ -84,6 +84,14 @@ describe("peer connection loss must not hide healthy remote cameras",()=>{
   expect(internal.peers.has("phone2")).toBe(false);
   expect(internal.channels.get(ch)).toBe("phone1");
  });
+ it("a stale local bye does not delete a live WebRTC peer",()=>{
+  const live=channel();
+  internal.channels.set(live,"phone1");
+  internal.peers.set("phone1",peer("phone1"));
+  internal.handle({type:"bye",from:"phone1"},"local");
+  expect(internal.peers.has("phone1")).toBe(true);
+  expect(internal.channels.has(live)).toBe(true);
+ });
  it("a stale bye must not hide the active replacement camera channel",()=>{
   const old=channel(),next=channel();
   internal.channels.set(old,"phone1");internal.channels.set(next,"phone1");
