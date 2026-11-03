@@ -26,6 +26,7 @@ import { saveRecordedClip } from "@/lib/clip-persistence";
 import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
 import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
 import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
+import { CameraHotplugGeneration, verifyCameraPresence } from "@/lib/camera-hotplug-recovery";
 import { captureRealDng } from "@/lib/raw-dng";
 import type { NativeCameraProfile } from "@/lib/native";
 import { DualCameraPreview } from "./DualCameraPreview";
@@ -124,6 +125,51 @@ export function CameraTab() {
     });
     return () => { alive = false; cameraController.release(token); };
   }, [appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision]);
+  // WebView may keep a USB-camera track "live" briefly after unplug.
+  // Confirm actual removal from two successive device enumerations before
+  // interrupting an active recording; never interpret a fold or hidden IDs
+  // as a camera disconnect.
+  useEffect(() => {
+    const deviceId = appliedDevice.lens;
+    if (!deviceId || !stream || !navigator.mediaDevices?.enumerateDevices) return;
+    const generation = new CameraHotplugGeneration();
+    const onDeviceChange = () => {
+      const token = generation.next();
+      void (async () => {
+        try {
+          const first = await navigator.mediaDevices.enumerateDevices();
+          if (!generation.isCurrent(token) || verifyCameraPresence(deviceId, first) !== "missing") return;
+          await new Promise<void>(resolve => window.setTimeout(resolve, 250));
+          if (!generation.isCurrent(token)) return;
+          const second = await navigator.mediaDevices.enumerateDevices();
+          if (!generation.isCurrent(token) || verifyCameraPresence(deviceId, second) !== "missing") return;
+          setCameraState("unavailable");
+          const reason = "Выбранная внешняя камера отключена. Запись прервана; проверьте сохранённый файл.";
+          if (dualSession.current) {
+            dualSession.current.stop(reason);
+            s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+          } else {
+            const active = recorderRef.current;
+            if (active && active.state !== "inactive") {
+              stopReasonRef.current ||= reason;
+              s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+              recordingStartCancel.current?.();
+              recordingStopWatch.current?.();
+              try { active.stop(); } catch (error) {
+                s.set({ recording: false, recordingPhase: "error",
+                  captureSaveError: reason + " Остановка кодировщика: " + String(error) });
+              }
+            }
+          }
+        } catch { /* Failed enumeration cannot prove a disconnection. */ }
+      })();
+    };
+    navigator.mediaDevices.addEventListener?.("devicechange", onDeviceChange);
+    return () => {
+      generation.invalidate();
+      navigator.mediaDevices.removeEventListener?.("devicechange", onDeviceChange);
+    };
+  }, [stream, appliedDevice.lens, s.set]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
     if (s.touchLocked) return;
     const caps = trackCaps(stream); const support = focusSupport(caps);
