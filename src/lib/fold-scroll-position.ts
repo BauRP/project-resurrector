@@ -44,6 +44,8 @@ export class FoldScrollRestorer {
   private desired: number | null = null;
   private entered = false;
   private programmaticTop: number | null = null;
+  private lastStableTop: number | null = null;
+  private lastContentHeight: number | null = null;
 
   activate(tab: ScrollTab, port: ScrollPort): void {
     if (this.tab === tab) return;
@@ -51,6 +53,8 @@ export class FoldScrollRestorer {
     // React may already have rendered the new tab into the same scroll port.
     this.tab = tab;
     this.desired = readFoldScrollTop(tab);
+    this.lastStableTop = this.desired;
+    this.lastContentHeight = port.scrollHeight;
     this.entered = false;
     this.programmaticTop = 0;
     port.scrollTop = 0;
@@ -70,11 +74,38 @@ export class FoldScrollRestorer {
     this.programmaticTop = top;
     port.scrollTop = top;
     // Do not persist a clamped temporary value when the editor still loads.
-    if (extent >= this.desired) this.desired = null;
+    if (extent >= this.desired) {
+      this.lastStableTop = this.desired;
+      this.desired = null;
+    }
+    this.lastContentHeight = port.scrollHeight;
+  }
+
+  /** A fold can shrink the document before React has finished remounting the
+   * editor; keep the previous content position until its height returns.
+   */
+  onViewportReflow(tab: ScrollTab, port: ScrollPort): void {
+    if (tab !== this.tab || !this.entered || !scrollable(tab)) return;
+    if (this.desired === null && this.lastStableTop !== null &&
+        this.lastContentHeight !== null &&
+        port.scrollHeight + 2 < this.lastContentHeight &&
+        port.scrollTop + 2 < this.lastStableTop) {
+      this.desired = this.lastStableTop;
+    }
+    this.retry(tab, port);
+    this.lastContentHeight = port.scrollHeight;
   }
 
   onScroll(tab: ScrollTab, port: ScrollPort): void {
     if (tab !== this.tab || !this.entered || !scrollable(tab)) return;
+    if (this.desired === null && this.lastStableTop !== null &&
+        this.lastContentHeight !== null &&
+        port.scrollHeight + 2 < this.lastContentHeight &&
+        port.scrollTop + 2 < this.lastStableTop) {
+      this.desired = this.lastStableTop;
+      this.retry(tab, port);
+      return;
+    }
     if (this.programmaticTop !== null &&
         Math.abs(port.scrollTop - this.programmaticTop) < 1) {
       this.programmaticTop = null;
@@ -84,12 +115,17 @@ export class FoldScrollRestorer {
     if (!validTop(port.scrollTop)) return;
     // An actual user scroll cancels a pending automatic restoration.
     this.desired = null;
+    this.lastStableTop = port.scrollTop;
+    this.lastContentHeight = port.scrollHeight;
     saveFoldScrollTop(tab, port.scrollTop);
   }
 
   capture(port: ScrollPort): void {
     if (this.tab && this.entered && this.desired === null &&
-        validTop(port.scrollTop)) saveFoldScrollTop(this.tab, port.scrollTop);
+        validTop(port.scrollTop)) {
+      this.lastStableTop = port.scrollTop;
+      saveFoldScrollTop(this.tab, port.scrollTop);
+    }
   }
 
   /** Called after saving the old tab, before React renders the replacement.
