@@ -103,9 +103,9 @@ export function SettingsTab() {
 }
 /** A broken Camera2/diagnostics module must not crash Settings or navigation. */
 class SettingsToolsBoundary extends Component<{ children: ReactNode; onClose: () => void }, { failed: boolean }> {
- state = { failed: false };
+ override state = { failed: false };
  static getDerivedStateFromError() { return { failed: true }; }
- render() {
+ override render() {
    if (this.state.failed) return <div role="alert" className="glass-panel m-2 space-y-2 rounded-xl p-3 text-sm">
      <p>Не удалось открыть инструмент. Остальные настройки продолжают работать.</p>
      <button type="button" className="connect-pill" onClick={this.props.onClose}>Закрыть инструмент</button>
