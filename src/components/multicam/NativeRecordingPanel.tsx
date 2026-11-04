@@ -227,11 +227,10 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      window.removeEventListener("multicam-fold-topology",folding);
      window.removeEventListener("multicam-native-preview-ready",resized);
      document.removeEventListener("visibilitychange",visibility);
-     // Always queue a final hide, even when the first show is pending.
-     void enqueue(async()=>{
-       lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
-       await bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);
-     });};
+     // Unmount cleanup must not wait behind a lost Android show callback.
+     // The native hide is owner-scoped; all capture features remain enabled.
+     lastVisible=false;lastPosition=null;lastViewport=null;lastShownFoldEpoch=-1;
+     void bridge.setDirectPreview({ownerId,visible:false}).catch(()=>undefined);};
  },[directEnabled]);
  const tapDirect=async(e:MouseEvent<HTMLDivElement>)=>{
    if(!directEnabled||!status?.directPreviewActive||
