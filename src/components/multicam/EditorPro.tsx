@@ -88,12 +88,35 @@ function saveClip(clip: StoredClip): Promise<void> {
     req.onsuccess = () => { const tx = req.result.transaction("clips", "readwrite"); tx.objectStore("clips").put(clip); tx.oncomplete = () => { req.result.close(); resolve(); }; tx.onerror = () => { req.result.close(); reject(tx.error); }; };
   });
 }
-function readClips(): Promise<StoredClip[]> {
+/** Keep video Blobs out of a single giant getAll() response. */
+function openClipLibrary(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open("multicam-pov-media", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("clips", { keyPath: "id" });
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains("clips"))
+        req.result.createObjectStore("clips", { keyPath: "id" });
+    };
+    req.onblocked = () => reject(new Error("Медиатека занята другой вкладкой"));
     req.onerror = () => reject(req.error);
-    req.onsuccess = () => { const all = req.result.transaction("clips").objectStore("clips").getAll(); all.onsuccess = () => { req.result.close(); resolve(all.result as StoredClip[]); }; all.onerror = () => { req.result.close(); reject(all.error); }; };
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+  });
+}
+function readClipIds(db: IDBDatabase): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("clips", "readonly").objectStore("clips").getAllKeys();
+    req.onsuccess = () => resolve(req.result.filter((id): id is string => typeof id === "string"));
+    req.onerror = () => reject(req.error);
+  });
+}
+function readClip(db: IDBDatabase, id: string): Promise<StoredClip | null> {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("clips", "readonly").objectStore("clips").get(id);
+    req.onsuccess = () => resolve((req.result as StoredClip | undefined) ?? null);
+    req.onerror = () => reject(req.error);
   });
 }
 
@@ -215,17 +238,41 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const loadGeneration = useRef(0);
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current; setLoading(true);
-    const results: Media[] = []; const errors: string[] = [];
+    const results: Array<{ media: Media; createdAt: number }> = [];
+    const errors: string[] = [];
+    let library: IDBDatabase | null = null;
     try {
-      const clips = await bounded(readClips(), 5000, "Media library"); clips.sort((a, b) => a.createdAt - b.createdAt);
-      for (const clip of clips) {
+      library = await bounded(openClipLibrary(), 5000, "Media library", late => late.close());
+      const ids = await bounded(readClipIds(library), 5000, "Media keys");
+      for (const id of ids) {
         if (generation !== loadGeneration.current) break;
-        try { results.push(await retry(() => analyse(clip))); } catch { errors.push(clip.name || clip.id); }
+        let clip: StoredClip | null;
+        try { clip = await bounded(readClip(library, id), 5000, "Read clip"); }
+        catch { errors.push(id); continue; }
+        if (!clip) continue;
+        if (generation !== loadGeneration.current) break;
+        try {
+          const mediaItem = await retry(() => analyse(clip));
+          results.push({ media: mediaItem, createdAt: clip.createdAt });
+        } catch { errors.push(clip.name || clip.id); }
+        // Release the event loop between records for Settings/navigation.
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
-      if (generation !== loadGeneration.current) { results.forEach((m) => URL.revokeObjectURL(m.url)); return; }
-      setMedia(results); if (errors.length) setImportErr(`Не удалось открыть: ${errors.join(", ")}`);
-    } catch { if (generation === loadGeneration.current) setImportErr("Хранилище недоступно. Повторите открытие медиатеки."); }
-    finally { if (generation === loadGeneration.current) setLoading(false); }
+      if (generation !== loadGeneration.current) {
+        results.forEach(({ media: item }) => URL.revokeObjectURL(item.url));
+        return;
+      }
+      results.sort((a, b) => a.createdAt - b.createdAt);
+      setMedia(results.map(({ media: item }) => item));
+      if (errors.length) setImportErr(`Не удалось открыть: ${errors.join(", ")}`);
+    } catch {
+      results.forEach(({ media: item }) => URL.revokeObjectURL(item.url));
+      if (generation === loadGeneration.current)
+        setImportErr("Хранилище недоступно. Повторите открытие медиатеки.");
+    } finally {
+      library?.close();
+      if (generation === loadGeneration.current) setLoading(false);
+    }
   }, []);
   useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => { loadGeneration.current++; window.removeEventListener("multicam-clips-changed", on); }; }, [load]);
   useEffect(() => {
