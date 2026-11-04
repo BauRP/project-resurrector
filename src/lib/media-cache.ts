@@ -1,8 +1,30 @@
 import { bounded } from "./async";
 
 // Derived previews only. Original media is never stored or deleted here.
-export const analysisCache = new Map<string, { duration: number; peaks: number[] }>();
-export const thumbCache = new Map<string, string[]>();
+/** Only derived metadata and generated filmstrips are held in this bounded
+ * LRU. Eviction never removes original videos, proxies, or editor features.
+ * The same analysis/thumbnail algorithms regenerate an evicted entry on use.
+ */
+export class BoundedDerivedCache<K, V> extends Map<K, V> {
+  constructor(readonly maxEntries: number) { super(); }
+  override get(key: K): V | undefined {
+    const result = super.get(key);
+    if (result !== undefined) { super.delete(key); super.set(key, result); }
+    return result;
+  }
+  override set(key: K, value: V): this {
+    if (super.has(key)) super.delete(key);
+    super.set(key, value);
+    while (this.size > this.maxEntries) {
+      const first = this.keys().next();
+      if (first.done) break;
+      super.delete(first.value);
+    }
+    return this;
+  }
+}
+export const analysisCache = new BoundedDerivedCache<string, { duration: number; peaks: number[] }>(128);
+export const thumbCache = new BoundedDerivedCache<string, string[]>(64);
 const CACHE_DB = "multicam-pov-preview-cache";
 export async function previewCache(): Promise<IDBDatabase> {
   return bounded(new Promise((resolve, reject) => {

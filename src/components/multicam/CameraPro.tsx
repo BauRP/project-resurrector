@@ -74,12 +74,16 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
         !faceDetectorAvailable()) { setBox(null); return; }
     const Ctor = (window as unknown as { FaceDetector: FaceDetectorCtor }).FaceDetector;
     const det = new Ctor({ fastMode: true, maxDetectedFaces: 4 }); let alive = true; let last: "face" | "center" | null = null;
+    let nextFrame: number | null = null;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
     const loop = async () => {
       const v = videoRef.current;
       if (v && v.videoWidth) {
         try {
           const faces = await det.detect(v);
+          // OEM face detection may resolve after the camera has unmounted.
+          // Do not update old UI or try to focus an obsolete camera owner.
+          if (!alive) return;
           const big = faces.map((f) => f.boundingBox).sort((a, b) => b.width * b.height - a.width * a.height)[0];
           if (big) {
             const b = { x: big.x / v.videoWidth, y: big.y / v.videoHeight, w: big.width / v.videoWidth, h: big.height / v.videoHeight }; setBox(b);
@@ -92,10 +96,10 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
           }
         } catch { /* frame not ready */ }
       }
-      if (alive) window.setTimeout(() => void loop(), 120);
+      if (alive) nextFrame = window.setTimeout(() => void loop(), 120);
     };
     void loop();
-    return () => { alive = false; };
+    return () => { alive = false; if (nextFrame !== null) window.clearTimeout(nextFrame); };
   }, [enabled, hybrid, stream, videoRef]);
   return box;
 }
@@ -163,8 +167,14 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
     const k0 = knobRef.current; g.gain.value = knobToGain(k0); comp.threshold.value = knobToCeiling(k0); clip.curve = clipCurve(knobToCeiling(k0));
     const buf = new Float32Array(an.fftSize); let raf = 0; let last = 0;
     const tick = (t: number) => {
-      an.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v;
-      if (t - last > 40) { last = t; setRms(Math.max(-90, 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-5))); }
+      // Audio sampling and React state updates share the same 25 Hz clock.
+      // No unnecessary FFT/canvas work on high-refresh-rate 90/120 Hz panels.
+      if (t - last >= 40) {
+        last = t;
+        an.getFloatTimeDomainData(buf);
+        let sum = 0; for (const v of buf) sum += v * v;
+        setRms(Math.max(-90, 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-5)));
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
