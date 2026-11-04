@@ -47,14 +47,15 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
     // The encoder can fail before video.play() resolves. Observe its rejection
     // immediately, even when the playback setup never reaches await done.
     void done.catch(() => undefined);
-    // Recorder requests 24 fps. Drawing at display refresh (60/90/120
-    // fps) wastes CPU/GPU and can starve Settings during a WebView switch.
-    // Keep all proxy frames while matching the requested recording rate.
-    let lastFrameAt = -Infinity;
+    // Phase-locked 24 fps: at 60Hz the naive "now-last >= 41.7ms"
+    // check silently produces 20fps. Preserve all requested proxy frames
+    // while avoiding 60/90/120 fps canvas copying and accumulated drift.
+    let deadline = Number.NEGATIVE_INFINITY;
     const draw = (now: number) => {
       if (signal.aborted) return;
-      if (now - lastFrameAt >= 1000 / 24) {
-        lastFrameAt = now;
+      const interval = 1000 / 24;
+      if (now + 0.75 >= deadline + interval) {
+        deadline = now - deadline >= 2 * interval ? now : deadline + interval;
         if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
       }
       raf = requestAnimationFrame(draw);

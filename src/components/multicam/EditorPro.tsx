@@ -233,6 +233,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const lastTimelineView = useRef({ left: 0, zoom: 8 });
   lastTimelineView.current.zoom = zoom;
   const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
+  const [cacheRevision, setCacheRevision] = useState(0);
   // Activity recreation must restore the last safe playhead, not restart the
   // editor at zero after every fold. The view-state sanitizer rejects NaN and
   // out-of-range positions and does not restore an active recorder.
@@ -300,6 +301,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       loadedProxyIds.current.clear();
       setProxies({});
       setThumbs({});
+      // Start a fresh AbortController on the next render; the cleared cache
+      // must regenerate thumbnails/proxies when the user keeps editing.
+      setCacheRevision(n => n + 1);
     };
     window.addEventListener("multicam-preview-cache-cleared", clear);
     const neededIds = new Set<string>(JSON.parse(timelineVideoKey) as string[]);
@@ -341,7 +345,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       abort.abort();
       window.removeEventListener("multicam-preview-cache-cleared", clear);
     };
-  }, [media, timelineVideoKey]);
+  }, [media, timelineVideoKey, cacheRevision]);
   useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   useEffect(() => {
     const now = new Set(media.map((m) => m.url));

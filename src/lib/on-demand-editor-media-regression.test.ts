@@ -8,7 +8,8 @@ describe("on-demand editor media work", () => {
     expect(code).toContain('items.filter(i => i.kind === "video").map(i => i.mediaId)');
     expect(code).toContain('m.kind !== "video" || !neededIds.has(m.id)');
     expect(code).toContain('!neededIds.has(m.id) || loadedProxyIds.current.has(m.id)');
-    expect(code).toContain('}, [media, timelineVideoKey])');
+    expect(code).toContain('}, [media, timelineVideoKey, cacheRevision])');
+    expect(code).toContain("setCacheRevision(n => n + 1)");
   });
   it("retains original playback and full proxy functions for timeline media",()=>{
     expect(code).toContain('await makeThumbs(m.url, m.duration, 10, abort.signal)');
@@ -22,4 +23,19 @@ describe("on-demand editor media work", () => {
     expect(native).toContain('onLate?: (value: T) => void');
     expect(native).toContain("requestPermissions: options => guard(");
   });
+});
+
+describe("proxy frame rate pacing",()=>{
+ it("avoids a 20fps proxy when capturing at 24fps from a 60Hz renderer",()=>{
+  let deadline=-Infinity,draws=0;
+  for(let f=0;f<60;f++){
+    const now=f*1000/60, interval=1000/24;
+    if(now+0.75>=deadline+interval){
+      deadline=now-deadline>=2*interval?now:deadline+interval;
+      draws++;
+    }
+  }
+  expect(draws).toBeGreaterThanOrEqual(23);
+  expect(draws).toBeLessThanOrEqual(25);
+ });
 });
