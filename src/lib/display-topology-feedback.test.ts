@@ -77,6 +77,23 @@ describe("WebView layout feedback cannot repaint forever", () => {
       if (originalHeight) Object.defineProperty(window, "innerHeight", originalHeight);
     }
   });
+  it("does not rewrite root datasets during repeated resize bursts with unchanged geometry", () => {
+    document.body.innerHTML = '<div class="app-shell"><div class="app-header"></div><div class="app-scroll"></div></div>';
+    const raf: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (fn:FrameRequestCallback) => {raf.push(fn);return raf.length;});
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    const root = document.documentElement;
+    const setAttr = vi.spyOn(root, "setAttribute");
+    const stop = startDisplayAdaptation();
+    try {
+      const before = setAttr.mock.calls.filter(x => String(x[0]).startsWith("data-")).length;
+      for(let i=0;i<30;i++) {
+        window.dispatchEvent(new Event("resize"));
+        raf.splice(0).forEach(fn=>fn(performance.now()));
+      }
+      expect(setAttr.mock.calls.filter(x => String(x[0]).startsWith("data-")).length).toBe(before);
+    } finally {stop();}
+  });
   it("compares keyboard, editor and hinge geometry rather than just outer window dimensions", () => {
     const source = readFileSync("src/lib/display-topology.ts", "utf8");
     expect(source).toContain("viewport?.offsetTop");

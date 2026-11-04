@@ -338,8 +338,8 @@ export function startDisplayAdaptation(): () => void {
     if (signature === lastMeasurement) return;
     lastMeasurement = signature;
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
-    root.dataset["windowClass"] = windowClass(currentWidth);
-    root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
+    if (root.dataset["windowClass"] !== (windowClass(currentWidth))) root.dataset["windowClass"] = windowClass(currentWidth);
+    if (root.dataset["windowHeight"] !== (currentHeight < 480 ? "short" : "regular")) root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
     writeCss("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
@@ -355,13 +355,13 @@ export function startDisplayAdaptation(): () => void {
     lastFoldSignature="untrusted";lastFoldRevision=-1;
     // Always clear stale CSS geometry, even after repeated invalid native
     // callbacks. A previous interrupted reset must not preserve pane offsets.
-    root.dataset["foldWorkspace"]="unknown";
-    root.dataset["foldInfo"]="unknown";
-    root.dataset["foldCount"]="0";root.dataset["foldSplit"]="none";
-    root.dataset["separatingFold"]="false";root.dataset["occludingFold"]="false";
-    root.dataset["foldRegions"]="0";root.dataset["foldWorkspace"]="unknown";
-    root.dataset["cameraSplit"]="none";root.dataset["cameraTabletop"]="false";
-    root.dataset["foldSurface"]="none";
+    if (root.dataset["foldWorkspace"] !== ("unknown")) root.dataset["foldWorkspace"]="unknown";
+    if (root.dataset["foldInfo"] !== ("unknown")) root.dataset["foldInfo"]="unknown";
+    if (root.dataset["foldCount"] !== ("0")) root.dataset["foldCount"]="0";if (root.dataset["foldSplit"] !== ("none")) root.dataset["foldSplit"]="none";
+    if (root.dataset["separatingFold"] !== ("false")) root.dataset["separatingFold"]="false";if (root.dataset["occludingFold"] !== ("false")) root.dataset["occludingFold"]="false";
+    if (root.dataset["foldRegions"] !== ("0")) root.dataset["foldRegions"]="0";if (root.dataset["foldWorkspace"] !== ("unknown")) root.dataset["foldWorkspace"]="unknown";
+    if (root.dataset["cameraSplit"] !== ("none")) root.dataset["cameraSplit"]="none";if (root.dataset["cameraTabletop"] !== ("false")) root.dataset["cameraTabletop"]="false";
+    if (root.dataset["foldSurface"] !== ("none")) root.dataset["foldSurface"]="none";
     workspaceTarget=null;workspaceYOffset=0;
     const vars=["--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top",
       "--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left",
@@ -380,7 +380,11 @@ export function startDisplayAdaptation(): () => void {
     // Explicit active surface avoids CSS :has(), which is missing from older
     // Android WebViews (including supported legacy Android versions).
     const currentTab = root.dataset["activeMulticamTab"];
-    root.dataset["foldSurface"] = currentTab === "camera" || currentTab === "editor" || currentTab === "settings"
+    if (root.dataset["foldSurface"] !== (currentTab === "camera" || currentTab === "editor" || currentTab === "settings"
+      ? currentTab
+      : document.querySelector(".camera-screen") ? "camera" :
+        document.querySelector(".editor-fold-workspace") ? "editor" :
+        document.querySelector(".settings-fold-workspace") ? "settings" : "none")) root.dataset["foldSurface"] = currentTab === "camera" || currentTab === "editor" || currentTab === "settings"
       ? currentTab
       : document.querySelector(".camera-screen") ? "camera" :
         document.querySelector(".editor-fold-workspace") ? "editor" :
@@ -402,14 +406,14 @@ export function startDisplayAdaptation(): () => void {
       // advancing the revision watermark to reject later stale native events.
       window.dispatchEvent(new CustomEvent(FOLD_EVENT, { detail: details }));
     }
-    root.dataset["foldInfo"] = state.posture;
+    if (root.dataset["foldInfo"] !== (state.posture)) root.dataset["foldInfo"] = state.posture;
     // Never present off-window or malformed reported features as active folds.
-    root.dataset["foldCount"] = String(geometry.hinges.length);
-    root.dataset["foldSplit"] = geometry.split;
-    root.dataset["separatingFold"] = String(geometry.hinges.length > 0);
-    root.dataset["occludingFold"] = String(geometry.occluded);
+    if (root.dataset["foldCount"] !== (String(geometry.hinges.length))) root.dataset["foldCount"] = String(geometry.hinges.length);
+    if (root.dataset["foldSplit"] !== (geometry.split)) root.dataset["foldSplit"] = geometry.split;
+    if (root.dataset["separatingFold"] !== (String(geometry.hinges.length > 0))) root.dataset["separatingFold"] = String(geometry.hinges.length > 0);
+    if (root.dataset["occludingFold"] !== (String(geometry.occluded))) root.dataset["occludingFold"] = String(geometry.occluded);
     // Keep all reported hinge bounds: two separate hinges stay two separate features.
-    root.dataset["foldRegions"] = String(geometry.regions.length);
+    if (root.dataset["foldRegions"] !== (String(geometry.regions.length))) root.dataset["foldRegions"] = String(geometry.regions.length);
     // Keep non-camera working surfaces fully inside an available pane if a real
     // hinge cuts across the app window. Unlike camera this region is chosen
     // by usable size rather than a hard-coded left/right position.
@@ -438,7 +442,7 @@ export function startDisplayAdaptation(): () => void {
       resetUntrustedLayout();
       return;
     }
-    root.dataset["foldWorkspace"] = workspace ? "pane" : "normal";
+    if (root.dataset["foldWorkspace"] !== (workspace ? "pane" : "normal")) root.dataset["foldWorkspace"] = workspace ? "pane" : "normal";
     writeCss("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
     writeCss("--fold-work-width",(workspace?.width??shellWidth)+"px");
     writeCss("--fold-work-height",(workspace?.height??contentBounds.height)+"px");
@@ -486,7 +490,8 @@ export function startDisplayAdaptation(): () => void {
     const quad=clippedQuadRegions.length===4 &&
       clippedQuadRegions.every((r):r is Region=>r!==null)
       ?fourPaneCameraLayout(clippedQuadRegions as Region[]):null;
-    root.dataset["cameraSplit"] = quad ? "quad" :
+    if (root.dataset["cameraSplit"] !== (quad ? "quad" :
+      eligibleThree ? "tri" : eligible ? "side" : "none")) root.dataset["cameraSplit"] = quad ? "quad" :
       eligibleThree ? "tri" : eligible ? "side" : "none";
     writeCss("--camera-left-pane-width", Math.max(0, (leftPane?.left ?? 0) + (leftPane?.width ?? width()) - cameraLeft) + "px");
     writeCss("--camera-right-pane-left", Math.max(0, (rightPane?.left ?? width()) - cameraLeft) + "px");
@@ -535,7 +540,7 @@ export function startDisplayAdaptation(): () => void {
       panes[0]!.top + panes[0]!.height <= panes[1]!.top + 4;
     const horizontal = stacked && geometry.split === "horizontal" &&
       panes[0]!.height >= 170 && panes[1]!.height >= 170;
-    root.dataset["cameraTabletop"] = horizontal ? "true" : "false";
+    if (root.dataset["cameraTabletop"] !== (horizontal ? "true" : "false")) root.dataset["cameraTabletop"] = horizontal ? "true" : "false";
     if (horizontal) {
       writeCss("--camera-upper-height", Math.max(0, panes[0]!.top + panes[0]!.height - cameraTop) + "px");
       writeCss("--camera-lower-top", Math.max(0, panes[1]!.top - cameraTop) + "px");
