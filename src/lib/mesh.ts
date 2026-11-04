@@ -132,6 +132,7 @@ export class Mesh {
   private handlers = new Set<(m: MeshMessage) => void>();
   private snapshot: PeerInfo[] = [];
   private timer: number | null = null;
+  private telemetryPromise: Promise<{ battery: number | null; storageMB: number | null }> | null = null;
   localId: string | null = null;
   selfRecording = false;
 
@@ -149,7 +150,17 @@ export class Mesh {
       } });
       if (changed) this.emit(); }, 2000);
   }
-  async sendTelemetry() {
+  sendTelemetry(): Promise<{ battery: number | null; storageMB: number | null }> {
+    // The camera view and mesh heartbeat both need these metrics. Coalesce
+    // overlapping polls instead of queuing two native Android status calls.
+    if (this.telemetryPromise) return this.telemetryPromise;
+    const pending = this.readTelemetry();
+    this.telemetryPromise = pending;
+    const clear = () => { if (this.telemetryPromise === pending) this.telemetryPromise = null; };
+    void pending.then(clear, clear);
+    return pending;
+  }
+  private async readTelemetry() {
     let battery: number | null = null; let storageMB: number | null = null;
     // On Android use native BatteryManager and StatFs, not optional Web APIs.
     // Native work runs in a dedicated Java worker; the UI never waits on it.
