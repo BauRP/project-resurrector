@@ -17,6 +17,9 @@ describe("safe Android startup and preview", () => {
    expect(c).toContain("if (!previewRequested || !stream) return");
 
    expect(w).toContain('isNative() && mode === "native"');
+   expect(w).toContain('const [mode, setMode] = useState<Mode>("web")');
+   expect(w).not.toContain("useState<Mode | null>(isNative() ? null");
+
    expect(c).toContain("Перейти в Camera2");
  });
 });
