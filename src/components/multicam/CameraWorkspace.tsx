@@ -49,11 +49,10 @@ export function CameraWorkspace() {
       setMode(nativeRecorderOwnsCamera(status.state) ? "native" : preference);
     }).catch(() => {
       if (live) {
-        // The placeholder never acquires a sensor. When the user presses
-        // "Включить камеру", its own Camera2 guard still requires a proved
-        // idle native owner, so a failed bridge cannot steal the camera.
-        setMode("web");
-        setNotice("Статус Camera2 неизвестен. Камера пока выключена.");
+        // When native service ownership is unknown, do not let WebView
+        // try to open the same sensor. The main app and settings stay usable.
+        setMode("native");
+        setNotice("Состояние Camera2 неизвестно. Нативная запись может продолжаться; проверьте её перед открытием обычной камеры.");
       }
     });
     return () => { live = false; };
