@@ -40,7 +40,7 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       }
       raf = requestAnimationFrame(draw);
     };
-    recorder.start(1000); draw(); await bounded(video.play(), 5000, "Proxy playback");
+    recorder.start(1000); draw(performance.now()); await bounded(video.play(), 5000, "Proxy playback");
     const duration = Number.isFinite(video.duration) ? video.duration : 60;
     const blob = await bounded(done, Math.min(600000, duration * 1000 + 10000), "Proxy encoding");
     if (blob.size && !signal.aborted) { await writeProxy(id, blob, signal); return signal.aborted ? null : blob; }
