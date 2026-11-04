@@ -14,10 +14,12 @@ describe("reference compact MULTI-CAM POV design", () => {
     expect(editor).toContain("const laneEls = useMemo(() => lanes.map((lane) =>");
     expect(editor).not.toContain("lanes.filter((lane) => items.some");
     expect(editor).toContain("{laneEls}");
-    expect(editor).toContain("label: \"Video\"");
-    expect(editor).toContain("label: \"Audio\"");
+    expect(editor).toContain('label: n === 1 ? "Видео" : `Видео ${n}`');
+    expect(editor).toContain('label: n === 1 ? "Аудио" : `Аудио ${n}`');
     expect(editor).toContain('Добавить видео дорожку');
     expect(editor).toContain('Добавить аудио дорожку');
+    expect(editor).toContain('const HEAD = 104;');
+    expect(css).toContain('.timeline-header button.timeline-lane-toggle');
   });
 
   it("does not globally enlarge camera HUD, editor toolbar or settings buttons to 48px", () => {
