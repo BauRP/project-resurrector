@@ -438,9 +438,21 @@ public class MultiCamNativePlugin extends Plugin {
     public void startHighSpeedRecording(PluginCall call) {
         if (getPermissionState("camera") != PermissionState.GRANTED) { requestPermissionForAlias("camera", call, "permissionCallback"); return; }
         if (recorder != null) { call.reject("Запись уже идёт или запускается"); return; }
+        // OEM cameras may emit multiple asynchronous callbacks (error,
+        // disconnected, configure-failed). Settle a Capacitor PluginCall at
+        // most once; an actual late recording state remains observable through
+        // the separate highSpeedStateChanged event, never fabricated here.
+        final java.util.concurrent.atomic.AtomicBoolean startCallSettled =
+            new java.util.concurrent.atomic.AtomicBoolean(false);
+        final java.util.function.Consumer<String> rejectStart = message -> {
+            if (startCallSettled.compareAndSet(false, true)) call.reject(message);
+        };
+        final java.util.function.Consumer<JSObject> resolveStart = value -> {
+            if (startCallSettled.compareAndSet(false, true)) call.resolve(value);
+        };
         String cameraId = call.getString("cameraId", "0");
         int width = call.getInt("width", 1280), height = call.getInt("height", 720), fps = call.getInt("fps", 120);
-        if (width <= 0 || height <= 0 || fps < 60 || fps > 960) { call.reject("Некорректные параметры high-speed"); return; }
+        if (width <= 0 || height <= 0 || fps < 60 || fps > 960) { rejectStart.accept("Некорректные параметры high-speed"); return; }
         highSpeedStarted = false;
         reportHighSpeedState("starting", "Открытие Camera2 high-speed сессии");
         try {
@@ -454,7 +466,7 @@ public class MultiCamNativePlugin extends Plugin {
                 if (sizeAvailable) for (Range<Integer> r : map.getHighSpeedVideoFpsRangesFor(requestedSize))
                     if (r.getLower() == fps && r.getUpper() == fps) { chosen = r; break; }
             }
-            if (chosen == null) { reportHighSpeedState("idle", "Режим не поддерживается"); call.reject("Режим " + width + "x" + height + "@" + fps + " не поддерживается сенсором"); return; }
+            if (chosen == null) { reportHighSpeedState("idle", "Режим не поддерживается"); rejectStart.accept("Режим " + width + "x" + height + "@" + fps + " не поддерживается сенсором"); return; }
             final Range<Integer> range = chosen;
             thread = new HandlerThread("multicam-hs"); thread.start(); handler = new Handler(thread.getLooper());
             File outputDir = getContext().getExternalFilesDir(null);
@@ -492,25 +504,25 @@ public class MultiCamNativePlugin extends Plugin {
                                     recorder.start(); startedAt = System.currentTimeMillis();
                                     highSpeedStarted = true;
                                     reportHighSpeedState("recording", "Настоящая Camera2 high-speed запись запущена");
-                                    JSObject res = new JSObject(); res.put("path", output.getAbsolutePath()); call.resolve(res);
-                                } catch (CameraAccessException | IllegalStateException e) { cleanup(); reportHighSpeedState("error", e.getMessage()); call.reject("Ошибка запуска: " + e.getMessage()); }
+                                    JSObject res = new JSObject(); res.put("path", output.getAbsolutePath()); resolveStart.accept(res);
+                                } catch (CameraAccessException | IllegalStateException e) { cleanup(); reportHighSpeedState("error", e.getMessage()); rejectStart.accept("Ошибка запуска: " + e.getMessage()); }
                             }
-                            @Override public void onConfigureFailed(CameraCaptureSession session) { cleanup(); reportHighSpeedState("error", "Сенсор отклонил сессию"); call.reject("Сенсор отклонил high-speed сессию"); }
+                            @Override public void onConfigureFailed(CameraCaptureSession session) { cleanup(); reportHighSpeedState("error", "Сенсор отклонил сессию"); rejectStart.accept("Сенсор отклонил high-speed сессию"); }
                         }, handler);
-                    } catch (CameraAccessException e) { cleanup(); reportHighSpeedState("error", e.getMessage()); call.reject(e.getMessage()); }
+                    } catch (CameraAccessException e) { cleanup(); reportHighSpeedState("error", e.getMessage()); rejectStart.accept(e.getMessage()); }
                 }
                 @Override public void onDisconnected(CameraDevice cam) {
                     boolean wasRecording = highSpeedStarted;
                     cleanup(); reportHighSpeedState("error", "Камера отключена");
-                    if (!wasRecording) call.reject("Камера отключена во время запуска");
+                    if (!wasRecording) rejectStart.accept("Камера отключена во время запуска");
                 }
                 @Override public void onError(CameraDevice cam, int error) {
                     boolean wasRecording = highSpeedStarted;
                     cleanup(); reportHighSpeedState("error", "Ошибка камеры " + error);
-                    if (!wasRecording) call.reject("Ошибка камеры " + error);
+                    if (!wasRecording) rejectStart.accept("Ошибка камеры " + error);
                 }
             }, handler);
-        } catch (Exception e) { cleanup(); reportHighSpeedState("error", e.getMessage()); call.reject("Не удалось начать запись: " + e.getMessage()); }
+        } catch (Exception e) { cleanup(); reportHighSpeedState("error", e.getMessage()); rejectStart.accept("Не удалось начать запись: " + e.getMessage()); }
     }
 
 
