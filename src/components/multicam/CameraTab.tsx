@@ -96,17 +96,30 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const clean = s.cleanFrame;
 
   useEffect(() => {
-    // No battery/storage Web APIs until the user starts a mesh session.
-    // Some Android WebViews block getBattery/storage.estimate after resume.
-    if (s.role === "solo" && peers.length === 0) return;
+    // Battery and storage are ALWAYS collected, including solo mode.
+    // One bounded asynchronous poll at a time: never flood WebView or
+    // interrupt the user's navigation during slow Android system calls.
     let active = true;
-    const poll = () => { void mesh.sendTelemetry().then(value => {
-      if (active) setSelf(value);
-    }).catch(() => undefined); };
+    let running = false;
+    const poll = () => {
+      if (!active || running) return;
+      running = true;
+      void mesh.sendTelemetry().then(value => {
+        if (active) setSelf(previous =>
+          previous.battery === value.battery && previous.storageMB === value.storageMB
+            ? previous : value);
+      }).catch(() => undefined).finally(() => { running = false; });
+    };
     poll();
-    const id = window.setInterval(poll, 10000);
-    return () => { active = false; window.clearInterval(id); };
-  }, [s.role, peers.length]);
+    const id = window.setInterval(poll, 5000);
+    const onReturn = () => { if (!document.hidden) poll(); };
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, []);
   useEffect(() => () => s.set({ cleanFrame: false }), []);
 
   const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");

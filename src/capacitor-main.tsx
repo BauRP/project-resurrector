@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { RouterProvider } from "@tanstack/react-router";
 import { getRouter } from "./router";
 import "./styles.css";
+import "./generated/subtitle-fonts.css";
 
 // Создаем роутер для клиентского режима Capacitor
 const router = getRouter();

@@ -357,13 +357,41 @@ public class NativeCapturePlugin extends Plugin {
      else call.reject("Повторная публикация недоступна или файл не подтверждён");
    },"Gallery-Publish-Retry").start();
  }
+ private final java.util.concurrent.ExecutorService statusWorker =
+     java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+       Thread thread = new Thread(r, "multicam-capture-status");
+       thread.setDaemon(true);
+       return thread;
+     });
+ @Override protected void handleOnDestroy() {
+   statusWorker.shutdownNow();
+   super.handleOnDestroy();
+ }
  @PluginMethod public void auditHistory(PluginCall call){
-   NativeCaptureService.recoverAbandonedRecording(getContext());
-   call.resolve(NativeCaptureAuditStore.history(getContext()));
+   final android.content.Context context=getContext().getApplicationContext();
+   try {
+     statusWorker.execute(()->{
+       try {
+         NativeCaptureService.recoverAbandonedRecording(context);
+         call.resolve(NativeCaptureAuditStore.history(context));
+       } catch (Exception error) { call.reject("История Camera2 недоступна: "+error.getMessage()); }
+     });
+   } catch (java.util.concurrent.RejectedExecutionException error) {
+     call.reject("Camera2 Activity закрыта");
+   }
  }
  @PluginMethod public void status(PluginCall call){
-   NativeCaptureService.recoverAbandonedRecording(getContext());
-  call.resolve(NativeCaptureService.status(getContext()));
+   final android.content.Context context=getContext().getApplicationContext();
+   try {
+     statusWorker.execute(()->{
+       try {
+         NativeCaptureService.recoverAbandonedRecording(context);
+         call.resolve(NativeCaptureService.status(context));
+       } catch (Exception error) { call.reject("Статус Camera2 недоступен: "+error.getMessage()); }
+     });
+   } catch (java.util.concurrent.RejectedExecutionException error) {
+     call.reject("Camera2 Activity закрыта");
+   }
  }
  @PluginMethod public void startPreview(PluginCall call) {
   if(getPermissionState("camera")!=com.getcapacitor.PermissionState.GRANTED){

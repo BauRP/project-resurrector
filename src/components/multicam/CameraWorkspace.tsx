@@ -34,21 +34,32 @@ export function CameraWorkspace() {
     return () => { mounted.current = false; };
   }, []);
 
+  const manualModeSelection = useRef(false);
   useEffect(() => {
     if (!isNative()) return;
-    // Do not call a native Camera2 binder from Android's first frame.
-    // An OEM CameraService lock can block WebView even with JS Promise
-    // timeouts. The reference camera is only a placeholder, not a stream.
-    // Its explicit "Включить камеру" action performs the guarded status
-    // check before acquiring the sensor; users can also open Camera2 below.
-    try {
-      if (localStorage.getItem(PREF) === "native")
-        setNotice("Режим Camera2 доступен в параметрах камеры. Камера не включалась автоматически.");
-    } catch { /* Storage is optional; default view remains interactive. */ }
+    let live = true;
+    // Preserve automatic Camera2 ownership restoration. The native status
+    // method now runs on a Java worker, so it cannot block Android's UI.
+    // Keep the UI interactive while the answer is pending; the WebView
+    // camera itself always checks native ownership before opening.
+    void bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")
+      .then(status => {
+        if (!live || manualModeSelection.current) return;
+        let preference: Mode = "web";
+        try { if (localStorage.getItem(PREF) === "native") preference = "native"; }
+        catch { /* storage may be unavailable */ }
+        if (nativeRecorderOwnsCamera(status.state)) setMode("native");
+        else if (preference === "native") setMode("native");
+      }).catch(() => {
+        if (live && !manualModeSelection.current)
+          setNotice("Camera2 не ответила. Прежде чем открывать камеру, проверьте её занятость.");
+      });
+    return () => { live = false; };
   }, []);
 
   const switchTo = useCallback(async (next:Mode) => {
     if (mode === next || switching || blocked) return;
+    manualModeSelection.current = true;
     setSwitching(true);
     try {
       if (next === "web") {

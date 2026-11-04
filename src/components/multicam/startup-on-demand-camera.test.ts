@@ -19,8 +19,10 @@ describe("safe Android startup and preview", () => {
 
    expect(w).toContain('isNative() && mode === "native"');
    expect(w).toContain('const [mode, setMode] = useState<Mode>("web")');
-   expect(w).not.toContain('void bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")');
-   expect(c).toContain('if (s.role === "solo" && peers.length === 0) return');
+   expect(w).toContain('bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")');
+   expect(w).toContain('manualModeSelection.current');
+   expect(c).not.toContain('if (s.role === "solo" && peers.length === 0) return');
+   expect(c).toContain('const id = window.setInterval(poll, 5000)');
    expect(w).not.toContain("useState<Mode | null>(isNative() ? null");
 
    expect(c).toContain("Перейти в Camera2");

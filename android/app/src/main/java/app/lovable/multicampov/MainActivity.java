@@ -12,6 +12,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(MultiCamNativePlugin.class);
         registerPlugin(NativeCapturePlugin.class);
         registerPlugin(DisplayTopologyPlugin.class);
+        registerPlugin(DeviceMetricsPlugin.class);
         registerPlugin(RawDngPlugin.class);
         registerPlugin(StabilizationProbePlugin.class);
         super.onCreate(savedInstanceState);

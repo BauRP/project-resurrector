@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build",
-    "build:android": "node scripts/create-capacitor-entry.mjs && vite build --config vite.capacitor.config.ts",
+    "build:android": "python3 scripts/bundle-subtitle-fonts.py && node scripts/create-capacitor-entry.mjs && vite build --config vite.capacitor.config.ts",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",

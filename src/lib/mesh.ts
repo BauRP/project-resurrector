@@ -1,6 +1,12 @@
 // Serverless P2P mesh: WebRTC data channels with QR/copy-paste signaling (LAN, no internet),
 // plus BroadcastChannel sessions for windows/tabs on the same device (numeric ID).
 import { bounded } from "./async";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+
+interface NativeDeviceMetrics {
+  read(): Promise<{battery: number | null; storageMB: number | null}>;
+}
+const androidMetrics = registerPlugin<NativeDeviceMetrics>("DeviceMetrics");
 export type RemoteRecordStatus = "received" | "recording" | "stopping" | "saved" | "error";
 export interface PeerInfo {
   id: string; name: string; battery: number | null; storageMB: number | null;
@@ -145,6 +151,23 @@ export class Mesh {
   }
   async sendTelemetry() {
     let battery: number | null = null; let storageMB: number | null = null;
+    // On Android use native BatteryManager and StatFs, not optional Web APIs.
+    // Native work runs in a dedicated Java worker; the UI never waits on it.
+    if (Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("DeviceMetrics")) {
+      try {
+        const result = await bounded(androidMetrics.read(), 1800, "Android device metrics");
+        battery = typeof result.battery === "number" && Number.isFinite(result.battery)
+          ? Math.round(Math.max(0, Math.min(100, result.battery))) : null;
+        storageMB = typeof result.storageMB === "number" && Number.isFinite(result.storageMB)
+          ? Math.max(0, Math.round(result.storageMB)) : null;
+        this.send({ type: "telemetry", from: this.selfId, name: this.name,
+          battery, storageMB, recording: this.selfRecording });
+        return {battery, storageMB};
+      } catch {
+        // The Android native metrics read failed. Preserve reporting by
+        // falling back to bounded browser Battery/Storage APIs below.
+      }
+    }
     // OEM WebViews can hang getBattery()/storage.estimate() while Activity
     // changes. Telemetry must still arrive so the remote controller can
     // identify its peer; unknown metrics are valid and never fabricated.
