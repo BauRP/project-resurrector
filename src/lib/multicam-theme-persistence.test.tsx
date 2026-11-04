@@ -38,6 +38,14 @@ describe("lightweight appearance preferences", () => {
   beforeEach(() => window.localStorage.clear());
   afterEach(() => { cleanup(); vi.restoreAllMocks(); window.localStorage.clear(); });
 
+  it("skips an oversized legacy snapshot without deleting user data", async () => {
+    const oversized = "x".repeat(300000);
+    localStorage.setItem("multicam-pov-state-native", oversized);
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    expect(screen.getByTestId("theme")).toHaveTextContent("light");
+    expect(localStorage.getItem("multicam-pov-state-native")).toBe(oversized);
+  });
+
   it("saves theme and language without serializing the project on every tap", async () => {
     const writes = vi.spyOn(Storage.prototype, "setItem");
     render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
