@@ -66,6 +66,14 @@ public class MultiCamNativePlugin extends Plugin {
         event.put("message", message);
         notifyListeners("highSpeedStateChanged", event);
     }
+    // CameraManager and MediaCodecList are binder-heavy on some OEMs.
+    // Never enumerate cameras or codec profiles on Capacitor's UI thread.
+    private final java.util.concurrent.ExecutorService cameraQueryWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+            Thread worker = new Thread(task, "multicam-camera-capabilities");
+            worker.setDaemon(true);
+            return worker;
+        });
     private HandlerThread thread;
     private Handler handler;
     private CameraManager.AvailabilityCallback availabilityWatcher;
@@ -127,7 +135,7 @@ public class MultiCamNativePlugin extends Plugin {
         }
     }
     @Override protected void handleOnDestroy() {
-        stopAvailability(); cleanup(); super.handleOnDestroy();
+        cameraQueryWorker.shutdownNow(); stopAvailability(); cleanup(); super.handleOnDestroy();
     }
 
     /** Encoder declarations are predictions, not proof that recording will succeed. */
@@ -139,6 +147,9 @@ public class MultiCamNativePlugin extends Plugin {
         if (width <= 0 || width > 8192 || height <= 0 || height > 8192 || fps < 1 || fps > 960) {
             call.reject("Invalid width/height/fps"); return;
         }
+        try {
+            cameraQueryWorker.execute(() -> {
+                try {
         JSArray results = new JSArray();
         for (MediaCodecInfo info : new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos()) {
             if (!info.isEncoder()) continue;
@@ -192,6 +203,13 @@ public class MultiCamNativePlugin extends Plugin {
         result.put("source", "MediaCodecInfo.VideoCapabilities");
         result.put("encoders", results);
         call.resolve(result);
+                } catch (Exception error) {
+                    call.reject("Не удалось получить возможности кодеков: " + error.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException error) {
+            call.reject("Список кодеков недоступен: Android закрывается");
+        }
     }
 
 
@@ -208,6 +226,8 @@ public class MultiCamNativePlugin extends Plugin {
 
     @PluginMethod
     public void getCapabilities(PluginCall call) {
+        try {
+            cameraQueryWorker.execute(() -> {
         try {
             JSArray list = new JSArray();
             for (String id : cameras().getCameraIdList()) {
@@ -350,6 +370,12 @@ public class MultiCamNativePlugin extends Plugin {
             call.resolve(res);
         } catch (CameraAccessException | SecurityException e) {
             call.reject("Не удалось опросить камеру: " + e.getMessage());
+        } catch (RuntimeException error) {
+            call.reject("Некорректные характеристики камеры: " + error.getMessage());
+        }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException error) {
+            call.reject("Камеры недоступны: Android закрывается");
         }
     }
 
