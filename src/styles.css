@@ -1256,3 +1256,26 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (prefers-reduced-motion:reduce) {
   .app-shell::before,.app-shell::after,.camera-live-view::before,.camera-live-view::after {animation:none;}
 }
+
+
+/* Small-screen editor: all three top actions remain usable without hiding
+   or truncating the brand. Camera and Settings retain the one-line header. */
+@media (max-width: 560px) {
+ .app-header-editor {display:grid;grid-template-columns:minmax(0,1fr);row-gap:.35rem;padding-block:.55rem;}
+ .app-header-editor > .multicam-brand {display:flex;min-width:0;max-width:100%;}
+ .app-header-editor .multicam-brand p {overflow:visible;text-overflow:clip;white-space:nowrap;font-size:.72rem;letter-spacing:.14em;}
+ .app-header-editor .app-header-actions {display:grid;grid-template-columns:2.5rem auto minmax(0,1fr);align-items:center;justify-content:stretch;gap:.38rem;width:100%;}
+ .app-header-editor .app-header-actions .connect-pill {width:auto;max-width:none;min-width:0;justify-content:center;}
+ .app-header-editor .app-header-actions .connect-pill:last-child {justify-self:end;width:max-content;max-width:100%;}
+ .app-header-editor .app-header-actions .connect-pill span {min-width:0;}
+}
+/* Prior narrow-screen rule hid the brand altogether. The reference 111/222
+   always shows the full name, even with gesture navigation. */
+@media (max-width: 390px) {
+ .app-header > .multicam-brand:first-child {display:flex;}
+ .app-header {grid-template-columns:minmax(0,1fr) auto;}
+ .app-header .multicam-brand p {font-size:.56rem;letter-spacing:.08em;}
+ .app-header .multicam-brand-mark {width:1.55rem;transform:scale(.84);transform-origin:left center;}
+ .app-header-editor {grid-template-columns:minmax(0,1fr);}
+ .app-header-editor .multicam-brand p {font-size:.69rem;letter-spacing:.12em;}
+}
