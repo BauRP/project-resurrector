@@ -143,7 +143,11 @@ public class MultiCamNativePlugin extends Plugin {
         }
     }
     @Override protected void handleOnDestroy() {
-        cameraQueryWorker.shutdownNow(); stopAvailability(); cleanup(); super.handleOnDestroy();
+        cameraQueryWorker.shutdownNow();
+        mp4InspectionWorker.shutdownNow();
+        stopAvailability();
+        cleanup();
+        super.handleOnDestroy();
     }
 
     /** Encoder declarations are predictions, not proof that recording will succeed. */
@@ -772,15 +776,6 @@ public class MultiCamNativePlugin extends Plugin {
     private void permissionCallback(PluginCall call) {
         if (getPermissionState("camera") == PermissionState.GRANTED) startHighSpeedRecording(call);
         else call.reject("Нет разрешения на камеру");
-    }
-
-    @Override protected void handleOnDestroy() {
-        // Do not retain a camera query or MP4 parser worker across Activity
-        // recreation. This only retires plugin-owned background threads;
-        // native recording cleanup remains controlled by its session.
-        cameraQueryWorker.shutdownNow();
-        mp4InspectionWorker.shutdownNow();
-        super.handleOnDestroy();
     }
 
     private void cleanup() {
