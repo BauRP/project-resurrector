@@ -33,11 +33,51 @@ export const kelvinFilter = (k: number | null) => k === null ? "" : k < 5600 ? `
 
 /* ---------- Photo storage ---------- */
 export function savePhoto(blob: Blob, meta: Record<string, unknown>): Promise<void> {
+  // A stalled emulator/Android storage callback must not keep photoBusy true
+  // forever. A timed-out write may have committed: NEVER retry it silently.
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open("multicam-pov-photos", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("photos", { keyPath: "id" });
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => { const tx = req.result.transaction("photos", "readwrite"); tx.objectStore("photos").put({ id: `photo-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, createdAt: Date.now(), blob, ...meta }); tx.oncomplete = () => { window.dispatchEvent(new Event("multicam-photos-changed")); resolve(); }; tx.onerror = () => reject(tx.error); };
+    let finished = false;
+    let db: IDBDatabase | null = null;
+    let tx: IDBTransaction | null = null;
+    const settle = (error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      try { db?.close(); } catch { /* Already closed. */ }
+      if (error) reject(error); else resolve();
+    };
+    const timer = window.setTimeout(() => {
+      try { tx?.abort(); } catch { /* Transaction might already have committed. */ }
+      settle(new Error("Сохранение фото не подтвердилось. Проверьте медиатеку перед повторной съёмкой."));
+    }, 10000);
+    try {
+      const req = indexedDB.open("multicam-pov-photos", 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains("photos"))
+          req.result.createObjectStore("photos", { keyPath: "id" });
+      };
+      req.onerror = () => settle(req.error ?? new Error("Не удалось открыть фотохранилище"));
+      req.onblocked = () => settle(new Error("Фотохранилище занято другой операцией"));
+      req.onsuccess = () => {
+        if (finished) { req.result.close(); return; }
+        db = req.result;
+        db.onversionchange = () => db?.close();
+        try {
+          tx = db.transaction("photos", "readwrite");
+          tx.oncomplete = () => {
+            if (finished) return;
+            settle();
+            window.dispatchEvent(new Event("multicam-photos-changed"));
+          };
+          tx.onabort = () => settle(tx?.error ?? new Error("Сохранение фото прервано"));
+          tx.onerror = () => { /* Abort is the authoritative terminal event. */ };
+          const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? `photo-${crypto.randomUUID()}`
+            : `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          tx.objectStore("photos").add({ ...meta, createdAt: Date.now(), blob, id });
+        } catch (error) { settle(error); }
+      };
+    } catch (error) { settle(error); }
   });
 }
 
@@ -58,7 +98,21 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
     for (let i = 0; i < acc.length; i++) out.data[i] = acc[i]! / frames;
     ctx.filter = "none"; ctx.putImageData(out, 0, 0);
   }
-  return new Promise((r) => c.toBlob((b) => r(b), "image/jpeg", 0.93));
+  // Keep original resolution, all exposure modes and JPEG quality (0.93).
+  // A lost WebView encoder callback becomes a recoverable photo error.
+  return new Promise<Blob | null>((resolve, reject) => {
+    let finished = false;
+    const finish = (blob: Blob | null, error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      if (error) reject(error); else resolve(blob);
+    };
+    const timer = window.setTimeout(
+      () => finish(null, new Error("Кодирование фотографии не ответило вовремя")), 5000);
+    try { c.toBlob(blob => finish(blob), "image/jpeg", 0.93); }
+    catch (error) { finish(null, error); }
+  });
 }
 
 /* ---------- Face tracking + hybrid focus (browser FaceDetector when available) ---------- */
