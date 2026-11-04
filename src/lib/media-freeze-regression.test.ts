@@ -4,7 +4,8 @@ import { readFileSync } from "node:fs";
 describe("WebView must not allocate GPU/video frames faster than requested", () => {
   it("draws 24fps proxy frames instead of 60/120fps while retaining original media", () => {
     const proxy = readFileSync("src/lib/video-proxy.ts", "utf8");
-    expect(proxy).toContain("now - lastFrameAt >= 1000 / 24");
+    expect(proxy).toContain("now + 0.75 >= deadline + interval");
+    expect(proxy).toContain("deadline = now - deadline >= 2 * interval ? now : deadline + interval");
     expect(proxy).toContain("canvas.captureStream(24)");
     expect(proxy).toContain("if (signal.aborted) return");
     expect(proxy).toContain("await writeProxy(id, blob, signal)");
