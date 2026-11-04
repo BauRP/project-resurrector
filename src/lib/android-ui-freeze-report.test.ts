@@ -9,7 +9,7 @@ describe("Android freezes leave evidence without disabling features", () => {
     expect(src).toContain("ANR_THRESHOLD_MS = 6500L");
     expect(src).toContain("WEBVIEW_THRESHOLD_MS = 12000L");
     expect(src).toContain("webViewHeartbeat.get()");
-    expect(src).toContain("UiFreezeMonitor.webViewPulse()".replace("UiFreezeMonitor", "UiFreezeMonitor") === "" ? "" : "WebView JavaScript heartbeat missing");
+    expect(src).toContain("WebView JavaScript heartbeat missing");
     expect(src).toContain('thread.setDaemon(true)');
     expect(act).toContain("UiFreezeMonitor.start(getApplicationContext())");
     expect(act).toContain("UiFreezeMonitor.setForeground(false)");
