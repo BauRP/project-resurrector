@@ -46,9 +46,24 @@ export class FoldScrollRestorer {
   private programmaticTop: number | null = null;
   private lastStableTop: number | null = null;
   private lastContentHeight: number | null = null;
+  private lastSaveAt = -Infinity;
+  private savedTop: number | null = null;
+  private saveTimer: ReturnType<typeof setTimeout> | null = null;
+  private persistLatest(): void {
+    if (this.saveTimer !== null) { clearTimeout(this.saveTimer); this.saveTimer = null; }
+    if (!this.tab || !scrollable(this.tab) || this.lastStableTop === null ||
+        this.desired !== null || this.savedTop === this.lastStableTop) return;
+    if (saveFoldScrollTop(this.tab, this.lastStableTop)) {
+      this.savedTop = this.lastStableTop;
+      this.lastSaveAt = performance.now();
+    }
+  }
 
   activate(tab: ScrollTab, port: ScrollPort): void {
     if (this.tab === tab) return;
+    this.persistLatest();
+    this.lastSaveAt = -Infinity;
+    this.savedTop = null;
     // The old tab is explicitly captured before state changes. At this point
     // React may already have rendered the new tab into the same scroll port.
     this.tab = tab;
@@ -117,14 +132,21 @@ export class FoldScrollRestorer {
     this.desired = null;
     this.lastStableTop = port.scrollTop;
     this.lastContentHeight = port.scrollHeight;
-    saveFoldScrollTop(tab, port.scrollTop);
+    // The first gesture is saved immediately, subsequent rapid scroll
+    // events are coalesced. Pagehide/tab changes synchronously flush the
+    // latest exact position so no user scroll is lost.
+    if (performance.now() - this.lastSaveAt >= 240) this.persistLatest();
+    else if (this.saveTimer === null) {
+      this.saveTimer = setTimeout(() => this.persistLatest(),
+        Math.max(1, 240 - (performance.now() - this.lastSaveAt)));
+    }
   }
 
   capture(port: ScrollPort): void {
     if (this.tab && this.entered && this.desired === null &&
         validTop(port.scrollTop)) {
       this.lastStableTop = port.scrollTop;
-      saveFoldScrollTop(this.tab, port.scrollTop);
+      this.persistLatest();
     }
   }
 

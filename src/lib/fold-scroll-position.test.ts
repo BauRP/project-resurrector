@@ -117,6 +117,24 @@ describe("fold/editor vertical scroll restoration", () => {
     restorer.onViewportReflow("settings",el);
     expect(el.scrollTop).toBe(650);
   });
+  it("coalesces rapid scroll writes while retaining the final position on navigation", () => {
+    const writes = vi.spyOn(localStorage, "setItem");
+    const element = port(0,20000,400);
+    const restorer = new FoldScrollRestorer();
+    restorer.activate("settings",element);
+    restorer.enter("settings",element);
+    for(let i=1;i<=400;i++) {
+      element.scrollTop=i;
+      restorer.onScroll("settings",element);
+    }
+    expect(writes.mock.calls.length).toBeLessThan(12);
+    restorer.capture(element);
+    expect(readFoldScrollTop("settings")).toBe(400);
+    restorer.pauseForTransition();
+    restorer.activate("camera",element);
+    expect(writes.mock.calls.length).toBeLessThan(15);
+    writes.mockRestore();
+  });
   it("refuses corrupted, oversized, impossible, and camera-only scroll state", () => {
     expect(saveFoldScrollTop("camera",200)).toBe(false);
     expect(saveFoldScrollTop("editor",-1)).toBe(false);
