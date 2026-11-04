@@ -386,10 +386,21 @@ export class Mesh {
     // while an async answer was being decoded. Never mutate the new offer.
     if(data.k!=="a"||!pc||this.pending!==pc||generation!==this.generation)
       throw new Error("Устаревший или недействительный ответ подключения");
-    await bounded(pc.setRemoteDescription({type:"answer",sdp:data.sdp}),4000,"Answer description");
-    if(this.pending!==pc||generation!==this.generation)
-      throw new Error("Сеанс подключения сменился во время подтверждения");
-    this.pending=null;
+    try {
+      await bounded(pc.setRemoteDescription({type:"answer",sdp:data.sdp}),4000,"Answer description");
+      if(this.pending!==pc||generation!==this.generation)
+        throw new Error("Сеанс подключения сменился во время подтверждения");
+      this.pending=null;
+    } catch (error) {
+      // A lost ICE/SDP callback must not leave an orphan decoder/network
+      // connection behind. Do not close a different, newer pairing.
+      if(this.pending===pc){
+        pc.close();
+        this.connections.delete(pc);
+        this.pending=null;
+      }
+      throw error;
+    }
   }
   /** Camera: answer the director's offer. Returns the reply code + session id. */
   async answerOffer(code: string) {

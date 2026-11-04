@@ -38,6 +38,18 @@ import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTra
 import { startDualRecording, independentStreamsReady, isDualEncoderStillFinishing, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
+/** Schedule every intended output frame even on 60/90/120 Hz displays.
+ * A phase accumulator avoids the 25->20 fps slowdown caused by resetting
+ * the deadline to each rAF timestamp. */
+export function advanceCaptureFrameDeadline(now: number, lastDeadline: number, fps: number): number | null {
+  const interval = 1000 / Math.max(1, fps);
+  if (!Number.isFinite(now)) return null;
+  if (!Number.isFinite(lastDeadline)) return now;
+  if (now + 0.75 < lastDeadline + interval) return null;
+  return now - lastDeadline >= interval * 2 ? now : lastDeadline + interval;
+}
+
+
 const tools = [
   ["focusPeaking", "peak", Focus], ["zebras", "zebra", Zap], ["wbLock", "wb", Lock], ["isoLock", "iso", Lock],
 ] as const;
@@ -497,7 +509,17 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
         const vt = cs.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
         let raf = 0; let timer = 0;
         if (lapse) timer = window.setInterval(() => { draw(); vt.requestFrame?.(); }, lapse);
-        else { const loop = () => { if (video.readyState >= 2) draw(); raf = requestAnimationFrame(loop); }; loop(); }
+        else {
+          let lastDeadline = Number.NEGATIVE_INFINITY;
+          const loop = (now: number) => {
+            if (video.readyState >= 2) {
+              const due = advanceCaptureFrameDeadline(now, lastDeadline, fps);
+              if (due !== null) { lastDeadline = due; draw(); }
+            }
+            raf = requestAnimationFrame(loop);
+          };
+          raf = requestAnimationFrame(loop);
+        }
         source = new MediaStream([...cs.getVideoTracks(), ...(lapse ? [] : stream.getAudioTracks())]);
         pipeRef.current = { stop: () => { cancelAnimationFrame(raf); window.clearInterval(timer); cs.getTracks().forEach((t) => t.stop()); } };
       }

@@ -1,4 +1,5 @@
 import {registerPlugin, type PluginListenerHandle} from "@capacitor/core";
+import { bounded } from "./async";
 export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;captureId?:number;stabilization:string;directPreviewActive?:boolean;
  cameraSensorFrames?:number;cameraSensorFps?:number;
@@ -54,7 +55,33 @@ export interface NativeCaptureBridge {
  setPreviewVisible(options:{visible:boolean;ownerId:string}):Promise<void>;
  requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
 }
-export const nativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
+const rawNativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
+/** A missing emulator Camera2/Capacitor callback must release the React
+ * controls. A timed-out operation is UNKNOWN, never an implicit success,
+ * stop, retry, or permission grant. The service remains the source of truth.
+ * Deadline is intentionally longer for codec start/stop and OS permission UI.
+ */
+const guard = <T>(promise: Promise<T>, ms: number, action: string): Promise<T> =>
+  bounded(promise, ms, `Camera2 ${action}: нет подтверждения от Android`);
+export const nativeCapture: NativeCaptureBridge = {
+  addListener: (name, listener) => guard(rawNativeCapture.addListener(name, listener), 8000, "listener"),
+  startPreview: options => guard(rawNativeCapture.startPreview(options), 21000, "startPreview"),
+  start: options => guard(rawNativeCapture.start(options), 30000, "start"),
+  stop: () => guard(rawNativeCapture.stop(), 30000, "stop"),
+  pause: () => guard(rawNativeCapture.pause(), 12000, "pause"),
+  resume: () => guard(rawNativeCapture.resume(), 12000, "resume"),
+  status: () => guard(rawNativeCapture.status(), 6000, "status"),
+  auditHistory: () => guard(rawNativeCapture.auditHistory(), 15000, "auditHistory"),
+  retryGalleryPublication: () => guard(rawNativeCapture.retryGalleryPublication(), 30000, "retryGalleryPublication"),
+  previewFrame: () => guard(rawNativeCapture.previewFrame(), 5000, "previewFrame"),
+  setDirectPreview: options => guard(rawNativeCapture.setDirectPreview(options), 8000, "setDirectPreview"),
+  setControls: options => guard(rawNativeCapture.setControls(options), 9000, "setControls"),
+  setTorch: options => guard(rawNativeCapture.setTorch(options), 9000, "setTorch"),
+  setFocus: options => guard(rawNativeCapture.setFocus(options), 9000, "setFocus"),
+  tapToMeter: options => guard(rawNativeCapture.tapToMeter(options), 9000, "tapToMeter"),
+  setPreviewVisible: options => guard(rawNativeCapture.setPreviewVisible(options), 8000, "setPreviewVisible"),
+  requestPermissions: options => guard(rawNativeCapture.requestPermissions(options), 30000, "requestPermissions"),
+};
 export const nativeRecorderOwnsCamera=(state:string):boolean=>
  ["starting","previewing","recording","paused","stopping"].includes(state);
 
