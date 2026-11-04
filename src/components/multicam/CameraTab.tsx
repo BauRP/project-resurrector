@@ -296,7 +296,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   };
   // Pro tools: AI engine, metering, face tracking, RAW capability, photo capture.
   const [aiEngine, setAiEngine] = useState<"native" | "web" | null>(null);
-  useEffect(() => { if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [s.aiEnabled, s.focusModeAI]);
+  useEffect(() => { if (!previewRequested) return; if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [previewRequested, s.aiEnabled, s.focusModeAI]);
   const [rawNative, setRawNative] = useState(false);
   const [rawCameras, setRawCameras] = useState<NativeCameraProfile[]>([]);
   const cameraMounted = useRef(true);
@@ -304,16 +304,17 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const [photoProcessing, setPhotoProcessing] = useState(false);
   useEffect(() => {
     cameraMounted.current = true;
-    if (isNative()) void MultiCamNative.getCapabilities().then(n => {
+    if (isNative() && previewRequested) void MultiCamNative.getCapabilities().then(n => {
       if (!cameraMounted.current) return;
       const candidates = n.cameras.filter(c => c.raw);
       setRawCameras(candidates);
       setRawNative(candidates.length > 0);
     }).catch(() => { if (cameraMounted.current) setRawNative(false); });
     return () => { cameraMounted.current = false; };
-  }, []);
+  }, [previewRequested]);
   const [meterOk, setMeterOk] = useState(true);
   useEffect(() => {
+    if (!previewRequested || !stream) return;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
     void nativeMetering(s.meterMode).then((native) => {
       if (native) { setMeterOk(true); return; }
@@ -321,7 +322,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
       setMeterOk(true);
       void applyAdvanced(stream, s.meterMode === "matrix" ? { exposureMode: "continuous", pointsOfInterest: [] } : { exposureMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] });
     });
-  }, [s.meterMode, stream]);
+  }, [previewRequested, s.meterMode, stream]);
   useEffect(() => { if (s.eyeAF && !s.aiEnabled) void applyAdvanced(stream, { focusMode: "continuous" }); }, [s.eyeAF, s.aiEnabled, stream]);
   const faceBox = useFaceTracking(videoRef, stream, s.eyeAF || s.aiEnabled, s.aiEnabled && s.focusModeAI === "hybrid_nearest_priority");
   const [countdown, setCountdown] = useState(0); const [flash, setFlash] = useState(0); const [photoMsg, setPhotoMsg] = useState("");

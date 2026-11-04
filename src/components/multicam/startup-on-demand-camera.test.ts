@@ -13,6 +13,9 @@ describe("safe Android startup and preview", () => {
    expect(c).toContain("const [previewRequested, setPreviewRequested] = useState(false)");
    expect(c).toContain("if (!previewRequested) return");
    expect(c).toContain("setPreviewRequested(true)");
+   expect(c).toContain("if (isNative() && previewRequested) void MultiCamNative.getCapabilities()");
+   expect(c).toContain("if (!previewRequested || !stream) return");
+
    expect(w).toContain('isNative() && mode === "native"');
    expect(c).toContain("Перейти в Camera2");
  });
