@@ -13,6 +13,6 @@ describe("high-speed Camera2 and device diagnostics never wait forever for missi
   expect(source).toContain('nativeDeadline(rawMultiCamNative.startHighSpeedRecording(options), 30000');
   expect(source).toContain('nativeDeadline(rawMultiCamNative.stopHighSpeedRecording(), 45000');
   expect(source).toContain('late.remove().catch(() => undefined)');
-  expect(source).toContain('The real camera/service owns its state');
+  expect(source).toContain('the real camera/service owns its state');
  });
 });
