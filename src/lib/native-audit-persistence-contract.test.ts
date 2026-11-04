@@ -86,7 +86,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(capturePlugin).toContain("directView==lostView");
  });
  it("keeps the native fold TextureView off REC and idle controls",()=>{
-   expect(capturePlugin).toContain('if(!"previewing".equals(captureState)){');
+   expect(capturePlugin).toContain('if(!NativeCaptureService.isPreviewingForUi()){');
    expect(capturePlugin).toContain('ack.put("reason","camera_not_previewing")');
    expect(capturePlugin).toContain('if(owner.equals(directOwner))detachDirectView()');
  });
