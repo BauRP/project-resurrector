@@ -612,7 +612,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const tr: Transition = { id: uid(), track, aId: a.id, bId: b.id, type, dur };
       setTransitions((cur) => [...cur.filter((x) => !(x.aId === a.id && x.bId === b.id)), tr]); setSelTr(tr.id); setSelected(null);
     };
-    dragRegistry.current?.register(move, up);
+    dragRegistry.current?.register(move, up, () => setGhost(null));
   };
   const colorOf = (i: Item | null): ColorAdj => ({ ...ZERO_COLOR, ...(i?.color ?? {}) });
   const setColor = (k: ColorKey, v: number) => { if (selItem?.kind === "video") setItems((cur) => cur.map((i) => i.id === selItem.id ? { ...i, color: { ...colorOf(i), [k]: v } } : i)); };
@@ -646,7 +646,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     e.stopPropagation(); const sx = e.clientX; const sy = e.clientY; let moved = false;
     const move = (ev: PointerEvent) => { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 4) moved = true; if (!moved) return; setOverlays((o) => o.map((x) => x.id === id ? { ...x, x: Math.min(98, Math.max(2, ((ev.clientX - box.left) / box.width) * 100)), y: Math.min(98, Math.max(2, ((ev.clientY - box.top) / box.height) * 100)) } : x)); };
     const up = () => { setSnap({ v: false, h: false }); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); if (!moved) setEditing(id); };
-    dragRegistry.current?.register(move, up);
+    dragRegistry.current?.register(move, up, () => setSnap({ v: false, h: false }));
   };
 
   const dragItem = (it: Item) => (e: React.PointerEvent) => {
@@ -660,7 +660,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       setItems((cur) => cur.map((x) => x.id === it.id ? { ...x, start, track } : x));
     };
     const up = () => { window.clearTimeout(hold); if (!moved) { setSelected(it.id); setSelTr(null); } window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    dragRegistry.current?.register(move, up);
+    dragRegistry.current?.register(move, up, () => window.clearTimeout(hold));
   };
 
   const editOverlay = overlays.find((o) => o.id === editing) ?? null;
@@ -729,7 +729,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       setCropDraft({ x, y, w, h });
     };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    dragRegistry.current?.register(move, up);
+    dragRegistry.current?.register(move, up, () => setSnap({ v: false, h: false }));
   };
   const minZoom = timelineMinZoom(tlW, total);
   const rulerTicks = useMemo(() => visibleRulerTicks(total, zoom, scrollX, tlW, HEAD), [total, zoom, scrollX, tlW]);
