@@ -133,6 +133,9 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
     const Ctor = (window as unknown as { FaceDetector: FaceDetectorCtor }).FaceDetector;
     const det = new Ctor({ fastMode: true, maxDetectedFaces: 4 }); let alive = true; let last: "face" | "center" | null = null;
     let nextFrame: number | null = null;
+    let lastFocusPoint: {x:number;y:number}|null = null;
+    let lastFocusSubmitted = 0;
+    let focusBusy = false;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
     const loop = async () => {
       const v = videoRef.current;
@@ -145,12 +148,32 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
           const big = faces.map((f) => f.boundingBox).sort((a, b) => b.width * b.height - a.width * a.height)[0];
           if (big) {
             const b = { x: big.x / v.videoWidth, y: big.y / v.videoHeight, w: big.width / v.videoWidth, h: big.height / v.videoHeight }; setBox(b);
-            if (poi) void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: b.x + b.w / 2, y: b.y + b.h / 2 }] });
+            // Track faces at the original detection cadence, but do not
+            // resend identical hardware-focus constraints 8 times/second.
+            const center = {x: b.x + b.w / 2, y: b.y + b.h / 2};
+            const changed = !lastFocusPoint || Math.hypot(center.x-lastFocusPoint.x,
+              center.y-lastFocusPoint.y) > 0.025;
+            if (poi && !focusBusy && (changed || performance.now()-lastFocusSubmitted > 1500)) {
+              focusBusy = true;
+              lastFocusPoint = center;
+              lastFocusSubmitted = performance.now();
+              void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [center] })
+                .finally(() => { focusBusy = false; });
+            }
             last = "face";
           } else {
             setBox(null);
             // Hybrid nearest priority: face hidden (e.g. a product held up) → focus the frame centre, return to the face when it reappears.
-            if (hybrid && poi && last !== "center") { void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] }); last = "center"; }
+            if (hybrid && poi && last !== "center") {
+              // Returning to the centre is still a real focus transition.
+              lastFocusPoint = null;
+              if (!focusBusy) {
+                focusBusy = true;
+                void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] })
+                  .finally(() => { focusBusy = false; });
+              }
+              last = "center";
+            }
           }
         } catch { /* frame not ready */ }
       }
