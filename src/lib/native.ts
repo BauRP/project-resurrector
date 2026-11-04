@@ -78,8 +78,11 @@ export const MultiCamNative: MultiCamNativePlugin = {
   getEncoderSupport: options => nativeDeadline(rawMultiCamNative.getEncoderSupport(options), 12000, "getEncoderSupport"),
   startCameraAvailability: options => nativeDeadline(rawMultiCamNative.startCameraAvailability(options), 10000, "startCameraAvailability"),
   stopCameraAvailability: options => nativeDeadline(rawMultiCamNative.stopCameraAvailability(options), 10000, "stopCameraAvailability"),
-  addListener: (name, listener) => nativeDeadline(rawMultiCamNative.addListener(name, listener), 8000, "addListener",
-    late => { void late.remove().catch(() => undefined); }),
+  addListener: (name, listener) => nativeDeadline(
+    name === "cameraAvailabilityChanged"
+      ? rawMultiCamNative.addListener(name, listener as (event: {cameraId:string;available:boolean}) => void)
+      : rawMultiCamNative.addListener("highSpeedStateChanged", listener as (event: {state:string;message:string}) => void),
+    8000, "addListener", late => { void late.remove().catch(() => undefined); }),
   getThermalStatus: () => nativeDeadline(rawMultiCamNative.getThermalStatus(), 7000, "getThermalStatus"),
   listAudioInputs: () => nativeDeadline(rawMultiCamNative.listAudioInputs(), 7000, "listAudioInputs"),
   setPreferredAudioInput: options => nativeDeadline(rawMultiCamNative.setPreferredAudioInput(options), 9000, "setPreferredAudioInput"),
