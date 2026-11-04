@@ -13,10 +13,27 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(NativeCapturePlugin.class);
         registerPlugin(DisplayTopologyPlugin.class);
         registerPlugin(DeviceMetricsPlugin.class);
+        registerPlugin(UiFreezePlugin.class);
         registerPlugin(RawDngPlugin.class);
         registerPlugin(StabilizationProbePlugin.class);
         super.onCreate(savedInstanceState);
         configureWebView();
+        UiFreezeMonitor.start(getApplicationContext());
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        UiFreezeMonitor.setForeground(true);
+    }
+
+    @Override protected void onPause() {
+        UiFreezeMonitor.setForeground(false);
+        super.onPause();
+    }
+
+    @Override protected void onDestroy() {
+        UiFreezeMonitor.stop();
+        super.onDestroy();
     }
 
     private void configureWebView() {

@@ -8,6 +8,7 @@ import { Capacitor } from "@capacitor/core";
 const EditorTab = lazy(() => import("./EditorTab").then(mod => ({ default: mod.EditorTab })));
 import { SettingsTab } from "./SettingsTab";
 import { SettingsCrashBoundary } from "./SettingsCrashBoundary";
+import { AndroidFreezeNotice } from "./AndroidFreezeNotice";
 import { SplashScreen } from "./SplashScreen";
 import { ConnectModal } from "./ConnectModal";
 import { useMeshPeers } from "./useMesh";
@@ -223,6 +224,7 @@ function MulticamAppContent() {
       </div>}
     </div>}
     <AnimatePresence>{connectOpen && <ConnectModal onClose={() => setConnectOpen(false)} />}</AnimatePresence>
+    <AndroidFreezeNotice />
   </div></div>;
 }
 
