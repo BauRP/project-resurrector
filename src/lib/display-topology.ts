@@ -579,6 +579,7 @@ export function startDisplayAdaptation(): () => void {
   };
   // WindowManager, CSS resize and viewport changes can occur in bursts when
   // the hinge animates. One RAF update avoids repeated synchronous DOM writes.
+  window.addEventListener("multicam-tab-rendered", scheduleMeasure);
   window.addEventListener("resize", scheduleMeasure);
   window.addEventListener("orientationchange", scheduleMeasure);
   window.visualViewport?.addEventListener("resize", scheduleMeasure);
@@ -591,16 +592,26 @@ export function startDisplayAdaptation(): () => void {
   const camera = document.querySelector(".camera-screen");
   if (camera) geometryObserver?.observe(camera);
   let observedCamera: Element | null = camera;
+  // A normal single-screen WebView can mutate many Settings rows during
+  // navigation/theme changes. Those content additions do not move any fold
+  // pane. Keep the observer attached for camera/tab remounts, but avoid
+  // unnecessary forced layout reads on a regular Android emulator.
+  let observedTab = root.dataset["activeMulticamTab"] ?? "";
   const mutations = content && typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
-    // Tabs remount their camera subtree. Stop observing the detached node:
-    // otherwise ResizeObserver can hold old React components indefinitely.
     const nextCamera = document.querySelector(".camera-screen");
-    if (nextCamera !== observedCamera) {
+    const cameraChanged = nextCamera !== observedCamera;
+    if (cameraChanged) {
       if (observedCamera) geometryObserver?.unobserve(observedCamera);
       if (nextCamera) geometryObserver?.observe(nextCamera);
       observedCamera = nextCamera;
     }
-    scheduleMeasure();
+    const nextTab = root.dataset["activeMulticamTab"] ?? "";
+    const tabChanged = nextTab !== observedTab;
+    observedTab = nextTab;
+    // Real fold-pane geometry can change when controls expand/collapse, even
+    // without a CSS viewport resize. Preserve that full observation path.
+    const foldHasSeparatingHinge = lastNative?.foldingFeatures.some(feature => feature.separating) === true;
+    if (cameraChanged || tabChanged || foldHasSeparatingHinge) scheduleMeasure();
   }) : null;
   if (content) mutations?.observe(content, { childList: true, subtree: true });
   measure();
@@ -626,6 +637,7 @@ export function startDisplayAdaptation(): () => void {
   return () => {
     disposed = true;
     forgetActiveFoldSnapshot(token);
+    window.removeEventListener("multicam-tab-rendered", scheduleMeasure);
     window.removeEventListener("resize", scheduleMeasure);
     window.removeEventListener("orientationchange", scheduleMeasure);
     window.visualViewport?.removeEventListener("resize", scheduleMeasure);
