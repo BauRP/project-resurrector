@@ -206,8 +206,8 @@ function MulticamAppContent() {
     className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
     {!clean && <header className={`app-header ${tab === "editor" ? "app-header-editor" : ""}`}>
       <div className="multicam-brand min-w-0"><span className="multicam-brand-mark" aria-hidden="true" /><p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em]">MULTI-CAM POV</p></div>
-      <div className="app-header-actions flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
-      {tab === "editor" && <motion.button whileTap={{ scale: .94 }} onClick={() => setStore({ exportOpen: true, mediaOpen: false })} className="connect-pill active"><Download className="size-4" /><span>{t("export")}</span></motion.button>}
+      <div className="app-header-actions flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active header-icon-action ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
+      {tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label={t("export")} title={t("export")} onClick={() => setStore({ exportOpen: true, mediaOpen: false })} className="connect-pill active header-icon-action"><Download className="size-4" /></motion.button>}
       <motion.button whileTap={{ scale: .94 }} onClick={() => setConnectOpen(true)} className={`connect-pill ${role !== "solo" ? "active" : ""}`}>
         <Link2 className="size-4" /><span className="truncate">{role === "solo" ? t("connect") : `${t(role)} · ${peers.length}`}</span>
         {role !== "solo" && <span className={`h-2 w-2 shrink-0 rounded-full ${peers.length ? "bg-status" : "bg-warning"}`} />}

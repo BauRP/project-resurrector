@@ -206,12 +206,12 @@
 @keyframes simulation-shift { to { background-position: 80% 50%; } }
 
 .app-stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: oklch(0.08 0 0); }
-.app-shell { --nav-h: calc(4.1rem + env(safe-area-inset-bottom)); position: relative; height: 100dvh; width: min(100vw, calc(100dvh * 9 / 16)); overflow: hidden; background: var(--background); transform: translateZ(0); container-type: inline-size; }
+.app-shell { --nav-h: calc(3.75rem + env(safe-area-inset-bottom)); position: relative; height: 100dvh; width: min(100vw, calc(100dvh * 9 / 16)); overflow: hidden; background: var(--background); transform: translateZ(0); container-type: inline-size; }
 .app-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
 .grid-cross::before { background: linear-gradient(to right,transparent 49.8%,oklch(1 0 0/.5) 50%,transparent 50.2%); }
 .grid-cross::after { background: linear-gradient(to bottom,transparent 49.8%,oklch(1 0 0/.5) 50%,transparent 50.2%); }
 .bottom-nav { position: absolute; z-index: 40; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); width: 100%; height: var(--nav-h); padding-bottom: env(safe-area-inset-bottom); overflow: hidden; border-top: 1px solid var(--border); border-radius: 0; background: var(--card); }
-.bottom-nav button { position: relative; display: flex; height: 4.1rem; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; color: var(--muted-foreground); cursor: pointer; }
+.bottom-nav button { position: relative; display: flex; height: 3.75rem; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; color: var(--muted-foreground); cursor: pointer; }
 .bottom-nav button svg { width: 1.25rem; height: 1.25rem; }
 .bottom-nav button span { font-size: .64rem; font-weight: 600; }
 .bottom-nav button.active { color: var(--foreground); }
@@ -431,15 +431,15 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .app-header .connect-pill { padding-inline: .5rem; font-size: .68rem; }
 }
 @media (min-width: 600px) {
-  .app-shell { --nav-h: calc(4.6rem + env(safe-area-inset-bottom)); }
+  .app-shell { --nav-h: calc(4rem + env(safe-area-inset-bottom)); }
   .app-header { padding-inline: max(1.25rem, env(safe-area-inset-left)); }
   .bottom-nav { max-width: 100%; }
-  .bottom-nav button { height: 4.6rem; }
+  .bottom-nav button { height: 4rem; }
 }
 @media (min-width: 840px) {
-  .app-shell { --nav-h: calc(4.8rem + env(safe-area-inset-bottom)); }
+  .app-shell { --nav-h: calc(4.05rem + env(safe-area-inset-bottom)); }
   .app-header { padding-inline: max(1.5rem, env(safe-area-inset-left)); }
-  .bottom-nav button { height: 4.8rem; }
+  .bottom-nav button { height: 4.05rem; }
 }
 @media (max-height: 480px) and (orientation: landscape) {
   .app-shell { --nav-h: calc(3.1rem + env(safe-area-inset-bottom)); }
@@ -1214,7 +1214,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   background:var(--reference-surface);
   box-shadow:0 -6px 24px oklch(.43 .10 264 / .16),inset 0 1px 0 oklch(1 0 0 / .29);
 }
-.bottom-nav button {height:100%;gap:.22rem;color:var(--foreground);}
+.bottom-nav button {height:100%;gap:.13rem;color:var(--foreground);}
 .bottom-nav button.active {
   color:var(--primary);
   background:linear-gradient(120deg,oklch(.82 .088 239 / .43),oklch(.74 .13 305 / .34));
@@ -1258,16 +1258,47 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 }
 
 
+/* Compact circular Folder and Export actions; the Connect button is still
+   positioned by the same header grid as the Camera section. */
+.app-header .app-header-actions .header-icon-action {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 2.25rem;
+  width:2.25rem;
+  height:2.25rem;
+  min-height:2.25rem;
+  padding:0;
+  border-radius:50%;
+}
+@media (max-width:390px) {
+ .app-header-editor .app-header-actions {gap:.2rem;}
+ .app-header-editor .app-header-actions .header-icon-action {flex-basis:2rem;width:2rem;height:2rem;min-height:2rem;}
+ .app-header-editor .app-header-actions .connect-pill:last-child {padding-inline:.48rem;gap:.3rem;font-size:.68rem;}
+}
+/* No tinted scrolling rectangle below the six camera HUD chips. Keep the
+   original placement and each button; scroll is retained on narrow phones. */
+.camera-hud-controls {
+ background:transparent;
+ border:0;
+ box-shadow:none;
+ outline:0;
+ overflow:visible;
+ scrollbar-gutter:auto;
+}
+@media (max-width:390px) {
+ .camera-hud-controls {overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;}
+}
+
 /* Small-screen editor: all three top actions remain usable without hiding
    or truncating the brand. Camera and Settings retain the one-line header. */
 @media (max-width: 560px) {
- .app-header-editor {display:grid;grid-template-columns:minmax(0,1fr);row-gap:.35rem;padding-block:.55rem;}
+ /* Both camera and editor keep their Connect button on the same top row. */
+ .app-header-editor {display:grid;grid-template-columns:minmax(0,1fr) auto;row-gap:0;}
  .app-header-editor > .multicam-brand {display:flex;min-width:0;max-width:100%;}
- .app-header-editor .multicam-brand p {overflow:visible;text-overflow:clip;white-space:nowrap;font-size:.72rem;letter-spacing:.14em;}
- .app-header-editor .app-header-actions {display:grid;grid-template-columns:2.5rem auto minmax(0,1fr);align-items:center;justify-content:stretch;gap:.38rem;width:100%;}
- .app-header-editor .app-header-actions .connect-pill {width:auto;max-width:none;min-width:0;justify-content:center;}
- .app-header-editor .app-header-actions .connect-pill:last-child {justify-self:end;width:max-content;max-width:100%;}
- .app-header-editor .app-header-actions .connect-pill span {min-width:0;}
+ .app-header-editor .multicam-brand p {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.72rem;letter-spacing:.14em;}
+ .app-header-editor .app-header-actions {display:flex;align-items:center;justify-content:flex-end;gap:.28rem;width:auto;min-width:0;flex-wrap:nowrap;}
+ .app-header-editor .app-header-actions .connect-pill:last-child {width:auto;max-width:100%;min-width:0;flex:0 1 auto;justify-content:center;}
 }
 /* Prior narrow-screen rule hid the brand altogether. The reference 111/222
    always shows the full name, even with gesture navigation. */
@@ -1276,7 +1307,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
  .app-header {grid-template-columns:minmax(0,1fr) auto;}
  .app-header .multicam-brand p {font-size:.56rem;letter-spacing:.08em;}
  .app-header .multicam-brand-mark {width:1.55rem;transform:scale(.84);transform-origin:left center;}
- .app-header-editor {grid-template-columns:minmax(0,1fr);}
+ .app-header-editor {grid-template-columns:minmax(0,1fr) auto;}
  .app-header-editor .multicam-brand p {font-size:.69rem;letter-spacing:.12em;}
 }
 
@@ -1284,7 +1315,7 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 /* Reference-scale vertical layout: 111/222 reserve ~10% for the navigation,
    and center the camera-status panel above the optical centre of the frame. */
 @media (min-height: 600px) and (min-width: 300px) {
- .app-shell {--nav-h:calc(clamp(4.7rem,10.1dvh,6.3rem) + env(safe-area-inset-bottom));}
+ .app-shell {--nav-h:calc(clamp(3.6rem,6.85dvh,4.05rem) + env(safe-area-inset-bottom));}
  .camera-screen.camera-offline .camera-preview-status {transform:translateY(-8.4dvh);}
 }
 .camera-preview-status {width:min(90%,32rem);}

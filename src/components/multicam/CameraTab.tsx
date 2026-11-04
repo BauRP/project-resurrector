@@ -870,7 +870,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     {!clean && s.captureSaveError && <div role="alert" className="absolute inset-x-3 bottom-28 z-30 rounded-md border border-warning bg-card px-3 py-2 text-xs text-foreground">{s.captureSaveError}</div>}
     {/* HUD status bar */}
     <div className="camera-hud absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
-      {!clean && <div className="scrollbar-none flex min-w-0 flex-1 gap-1 overflow-x-auto">
+      {!clean && <div className="camera-hud-controls scrollbar-none flex min-w-0 flex-1 gap-1">
         <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : !previewRequested ? "СИМ" : cameraState === "loading" ? "…" : "НЕТ КАМЕРЫ"}</span>
         <button className={`hud-chip ${hud === "shutter" ? "active" : ""}`} onClick={() => toggleHud("shutter")}>{s.shutter}s</button>
         <button className={`hud-chip ${hud === "iso" ? "active" : ""} ${camCaps && !camCaps.iso ? "opacity-40" : ""}`} onClick={() => toggleHud("iso")}>ISO {s.capture.iso ?? "A"}</button>
