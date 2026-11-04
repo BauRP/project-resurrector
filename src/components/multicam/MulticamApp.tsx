@@ -196,9 +196,9 @@ function MulticamAppContent() {
   const current = labels[language] ?? [t("camera"), t("editor"), t("settings")];
   return <div className="app-stage"><div className="app-shell">{!ready && <SplashScreen onDone={onProbed} />}<div ref={appScrollRef} onScroll={(event) => scrollRestorer.current.onScroll(tab, event.currentTarget)}
     className={`app-scroll ${tab === "camera" ? "flex flex-col overflow-hidden" : ""}`}>
-    {!clean && <header className="app-header">
+    {!clean && <header className={`app-header ${tab === "editor" ? "app-header-editor" : ""}`}>
       <div className="multicam-brand min-w-0"><span className="multicam-brand-mark" aria-hidden="true" /><p className="truncate text-[11px] font-semibold uppercase tracking-[0.18em]">MULTI-CAM POV</p></div>
-      <div className="flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
+      <div className="app-header-actions flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
       {tab === "editor" && <motion.button whileTap={{ scale: .94 }} onClick={() => setStore({ exportOpen: true, mediaOpen: false })} className="connect-pill active"><Download className="size-4" /><span>{t("export")}</span></motion.button>}
       <motion.button whileTap={{ scale: .94 }} onClick={() => setConnectOpen(true)} className={`connect-pill ${role !== "solo" ? "active" : ""}`}>
         <Link2 className="size-4" /><span className="truncate">{role === "solo" ? t("connect") : `${t(role)} · ${peers.length}`}</span>
