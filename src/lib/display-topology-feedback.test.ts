@@ -40,6 +40,37 @@ describe("WebView layout feedback cannot repaint forever", () => {
       if (originalHeight) Object.defineProperty(window, "innerHeight", originalHeight);
     }
   });
+  it("avoids duplicate CSS writes for real tab changes with unchanged viewport", () => {
+    document.body.innerHTML = '<div class="app-shell"><div class="app-header"></div><div class="app-scroll"><div class="camera-screen"></div></div></div>';
+    const originalWidth = Object.getOwnPropertyDescriptor(window, "innerWidth");
+    const originalHeight = Object.getOwnPropertyDescriptor(window, "innerHeight");
+    Object.defineProperty(window, "innerWidth", { configurable: true, value: 420 });
+    Object.defineProperty(window, "innerHeight", { configurable: true, value: 840 });
+    const raf: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => { raf.push(fn); return raf.length; });
+    vi.stubGlobal("cancelAnimationFrame", () => undefined);
+    const root = document.documentElement;
+    const cssWrite = vi.spyOn(root.style, "setProperty");
+    const stop = startDisplayAdaptation();
+    try {
+      const writes = cssWrite.mock.calls.length;
+      root.dataset["activeMulticamTab"] = "settings";
+      window.dispatchEvent(new Event("resize"));
+      raf.splice(0).forEach(fn => fn(performance.now()));
+      expect(cssWrite.mock.calls.length).toBe(writes);
+      // An actual height change still updates the same CSS property.
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 710 });
+      window.dispatchEvent(new Event("resize"));
+      raf.splice(0).forEach(fn => fn(performance.now()));
+      expect(root.style.getPropertyValue("--app-viewport-height")).toBe("710px");
+      expect(cssWrite.mock.calls.length).toBeGreaterThan(writes);
+    } finally {
+      stop();
+      delete root.dataset["activeMulticamTab"];
+      if (originalWidth) Object.defineProperty(window, "innerWidth", originalWidth);
+      if (originalHeight) Object.defineProperty(window, "innerHeight", originalHeight);
+    }
+  });
   it("compares keyboard, editor and hinge geometry rather than just outer window dimensions", () => {
     const source = readFileSync("src/lib/display-topology.ts", "utf8");
     expect(source).toContain("viewport?.offsetTop");

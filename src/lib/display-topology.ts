@@ -285,6 +285,15 @@ export function startDisplayAdaptation(): () => void {
   let workspaceTarget:Element|null=null;
   let workspaceYOffset=0;
   const root = document.documentElement;
+  // A no-op CSS write can trigger layout and another ResizeObserver callback
+  // on Android WebView. Only mutate when the computed pane value changes.
+  // This keeps every fold/rotation/keyboard layout feature fully active.
+  const writeCss = (name: string, value: string) => {
+    if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value);
+  };
+  const clearCss = (name: string) => {
+    if (root.style.getPropertyValue(name) !== "") root.style.removeProperty(name);
+  };
   const width = () => window.innerWidth;
   const height = () => window.innerHeight;
   let lastGoodWidth: number | null = null;
@@ -331,7 +340,7 @@ export function startDisplayAdaptation(): () => void {
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
     root.dataset["windowClass"] = windowClass(currentWidth);
     root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
-    root.style.setProperty("--app-viewport-height", currentHeight + "px");
+    writeCss("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
     // Avoid repeatedly publishing identical pane geometry on mutation storms.
@@ -361,7 +370,7 @@ export function startDisplayAdaptation(): () => void {
     for(const pane of ["preview","hud","settings","controls"])
       for(const axis of ["left","top","width","height"])
         vars.push("--camera-quad-"+pane+"-"+axis);
-    for(const name of vars)root.style.removeProperty(name);
+    for(const name of vars)clearCss(name);
     window.dispatchEvent(new CustomEvent(FOLD_EVENT,{detail:{invalid:true}}));
   };
   const layout = (state: DisplayTopology) => {
@@ -430,13 +439,13 @@ export function startDisplayAdaptation(): () => void {
       return;
     }
     root.dataset["foldWorkspace"] = workspace ? "pane" : "normal";
-    root.style.setProperty("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
-    root.style.setProperty("--fold-work-width",(workspace?.width??shellWidth)+"px");
-    root.style.setProperty("--fold-work-height",(workspace?.height??contentBounds.height)+"px");
+    writeCss("--fold-work-left",Math.max(0,(workspace?.left??shellLeft)-shellLeft)+"px");
+    writeCss("--fold-work-width",(workspace?.width??shellWidth)+"px");
+    writeCss("--fold-work-height",(workspace?.height??contentBounds.height)+"px");
     // Fixed-position modal siblings need the pane's absolute viewport top.
     // --fold-work-y-offset is relative to scroll content and is NOT suitable
     // for fixed dialogs. A horizontal hinge may otherwise hide the close/QR.
-    root.style.setProperty("--fold-work-top",Math.max(0,workspace?.top??contentBounds.top)+"px");
+    writeCss("--fold-work-top",Math.max(0,workspace?.top??contentBounds.top)+"px");
     const target=document.querySelector(".editor-fold-workspace, .settings-fold-workspace");
     if(target!==workspaceTarget){workspaceTarget=target;workspaceYOffset=0;}
     // position:relative top offsets can be measured without accumulating
@@ -445,7 +454,7 @@ export function startDisplayAdaptation(): () => void {
     const unshiftedTop=targetTop-workspaceYOffset;
     workspaceYOffset=target&&workspace
       ?Math.max(0,workspace.top-unshiftedTop):0;
-    root.style.setProperty("--fold-work-y-offset",workspaceYOffset+"px");
+    writeCss("--fold-work-y-offset",workspaceYOffset+"px");
     const panes = [...geometry.regions].sort((a,b) => a.left - b.left || a.top - b.top);
     // CSS pane-aware camera placement is only used when BOTH useful panes exist.
     // Mixed-orientation multi-hinge layouts need their own pane model; a
@@ -479,11 +488,11 @@ export function startDisplayAdaptation(): () => void {
       ?fourPaneCameraLayout(clippedQuadRegions as Region[]):null;
     root.dataset["cameraSplit"] = quad ? "quad" :
       eligibleThree ? "tri" : eligible ? "side" : "none";
-    root.style.setProperty("--camera-left-pane-width", Math.max(0, (leftPane?.left ?? 0) + (leftPane?.width ?? width()) - cameraLeft) + "px");
-    root.style.setProperty("--camera-right-pane-left", Math.max(0, (rightPane?.left ?? width()) - cameraLeft) + "px");
-    root.style.setProperty("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
-    root.style.setProperty("--camera-control-pane-left", Math.max(0, (controlPane?.left ?? width()) - cameraLeft) + "px");
-    root.style.setProperty("--camera-control-pane-width", Math.max(0, controlPane?.width ?? 0) + "px");
+    writeCss("--camera-left-pane-width", Math.max(0, (leftPane?.left ?? 0) + (leftPane?.width ?? width()) - cameraLeft) + "px");
+    writeCss("--camera-right-pane-left", Math.max(0, (rightPane?.left ?? width()) - cameraLeft) + "px");
+    writeCss("--camera-right-pane-width", Math.max(0, rightPane?.width ?? 0) + "px");
+    writeCss("--camera-control-pane-left", Math.max(0, (controlPane?.left ?? width()) - cameraLeft) + "px");
+    writeCss("--camera-control-pane-width", Math.max(0, controlPane?.width ?? 0) + "px");
     // Layout coordinates must be relative to the actual camera container,
     // not the full Android display or the page's top-left origin.
     const quadVars: Record<string, number> = quad ? {
@@ -514,8 +523,8 @@ export function startDisplayAdaptation(): () => void {
       "--camera-quad-controls-left","--camera-quad-controls-top",
       "--camera-quad-controls-width","--camera-quad-controls-height",
     ]) {
-      if(quad) root.style.setProperty(name,Math.max(0,quadVars[name]??0)+"px");
-      else root.style.removeProperty(name);
+      if(quad) writeCss(name,Math.max(0,quadVars[name]??0)+"px");
+      else clearCss(name);
     }
     // A tablet-like tabletop layout requires two full-width, vertically
     // stacked usable regions. Mixed perpendicular hinges create four panes
@@ -528,12 +537,12 @@ export function startDisplayAdaptation(): () => void {
       panes[0]!.height >= 170 && panes[1]!.height >= 170;
     root.dataset["cameraTabletop"] = horizontal ? "true" : "false";
     if (horizontal) {
-      root.style.setProperty("--camera-upper-height", Math.max(0, panes[0]!.top + panes[0]!.height - cameraTop) + "px");
-      root.style.setProperty("--camera-lower-top", Math.max(0, panes[1]!.top - cameraTop) + "px");
+      writeCss("--camera-upper-height", Math.max(0, panes[0]!.top + panes[0]!.height - cameraTop) + "px");
+      writeCss("--camera-lower-top", Math.max(0, panes[1]!.top - cameraTop) + "px");
     } else {
       // Do not carry tabletop coordinates into a later book/cover layout.
-      root.style.removeProperty("--camera-upper-height");
-      root.style.removeProperty("--camera-lower-top");
+      clearCss("--camera-upper-height");
+      clearCss("--camera-lower-top");
     }
   };
   const apply = (state: DisplayTopology) => {
@@ -626,7 +635,7 @@ export function startDisplayAdaptation(): () => void {
     if (activeAdaptation === token) {
       activeAdaptation = null;
       ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","foldSurface","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
-      ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => root.style.removeProperty(key));
+      ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => clearCss(key));
     }
   };
 }
