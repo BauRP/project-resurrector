@@ -180,7 +180,7 @@ async function analyse(clip: StoredClip): Promise<Media> {
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
   const [media, setMedia] = useState<Media[]>([]);
   // Restore and sanitize the saved project only ONCE per editor mount. Each
-  // loadEditorProject() performs synchronous localStorage JSON.parse and
+  // Loading it performs synchronous localStorage JSON.parse and
   // validation of hundreds of clips; running it once per separate state
   // field previously multiplied the WebView first-paint cost.
   const [initialEditorProject] = useState(() => loadEditorProject());
