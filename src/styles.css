@@ -1377,3 +1377,76 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 .app-header .connect-pill svg {
   filter:drop-shadow(0 0 3px oklch(.60 .16 290 / .35));
 }
+
+
+/* Reference 111/222 timeline: visible Video/Audio lane titles and unboxed
+   eye/speaker glyphs, rather than tiny square buttons and clipped "V". */
+.editor-fold-workspace .timeline-header {
+  min-width: 104px;
+  justify-content: space-between;
+  gap: 3px;
+  padding: 0 5px 0 7px;
+  border-right: 1px solid var(--reference-rim);
+  background: var(--reference-surface);
+  color: var(--foreground);
+}
+.editor-fold-workspace .timeline-header .timeline-lane-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  letter-spacing: -.02em;
+}
+.editor-fold-workspace .timeline-header button.timeline-lane-toggle,
+.editor-fold-workspace .timeline-header button.timeline-lane-toggle:not(:disabled) {
+  display: inline-flex;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  outline-offset: -1px;
+  -webkit-tap-highlight-color: transparent;
+}
+.editor-fold-workspace .timeline-header .timeline-lane-toggle svg {width: 17px;height: 17px;}
+.editor-fold-workspace .timeline-header .timeline-lane-toggle.is-off {
+  color: var(--destructive);
+  opacity: .8;
+}
+.editor-fold-workspace .timeline-header button.timeline-lane-toggle:active {
+  background-color: color-mix(in oklab, var(--primary) 18%, transparent) !important;
+}
+.editor-fold-workspace .timeline-lane {
+  background: color-mix(in oklab, var(--reference-top) 55%, transparent);
+}
+.editor-fold-workspace .timeline-lane:nth-child(2n) {
+  background: color-mix(in oklab, var(--reference-bottom) 55%, transparent);
+}
+/* Camera HUD: individual outlined pill lenses like reference 111/222, not a
+   single flat strip. Keep original 8 controls and their touch bounds. */
+.camera-screen .camera-hud .hud-chip {
+  border-radius: 999px !important;
+  border: 1px solid var(--reference-rim);
+  background: var(--reference-surface);
+  padding-inline: clamp(.33rem, 1.65vw, .57rem);
+  box-shadow: var(--reference-shadow), 0 1px 4px color-mix(in oklab,var(--primary) 12%,transparent);
+  min-height: 2.1rem;
+  font-size: clamp(.58rem, 2.24vw, .78rem);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+.camera-screen .camera-hud .hud-chip.active {background:var(--gradient-primary);color:white;box-shadow:var(--reference-glow);}
+@media(max-width:390px) {
+  .camera-screen .camera-hud {gap: .22rem;}
+  .camera-screen .camera-hud .hud-chip {padding-inline:.29rem;font-size:.56rem;min-height:1.9rem;}
+}

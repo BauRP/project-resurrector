@@ -75,7 +75,7 @@ const LOOKS: Record<string, string> = { "Без цвета": "none", Тёплы�
 const FONT_NAMES = ["Montserrat","Roboto","Open Sans","Raleway","Nunito","Rubik","Manrope","Jost","Exo 2","Ubuntu","Fira Sans","IBM Plex Sans","PT Sans","PT Serif","Playfair Display","Lora","Merriweather","Cormorant Garamond","Alice","Yeseva One","Oswald","Russo One","Unbounded","Comfortaa","Philosopher","Lobster","Pacifico","Caveat","Marck Script","Press Start 2P"];
 export const FONTS = FONT_NAMES.map((f) => `"${f}", sans-serif`);
 const ASPECTS: [string, string, number][] = [["16:9", "YouTube", 16 / 9], ["9:16", "Reels / TikTok", 9 / 16], ["1:1", "Квадрат", 1], ["4:3", "Классика", 4 / 3], ["4:5", "Instagram", 4 / 5], ["21:9", "Кино", 21 / 9]];
-const ROW = 44; const FRAME = 1 / 30; const HEAD = 72; const TILE = 64;
+const ROW = 44; const FRAME = 1 / 30; const HEAD = 104; const TILE = 64;
 const uid = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 const len = (i: Item) => (i.out - i.in) / i.speed;
 const fmt = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${(t % 60).toFixed(2).padStart(5, "0")}`;
@@ -503,7 +503,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
   const editOverlay = overlays.find((o) => o.id === editing) ?? null;
   const patchOverlay = (patch: Partial<Overlay>) => setOverlays((o) => o.map((x) => x.id === editing || (editOverlay?.subtitle && x.subtitle && !("text" in patch)) ? { ...x, ...patch } : x));
-  const lanes = [...Array.from({ length: vTracks }, (_, k) => k + 1).map((n) => ({ key: `v${n}`, kind: "video" as const, track: n, label: "Video" })), ...Array.from({ length: aTracks }, (_, k) => k + 1).map((n) => ({ key: `a${n}`, kind: "audio" as const, track: n, label: "Audio" }))];
+  const lanes = [...Array.from({ length: vTracks }, (_, k) => k + 1).map((n) => ({ key: `v${n}`, kind: "video" as const, track: n, label: n === 1 ? "Видео" : `Видео ${n}` })), ...Array.from({ length: aTracks }, (_, k) => k + 1).map((n) => ({ key: `a${n}`, kind: "audio" as const, track: n, label: n === 1 ? "Аудио" : `Аудио ${n}` }))];
 
   useEffect(() => {
     const token=Symbol("mounted editor");
@@ -614,10 +614,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   };
   // Lanes do not depend on the playhead, so they are memoised and skipped during 60 fps playback re-renders.
   const laneEls = useMemo(() => lanes.map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
-    <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
-      <span className="w-8 truncate text-[9px] font-semibold">{lane.label}</span>
-      {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
-      <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={muted[lane.key] ? "text-record" : "text-muted-foreground"}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
+    <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" role="group" aria-label={`Дорожка ${lane.label}`} style={{ width: HEAD }}>
+      <span className="timeline-lane-title min-w-0 flex-1 text-[11px] font-semibold">{lane.label}</span>
+      {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={`timeline-lane-toggle ${hidden[lane.key] ? "is-off text-record" : "text-foreground"}`}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
+      <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук дорожки ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={`timeline-lane-toggle ${muted[lane.key] ? "is-off text-record" : "text-foreground"}`}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
     </div>
     <div className="relative flex-1" ref={(el) => { laneRefs.current[lane.key] = el; }}>
       {items.filter((i) => i.track === lane.track && i.kind === lane.kind).map((i) => {
