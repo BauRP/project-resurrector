@@ -74,6 +74,14 @@ public class MultiCamNativePlugin extends Plugin {
             worker.setDaemon(true);
             return worker;
         });
+    // MP4 parsing is independent of the CameraManager query queue. A corrupt
+    // emulator recording must never run a MediaExtractor scan on the UI thread.
+    private final java.util.concurrent.ExecutorService mp4InspectionWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+            Thread worker = new Thread(task, "multicam-mp4-inspection");
+            worker.setDaemon(true);
+            return worker;
+        });
     private HandlerThread thread;
     private Handler handler;
     private CameraManager.AvailabilityCallback availabilityWatcher;
@@ -512,18 +520,24 @@ public class MultiCamNativePlugin extends Plugin {
         final String requested = call.getString("path", "");
         if (requested == null || requested.isEmpty()) { call.reject("Путь MP4 не указан"); return; }
         try {
-            final File root = getContext().getExternalFilesDir(null);
-            if (root == null) throw new IllegalStateException("Внутренняя папка видео недоступна");
-            final File allowed = root.getCanonicalFile();
-            final File file = new File(requested).getCanonicalFile();
-            if (!file.getPath().startsWith(allowed.getPath() + File.separator)) {
-                call.reject("Доступ разрешён только к видеозаписям приложения");
-                return;
-            }
-            if (!file.isFile() || file.length() < 1024) { call.reject("Файл MP4 отсутствует или пуст"); return; }
-            call.resolve(inspectRecordedFile(file));
-        } catch (Exception error) {
-            call.reject("Анализ сохранённого MP4 невозможен: " + error.getMessage());
+            mp4InspectionWorker.execute(() -> {
+                try {
+                    final File root = getContext().getExternalFilesDir(null);
+                    if (root == null) throw new IllegalStateException("Внутренняя папка видео недоступна");
+                    final File allowed = root.getCanonicalFile();
+                    final File file = new File(requested).getCanonicalFile();
+                    if (!file.getPath().startsWith(allowed.getPath() + File.separator)) {
+                        call.reject("Доступ разрешён только к видеозаписям приложения");
+                        return;
+                    }
+                    if (!file.isFile() || file.length() < 1024) { call.reject("Файл MP4 отсутствует или пуст"); return; }
+                    call.resolve(inspectRecordedFile(file));
+                } catch (Exception error) {
+                    call.reject("Анализ сохранённого MP4 невозможен: " + error.getMessage());
+                }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException error) {
+            call.reject("Анализ MP4 недоступен после закрытия приложения");
         }
     }
 
