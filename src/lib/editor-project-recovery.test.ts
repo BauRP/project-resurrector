@@ -1,4 +1,5 @@
 import {describe,expect,it,vi} from "vitest";
+import {readFileSync} from "node:fs";
 import {sanitizeEditorProject,saveEditorProject,loadEditorProject} from "./editor-project-recovery";
 const item={id:"one",mediaId:"stored-video",kind:"video",track:1,start:0,in:0,out:10,
  speed:1,reverse:false,scale:100,posX:0,opacity:100,look:"Без цвета"};
@@ -16,6 +17,14 @@ describe("fold-safe editor project persistence",()=>{
     transitions:[],muted:{weird:true,a1:true},hidden:{"__proto__":true}});
   expect(p.items).toHaveLength(1);
   expect(p.muted).toEqual({a1:true});
+ });
+ it("does not synchronously serialize project state on every editor change",()=>{
+  const code=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
+  expect(code).toContain("projectWriteTimer.current = window.setTimeout(flushEditorProject, 400)");
+  expect(code).toContain("projectDirty.current = true");
+  expect(code).toContain("window.addEventListener(\"pagehide\", flushEditorProject)");
+  expect(code).toContain("flushEditorProject();");
+  expect(code).not.toContain("document.removeEventListener(\"visibilitychange\",onHidden);flush();");
  });
  it("survives local-only save/load with a simulated WebView",()=>{
   const map=new Map<string,string>();
