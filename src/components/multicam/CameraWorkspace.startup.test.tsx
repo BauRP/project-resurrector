@@ -33,14 +33,14 @@ describe("native bridge must not freeze the initial camera screen", () => {
     expect(screen.getByText("Камера пока выключена")).toBeInTheDocument();
     expect(mocks.status).toHaveBeenCalledTimes(1);
   });
-  it("preserves manual Camera2 access while keeping initial status calls at zero", async () => {
+  it("preserves Camera2 ownership restoration and checks status before returning to WebView", async () => {
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
     expect(mocks.status).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Перейти в Camera2" }));
     await waitFor(() => expect(screen.getByText("Нативная панель")).toBeInTheDocument());
     expect(mocks.status).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
-    await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(2));
     expect(screen.getByText("Камера пока выключена")).toBeInTheDocument();
   });
 });
