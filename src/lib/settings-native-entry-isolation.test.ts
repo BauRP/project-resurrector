@@ -27,6 +27,6 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(folds).toContain('window.addEventListener("multicam-tab-rendered", scheduleMeasure)');
     expect(folds).toContain('window.removeEventListener("multicam-tab-rendered", scheduleMeasure)');
     expect(app).toContain('window.dispatchEvent(new Event("multicam-tab-rendered"))');
-    expect(folds).toContain("updateSurfaceHinges")===false; // handled on native side
+    expect(folds).toContain("NativeDisplay.startObserving({ ownerId })");
   });
 });
