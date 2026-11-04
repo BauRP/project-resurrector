@@ -39,6 +39,22 @@ describe("settings actions remain interactive", () => {
     expect(screen.getByRole("radio", { name: "Светлая" })).toHaveAttribute("aria-checked", "true");
     expect(fakes.cacheBytes).not.toHaveBeenCalled();
   });
+  it("survives rapid theme and language switching without launching camera or cache work", () => {
+    view();
+    for (let i = 0; i < 30; i++) {
+      fireEvent.click(screen.getByRole("radio", { name: i % 2 ? "Светлая" : "Тёмная" }));
+    }
+    const picker = screen.getByRole("combobox");
+    fireEvent.change(picker, { target: { value: "en" } });
+    expect(picker).toHaveValue("en");
+    fireEvent.change(picker, { target: { value: "ru" } });
+    expect(picker).toHaveValue("ru");
+    expect(screen.getByRole("radio", { name: "Светлая" })).toHaveAttribute("aria-checked", "true");
+    expect(fakes.cacheBytes).not.toHaveBeenCalled();
+    expect(fakes.diagnose).not.toHaveBeenCalled();
+    expect(fakes.clearPreviewCache).not.toHaveBeenCalled();
+  });
+
   it("requires confirmation to clear previews without touching original files", async () => {
     view();
     fireEvent.click(screen.getByRole("button", { name: /Очистить кэш/i }));
