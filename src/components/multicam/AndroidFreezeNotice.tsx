@@ -5,6 +5,7 @@ import { bounded } from "@/lib/async";
 interface UiFreezeBridge {
   read(): Promise<{report: string; recordedAt: number}>;
   clear(): Promise<void>;
+  pulse(): Promise<void>;
 }
 const uiFreeze = registerPlugin<UiFreezeBridge>("UiFreeze");
 
@@ -15,12 +16,30 @@ export function AndroidFreezeNotice() {
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable("UiFreeze")) return;
     let live = true;
+    let pulsePending = false;
+    const heartbeat = () => {
+      if (!live || document.hidden || pulsePending) return;
+      pulsePending = true;
+      // A hung JS loop simply stops invoking this callback. The Android
+      // daemon then records which side (UI/renderer) became unresponsive.
+      void bounded(uiFreeze.pulse(), 1600, "WebView heartbeat")
+        .catch(() => undefined)
+        .finally(() => { pulsePending = false; });
+    };
+    heartbeat();
+    const heartbeatId = window.setInterval(heartbeat, 2000);
+    document.addEventListener("visibilitychange", heartbeat);
     const id = window.setTimeout(() => {
       void bounded(uiFreeze.read(), 1500, "Android UI freeze report")
         .then(result => { if (live && result.report) setReport(result.report.slice(0, 4096)); })
         .catch(() => undefined);
     }, 1800);
-    return () => { live = false; window.clearTimeout(id); };
+    return () => {
+      live = false;
+      window.clearTimeout(id);
+      window.clearInterval(heartbeatId);
+      document.removeEventListener("visibilitychange", heartbeat);
+    };
   }, []);
   if (!report) return null;
   const copyReport = () => {

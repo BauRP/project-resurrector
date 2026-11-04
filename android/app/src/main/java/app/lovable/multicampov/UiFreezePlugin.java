@@ -11,6 +11,10 @@ import com.getcapacitor.PluginMethod;
 /** Read-only recovery diagnostics; never alters camera or recording. */
 @CapacitorPlugin(name = "UiFreeze")
 public class UiFreezePlugin extends Plugin {
+    @PluginMethod public void pulse(PluginCall call) {
+        UiFreezeMonitor.webViewPulse();
+        call.resolve();
+    }
     @PluginMethod public void read(PluginCall call) {
         Context app = getContext().getApplicationContext();
         // SharedPreferences is capped at 4KB and does not touch camera state.

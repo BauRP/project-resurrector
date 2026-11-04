@@ -22,8 +22,11 @@ public final class UiFreezeMonitor {
     static final String REPORT = "lastReport";
     static final String RECORDED_AT = "recordedAt";
     private static final long ANR_THRESHOLD_MS = 6500L;
+    private static final long WEBVIEW_THRESHOLD_MS = 12000L;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicLong lastHeartbeat = new AtomicLong();
+    private static final AtomicLong webViewHeartbeat = new AtomicLong();
+    private static final AtomicBoolean webViewCaptured = new AtomicBoolean();
     private static final AtomicBoolean pendingPulse = new AtomicBoolean();
     private static final AtomicBoolean captured = new AtomicBoolean();
     private static volatile boolean foreground = false;
@@ -36,6 +39,8 @@ public final class UiFreezeMonitor {
         stop();
         context = applicationContext.getApplicationContext();
         lastHeartbeat.set(SystemClock.uptimeMillis());
+        webViewHeartbeat.set(0L);
+        webViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
         foreground = true;
@@ -49,9 +54,31 @@ public final class UiFreezeMonitor {
 
     public static void setForeground(boolean visible) {
         foreground = visible;
-        lastHeartbeat.set(SystemClock.uptimeMillis());
+        final long now = SystemClock.uptimeMillis();
+        lastHeartbeat.set(now);
+        // A WebView paused by Android is not evidence of a JS loop freeze.
+        if (webViewHeartbeat.get() != 0L) webViewHeartbeat.set(now);
+        webViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
+    }
+
+    /** Called only by the running React JS loop. Native UI and JS renderer
+     * are separate processes; a healthy Android main thread does not prove
+     * the app's WebView is still processing touches and effects. */
+    public static void webViewPulse() {
+        webViewHeartbeat.set(SystemClock.uptimeMillis());
+        webViewCaptured.set(false);
+    }
+
+    private static void persistReport(String report) {
+        Context ctx = context;
+        if (ctx == null) return;
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
+            .putString(REPORT, report.length() > 4096 ? report.substring(0, 4096) : report)
+            .putLong(RECORDED_AT, System.currentTimeMillis())
+            .commit();
+        Log.e("MultiCamUiFreeze", report);
     }
 
     private static void check() {
@@ -66,7 +93,20 @@ public final class UiFreezeMonitor {
                 });
             }
             long blockedFor = now - lastHeartbeat.get();
-            if (blockedFor < ANR_THRESHOLD_MS || !captured.compareAndSet(false, true)) return;
+            if (blockedFor < ANR_THRESHOLD_MS) {
+                final long webLast = webViewHeartbeat.get();
+                final long webDelay = webLast == 0L ? 0L : now - webLast;
+                if (webDelay >= WEBVIEW_THRESHOLD_MS &&
+                    webViewCaptured.compareAndSet(false, true)) {
+                    persistReport("MULTI-CAM POV: WebView JavaScript heartbeat missing for " +
+                        webDelay + " ms while Android main thread remains responsive. " +
+                        "This indicates a stalled WebView JS loop, render process, or " +
+                        "JS-to-native bridge. Android native stack cannot identify a " +
+                        "specific JavaScript line; capture logcat for more detail.");
+                }
+                return;
+            }
+            if (!captured.compareAndSet(false, true)) return;
             StackTraceElement[] stack = Looper.getMainLooper().getThread().getStackTrace();
             StringBuilder details = new StringBuilder();
             details.append("MULTI-CAM POV: Android UI thread blocked for ")
@@ -75,16 +115,8 @@ public final class UiFreezeMonitor {
             for (int i = 0; i < limit; i++) {
                 details.append("\n").append(stack[i].toString());
             }
-            String report = details.length() > 4096 ? details.substring(0, 4096) : details.toString();
-            Context ctx = context;
-            if (ctx != null) {
-                // Write on the monitor thread, never the blocked UI thread.
-                ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
-                    .putString(REPORT, report)
-                    .putLong(RECORDED_AT, System.currentTimeMillis())
-                    .commit();
-            }
-            Log.e("MultiCamUiFreeze", report);
+            // SharedPreferences persistence is done on the worker, never UI.
+            persistReport(details.toString());
         } catch (Exception e) {
             Log.w("MultiCamUiFreeze", "Failed to capture UI stall", e);
         }

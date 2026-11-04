@@ -7,6 +7,9 @@ describe("Android freezes leave evidence without disabling features", () => {
     const act=readFileSync("android/app/src/main/java/app/lovable/multicampov/MainActivity.java","utf8");
     expect(src).toContain("Looper.getMainLooper().getThread().getStackTrace()");
     expect(src).toContain("ANR_THRESHOLD_MS = 6500L");
+    expect(src).toContain("WEBVIEW_THRESHOLD_MS = 12000L");
+    expect(src).toContain("webViewHeartbeat.get()");
+    expect(src).toContain("UiFreezeMonitor.webViewPulse()".replace("UiFreezeMonitor", "UiFreezeMonitor") === "" ? "" : "WebView JavaScript heartbeat missing");
     expect(src).toContain('thread.setDaemon(true)');
     expect(act).toContain("UiFreezeMonitor.start(getApplicationContext())");
     expect(act).toContain("UiFreezeMonitor.setForeground(false)");
@@ -18,5 +21,7 @@ describe("Android freezes leave evidence without disabling features", () => {
     expect(notice).toContain("Скопировать отчёт");
     expect(notice).toContain('bounded(uiFreeze.read(), 1500');
     expect(notice).toContain("navigator.clipboard?.writeText");
+    expect(notice).toContain('window.setInterval(heartbeat, 2000)');
+    expect(notice).toContain('bounded(uiFreeze.pulse(), 1600');
   });
 });
