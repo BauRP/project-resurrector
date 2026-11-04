@@ -289,11 +289,22 @@ export function startDisplayAdaptation(): () => void {
   const height = () => window.innerHeight;
   let lastGoodWidth: number | null = null;
   let lastGoodHeight: number | null = null;
+  // Native Android single-screen devices need no repeated fold geometry
+  // writes on every ResizeObserver or DOM mutation. Those writes can trigger
+  // another reflow while Settings switches themes. Genuine foldables remain
+  // on the existing live measurement path.
+  let lastFlatMeasurement = "";
   const measure = () => {
     if (disposed || activeAdaptation !== token) return;
     const currentWidth = retainedViewportDimension(width(), lastGoodWidth);
     const currentHeight = retainedViewportDimension(height(), lastGoodHeight);
     if (currentWidth === null || currentHeight === null) return;
+    if (lastNative && lastNative.foldingFeatures.length === 0) {
+      const signature = [currentWidth,currentHeight,
+        root.dataset["activeMulticamTab"] ?? "",lastNative.revision].join("|");
+      if (signature === lastFlatMeasurement) return;
+      lastFlatMeasurement = signature;
+    } else lastFlatMeasurement = "";
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
     root.dataset["windowClass"] = windowClass(currentWidth);
     root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
