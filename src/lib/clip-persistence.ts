@@ -126,54 +126,66 @@ export async function assertSavedClipsReadable(clips: readonly RecordedClip[]): 
   if (!clips.length) throw new Error("Не указан сохранённый клип");
   if (typeof indexedDB === "undefined") throw new Error("Локальное хранилище недоступно");
   await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open("multicam-pov-media", 1);
-    request.onblocked = () => reject(new Error("Не удалось проверить сохранение: база занята"));
-    request.onerror = () => reject(new Error("Не удалось повторно открыть сохранённую медиатеку"));
-    request.onsuccess = () => {
-      const db = request.result;
-      let finished = false;
-      const fail = (message: string) => {
-        if (finished) return;
-        finished = true;
-        db.close();
-        reject(new Error(message));
-      };
-      if (!db.objectStoreNames.contains("clips")) {
-        fail("Медиатека не содержит сохранённых видео");
-        return;
-      }
-      try {
-        const tx = db.transaction("clips", "readonly");
-        const store = tx.objectStore("clips");
-        let failure = "";
-        const checkBytes: { expected: Blob; stored: Blob; id: string }[] = [];
-        for (const clip of clips) {
-          const read = store.get(clip.id);
-          read.onsuccess = () => {
-            if (!persistedClipMatches(clip, read.result))
-              failure = "Файл " + clip.id + " отсутствует или повреждён в хранилище";
-            else checkBytes.push({ expected: clip.blob, stored: (read.result as RecordedClip).blob, id: clip.id });
-          };
-          read.onerror = () => { failure = "Не удалось прочитать файл " + clip.id; };
-        }
-        tx.oncomplete = () => {
-          if (finished) return;
-          finished = true;
-          db.close();
-          if (failure) { reject(new Error(failure)); return; }
-          // Do not await Blob IO inside an open IndexedDB transaction:
-          // it may auto-close. Only examine bytes after oncomplete.
-          void Promise.all(checkBytes.map(async sample => {
-            if (!await sampledClipBytesMatch(sample.expected, sample.stored))
-              throw new Error("Сохранённый видеоклип " + sample.id + " отличается от исходных данных");
-          })).then(() => resolve(), error => reject(error));
-        };
-        tx.onabort = () => fail("Проверка записанного видео прервана");
-        tx.onerror = () => fail("Ошибка чтения сохранённого видео");
-      } catch (error) {
-        fail("Не удалось проверить записанные клипы: " + String(error));
-      }
+    let finished = false;
+    let db: IDBDatabase | null = null;
+    let tx: IDBTransaction | null = null;
+    const settle = (error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      try { db?.close(); } catch { /* The Activity is being torn down. */ }
+      if (error) reject(error); else resolve();
     };
+    // The write may have already committed. A verification timeout must
+    // NEVER delete, repeat or replace an existing user recording.
+    const timer = window.setTimeout(() => {
+      try { tx?.abort(); } catch { /* Read transaction already completed. */ }
+      settle(new Error("Проверка видео не ответила вовремя. Запись не удалена, проверьте медиатеку."));
+    }, 12000);
+    try {
+      const request = indexedDB.open("multicam-pov-media", 1);
+      request.onblocked = () => settle(new Error("Не удалось проверить сохранение: база занята"));
+      request.onerror = () => settle(new Error("Не удалось повторно открыть сохранённую медиатеку"));
+      request.onsuccess = () => {
+        if (finished) { request.result.close(); return; }
+        db = request.result;
+        db.onversionchange = () => db?.close();
+        if (!db.objectStoreNames.contains("clips")) {
+          settle(new Error("Медиатека не содержит сохранённых видео"));
+          return;
+        }
+        try {
+          tx = db.transaction("clips", "readonly");
+          const store = tx.objectStore("clips");
+          let failure = "";
+          const checkBytes: { expected: Blob; stored: Blob; id: string }[] = [];
+          for (const clip of clips) {
+            const read = store.get(clip.id);
+            read.onsuccess = () => {
+              if (finished) return;
+              if (!persistedClipMatches(clip, read.result))
+                failure = "Файл " + clip.id + " отсутствует или повреждён в хранилище";
+              else checkBytes.push({ expected: clip.blob, stored: (read.result as RecordedClip).blob, id: clip.id });
+            };
+            read.onerror = () => { failure = "Не удалось прочитать файл " + clip.id; };
+          }
+          tx.oncomplete = () => {
+            if (finished) return;
+            // The IndexedDB transaction must finish before asynchronous
+            // Blob sample reads. Keep the same deadline through both stages.
+            if (failure) { settle(new Error(failure)); return; }
+            void Promise.all(checkBytes.map(async sample => {
+              if (!await sampledClipBytesMatch(sample.expected, sample.stored))
+                throw new Error("Сохранённый видеоклип " + sample.id + " отличается от исходных данных");
+            })).then(() => settle(), error => settle(error));
+          };
+          tx.onabort = () => settle(new Error("Проверка записанного видео прервана"));
+          tx.onerror = () => settle(new Error("Ошибка чтения сохранённого видео"));
+        } catch (error) {
+          settle(new Error("Не удалось проверить записанные клипы: " + String(error)));
+        }
+      };
+    } catch (error) { settle(error); }
   });
 }
 
@@ -184,38 +196,58 @@ export async function readPersistedClip(clipId: string): Promise<RecordedClip> {
   if (!clipId) throw new Error("Не указан идентификатор сохранённого видео");
   if (typeof indexedDB === "undefined") throw new Error("IndexedDB недоступна");
   return new Promise<RecordedClip>((resolve, reject) => {
-    const request = indexedDB.open("multicam-pov-media", 1);
-    request.onblocked = () => reject(new Error("Медиатека заблокирована"));
-    request.onerror = () => reject(new Error("Не удалось открыть хранилище для проверки клипа"));
-    request.onsuccess = () => {
-      const db = request.result;
-      if (!db.objectStoreNames.contains("clips")) {
-        db.close(); reject(new Error("Сохранённые видео не найдены")); return;
-      }
-      try {
-        const tx = db.transaction("clips", "readonly");
-        const result = tx.objectStore("clips").get(clipId);
-        let clip: RecordedClip | null = null;
-        let failed = "";
-        result.onsuccess = () => {
-          const stored: unknown = result.result;
-          if (!stored || typeof stored !== "object" ||
-              (stored as RecordedClip).id !== clipId ||
-              !((stored as RecordedClip).blob instanceof Blob) ||
-              (stored as RecordedClip).blob.size < 1024) {
-            failed = "Сохранённый видеоклип отсутствует или повреждён"; return;
-          }
-          clip = stored as RecordedClip;
-        };
-        result.onerror = () => { failed = "Ошибка чтения видеоклипа"; };
-        tx.oncomplete = () => {
-          db.close();
-          if (failed || !clip) reject(new Error(failed || "Файл не прочитан"));
-          else resolve(clip);
-        };
-        tx.onabort = () => { db.close(); reject(new Error("Чтение видеоклипа прервано")); };
-        tx.onerror = () => { db.close(); reject(new Error("Ошибка транзакции чтения клипа")); };
-      } catch (error) { db.close(); reject(error); }
+    let finished = false;
+    let db: IDBDatabase | null = null;
+    let tx: IDBTransaction | null = null;
+    const settle = (clip?: RecordedClip, error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      try { db?.close(); } catch { /* Activity recreation. */ }
+      if (error) reject(error); else if (clip) resolve(clip);
+      else reject(new Error("Сохранённый видеоклип не найден"));
     };
+    const timer = window.setTimeout(() => {
+      try { tx?.abort(); } catch { /* Read-only transaction may already be finished. */ }
+      settle(undefined, new Error("Чтение видео слишком долго не отвечает. Исходный файл не изменён."));
+    }, 12000);
+    try {
+      const request = indexedDB.open("multicam-pov-media", 1);
+      request.onblocked = () => settle(undefined, new Error("Медиатека заблокирована"));
+      request.onerror = () => settle(undefined, new Error("Не удалось открыть хранилище для проверки клипа"));
+      request.onsuccess = () => {
+        if (finished) { request.result.close(); return; }
+        db = request.result;
+        db.onversionchange = () => db?.close();
+        if (!db.objectStoreNames.contains("clips")) {
+          settle(undefined, new Error("Сохранённые видео не найдены"));
+          return;
+        }
+        try {
+          tx = db.transaction("clips", "readonly");
+          const result = tx.objectStore("clips").get(clipId);
+          let clip: RecordedClip | null = null;
+          let failed = "";
+          result.onsuccess = () => {
+            if (finished) return;
+            const stored: unknown = result.result;
+            if (!stored || typeof stored !== "object" ||
+                (stored as RecordedClip).id !== clipId ||
+                !((stored as RecordedClip).blob instanceof Blob) ||
+                (stored as RecordedClip).blob.size < 1024) {
+              failed = "Сохранённый видеоклип отсутствует или повреждён"; return;
+            }
+            clip = stored as RecordedClip;
+          };
+          result.onerror = () => { failed = "Ошибка чтения видеоклипа"; };
+          tx.oncomplete = () => {
+            if (failed || !clip) settle(undefined, new Error(failed || "Файл не прочитан"));
+            else settle(clip);
+          };
+          tx.onabort = () => settle(undefined, new Error("Чтение видеоклипа прервано"));
+          tx.onerror = () => settle(undefined, new Error("Ошибка транзакции чтения клипа"));
+        } catch (error) { settle(undefined, error); }
+      };
+    } catch (error) { settle(undefined, error); }
   });
 }
