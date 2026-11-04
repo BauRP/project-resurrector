@@ -244,6 +244,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const [loading, setLoading] = useState(true);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Only clips placed on the timeline need thumbnails and 480p scrubbing
+  // copies. Library-only files remain untouched until actually edited.
+  const timelineVideoKey = useMemo(() => JSON.stringify(
+    [...new Set(items.filter(i => i.kind === "video").map(i => i.mediaId))].sort()
+  ), [items]);
+  const loadedProxyIds = useRef(new Set<string>());
   const loadGeneration = useRef(0);
   const load = useCallback(async () => {
     const generation = ++loadGeneration.current; setLoading(true);
@@ -291,17 +297,19 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       abort.abort();
       proxyUrls.current.forEach((url) => URL.revokeObjectURL(url));
       proxyUrls.current.clear();
+      loadedProxyIds.current.clear();
       setProxies({});
       setThumbs({});
     };
     window.addEventListener("multicam-preview-cache-cleared", clear);
+    const neededIds = new Set<string>(JSON.parse(timelineVideoKey) as string[]);
     void (async () => {
       // One decoder pipeline at a time. Previously thumbnail seekers and
       // full-length proxy encoders ran concurrently for every clip, exhausting
       // GPU/MediaCodec capacity when Android switches between app sections.
       for (const m of media) {
         if (!live || abort.signal.aborted) return;
-        if (m.kind !== "video") continue;
+        if (m.kind !== "video" || !neededIds.has(m.id)) continue;
         try {
           let frames = thumbCache.get(m.id);
           if (!frames) {
@@ -315,12 +323,13 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       }
       for (const m of media) {
         if (!live || abort.signal.aborted) return;
-        if (m.kind !== "video") continue;
+        if (m.kind !== "video" || !neededIds.has(m.id) || loadedProxyIds.current.has(m.id)) continue;
         try {
           const blob = await generateProxy(m.id, m.url, abort.signal);
           if (blob && live && !abort.signal.aborted) {
             const url = URL.createObjectURL(blob);
             proxyUrls.current.add(url);
+            loadedProxyIds.current.add(m.id);
             setProxies(cur => ({ ...cur, [m.id]: url }));
           }
         } catch { /* Originals remain playable when proxy encoding fails. */ }
@@ -332,7 +341,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       abort.abort();
       window.removeEventListener("multicam-preview-cache-cleared", clear);
     };
-  }, [media]);
+  }, [media, timelineVideoKey]);
   useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   useEffect(() => {
     const now = new Set(media.map((m) => m.url));

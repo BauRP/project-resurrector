@@ -61,10 +61,11 @@ const rawNativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
  * stop, retry, or permission grant. The service remains the source of truth.
  * Deadline is intentionally longer for codec start/stop and OS permission UI.
  */
-const guard = <T>(promise: Promise<T>, ms: number, action: string): Promise<T> =>
-  bounded(promise, ms, `Camera2 ${action}: нет подтверждения от Android`);
+const guard = <T>(promise: Promise<T>, ms: number, action: string, onLate?: (value: T) => void): Promise<T> =>
+  bounded(promise, ms, `Camera2 ${action}: нет подтверждения от Android`, onLate);
 export const nativeCapture: NativeCaptureBridge = {
-  addListener: (name, listener) => guard(rawNativeCapture.addListener(name, listener), 8000, "listener"),
+  addListener: (name, listener) => guard(rawNativeCapture.addListener(name, listener), 8000, "listener",
+    lateHandle => { void lateHandle.remove().catch(() => undefined); }),
   startPreview: options => guard(rawNativeCapture.startPreview(options), 21000, "startPreview"),
   start: options => guard(rawNativeCapture.start(options), 30000, "start"),
   stop: () => guard(rawNativeCapture.stop(), 30000, "stop"),
