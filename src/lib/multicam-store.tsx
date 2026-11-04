@@ -119,7 +119,10 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let patch: Partial<StateData> = {};
     try {
-      const saved = JSON.parse(window.localStorage.getItem("multicam-pov-state-native") ?? "{}") as Partial<StateData>;
+      const raw = window.localStorage.getItem("multicam-pov-state-native");
+      // Do not parse an oversized legacy snapshot on the UI thread.
+      // Skip damaged state without deleting the original saved bytes.
+      const saved = (raw && raw.length <= 262144 ? JSON.parse(raw) : {}) as Partial<StateData>;
       patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
       if (patch.theme !== "light" && patch.theme !== "dark") delete patch.theme;
     } catch { /* Restricted/corrupt main preferences do not block view recovery. */ }
