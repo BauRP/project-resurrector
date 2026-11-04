@@ -68,7 +68,10 @@ export const faceDetectorAvailable = () => typeof window !== "undefined" && "Fac
 export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, stream: MediaStream | null, enabled: boolean, hybrid: boolean) {
   const [box, setBox] = useState<Box | null>(null);
   useEffect(() => {
-    if (!enabled || !faceDetectorAvailable()) { setBox(null); return; }
+    // Do not spin a tracking timer while the camera is still closed.
+    // All tracking resumes automatically when a real MediaStream arrives.
+    if (!enabled || !stream?.getVideoTracks().some(track => track.readyState === "live") ||
+        !faceDetectorAvailable()) { setBox(null); return; }
     const Ctor = (window as unknown as { FaceDetector: FaceDetectorCtor }).FaceDetector;
     const det = new Ctor({ fastMode: true, maxDetectedFaces: 4 }); let alive = true; let last: "face" | "center" | null = null;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
