@@ -38,7 +38,7 @@ describe("editor gestures survive pointer cancel and tab exit", () => {
   });
   it("preserves five drag interaction modes in editor", () => {
     const source=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
-    expect(source.match(/dragRegistry.current\\?\\.register\\(move, up/g)).toHaveLength(5);
+    expect(source.split("dragRegistry.current?.register(move, up").slice(1)).toHaveLength(5);
     expect(source).toContain("() => window.clearTimeout(hold)");
     for(const marker of ["startTrDrag","dragOverlay","dragItem","cropDrag","scrub"])expect(source).toContain(marker);
   });
