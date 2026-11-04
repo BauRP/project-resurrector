@@ -95,7 +95,18 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const [self, setSelf] = useState<{ battery: number | null; storageMB: number | null }>({ battery: null, storageMB: null });
   const clean = s.cleanFrame;
 
-  useEffect(() => { void mesh.sendTelemetry().then(setSelf); const id = window.setInterval(() => void mesh.sendTelemetry().then(setSelf), 5000); return () => window.clearInterval(id); }, []);
+  useEffect(() => {
+    // No battery/storage Web APIs until the user starts a mesh session.
+    // Some Android WebViews block getBattery/storage.estimate after resume.
+    if (s.role === "solo" && peers.length === 0) return;
+    let active = true;
+    const poll = () => { void mesh.sendTelemetry().then(value => {
+      if (active) setSelf(value);
+    }).catch(() => undefined); };
+    poll();
+    const id = window.setInterval(poll, 10000);
+    return () => { active = false; window.clearInterval(id); };
+  }, [s.role, peers.length]);
   useEffect(() => () => s.set({ cleanFrame: false }), []);
 
   const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");

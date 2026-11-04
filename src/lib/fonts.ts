@@ -1,3 +1,5 @@
+import { Capacitor } from "@capacitor/core";
+
 /**
  * Subtitle font families are an optional enhancement. The app ships with a system font stack and
  * never blocks on the network: the Google Fonts stylesheet is attached only when the device is
@@ -8,6 +10,10 @@ const ID = "optional-subtitle-fonts";
 
 export function loadOptionalFonts(): () => void {
   if (typeof window === "undefined" || typeof document === "undefined") return () => {};
+  // Android editor must remain fully offline. External Google Fonts requests
+  // can hold a WebView's render pipeline after an emulator Activity resumes;
+  // system-family fallbacks work without any network or background fetch.
+  if (Capacitor.isNativePlatform()) return () => {};
   const attach = () => {
     if (document.getElementById(ID) || !navigator.onLine) return;
     const link = document.createElement("link");

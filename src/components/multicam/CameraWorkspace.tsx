@@ -36,26 +36,15 @@ export function CameraWorkspace() {
 
   useEffect(() => {
     if (!isNative()) return;
-    let live = true;
-    // Android binder may never reply after Activity recreation. Fail closed
-    // into the native owner panel instead of freezing a blank camera page.
-    void bounded(nativeCapture.status(), 2200, "Camera2 startup ownership").then(status => {
-      if (!live) return;
-      let preference:Mode = "web";
-      try { if (localStorage.getItem(PREF) === "native") preference = "native"; }
-      catch { /* private storage unavailable */ }
-      // A surviving Android service must always keep ownership after WebView
-      // Activity recreation. Never reopen getUserMedia before checking it.
-      setMode(nativeRecorderOwnsCamera(status.state) ? "native" : preference);
-    }).catch(() => {
-      if (live) {
-        // When native service ownership is unknown, do not let WebView
-        // try to open the same sensor. The main app and settings stay usable.
-        setMode("native");
-        setNotice("Состояние Camera2 неизвестно. Нативная запись может продолжаться; проверьте её перед открытием обычной камеры.");
-      }
-    });
-    return () => { live = false; };
+    // Do not call a native Camera2 binder from Android's first frame.
+    // An OEM CameraService lock can block WebView even with JS Promise
+    // timeouts. The reference camera is only a placeholder, not a stream.
+    // Its explicit "Включить камеру" action performs the guarded status
+    // check before acquiring the sensor; users can also open Camera2 below.
+    try {
+      if (localStorage.getItem(PREF) === "native")
+        setNotice("Режим Camera2 доступен в параметрах камеры. Камера не включалась автоматически.");
+    } catch { /* Storage is optional; default view remains interactive. */ }
   }, []);
 
   const switchTo = useCallback(async (next:Mode) => {
