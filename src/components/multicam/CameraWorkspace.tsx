@@ -18,7 +18,7 @@ const PREF = "multicam-user-camera-mode-v1";
 export function CameraWorkspace() {
   const recording = useMulticamStore(s => s.recording);
   const phase = useMulticamStore(s => s.recordingPhase);
-  const [mode, setMode] = useState<Mode | null>(isNative() ? null : "web");
+  const [mode, setMode] = useState<Mode>("web"); // No permission or camera stream is opened here.
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
   useSyncExternalStore(diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
@@ -49,9 +49,11 @@ export function CameraWorkspace() {
       setMode(nativeRecorderOwnsCamera(status.state) ? "native" : preference);
     }).catch(() => {
       if (live) {
-        // Fail closed: a service whose state is unknown may own the camera.
-        setMode("native");
-        setNotice("Состояние нативной камеры неизвестно; откройте нативный режим для проверки.");
+        // The placeholder never acquires a sensor. When the user presses
+        // "Включить камеру", its own Camera2 guard still requires a proved
+        // idle native owner, so a failed bridge cannot steal the camera.
+        setMode("web");
+        setNotice("Статус Camera2 неизвестен. Камера пока выключена.");
       }
     });
     return () => { live = false; };
@@ -80,10 +82,6 @@ export function CameraWorkspace() {
       if (mounted.current) setSwitching(false);
     }
   }, [mode,switching,blocked]);
-
-  if (mode === null) return <div role="status" className="flex min-h-[45vh] items-center justify-center p-4 text-center text-sm">
-    Проверяю, не продолжается ли нативная запись Android…
-  </div>;
 
   return <div className="flex h-full min-h-0 flex-col">
     {isNative() && mode === "native" && <div className="camera-mode-switch flex shrink-0 items-center justify-end gap-1 border-b border-border/40 bg-card/50 px-2 py-1" role="group" aria-label="Режим камеры">
