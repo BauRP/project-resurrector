@@ -39,7 +39,7 @@ describe("read-back verification remains bounded even when Android storage hangs
     await vi.advanceTimersByTimeAsync(12000);
     await assertion;
     req["onsuccess"]();
-    expect(req.result.close).toHaveBeenCalledOnce();
-    expect(req.result.transaction).not.toHaveBeenCalled();
+    expect(req['result'].close).toHaveBeenCalledOnce();
+    expect(req['result'].transaction).not.toHaveBeenCalled();
   });
 });
