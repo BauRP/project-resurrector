@@ -292,6 +292,7 @@ public class NativeCapturePlugin extends Plugin {
  }
  @Override protected void handleOnDestroy(){
    // Capacitor may have already detached its Activity at teardown.
+   statusWorker.shutdownNow();
    new Handler(Looper.getMainLooper()).post(this::detachDirectView);
    super.handleOnDestroy();
  }
@@ -363,10 +364,6 @@ public class NativeCapturePlugin extends Plugin {
        thread.setDaemon(true);
        return thread;
      });
- @Override protected void handleOnDestroy() {
-   statusWorker.shutdownNow();
-   super.handleOnDestroy();
- }
  @PluginMethod public void auditHistory(PluginCall call){
    final android.content.Context context=getContext().getApplicationContext();
    try {
