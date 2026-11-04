@@ -1450,3 +1450,22 @@ button:disabled { cursor: not-allowed; opacity: .45; }
   .camera-screen .camera-hud {gap: .22rem;}
   .camera-screen .camera-hud .hud-chip {padding-inline:.29rem;font-size:.56rem;min-height:1.9rem;}
 }
+
+
+/* Android settings GPU safe paint: retain glass appearance without blur allocations */
+html[data-active-multicam-tab="settings"][data-multicam-native-webview="true"]
+ .app-shell :is(.settings-fold-workspace,.settings-fold-workspace *,
+ .privacy-fold-overlay,.settings-confirm-overlay) {
+ -webkit-backdrop-filter:none !important;
+ backdrop-filter:none !important;
+}
+/* All panels keep translucent reference gradients, rims and soft shadows. */
+html[data-active-multicam-tab="settings"] .settings-fold-workspace {
+ background:transparent;
+}
+html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
+ .theme-seg,.settings-tool-trigger,.settings-item select,.settings-confirm-card) {
+ background:var(--reference-surface);
+ border-color:var(--reference-rim);
+ box-shadow:var(--reference-shadow);
+}
