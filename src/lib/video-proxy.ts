@@ -28,7 +28,18 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       video.onended = () => { if (recorder?.state !== "inactive") recorder?.stop(); };
       video.onerror = () => reject(new Error("Video decode failed"));
     });
-    const draw = () => { if (signal.aborted) return; ctx.drawImage(video, 0, 0, canvas.width, canvas.height); raf = requestAnimationFrame(draw); };
+    // Recorder requests 24 fps. Drawing at display refresh (60/90/120
+    // fps) wastes CPU/GPU and can starve Settings during a WebView switch.
+    // Keep all proxy frames while matching the requested recording rate.
+    let lastFrameAt = -Infinity;
+    const draw = (now: number) => {
+      if (signal.aborted) return;
+      if (now - lastFrameAt >= 1000 / 24) {
+        lastFrameAt = now;
+        if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      }
+      raf = requestAnimationFrame(draw);
+    };
     recorder.start(1000); draw(); await bounded(video.play(), 5000, "Proxy playback");
     const duration = Number.isFinite(video.duration) ? video.duration : 60;
     const blob = await bounded(done, Math.min(600000, duration * 1000 + 10000), "Proxy encoding");

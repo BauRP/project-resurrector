@@ -110,7 +110,11 @@ export function FalseColorOverlay({ videoRef }: { videoRef: RefObject<HTMLVideoE
     const tick = (t: number) => {
       raf = requestAnimationFrame(tick); if (t - last < 66) return; last = t;
       const v = videoRef.current; const c = canvas.current; if (!v || !c || !v.videoWidth) return;
-      const w = 240; const h = Math.round((w * v.videoHeight) / v.videoWidth); c.width = w; c.height = h;
+      const w = 240; const h = Math.round((w * v.videoHeight) / v.videoWidth);
+      // Assigning canvas dimensions reallocates its GPU buffer. A 15 fps
+      // false-color overlay must reuse the buffer when camera size is stable.
+      if (c.width !== w) c.width = w;
+      if (c.height !== h) c.height = h;
       const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
       ctx.drawImage(v, 0, 0, w, h); const img = ctx.getImageData(0, 0, w, h); const d = img.data;
       for (let i = 0; i < d.length; i += 4) { const y = Math.round(0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!); d[i] = lut[y * 3]!; d[i + 1] = lut[y * 3 + 1]!; d[i + 2] = lut[y * 3 + 2]!; }
