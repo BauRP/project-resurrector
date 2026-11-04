@@ -279,7 +279,24 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    if(live){setCameras(x.cameras);setCamera(previous=>
      x.cameras.some(camera=>camera.cameraId===previous)?previous:x.cameras[0]?.cameraId??"");}
   }).catch(e=>{if(live)setError(String(e));});
-  const refresh=()=>void bridge.status().then(x=>{if(live){setStatus(x);if(nativeRecorderOwnsCamera(x.state)){if(x.cameraId)setCamera(x.cameraId);if(x.width&&x.height)setResolution(`${x.width}x${x.height}`);if(x.fps)setFps(x.fps);}}}).catch(()=>undefined);
+  // The Camera2 status worker can wait on a vendor CameraService lock.
+  // One in-flight request per visible panel prevents an unbounded Android
+  // bridge queue without pausing or disabling the 1700ms status feature.
+  let statusPending=false;
+  const refresh=()=>{
+    if (!live || statusPending) return;
+    statusPending=true;
+    void bridge.status().then(x=>{
+      if(live){
+        setStatus(x);
+        if(nativeRecorderOwnsCamera(x.state)){
+          if(x.cameraId)setCamera(x.cameraId);
+          if(x.width&&x.height)setResolution(`${x.width}x${x.height}`);
+          if(x.fps)setFps(x.fps);
+        }
+      }
+    }).catch(()=>undefined).finally(()=>{statusPending=false;});
+  };
   refresh();const timer=window.setInterval(refresh,1700);
   return ()=>{live=false;window.clearInterval(timer);};
  },[]);
