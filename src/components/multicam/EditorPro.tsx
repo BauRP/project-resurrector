@@ -309,15 +309,35 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // recreation. Only local metadata; original media stays in IndexedDB.
   const latestProject = useRef({items,overlays,transitions,hidden,muted});
   latestProject.current = {items,overlays,transitions,hidden,muted};
+  const projectWriteTimer = useRef<number | null>(null);
+  const projectDirty = useRef(false);
+  const flushEditorProject = useCallback(() => {
+    if (projectWriteTimer.current !== null) window.clearTimeout(projectWriteTimer.current);
+    projectWriteTimer.current = null;
+    if (!projectDirty.current) return;
+    projectDirty.current = false;
+    saveEditorProject(latestProject.current);
+  }, []);
   useEffect(() => {
-    const flush=()=>{saveEditorProject(latestProject.current);};
-    const timer=window.setTimeout(flush,400);
-    const onHidden=()=>{if(document.hidden)flush();};
-    window.addEventListener("pagehide",flush);
-    document.addEventListener("visibilitychange",onHidden);
-    return ()=>{window.clearTimeout(timer);window.removeEventListener("pagehide",flush);
-      document.removeEventListener("visibilitychange",onHidden);flush();};
-  },[items,overlays,transitions,hidden,muted]);
+    // On each timeline edit, update the deadline; do not serialize the whole
+    // project in an effect cleanup. React runs that cleanup on *every* edit,
+    // which previously defeated the 400ms debounce and stalled WebView.
+    projectDirty.current = true;
+    if (projectWriteTimer.current !== null) window.clearTimeout(projectWriteTimer.current);
+    projectWriteTimer.current = window.setTimeout(flushEditorProject, 400);
+  }, [items,overlays,transitions,hidden,muted,flushEditorProject]);
+  useEffect(() => {
+    const onHidden = () => { if (document.hidden) flushEditorProject(); };
+    window.addEventListener("pagehide", flushEditorProject);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("pagehide", flushEditorProject);
+      document.removeEventListener("visibilitychange", onHidden);
+      // On *unmount* (not every timeline edit), write the latest changes to
+      // retain project recovery across tab navigation and Activity teardown.
+      flushEditorProject();
+    };
+  }, [flushEditorProject]);
   // Keep the editor's strongly typed color controls while providing the
   // renderer with an explicit plain numeric adjustment map.
   const renderItems = useMemo(() => items.map(item => {
