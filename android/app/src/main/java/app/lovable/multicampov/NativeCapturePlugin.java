@@ -314,7 +314,7 @@ public class NativeCapturePlugin extends Plugin {
   if(zoom==null||exposure==null ||
     !NativeCaptureService.updateControls(zoom.floatValue(),exposure,
        applied->{
-        if(applied)call.resolve(NativeCaptureService.status(getContext()));
+        if(applied)resolveStatusAsync(call);
         else call.reject("Camera2 отклонил увеличение или экспозицию");
        })){
     call.reject("Увеличение или экспозиция недоступны для этого Camera2 режима");
@@ -324,7 +324,7 @@ public class NativeCapturePlugin extends Plugin {
   Boolean enabled=call.getBoolean("enabled");
   if(enabled==null || !NativeCaptureService.updateTorch(enabled,
      applied->{
-      if(applied)call.resolve(NativeCaptureService.status(getContext()));
+      if(applied)resolveStatusAsync(call);
       else call.reject("Camera2 не подтвердил включение фонарика");
      })){
     call.reject("Фонарик недоступен для выбранной Camera2 камеры");
@@ -335,7 +335,7 @@ public class NativeCapturePlugin extends Plugin {
   Double distance=call.getDouble("diopters",0.0);
   if(manual==null||distance==null ||
       !NativeCaptureService.setFocus(manual,distance.floatValue(),applied->{
-        if(applied)call.resolve(NativeCaptureService.status(getContext()));
+        if(applied)resolveStatusAsync(call);
         else call.reject("Camera2 не принял выбранную фокусировку");
       })){
     call.reject("Ручной или автоматический фокус не поддерживается объективом");
@@ -345,7 +345,7 @@ public class NativeCapturePlugin extends Plugin {
   Double x=call.getDouble("x"), y=call.getDouble("y");
   if(x==null||y==null||!NativeCaptureService.tapToMeter(x.floatValue(),y.floatValue(),
      applied->{
-      if(applied)call.resolve(NativeCaptureService.status(getContext()));
+      if(applied)resolveStatusAsync(call);
       else call.reject("Camera2 не принял точку фокусировки/экспозамера");
      })){
     call.reject("Фокусировка или экспозамер по касанию недоступны для текущей камеры");
@@ -354,7 +354,7 @@ public class NativeCapturePlugin extends Plugin {
  @PluginMethod public void retryGalleryPublication(PluginCall call){
    new Thread(()->{
      boolean success=NativeCaptureService.retryGalleryPublication(getContext());
-     if(success)call.resolve(NativeCaptureService.status(getContext()));
+     if(success)resolveStatusAsync(call);
      else call.reject("Повторная публикация недоступна или файл не подтверждён");
    },"Gallery-Publish-Retry").start();
  }
@@ -364,6 +364,23 @@ public class NativeCapturePlugin extends Plugin {
        thread.setDaemon(true);
        return thread;
      });
+ /**
+  * Android's Camera2 service lock may be owned by an encoder callback.
+  * Never synchronously build a full status JSON on Capacitor's UI thread.
+  * Deliver the same fields and errors through the existing status worker.
+  */
+ private void resolveStatusAsync(PluginCall call) {
+   final android.content.Context context = getContext().getApplicationContext();
+   try {
+     statusWorker.execute(() -> {
+       try { call.resolve(NativeCaptureService.status(context)); }
+       catch (Exception error) { call.reject("Статус Camera2 недоступен: " + error.getMessage()); }
+     });
+   } catch (java.util.concurrent.RejectedExecutionException error) {
+     call.reject("Android закрывает Camera2");
+   }
+ }
+
  @PluginMethod public void auditHistory(PluginCall call){
    final android.content.Context context=getContext().getApplicationContext();
    try {
@@ -403,7 +420,7 @@ public class NativeCapturePlugin extends Plugin {
   intent.setAction(NativeCaptureService.ACTION_PREVIEW);
   intent.putExtra("cameraId",id);
   try{ContextCompat.startForegroundService(getContext(),intent);
-   call.resolve(NativeCaptureService.status(getContext()));
+   resolveStatusAsync(call);
   }catch(Exception error){call.reject("Не удалось открыть предпросмотр: "+error.getMessage());}
  }
  @PluginMethod public void start(PluginCall call){
@@ -427,28 +444,28 @@ public class NativeCapturePlugin extends Plugin {
   intent.putExtra("height",height);intent.putExtra("fps",fps);intent.putExtra("audio",audio);
   try{
    ContextCompat.startForegroundService(getContext(),intent);
-   call.resolve(NativeCaptureService.status(getContext()));
+   resolveStatusAsync(call);
   }catch(Exception error){call.reject("Служба записи недоступна: "+error.getMessage());}
  }
  @PluginMethod public void pause(PluginCall call) {
   if (!NativeCaptureService.isRunning()) {call.reject("Нативная запись не активна");return;}
   Intent intent=new Intent(getContext(),NativeCaptureService.class);
   intent.setAction(NativeCaptureService.ACTION_PAUSE);
-  try {getContext().startService(intent);call.resolve(NativeCaptureService.status(getContext()));}
+  try {getContext().startService(intent);resolveStatusAsync(call);}
   catch(Exception error){call.reject("Пауза недоступна: "+error.getMessage());}
  }
  @PluginMethod public void resume(PluginCall call) {
   if (!NativeCaptureService.isRunning()) {call.reject("Нативная запись не активна");return;}
   Intent intent=new Intent(getContext(),NativeCaptureService.class);
   intent.setAction(NativeCaptureService.ACTION_RESUME);
-  try {getContext().startService(intent);call.resolve(NativeCaptureService.status(getContext()));}
+  try {getContext().startService(intent);resolveStatusAsync(call);}
   catch(Exception error){call.reject("Продолжение недоступно: "+error.getMessage());}
  }
  @PluginMethod public void stop(PluginCall call){
-  if(!NativeCaptureService.isRunning()){call.resolve(NativeCaptureService.status(getContext()));return;}
+  if(!NativeCaptureService.isRunning()){resolveStatusAsync(call);return;}
   Intent intent=new Intent(getContext(),NativeCaptureService.class);
   intent.setAction(NativeCaptureService.ACTION_STOP);
-  try{getContext().startService(intent);call.resolve(NativeCaptureService.status(getContext()));}
+  try{getContext().startService(intent);resolveStatusAsync(call);}
   catch(Exception error){call.reject("Не удалось остановить запись: "+error.getMessage());}
  }
 }
