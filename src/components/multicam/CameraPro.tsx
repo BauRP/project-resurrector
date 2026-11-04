@@ -88,7 +88,11 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
   ctx.filter = filter || "none";
   if (frames <= 1) { ctx.drawImage(video, 0, 0, w, h); }
   else {
-    const acc = new Float32Array(w * h * 4);
+    // Camera captures average at most 40 frames here. Integer accumulation
+    // gives identical pixel averages while halving 4K temporary memory:
+    // 4K RGBA Float32 ~133 MiB -> Uint16 ~66 MiB. If a future mode needs
+    // >257 frames, automatically use Uint32 to avoid accumulator overflow.
+    const acc = frames <= 257 ? new Uint16Array(w * h * 4) : new Uint32Array(w * h * 4);
     for (let k = 0; k < frames; k++) {
       ctx.drawImage(video, 0, 0, w, h); const d = ctx.getImageData(0, 0, w, h).data;
       for (let i = 0; i < d.length; i++) acc[i]! += d[i]!;
