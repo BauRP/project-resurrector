@@ -306,7 +306,16 @@ public class NativeCapturePlugin extends Plugin {
   call.resolve();
  }
  @PluginMethod public void previewFrame(PluginCall call) {
-  call.resolve(NativeCaptureService.previewFrame());
+   // A JPEG may be encoded while Camera2's shared state lock is held.
+   // Waiting for it on Capacitor's main thread freezes every screen.
+   try {
+     statusWorker.execute(() -> {
+       try { call.resolve(NativeCaptureService.previewFrame()); }
+       catch (Exception error) { call.reject("Кадр Camera2 недоступен: " + error.getMessage()); }
+     });
+   } catch (java.util.concurrent.RejectedExecutionException error) {
+     call.reject("Android закрывает предпросмотр Camera2");
+   }
  }
  @PluginMethod public void setControls(PluginCall call) {
   Double zoom=call.getDouble("zoom");
