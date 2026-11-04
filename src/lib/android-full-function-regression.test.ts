@@ -16,6 +16,7 @@ describe("all runtime features stay enabled while Android operations are asynchr
     expect(source).toContain('bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")');
     expect(native).toContain('statusWorker.execute(()->');
     expect(native).toContain("NativeCaptureService.status(context)");
+    expect(native).toContain("NativeCaptureService.isPreviewingForUi()");
     expect(native).toContain('private void resolveStatusAsync(PluginCall call)');
     expect(native).toContain('statusWorker.execute(() -> {');
     expect(native).toContain('if(applied)resolveStatusAsync(call)');

@@ -78,14 +78,14 @@ public class NativeCaptureService extends Service {
     private static final int NOTIFICATION = 2017;
     private static final String STORE = "native_capture_v1";
     private static final Object STATE_LOCK = new Object();
-    private static NativeCaptureService runningInstance;
+    private static volatile NativeCaptureService runningInstance;
     // A preview consumer can mount before the foreground service is created.
     // A stale WebView teardown must not hide a newer camera view.
     private static String previewOwnerId;
     private static String directPreviewOwnerId;
     private static SurfaceTexture directPreviewTexture;
     private static boolean directPreviewActive = false;
-    private static String state = "idle";
+    private static volatile String state = "idle";
     private static String lastMessage = "Нативная запись не запускалась";
     private static String savedPath = "";
     private static String savedUri = "";
@@ -1057,6 +1057,13 @@ public class NativeCaptureService extends Service {
             return false;
         }
     }
+    /** Read-only, lock-free UI visibility check. The UI never waits for
+     * Camera2 or the recorder's STATE_LOCK while creating TextureView.
+     * This never certifies persisted stale preview state after process death. */
+    public static boolean isPreviewingForUi() {
+        return runningInstance != null && "previewing".equals(state);
+    }
+
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
             return runningInstance != null &&

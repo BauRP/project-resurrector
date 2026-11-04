@@ -139,8 +139,7 @@ public class NativeCapturePlugin extends Plugin {
      // an active preview. A speculative overlay before camera open obscures
      // controls; an overlay during MediaRecorder capture obscures REC controls.
      // Returning a non-visible result is not a permanent feature failure.
-     String captureState=NativeCaptureService.status(getContext()).getString("state");
-     if(!"previewing".equals(captureState)){
+     if(!NativeCaptureService.isPreviewingForUi()){
        if(owner.equals(directOwner))detachDirectView();
        JSObject ack=new JSObject();
        ack.put("visible",false);
