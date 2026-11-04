@@ -11,6 +11,7 @@ import { useMeshPeers } from "./useMesh";
 import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
 import { bounded } from "@/lib/async";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
+import { traceUiAction } from "@/lib/freeze-action-trace";
 
 // Load native recording and camera diagnosis only if explicitly opened.
 const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
@@ -56,8 +57,13 @@ export function SettingsTab() {
  const [cacheMeasured, setCacheMeasured] = useState(false);
  // IndexedDB can hold large video proxy blobs. Never enumerate them on entry
  // to settings or during rapid theme changes. Measure only when requested.
- useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+ useEffect(() => {
+   alive.current = true;
+   traceUiAction("settings: mounted");
+   return () => { alive.current = false; traceUiAction("settings: unmounted"); };
+ }, []);
  const measureCache = async () => {
+   traceUiAction("settings: cache measurement");
    // State updates can be batched. A ref prevents repeated taps from starting
    // parallel IndexedDB cursor scans before React has rendered "disabled".
    if (measurementBusy.current || cacheBusy.current) return;
@@ -70,6 +76,7 @@ export function SettingsTab() {
    finally { measurementBusy.current = false; if (alive.current) setMeasuringCache(false); }
  };
  const diagnose = async () => {
+   traceUiAction("settings: network diagnosis");
    if (busy.current) return; busy.current = true; setChecking(true); setOperationError("");
    // mesh.diagnose already has a bounded peer-response window. Retrying a
     // failed connection immediately doubles work but cannot repair it.
@@ -78,6 +85,7 @@ export function SettingsTab() {
    finally { busy.current = false; if (alive.current) setChecking(false); }
  };
  const clearCache = async () => {
+   traceUiAction("settings: clear cache");
    if (cacheBusy.current || measurementBusy.current) return;
    cacheBusy.current=true;
    setClearing(true); setOperationError("");
@@ -89,11 +97,11 @@ export function SettingsTab() {
    const action=confirmAction;
    setConfirmAction(null);
    if(action==="cache") { void clearCache(); }
-   else if(action==="reset") s.resetProject();
+   else if(action==="reset") { traceUiAction("settings: reset project"); s.resetProject(); }
  };
  const tc=themeCopy[s.language] ?? { theme:"Theme", light:"Light", dark:"Dark" };
   return <div className="settings-fold-workspace pb-[calc(4rem+env(safe-area-inset-bottom))] text-foreground"><header className="px-4 pb-2 pt-3"><h1 className="text-lg font-semibold">{t.title}</h1></header><main className="mx-auto max-w-2xl space-y-2.5 px-3">
-  <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
+  <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ traceUiAction("settings: theme light"); setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ traceUiAction("settings: theme dark"); setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
  <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
  <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
@@ -104,11 +112,11 @@ export function SettingsTab() {
  <section className="settings-advanced-tools" aria-label="Дополнительные инструменты">
   <div className="settings-advanced-actions">
    <button type="button" className={"settings-tool-trigger" + (advancedPanel === "native" ? " active" : "")}
-     aria-expanded={advancedPanel === "native"} onClick={() => setAdvancedPanel(p => p === "native" ? null : "native")}>
+     aria-expanded={advancedPanel === "native"} onClick={() => { traceUiAction("settings: native tools"); setAdvancedPanel(p => p === "native" ? null : "native"); }}>
      <Database aria-hidden="true"/><span>Нативная запись Camera2</span><ChevronRight aria-hidden="true"/>
    </button>
    <button type="button" className={"settings-tool-trigger" + (advancedPanel === "diagnostics" ? " active" : "")}
-     aria-expanded={advancedPanel === "diagnostics"} onClick={() => setAdvancedPanel(p => p === "diagnostics" ? null : "diagnostics")}>
+     aria-expanded={advancedPanel === "diagnostics"} onClick={() => { traceUiAction("settings: camera diagnostics"); setAdvancedPanel(p => p === "diagnostics" ? null : "diagnostics"); }}>
      <Activity aria-hidden="true"/><span>Проверка камер</span><ChevronRight aria-hidden="true"/>
    </button>
   </div>

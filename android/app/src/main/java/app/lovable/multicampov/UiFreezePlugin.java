@@ -8,9 +8,13 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.annotation.CapacitorPlugin;
 import com.getcapacitor.PluginMethod;
 
-/** Read-only recovery diagnostics; never alters camera or recording. */
+/** Recovery diagnostics; never alters camera or recording. */
 @CapacitorPlugin(name = "UiFreeze")
 public class UiFreezePlugin extends Plugin {
+    @PluginMethod public void trace(PluginCall call) {
+        UiFreezeMonitor.traceAction(call.getString("action", ""));
+        call.resolve();
+    }
     @PluginMethod public void pulse(PluginCall call) {
         UiFreezeMonitor.webViewPulse();
         call.resolve();

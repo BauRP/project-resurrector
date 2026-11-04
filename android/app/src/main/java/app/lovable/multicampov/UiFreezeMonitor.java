@@ -26,6 +26,9 @@ public final class UiFreezeMonitor {
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicLong lastHeartbeat = new AtomicLong();
     private static final AtomicLong webViewHeartbeat = new AtomicLong();
+    private static final AtomicBoolean receivedJsHeartbeat = new AtomicBoolean();
+    private static volatile String lastJsAction = "Android activity created";
+    private static volatile long lastJsActionAt = 0L;
     private static final AtomicBoolean webViewCaptured = new AtomicBoolean();
     private static final AtomicBoolean pendingPulse = new AtomicBoolean();
     private static final AtomicBoolean captured = new AtomicBoolean();
@@ -39,7 +42,10 @@ public final class UiFreezeMonitor {
         stop();
         context = applicationContext.getApplicationContext();
         lastHeartbeat.set(SystemClock.uptimeMillis());
-        webViewHeartbeat.set(0L);
+        webViewHeartbeat.set(SystemClock.uptimeMillis());
+        receivedJsHeartbeat.set(false);
+        lastJsAction = "Android activity created; waiting for WebView";
+        lastJsActionAt = SystemClock.uptimeMillis();
         webViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
@@ -57,7 +63,9 @@ public final class UiFreezeMonitor {
         final long now = SystemClock.uptimeMillis();
         lastHeartbeat.set(now);
         // A WebView paused by Android is not evidence of a JS loop freeze.
-        if (webViewHeartbeat.get() != 0L) webViewHeartbeat.set(now);
+        // The first JavaScript pulse may never arrive if startup is frozen.
+        // Start a watchdog even before React has mounted.
+        webViewHeartbeat.set(now);
         webViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
@@ -67,8 +75,23 @@ public final class UiFreezeMonitor {
      * are separate processes; a healthy Android main thread does not prove
      * the app's WebView is still processing touches and effects. */
     public static void webViewPulse() {
+        receivedJsHeartbeat.set(true);
         webViewHeartbeat.set(SystemClock.uptimeMillis());
         webViewCaptured.set(false);
+    }
+
+    /** A lightweight diagnostic breadcrumb, kept in memory until a freeze is
+     * detected. No disk I/O and no camera changes on the Android UI thread. */
+    public static void traceAction(String action) {
+        if (action == null || action.isEmpty()) return;
+        lastJsAction = action.replace('\n', ' ').replace('\r', ' ')
+            .substring(0, Math.min(96, action.length()));
+        lastJsActionAt = SystemClock.uptimeMillis();
+    }
+
+    private static String actionContext(long now) {
+        return " Last action: " + lastJsAction +
+            "; action age: " + Math.max(0L, now - lastJsActionAt) + " ms.";
     }
 
     private static void persistReport(String report) {
@@ -98,11 +121,13 @@ public final class UiFreezeMonitor {
                 final long webDelay = webLast == 0L ? 0L : now - webLast;
                 if (webDelay >= WEBVIEW_THRESHOLD_MS &&
                     webViewCaptured.compareAndSet(false, true)) {
-                    persistReport("MULTI-CAM POV: WebView JavaScript heartbeat missing for " +
+                    persistReport("MULTI-CAM POV: " +
+                        (receivedJsHeartbeat.get() ? "WebView JavaScript heartbeat missing for " :
+                         "First WebView JavaScript heartbeat never arrived after ") +
                         webDelay + " ms while Android main thread remains responsive. " +
-                        "This indicates a stalled WebView JS loop, render process, or " +
-                        "JS-to-native bridge. Android native stack cannot identify a " +
-                        "specific JavaScript line; capture logcat for more detail.");
+                        "Possible stalled startup, WebView renderer, JavaScript loop, or " +
+                        "JS-to-native bridge; this is NOT proof of a specific cause." +
+                        actionContext(now) + " Capture logcat for more detail.");
                 }
                 return;
             }
@@ -110,7 +135,8 @@ public final class UiFreezeMonitor {
             StackTraceElement[] stack = Looper.getMainLooper().getThread().getStackTrace();
             StringBuilder details = new StringBuilder();
             details.append("MULTI-CAM POV: Android UI thread blocked for ")
-                .append(blockedFor).append(" ms");
+                .append(blockedFor).append(" ms")
+                .append(actionContext(now));
             int limit = Math.min(stack.length, 28);
             for (int i = 0; i < limit; i++) {
                 details.append("\n").append(stack[i].toString());

@@ -10,6 +10,9 @@ describe("Android freezes leave evidence without disabling features", () => {
     expect(src).toContain("WEBVIEW_THRESHOLD_MS = 12000L");
     expect(src).toContain("webViewHeartbeat.get()");
     expect(src).toContain("WebView JavaScript heartbeat missing");
+    expect(src).toContain("First WebView JavaScript heartbeat never arrived");
+    expect(src).toContain("webViewHeartbeat.set(now)");
+    expect(src).toContain("actionContext(now)");
     expect(src).toContain('thread.setDaemon(true)');
     expect(act).toContain("UiFreezeMonitor.start(getApplicationContext())");
     expect(act).toContain("UiFreezeMonitor.setForeground(false)");
@@ -23,5 +26,12 @@ describe("Android freezes leave evidence without disabling features", () => {
     expect(notice).toContain("navigator.clipboard?.writeText");
     expect(notice).toContain('window.setInterval(heartbeat, 2000)');
     expect(notice).toContain('bounded(uiFreeze.pulse(), 1600');
+    const settings = readFileSync("src/components/multicam/SettingsTab.tsx", "utf8");
+    const plugin = readFileSync("android/app/src/main/java/app/lovable/multicampov/UiFreezePlugin.java", "utf8");
+    const trace = readFileSync("src/lib/freeze-action-trace.ts", "utf8");
+    expect(settings).toContain('traceUiAction("settings: theme dark")');
+    expect(settings).toContain('traceUiAction("settings: cache measurement")');
+    expect(plugin).toContain('@PluginMethod public void trace(PluginCall call)');
+    expect(trace).toContain('registerPlugin<TraceBridge>("UiFreeze")');
   });
 });

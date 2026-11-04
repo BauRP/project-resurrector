@@ -18,6 +18,7 @@ import { RemoteRecordGuard } from "@/lib/remote-record-guard";
 import { nextRemoteReceiptStatus } from "@/lib/remote-record-receipts";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
+import { traceUiAction } from "@/lib/freeze-action-trace";
 import { FoldScrollRestorer } from "@/lib/fold-scroll-position";
 
 const nav: { id: AppTab; icon: typeof Camera }[] = [{ id: "camera", icon: Camera }, { id: "editor", icon: SlidersHorizontal }, { id: "settings", icon: Settings }];
@@ -149,6 +150,8 @@ function MulticamAppContent() {
   }, [tab]);
   // Window changes only rearrange UI; they never restart the camera pipeline.
   useEffect(() => startDisplayAdaptation(), []);
+  useEffect(() => { traceUiAction("app: mounted"); }, []);
+  useEffect(() => { traceUiAction("tab: " + tab); }, [tab]);
   // Translucent theme surfaces remain, but native WebViews avoid full-panel
   // backdrop blur on each settings repaint.
   useEffect(() => {
@@ -161,6 +164,7 @@ function MulticamAppContent() {
   // transaction confirm that the user's video was actually saved.
   const requestTab = useCallback((next: AppTab) => {
     if (next === tab) return;
+    traceUiAction("navigate: " + tab + " -> " + next);
     if (recordingPhase === "starting") {
       setNavigationNotice("Запись запускается. Дождитесь подтверждения перед переходом.");
       return;
