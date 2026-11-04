@@ -130,7 +130,14 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       if (typeof prefs.language === "string" && prefs.language.length <= 12) patch.language = prefs.language;
       if (typeof prefs.hardwareAcceleration === "boolean") patch.hardwareAcceleration = prefs.hardwareAcceleration;
     } catch { /* A corrupt preference entry must never stop the UI. */ }
-    store.getSnapshot().set({ ...patch, ...restoreViewState() });
+    const restoredView = restoreViewState();
+    // On Activity recreation a previously frozen Settings screen must not
+    // reopen by itself. Keep all editor/project data but start in Camera.
+    if (restoredView.tab === "settings") {
+      restoredView.tab = "camera";
+      saveViewState(restoredView);
+    }
+    store.getSnapshot().set({ ...patch, ...restoredView });
     let previous = persistedKeys.map((k) => store.getSnapshot()[k]);
     let previousView = [store.getSnapshot().tab, store.getSnapshot().playhead,
       store.getSnapshot().editMode, store.getSnapshot().aspect, store.getSnapshot().captureKind];
