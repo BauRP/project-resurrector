@@ -33,6 +33,12 @@ describe("WebView layout feedback cannot repaint forever", () => {
       window.dispatchEvent(new Event("resize"));
       raf.splice(0).forEach(fn => fn(performance.now()));
       expect(root.dataset["windowClass"]).toBe("medium");
+      // Width-only changes preserve the existing height CSS variable.
+      expect(root.style.getPropertyValue("--app-viewport-height")).toBe("840px");
+      Object.defineProperty(window, "innerHeight", { configurable: true, value: 730 });
+      window.dispatchEvent(new Event("resize"));
+      raf.splice(0).forEach(fn => fn(performance.now()));
+      expect(root.style.getPropertyValue("--app-viewport-height")).toBe("730px");
       expect(setProperty.mock.calls.length).toBeGreaterThan(original);
     } finally {
       stop();

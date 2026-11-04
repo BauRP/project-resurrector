@@ -13,7 +13,8 @@ describe("fullscreen editor export and privacy in real fold panes",()=>{
     expect(css).toContain("top: var(--fold-work-top, 0px)");
     expect(css).toContain("height: var(--fold-work-height, 100dvh)");
     const topology=readFileSync("src/lib/display-topology.ts","utf8");
-    expect(topology).toContain('root.style.setProperty("--fold-work-top"');
+    expect(topology).toContain('writeCss("--fold-work-top"');
+    expect(topology).toContain("if (root.style.getPropertyValue(name) !== value) root.style.setProperty(name, value)");
     expect(topology).toContain('"--fold-work-top","--fold-work-y-offset"');
     expect(css).toContain("width: min(var(--fold-work-width, 100%), 100%)");
     expect(editor).toContain("export-action-grid mb-5 grid gap-2");
@@ -67,7 +68,7 @@ describe("repeated invalid fold callbacks", () => {
     const adapter=readFileSync("src/lib/display-topology.ts","utf8");
     expect(adapter).not.toContain('if(root.dataset["foldWorkspace"]==="unknown")return;');
     expect(adapter).toContain('root.dataset["foldWorkspace"]="unknown";');
-    expect(adapter).toContain('root.style.removeProperty(name)');
+    expect(adapter).toContain('if (root.style.getPropertyValue(name) !== "") root.style.removeProperty(name)');
   });
 });
 
