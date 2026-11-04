@@ -146,7 +146,7 @@ describe("remote camera answer does not corrupt a newer QR handshake",()=>{
  });
  it("rejects an answer when leave advances the session generation mid-handshake",async()=>{
   let resolve!:()=>void;
-  const pc={setRemoteDescription:vi.fn(()=>new Promise<void>(r=>{resolve=r;}))} as unknown as RTCPeerConnection;
+  const pc={setRemoteDescription:vi.fn(()=>new Promise<void>(r=>{resolve=r;})), close:vi.fn()} as unknown as RTCPeerConnection;
   state.pending=pc;
   const generation=state.generation;
   const pending=mesh.acceptAnswer(answer("v=0"));
