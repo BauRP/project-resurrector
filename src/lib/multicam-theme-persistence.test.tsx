@@ -86,6 +86,20 @@ describe("lightweight appearance preferences", () => {
     expect(writes.mock.calls.filter(([key]) => key === "multicam-pov-state-native")).toHaveLength(1);
   });
 
+  it("recovers from a previously frozen settings tab without resetting the editor playhead", async () => {
+    window.localStorage.setItem("multicam-view-state-v1", JSON.stringify({
+      tab: "settings", playhead: 12.5, aspect: "16:9", captureKind: "video",
+    }));
+    function TabProbe() {
+      const tab = useMulticamStore(state => state.tab);
+      return <output data-testid="tab">{tab}</output>;
+    }
+    render(<MulticamStoreProvider><TabProbe /></MulticamStoreProvider>);
+    await waitFor(() => expect(screen.getByTestId("tab")).toHaveTextContent("camera"));
+    const restored = JSON.parse(window.localStorage.getItem("multicam-view-state-v1") ?? "{}");
+    expect(restored).toMatchObject({ tab: "camera", playhead: 12.5, aspect: "16:9" });
+  });
+
   it("prefers the new stored theme over legacy appearance data", async () => {
     window.localStorage.setItem("multicam-pov-state-native", JSON.stringify({ theme: "light", selectedLut: "Neutral" }));
     window.localStorage.setItem("multicam-pov-ui-prefs-native", JSON.stringify({ theme: "dark", language: "en" }));
