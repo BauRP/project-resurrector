@@ -98,20 +98,60 @@ function readClips(): Promise<StoredClip[]> {
 }
 
 /** Extracts evenly spaced JPEG frames for the filmstrip; cached per clip id. */
-async function makeThumbs(url: string, duration: number, n = 10): Promise<string[]> {
+async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortSignal): Promise<string[]> {
   const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; v.src = url;
-  await new Promise<void>((res) => { v.onloadeddata = () => res(); v.onerror = () => res(); window.setTimeout(res, 4000); });
-  if (!v.videoWidth || !v.videoHeight) return [];
-  const c = document.createElement("canvas"); c.height = 54; c.width = Math.round((54 * v.videoWidth) / v.videoHeight);
-  const ctx = c.getContext("2d"); if (!ctx) return [];
-  const out: string[] = [];
-  for (let k = 0; k < n; k++) {
-    const time = Math.min(Math.max(0, duration - 0.05), ((k + 0.5) * duration) / n);
-    await new Promise<void>((res) => { let done = false; const fin = () => { if (done) return; done = true; v.removeEventListener("seeked", fin); res(); }; v.addEventListener("seeked", fin); v.currentTime = time; window.setTimeout(fin, 1500); });
-    ctx.drawImage(v, 0, 0, c.width, c.height); out.push(c.toDataURL("image/jpeg", 0.6));
+  // A cancelled editor must release every decoder, including early errors.
+  try {
+    await new Promise<void>((res) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(timer);
+        v.removeEventListener("loadeddata", finish);
+        v.removeEventListener("error", finish);
+        signal?.removeEventListener("abort", finish);
+        res();
+      };
+      const timer = window.setTimeout(finish, 4000);
+      v.addEventListener("loadeddata", finish);
+      v.addEventListener("error", finish);
+      signal?.addEventListener("abort", finish, { once: true });
+    });
+    if (signal?.aborted || !v.videoWidth || !v.videoHeight) return [];
+    const c = document.createElement("canvas"); c.height = 54; c.width = Math.round((54 * v.videoWidth) / v.videoHeight);
+    const ctx = c.getContext("2d"); if (!ctx) return [];
+    const out: string[] = [];
+    for (let k = 0; k < n; k++) {
+      if (signal?.aborted) return [];
+      const time = Math.min(Math.max(0, duration - 0.05), ((k + 0.5) * duration) / n);
+      await new Promise<void>((res) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          window.clearTimeout(timer);
+          v.removeEventListener("seeked", finish);
+          signal?.removeEventListener("abort", finish);
+          res();
+        };
+        const timer = window.setTimeout(finish, 1500);
+        v.addEventListener("seeked", finish);
+        signal?.addEventListener("abort", finish, { once: true });
+        try { v.currentTime = time; } catch { finish(); }
+      });
+      if (signal?.aborted) return [];
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      out.push(c.toDataURL("image/jpeg", 0.6));
+      // Yield so changing tabs, recording and Android UI callbacks can paint.
+      await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    }
+    return out;
+  } finally {
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
   }
-  v.removeAttribute("src"); v.load();
-  return out;
 }
 async function analyse(clip: StoredClip): Promise<Media> {
   const url = URL.createObjectURL(clip.blob);
@@ -185,32 +225,60 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => { loadGeneration.current++; window.removeEventListener("multicam-clips-changed", on); }; }, [load]);
   useEffect(() => {
     const abort = new AbortController();
-    void (async () => { for (const m of media) {
-      if (m.kind !== "video" || abort.signal.aborted) continue;
-      try { const blob = await generateProxy(m.id, m.url, abort.signal); if (blob && !abort.signal.aborted) { const url = URL.createObjectURL(blob); proxyUrls.current.add(url); setProxies((cur) => ({ ...cur, [m.id]: url })); } }
-      catch { /* Originals remain playable when proxy encoding is unavailable. */ }
-    } })();
-    const clear = () => { abort.abort(); proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)); proxyUrls.current.clear(); setProxies({}); setThumbs({}); };
+    let live = true;
+    const clear = () => {
+      abort.abort();
+      proxyUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      proxyUrls.current.clear();
+      setProxies({});
+      setThumbs({});
+    };
     window.addEventListener("multicam-preview-cache-cleared", clear);
-    return () => { abort.abort(); window.removeEventListener("multicam-preview-cache-cleared", clear); };
-  }, [media]);
-  useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
-  useEffect(() => { const now = new Set(media.map((m) => m.url)); urlsRef.current.forEach((u) => { if (!now.has(u)) URL.revokeObjectURL(u); }); urlsRef.current = now; }, [media]);
-  useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
-  useEffect(() => {
-    let alive = true;
     void (async () => {
+      // One decoder pipeline at a time. Previously thumbnail seekers and
+      // full-length proxy encoders ran concurrently for every clip, exhausting
+      // GPU/MediaCodec capacity when Android switches between app sections.
       for (const m of media) {
+        if (!live || abort.signal.aborted) return;
         if (m.kind !== "video") continue;
-        let th = thumbCache.get(m.id);
-        if (!th) { th = await makeThumbs(m.url, m.duration); if (th.length) thumbCache.set(m.id, th); }
-        if (!alive) return;
-        const frames = th;
-        setThumbs((cur) => cur[m.id] === frames ? cur : { ...cur, [m.id]: frames });
+        try {
+          let frames = thumbCache.get(m.id);
+          if (!frames) {
+            frames = await makeThumbs(m.url, m.duration, 10, abort.signal);
+            if (frames.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
+          }
+          if (!live || abort.signal.aborted) return;
+          setThumbs(cur => cur[m.id] === frames ? cur : { ...cur, [m.id]: frames ?? [] });
+        } catch { /* An undecodable thumbnail never hides the original clip. */ }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      }
+      for (const m of media) {
+        if (!live || abort.signal.aborted) return;
+        if (m.kind !== "video") continue;
+        try {
+          const blob = await generateProxy(m.id, m.url, abort.signal);
+          if (blob && live && !abort.signal.aborted) {
+            const url = URL.createObjectURL(blob);
+            proxyUrls.current.add(url);
+            setProxies(cur => ({ ...cur, [m.id]: url }));
+          }
+        } catch { /* Originals remain playable when proxy encoding fails. */ }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      live = false;
+      abort.abort();
+      window.removeEventListener("multicam-preview-cache-cleared", clear);
+    };
   }, [media]);
+  useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
+  useEffect(() => {
+    const now = new Set(media.map((m) => m.url));
+    urlsRef.current.forEach((u) => { if (!now.has(u)) URL.revokeObjectURL(u); });
+    urlsRef.current = now;
+  }, [media]);
+  useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
   useEffect(() => { setStore({ exportMix: { excludedAudio: Object.keys(muted).filter((k) => muted[k]), hiddenVideo: Object.keys(hidden).filter((k) => hidden[k]) } }); }, [muted, hidden, setStore]);
 
   const total = useMemo(() => Math.max(10, ...items.map((i) => i.start + len(i))), [items]);
