@@ -179,10 +179,15 @@ async function analyse(clip: StoredClip): Promise<Media> {
 
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
   const [media, setMedia] = useState<Media[]>([]);
-  const [items, setItems] = useState<Item[]>(() => loadEditorProject().items as unknown as Item[]);
-  const [overlays, setOverlays] = useState<Overlay[]>(() => loadEditorProject().overlays as unknown as Overlay[]);
-  const [muted, setMuted] = useState<Record<string, boolean>>(() => loadEditorProject().muted);
-  const [hidden, setHidden] = useState<Record<string, boolean>>(() => loadEditorProject().hidden);
+  // Restore and sanitize the saved project only ONCE per editor mount. Each
+  // loadEditorProject() performs synchronous localStorage JSON.parse and
+  // validation of hundreds of clips; running it once per separate state
+  // field previously multiplied the WebView first-paint cost.
+  const [initialEditorProject] = useState(() => loadEditorProject());
+  const [items, setItems] = useState<Item[]>(() => initialEditorProject.items as unknown as Item[]);
+  const [overlays, setOverlays] = useState<Overlay[]>(() => initialEditorProject.overlays as unknown as Overlay[]);
+  const [muted, setMuted] = useState<Record<string, boolean>>(() => initialEditorProject.muted);
+  const [hidden, setHidden] = useState<Record<string, boolean>>(() => initialEditorProject.hidden);
   const [thumbs, setThumbs] = useState<Record<string, string[]>>({});
   const [panel, setPanel] = useState<"transitions" | "color" | "audio" | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
@@ -304,7 +309,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     };
   }, []);
   const [vTracks, setVTracks] = useState(1); const [aTracks, setATracks] = useState(1);
-  const [transitions, setTransitions] = useState<Transition[]>(() => loadEditorProject().transitions as unknown as Transition[]); const [selTr, setSelTr] = useState<string | null>(null);
+  const [transitions, setTransitions] = useState<Transition[]>(() => initialEditorProject.transitions as unknown as Transition[]); const [selTr, setSelTr] = useState<string | null>(null);
   // Preserve the editor timeline across fold-driven Activity/WebView
   // recreation. Only local metadata; original media stays in IndexedDB.
   const latestProject = useRef({items,overlays,transitions,hidden,muted});
