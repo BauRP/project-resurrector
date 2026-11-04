@@ -7,10 +7,26 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
   if (signal.aborted || typeof MediaRecorder === "undefined") return null;
   const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
-  const stop = () => { cancelAnimationFrame(raf); video.pause(); if (recorder && recorder.state !== "inactive") recorder.stop(); stream?.getTracks().forEach((track) => track.stop()); };
+  const stop = () => { cancelAnimationFrame(raf); video.pause(); if (recorder && recorder.state !== "inactive") { try { recorder.stop(); } catch { /* The encoder may already be closing. */ } } stream?.getTracks().forEach((track) => track.stop()); };
   signal.addEventListener("abort", stop, { once: true });
   try {
-    await bounded(new Promise<void>((resolve, reject) => { video.onloadeddata = () => resolve(); video.onerror = () => reject(new Error("Cannot decode video")); video.src = source; video.load(); }), 5000, "Proxy metadata");
+    await bounded(new Promise<void>((resolve, reject) => {
+      const finish = (error?: Error) => {
+        video.removeEventListener("loadeddata", onReady);
+        video.removeEventListener("error", onError);
+        signal.removeEventListener("abort", onAbort);
+        if (error) reject(error); else resolve();
+      };
+      const onReady = () => finish();
+      const onError = () => finish(new Error("Cannot decode video"));
+      const onAbort = () => finish(new Error("Proxy cancelled"));
+      video.addEventListener("loadeddata", onReady, { once: true });
+      video.addEventListener("error", onError, { once: true });
+      signal.addEventListener("abort", onAbort, { once: true });
+      if (signal.aborted) { onAbort(); return; }
+      video.src = source;
+      video.load();
+    }), 5000, "Proxy metadata");
     if (Math.min(video.videoWidth, video.videoHeight) <= 480 || signal.aborted) return null;
     const canvas = document.createElement("canvas");
     const scale = 480 / Math.min(video.videoWidth, video.videoHeight);
@@ -28,6 +44,9 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       video.onended = () => { if (recorder?.state !== "inactive") recorder?.stop(); };
       video.onerror = () => reject(new Error("Video decode failed"));
     });
+    // The encoder can fail before video.play() resolves. Observe its rejection
+    // immediately, even when the playback setup never reaches await done.
+    void done.catch(() => undefined);
     // Recorder requests 24 fps. Drawing at display refresh (60/90/120
     // fps) wastes CPU/GPU and can starve Settings during a WebView switch.
     // Keep all proxy frames while matching the requested recording rate.

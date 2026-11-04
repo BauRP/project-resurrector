@@ -29,11 +29,13 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
     if(!v)return;
     // A source change is a new decoder session: discard old playback first.
     v.pause();
-    v.src=source;v.load();
+    // A cached WebView video can dispatch loadedmetadata during load().
+    // Install the handler first to retain the correct initial timeline frame.
     const onReady=()=>{const to=target();if(Number.isFinite(to)){
       try{v.currentTime=to;}catch{/* codec not ready yet */}
     }};
     v.addEventListener("loadedmetadata",onReady);
+    v.src=source;v.load();
     return ()=>{v.removeEventListener("loadedmetadata",onReady);v.pause();
       v.removeAttribute("src");v.load();};
     // source is the only signal for decoder ownership
