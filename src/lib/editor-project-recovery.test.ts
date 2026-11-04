@@ -18,6 +18,14 @@ describe("fold-safe editor project persistence",()=>{
   expect(p.items).toHaveLength(1);
   expect(p.muted).toEqual({a1:true});
  });
+ it("parses saved editor metadata only once per mount",()=>{
+  const code=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
+  expect(code).toContain("const [initialEditorProject] = useState(() => loadEditorProject())");
+  expect(code.match(/loadEditorProject\(\)/g)).toHaveLength(1);
+  for(const field of ["items","overlays","transitions","hidden","muted"]) {
+    expect(code).toContain("initialEditorProject."+field);
+  }
+ });
  it("does not synchronously serialize project state on every editor change",()=>{
   const code=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
   expect(code).toContain("projectWriteTimer.current = window.setTimeout(flushEditorProject, 400)");
