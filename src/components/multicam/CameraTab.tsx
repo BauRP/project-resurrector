@@ -923,7 +923,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     <div className="camera-record-dock absolute inset-x-0 bottom-6 z-20 px-4">
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
         <div className="mb-4 flex items-center justify-start gap-1.5">{!clean && <>
-          <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={cameraState === "loading" || s.recording || (s.capMatrix ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false)} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>
+          <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={cameraState === "loading" || s.recording || (s.capMatrix && s.capMatrix.permissions.camera !== "not-requested" ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false)} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>
           <Button size="icon" variant={sheet ? "default" : "secondary"} aria-label="Параметры" aria-expanded={sheet} onClick={() => { setHud(null); setSheet(!sheet); }}><SlidersHorizontal /></Button>
         </>}</div>
         <div className="flex flex-col items-center gap-2">{!clean && <>

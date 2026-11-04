@@ -13,6 +13,7 @@ describe("safe Android startup and preview", () => {
    expect(c).toContain("const [previewRequested, setPreviewRequested] = useState(false)");
    expect(c).toContain("if (!previewRequested) return");
    expect(c).toContain("setPreviewRequested(true)");
+   expect(c).toContain('s.capMatrix.permissions.camera !== "not-requested"');
    expect(c).toContain("if (isNative() && previewRequested) void MultiCamNative.getCapabilities()");
    expect(c).toContain("if (!previewRequested || !stream) return");
 
