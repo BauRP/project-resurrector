@@ -18,7 +18,7 @@ import { canExportOriginalClip } from "@/lib/editor-original-export";
 import { readPersistedClip } from "@/lib/clip-persistence";
 import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
-import { timelineMinZoom, timelineTime, visibleTiles } from "@/lib/timeline";
+import { timelineMinZoom, timelineTime, visibleTiles, visibleRulerTicks } from "@/lib/timeline";
 import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
 
 interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
@@ -710,6 +710,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
   };
   const minZoom = timelineMinZoom(tlW, total);
+  const rulerTicks = useMemo(() => visibleRulerTicks(total, zoom, scrollX, tlW, HEAD), [total, zoom, scrollX, tlW]);
   useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
   useEffect(() => {
     if (restoredScroll.current || tlW <= 0 || zoom < minZoom) return;
@@ -841,7 +842,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       <div className="relative" style={{ width: items.length ? Math.max(tlW, HEAD + total * zoom + 8) : tlW }}>
         <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
         <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
-          {Array.from({ length: Math.ceil(total) + 1 }, (_, s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
+          {rulerTicks.map((s) => <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
         </div>
         {laneEls}
         <div ref={playheadLine} className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: HEAD + t * zoom }} />
