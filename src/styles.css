@@ -1291,3 +1291,89 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 @media (max-width:440px) {
  .camera-preview-status {width:90%;}
 }
+
+
+/* Shared visual grammar: camera, timeline editor and settings use identical
+ * glass pigment, soft bevel rims, cyan-violet accents and compact controls. */
+.editor-fold-workspace .bg-card,
+.editor-fold-workspace .bg-secondary,
+.editor-fold-workspace .bg-timeline {
+  background:var(--reference-surface);
+  border-color:var(--reference-rim);
+}
+.editor-fold-workspace button:not(:disabled):not(.record-shutter),
+.editor-fold-workspace .timeline-header,
+.editor-fold-workspace .timeline-lane,
+.settings-fold-workspace button:not(:disabled) {
+  -webkit-tap-highlight-color:transparent;
+}
+.editor-fold-workspace .timeline-header {
+  border-right:1px solid var(--reference-rim);
+  background:var(--reference-surface);
+}
+.editor-fold-workspace .timeline-lane {border-bottom-color:var(--reference-rim);}
+.editor-fold-workspace .timeline-play,
+.editor-fold-workspace [role="toolbar"] button,
+.editor-fold-workspace .editor-tab,
+.editor-fold-workspace button[aria-label="Уменьшить масштаб"],
+.editor-fold-workspace button[aria-label="Увеличить масштаб"] {
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);
+  border-radius:1.05rem;
+  box-shadow:var(--reference-shadow);
+}
+.editor-fold-workspace .timeline-play,
+.editor-fold-workspace .editor-tab.active,
+.editor-fold-workspace [role="toolbar"] button.bg-primary {
+  color:white;
+  background:var(--gradient-primary);
+  box-shadow:var(--reference-glow);
+}
+.editor-fold-workspace [role="toolbar"] button:disabled {
+  opacity:.48;
+  box-shadow:none;
+}
+.editor-fold-workspace .timeline-scroll {border:1px solid var(--reference-rim);}
+.editor-fold-workspace [role="tablist"] {
+  border-radius:1.05rem;
+  background:var(--reference-surface);
+  border:1px solid var(--reference-rim);
+}
+.editor-fold-workspace [role="tablist"] .editor-tab {
+  border-radius:.9rem;
+}
+.settings-fold-workspace section,
+.settings-fold-workspace .settings-advanced-tools {
+  border-radius:1.15rem;
+}
+.settings-fold-workspace .settings-tool-trigger,
+.settings-fold-workspace .theme-seg,
+.settings-fold-workspace .settings-item select {
+  background:var(--reference-surface);
+  border-color:var(--reference-rim);
+  box-shadow:var(--reference-shadow);
+}
+.settings-fold-workspace .theme-seg button:not(.active) {color:var(--foreground);}
+.settings-fold-workspace .theme-seg button.active {
+  background:var(--gradient-primary);
+  border:1px solid oklch(.93 .05 230 / .7);
+  box-shadow:var(--reference-glow);
+  color:white;
+}
+.settings-confirm-card,
+.settings-error-state,
+.settings-privacy-empty {
+  background:var(--reference-surface);
+  border:1px solid var(--reference-rim);
+  box-shadow:var(--reference-shadow);
+}
+.settings-fold-workspace button:focus-visible,
+.editor-fold-workspace button:focus-visible,
+.camera-screen button:focus-visible {
+  outline:2px solid var(--primary);
+  outline-offset:2px;
+}
+.bottom-nav button.active svg,
+.app-header .connect-pill svg {
+  filter:drop-shadow(0 0 3px oklch(.60 .16 290 / .35));
+}
