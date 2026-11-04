@@ -122,7 +122,7 @@ function readClip(db: IDBDatabase, id: string): Promise<StoredClip | null> {
 
 /** Extracts evenly spaced JPEG frames for the filmstrip; cached per clip id. */
 async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortSignal): Promise<string[]> {
-  const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; v.src = url;
+  const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true;
   // A cancelled editor must release every decoder, including early errors.
   try {
     await new Promise<void>((res) => {
@@ -140,6 +140,8 @@ async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortS
       v.addEventListener("loadeddata", finish);
       v.addEventListener("error", finish);
       signal?.addEventListener("abort", finish, { once: true });
+      v.src = url;
+      v.load();
     });
     if (signal?.aborted || !v.videoWidth || !v.videoHeight) return [];
     const c = document.createElement("canvas"); c.height = 54; c.width = Math.round((54 * v.videoWidth) / v.videoHeight);
@@ -180,12 +182,14 @@ async function analyse(clip: StoredClip): Promise<Media> {
   const url = URL.createObjectURL(clip.blob);
   const cached = analysisCache.get(clip.id);
   if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
-  const v = document.createElement("video"); v.preload = "metadata"; v.src = url;
+  const v = document.createElement("video"); v.preload = "metadata";
   let duration: number;
   try {
     duration = await bounded(new Promise<number>((resolve, reject) => {
       v.onloadedmetadata = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); else { v.currentTime = 1e7; v.ontimeupdate = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); }; } };
       v.onerror = () => reject(new Error("Не удалось прочитать видео"));
+      v.src = url;
+      v.load();
     }), 6000, "Video metadata");
   } catch (error) { URL.revokeObjectURL(url); throw error; }
   finally { v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null; v.removeAttribute("src"); v.load(); }

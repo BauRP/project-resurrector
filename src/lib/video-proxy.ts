@@ -5,12 +5,12 @@ import { readProxy, writeProxy } from "./media-cache";
 export async function generateProxy(id: string, source: string, signal: AbortSignal): Promise<Blob | null> {
   const cached = await readProxy(id); if (signal.aborted) return null; if (cached) return cached;
   if (signal.aborted || typeof MediaRecorder === "undefined") return null;
-  const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto"; video.src = source;
+  const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
   const stop = () => { cancelAnimationFrame(raf); video.pause(); if (recorder && recorder.state !== "inactive") recorder.stop(); stream?.getTracks().forEach((track) => track.stop()); };
   signal.addEventListener("abort", stop, { once: true });
   try {
-    await bounded(new Promise<void>((resolve, reject) => { video.onloadeddata = () => resolve(); video.onerror = () => reject(new Error("Cannot decode video")); }), 5000, "Proxy metadata");
+    await bounded(new Promise<void>((resolve, reject) => { video.onloadeddata = () => resolve(); video.onerror = () => reject(new Error("Cannot decode video")); video.src = source; video.load(); }), 5000, "Proxy metadata");
     if (Math.min(video.videoWidth, video.videoHeight) <= 480 || signal.aborted) return null;
     const canvas = document.createElement("canvas");
     const scale = 480 / Math.min(video.videoWidth, video.videoHeight);
