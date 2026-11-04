@@ -28,9 +28,9 @@ describe("emulator and WebView photo callback recovery", () => {
     window.addEventListener("multicam-photos-changed", listener);
     try {
       const operation = savePhoto(new Blob(["frame"]), { mode: "single" });
-      req.onsuccess();
+      req['onsuccess']();
       expect(db.close).not.toHaveBeenCalled();
-      tx.oncomplete();
+      tx['oncomplete']();
       await operation;
       expect(db.close).toHaveBeenCalledTimes(1);
       expect(listener).toHaveBeenCalledTimes(1);
@@ -45,7 +45,7 @@ describe("emulator and WebView photo callback recovery", () => {
     const rejected = expect(pending).rejects.toThrow("Проверьте медиатеку");
     await vi.advanceTimersByTimeAsync(10000);
     await rejected;
-    req.onsuccess();
+    req['onsuccess']();
     expect(db.close).toHaveBeenCalledTimes(1);
   });
   it("stops waiting for a lost toBlob callback without degrading quality", async () => {
