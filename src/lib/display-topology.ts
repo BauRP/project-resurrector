@@ -293,18 +293,23 @@ export function startDisplayAdaptation(): () => void {
   // writes on every ResizeObserver or DOM mutation. Those writes can trigger
   // another reflow while Settings switches themes. Genuine foldables remain
   // on the existing live measurement path.
-  let lastFlatMeasurement = "";
+  // A ResizeObserver notification may be caused by our own CSS variables.
+  // Idempotence applies to *all* devices, including emulators whose native
+  // WindowManager bridge has not answered yet and real folding devices.
+  // A genuine size, tab or native-revision change still recalculates panes.
+  let lastMeasurement = "";
   const measure = () => {
     if (disposed || activeAdaptation !== token) return;
     const currentWidth = retainedViewportDimension(width(), lastGoodWidth);
     const currentHeight = retainedViewportDimension(height(), lastGoodHeight);
     if (currentWidth === null || currentHeight === null) return;
-    if (lastNative && lastNative.foldingFeatures.length === 0) {
-      const signature = [currentWidth,currentHeight,
-        root.dataset["activeMulticamTab"] ?? "",lastNative.revision].join("|");
-      if (signature === lastFlatMeasurement) return;
-      lastFlatMeasurement = signature;
-    } else lastFlatMeasurement = "";
+    const signature = [currentWidth,currentHeight,
+      root.dataset["activeMulticamTab"] ?? "",
+      lastNative?.revision ?? "pending",
+      lastNative?.posture ?? "unknown",
+      lastNative?.foldingFeatures.length ?? 0].join("|");
+    if (signature === lastMeasurement) return;
+    lastMeasurement = signature;
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
     root.dataset["windowClass"] = windowClass(currentWidth);
     root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
