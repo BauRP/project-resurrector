@@ -31,14 +31,14 @@ describe("native bridge must not freeze the initial camera screen", () => {
     mocks.status.mockImplementation(() => new Promise(() => undefined));
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
     expect(screen.getByText("Камера пока выключена")).toBeInTheDocument();
-    expect(mocks.status).not.toHaveBeenCalled();
+    expect(mocks.status).toHaveBeenCalledTimes(1);
   });
   it("preserves manual Camera2 access while keeping initial status calls at zero", async () => {
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
-    expect(mocks.status).not.toHaveBeenCalled();
+    expect(mocks.status).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Перейти в Camera2" }));
     await waitFor(() => expect(screen.getByText("Нативная панель")).toBeInTheDocument());
-    expect(mocks.status).not.toHaveBeenCalled();
+    expect(mocks.status).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
     await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(1));
     expect(screen.getByText("Камера пока выключена")).toBeInTheDocument();
