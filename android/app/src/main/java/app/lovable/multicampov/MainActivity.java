@@ -21,17 +21,17 @@ public class MainActivity extends BridgeActivity {
         UiFreezeMonitor.start(getApplicationContext());
     }
 
-    @Override protected void onResume() {
+    @Override public void onResume() {
         super.onResume();
         UiFreezeMonitor.setForeground(true);
     }
 
-    @Override protected void onPause() {
+    @Override public void onPause() {
         UiFreezeMonitor.setForeground(false);
         super.onPause();
     }
 
-    @Override protected void onDestroy() {
+    @Override public void onDestroy() {
         UiFreezeMonitor.stop();
         super.onDestroy();
     }
