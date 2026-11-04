@@ -303,11 +303,29 @@ export function startDisplayAdaptation(): () => void {
     const currentWidth = retainedViewportDimension(width(), lastGoodWidth);
     const currentHeight = retainedViewportDimension(height(), lastGoodHeight);
     if (currentWidth === null || currentHeight === null) return;
-    const signature = [currentWidth,currentHeight,
+    // The CSS viewport alone is insufficient: Android keyboards, inset
+    // changes, newly loaded editor panels and unchanged-revision hinges
+    // can move the *visible content* without changing window.innerHeight.
+    // Include only geometry used by layout(), while deduplicating paint work.
+    const viewport = window.visualViewport;
+    const scroll = document.querySelector(".app-scroll")?.getBoundingClientRect();
+    const header = document.querySelector(".app-header")?.getBoundingClientRect();
+    const camera = document.querySelector(".camera-screen")?.getBoundingClientRect();
+    const hinges = lastNative?.foldingFeatures.map(f => [
+      f.leftPx,f.topPx,f.rightPx,f.bottomPx,f.orientation,f.state,
+      f.occlusion,f.separating,
+    ]) ?? [];
+    const signature = JSON.stringify([
+      currentWidth,currentHeight,
       root.dataset["activeMulticamTab"] ?? "",
       lastNative?.revision ?? "pending",
       lastNative?.posture ?? "unknown",
-      lastNative?.foldingFeatures.length ?? 0].join("|");
+      hinges,
+      viewport?.offsetTop,viewport?.offsetLeft,
+      viewport?.width,viewport?.height,
+      scroll?.left,scroll?.top,scroll?.width,scroll?.height,
+      header?.bottom,camera?.left,camera?.top,camera?.width,camera?.height,
+    ]);
     if (signature === lastMeasurement) return;
     lastMeasurement = signature;
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
