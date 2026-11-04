@@ -25,37 +25,52 @@ export async function saveRecordedClipsAtomically(clips: readonly RecordedClip[]
   }
   if (typeof indexedDB === "undefined") throw new Error("Локальное хранилище недоступно");
   await new Promise<void>((resolve, reject) => {
-    const request = indexedDB.open("multicam-pov-media", 1);
-    request.onupgradeneeded = () => {
-      if (!request.result.objectStoreNames.contains("clips")) {
-        request.result.createObjectStore("clips", { keyPath: "id" });
-      }
+    let finished = false;
+    let db: IDBDatabase | null = null;
+    let tx: IDBTransaction | null = null;
+    const settle = (error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timeout);
+      try { db?.close(); } catch { /* A stopped WebView may close the DB. */ }
+      if (error) reject(error); else resolve();
     };
-    request.onerror = () => reject(new Error("Не удалось открыть медиатеку"));
-    request.onblocked = () => reject(new Error("Хранилище занято другой вкладкой"));
-    request.onsuccess = () => {
-      const db = request.result;
-      let closed = false;
-      const close = () => { if (!closed) { closed = true; db.close(); } };
-      try {
-        const tx = db.transaction("clips", "readwrite");
-        tx.oncomplete = () => { close(); resolve(); };
-        tx.onabort = () => {
-          const conflict = tx.error?.name === "ConstraintError";
-          close();
-          reject(new Error(conflict
-            ? "Клип с таким идентификатором уже существует: исходная запись не изменена"
-            : "Сохранение прервано: проверьте место на устройстве"));
-        };
-        tx.onerror = () => {
-          // Wait for onabort: IDB abort is atomic even if an individual
-          // request failed. In particular, a duplicate ID must NEVER
-          // replace an existing user's video.
-        };
-        const objectStore = tx.objectStore("clips");
-        for (const clip of clips) objectStore.add(clip);
-      } catch (error) { close(); reject(error); }
-    };
+    // A lost IndexedDB callback cannot hold the Camera screen in "saving".
+    // A timeout is NOT proof of rollback: do not replay or delete the clip.
+    const timeout = window.setTimeout(() => {
+      try { tx?.abort(); } catch { /* Commit may already have completed. */ }
+      settle(new Error("Сохранение видео не подтверждено. Проверьте медиатеку перед повторной записью."));
+    }, 12000);
+    try {
+      const request = indexedDB.open("multicam-pov-media", 1);
+      request.onupgradeneeded = () => {
+        if (!request.result.objectStoreNames.contains("clips")) {
+          request.result.createObjectStore("clips", { keyPath: "id" });
+        }
+      };
+      request.onerror = () => settle(new Error("Не удалось открыть медиатеку"));
+      request.onblocked = () => settle(new Error("Хранилище занято другой вкладкой"));
+      request.onsuccess = () => {
+        if (finished) { request.result.close(); return; }
+        db = request.result;
+        db.onversionchange = () => db?.close();
+        try {
+          tx = db.transaction("clips", "readwrite");
+          tx.oncomplete = () => settle();
+          tx.onabort = () => {
+            const conflict = tx?.error?.name === "ConstraintError";
+            settle(new Error(conflict
+              ? "Клип с таким идентификатором уже существует: исходная запись не изменена"
+              : "Сохранение прервано: проверьте место на устройстве"));
+          };
+          tx.onerror = () => {
+            // Wait for onabort: failed writes are atomic, never use put().
+          };
+          const store = tx.objectStore("clips");
+          for (const clip of clips) store.add(clip);
+        } catch (error) { settle(error); }
+      };
+    } catch (error) { settle(error); }
   });
   // IDB transaction.oncomplete confirms a write, but not that a media blob
   // can be fetched later. Verify each saved record with a fresh transaction.

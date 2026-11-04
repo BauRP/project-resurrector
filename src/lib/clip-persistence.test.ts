@@ -33,6 +33,51 @@ describe("bounded persisted-byte sampling (not full-file integrity)", () => {
 });
 
 describe("non-destructive video persistence policy", () => {
+  it("returns a recoverable error on lost storage-open callback without auto-retrying clips", async () => {
+    vi.useFakeTimers();
+    const original = Object.getOwnPropertyDescriptor(globalThis, "indexedDB");
+    const open = vi.fn(() => ({}));
+    Object.defineProperty(globalThis, "indexedDB", { configurable: true, value: { open } });
+    try {
+      const pending = saveRecordedClipsAtomically([{
+        id:"unique-pending",createdAt:1,camera:1,mode:"video",profile:"standard",
+        playbackRate:1,blob:new Blob([new Uint8Array(2048)]),
+      }]);
+      const failure = expect(pending).rejects.toThrow("Проверьте медиатеку");
+      await vi.advanceTimersByTimeAsync(12000);
+      await failure;
+      expect(open).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      if (original) Object.defineProperty(globalThis, "indexedDB", original);
+      else Reflect.deleteProperty(globalThis, "indexedDB");
+    }
+  });
+
+  it("a late open after storage timeout only closes the database and never writes", async () => {
+    vi.useFakeTimers();
+    const original = Object.getOwnPropertyDescriptor(globalThis,"indexedDB");
+    const db = {close:vi.fn(),transaction:vi.fn()};
+    const request: Record<string, any> = {result:db};
+    Object.defineProperty(globalThis,"indexedDB",{configurable:true,value:{open:()=>request}});
+    try {
+      const pending = saveRecordedClipsAtomically([{
+        id:"late-video",createdAt:1,camera:1,mode:"video",profile:"standard",
+        playbackRate:1,blob:new Blob([new Uint8Array(2048)]),
+      }]);
+      const failure=expect(pending).rejects.toThrow("Проверьте медиатеку");
+      await vi.advanceTimersByTimeAsync(12000);
+      await failure;
+      request['onsuccess']();
+      expect(db.close).toHaveBeenCalledOnce();
+      expect(db.transaction).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+      if(original)Object.defineProperty(globalThis,"indexedDB",original);
+      else Reflect.deleteProperty(globalThis,"indexedDB");
+    }
+  });
+
   it("rejects duplicate IDs within an atomic group before any storage access", async () => {
     const saved=Object.getOwnPropertyDescriptor(globalThis,"indexedDB");
     const open=vi.fn();
