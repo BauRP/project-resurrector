@@ -51,8 +51,35 @@ export function emptyCapabilityMatrix(permissions: CapabilityMatrix["permissions
 }
 export const makeUnavailableMatrix = emptyCapabilityMatrix;
 
+/** A corrupted or partially written passport must not crash the camera
+ * screen after Android kills and restarts the WebView. Ignore invalid data,
+ * never erase it, and permit a fresh explicit diagnosis later. */
 export function loadMatrix(): CapabilityMatrix | null {
-  try { const raw = window.localStorage.getItem(KEY); return raw ? JSON.parse(raw) as CapabilityMatrix : null; } catch { return null; }
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    if (!raw || raw.length > 262144) return null;
+    const data: unknown = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    const matrix = data as Partial<CapabilityMatrix>;
+    const perms = matrix.permissions;
+    if (!perms || typeof perms.camera !== "string" ||
+        typeof perms.microphone !== "string" || typeof perms.storage !== "string") return null;
+    const validCamera = (v: unknown): v is CameraCaps => {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      const cam = v as Partial<CameraCaps>;
+      return typeof cam.available === "boolean" &&
+        (cam.deviceId === null || typeof cam.deviceId === "string") &&
+        Array.isArray(cam.resolutions) && Array.isArray(cam.fps) &&
+        Array.isArray(cam.highSpeed) &&
+        Number.isFinite(cam.maxWidth) && Number.isFinite(cam.maxHeight) &&
+        Number.isFinite(cam.maxFps);
+    };
+    if (!validCamera(matrix.rear) || !validCamera(matrix.front) ||
+        !Array.isArray(matrix.codecs) ||
+        typeof matrix.native !== "boolean" ||
+        !Number.isFinite(matrix.probedAt)) return null;
+    return matrix as CapabilityMatrix;
+  } catch { return null; }
 }
 
 async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCaps> {
