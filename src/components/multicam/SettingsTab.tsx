@@ -60,7 +60,26 @@ export function SettingsTab() {
  useEffect(() => {
    alive.current = true;
    traceUiAction("settings: mounted");
-   return () => { alive.current = false; traceUiAction("settings: unmounted"); };
+   // Identify whether this WebView can paint and process timers after mounting.
+   let frameA = 0;
+   let frameB = 0;
+   const timer = window.setTimeout(() => {
+     if (alive.current) traceUiAction("settings: event loop alive 1s");
+   }, 1000);
+   frameA = window.requestAnimationFrame(() => {
+     if (!alive.current) return;
+     traceUiAction("settings: first paint frame");
+     frameB = window.requestAnimationFrame(() => {
+       if (alive.current) traceUiAction("settings: second paint frame");
+     });
+   });
+   return () => {
+     alive.current = false;
+     window.cancelAnimationFrame(frameA);
+     window.cancelAnimationFrame(frameB);
+     window.clearTimeout(timer);
+     traceUiAction("settings: unmounted");
+   };
  }, []);
  const measureCache = async () => {
    traceUiAction("settings: cache measurement");

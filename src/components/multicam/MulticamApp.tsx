@@ -152,6 +152,9 @@ function MulticamAppContent() {
   useEffect(() => startDisplayAdaptation(), []);
   useEffect(() => { traceUiAction("app: mounted"); }, []);
   useEffect(() => { traceUiAction("tab: " + tab); }, [tab]);
+  useLayoutEffect(() => {
+    if (tab === "settings") traceUiAction("settings: React commit complete");
+  }, [tab]);
   // Translucent theme surfaces remain, but native WebViews avoid full-panel
   // backdrop blur on each settings repaint.
   useEffect(() => {

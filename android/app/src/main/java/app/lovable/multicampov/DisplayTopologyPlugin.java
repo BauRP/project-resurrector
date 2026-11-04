@@ -144,6 +144,8 @@ public class DisplayTopologyPlugin extends Plugin {
     private Consumer<WindowLayoutInfo> listener;
     private WindowLayoutInfo latest;
     private long revision = 0L;
+    /** Repeated OEM notifications must not repaint Settings. */
+    private String lastNotifiedGeometry = null;
     /** Reject queued topology callbacks belonging to a stopped observer. */
     private long observerGeneration = 0L;
     /** One unique lease per WindowManager listener registration. This lease
@@ -243,6 +245,35 @@ public class DisplayTopologyPlugin extends Plugin {
         return result;
     }
 
+    /** Exact measured window geometry, independent of CSS child layout.
+     * All fold states, insets, device density and WebView movements stay observable. */
+    private String measuredWindowFingerprint() {
+        android.app.Activity host = getActivity();
+        if (host == null || host.isDestroyed()) return "activity-unavailable";
+        View root = host.getWindow().getDecorView();
+        StringBuilder key = new StringBuilder();
+        key.append(root.getWidth()).append(',').append(root.getHeight())
+            .append(',').append(host.getResources().getDisplayMetrics().densityDpi);
+        View web = getBridge() == null ? null : getBridge().getWebView();
+        if (web != null) {
+            int[] rootOrigin = new int[2];
+            int[] webOrigin = new int[2];
+            root.getLocationInWindow(rootOrigin);
+            web.getLocationInWindow(webOrigin);
+            key.append('|').append(webOrigin[0] - rootOrigin[0])
+                .append(',').append(webOrigin[1] - rootOrigin[1])
+                .append(',').append(web.getWidth()).append(',').append(web.getHeight());
+        } else key.append("|no-webview");
+        WindowInsetsCompat insets = ViewCompat.getRootWindowInsets(root);
+        if (insets != null) {
+            Insets bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() |
+                WindowInsetsCompat.Type.displayCutout());
+            key.append('|').append(bars.left).append(',').append(bars.top)
+                .append(',').append(bars.right).append(',').append(bars.bottom);
+        }
+        return key.toString();
+    }
+
     @PluginMethod
     public void getState(PluginCall call) { call.resolve(snapshot()); }
 
@@ -263,6 +294,7 @@ public class DisplayTopologyPlugin extends Plugin {
             return;
         }
         try {
+            lastNotifiedGeometry = null;
             adapter = new WindowInfoTrackerCallbackAdapter(WindowInfoTracker.getOrCreate(host));
             // API 28 Context.getMainExecutor is not available on Android 7.
             // Jetpack ContextCompat keeps real WindowManager callbacks on main.
@@ -277,7 +309,6 @@ public class DisplayTopologyPlugin extends Plugin {
                     if (ownerGeneration != observerGeneration || listener == null ||
                             activeOwners.isEmpty()) return;
                     latest = info;
-                    revision++;
                     updateSurfaceHinges(lease,info);
                     int foldCount=0;
                     ArrayList<String> postureFeatures=new ArrayList<>();
@@ -306,7 +337,16 @@ public class DisplayTopologyPlugin extends Plugin {
                     // folding posture. Geometry-only updates have their own counter.
                     NativeCaptureService.observeFoldDuringRecording(
                         lease,foldCount,postureSignature,geometrySignature);
-                    notifyListeners("topologyChanged", snapshot());
+                    // Continue every recording observation and safety check.
+                    // Only real viewport, inset or hinge changes redraw WebView.
+                    String nextGeometry = postureSignature + "|" + geometrySignature
+                        + "|" + info.getDisplayFeatures().size()
+                        + "|" + measuredWindowFingerprint();
+                    if (!nextGeometry.equals(lastNotifiedGeometry)) {
+                        lastNotifiedGeometry = nextGeometry;
+                        revision++;
+                        notifyListeners("topologyChanged", snapshot());
+                    }
                 }
             };
             activeOwners.add(ownerId);
@@ -360,6 +400,7 @@ public class DisplayTopologyPlugin extends Plugin {
         listener = null;
         adapter = null;
         latest = null;
+        lastNotifiedGeometry = null;
     }
 
     @Override
