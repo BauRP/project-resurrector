@@ -3179,25 +3179,42 @@ public class NativeCaptureService extends Service {
             if(!readable)return false;
             String uri=publishVideo(context,source,prefs.getBoolean("recordAudio",false));
             if(uri==null)return false;
+            // All slow SharedPreferences commits and MediaStore deletes must
+            // happen OUTSIDE STATE_LOCK, which Android UI/preview callbacks use.
+            // Enqueue under the lock to retain ordering with capture publish().
+            final String message="Повторная публикация ранее сохранённого MP4 в Галерею подтверждена";
+            java.util.concurrent.Future<Boolean> savedCommit = null;
             synchronized(STATE_LOCK){
-                // A new capture can start while an IO-bound retry is copying.
-                // Never replace its status, history or Gallery URI with old data.
-                if(isRunning()||prefs.getLong("captureId",0L)!=captureId||
-                    !path.equals(prefs.getString("path",""))||
-                    !prefs.getString("uri","").isEmpty()){
-                    try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
-                    catch(Exception ignored){}
-                    return false;
+                if(!isRunning() && prefs.getLong("captureId",0L)==captureId &&
+                    path.equals(prefs.getString("path","")) &&
+                    prefs.getString("uri","").isEmpty()) {
+                    savedCommit=STATE_WRITER.submit(() ->
+                        prefs.edit().putString("uri",uri).putString("message",message).commit());
                 }
-                String message="Повторная публикация ранее сохранённого MP4 в Галерею подтверждена";
-                if(!prefs.edit().putString("uri",uri).putString("message",message).commit()){
-                    try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
-                    catch(Exception ignored){}
-                    return false;
+            }
+            if(savedCommit==null){
+                try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
+                catch(Exception ignored){}
+                return false;
+            }
+            if(!savedCommit.get()){
+                try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
+                catch(Exception ignored){}
+                return false;
+            }
+            boolean stillCurrent;
+            synchronized(STATE_LOCK){
+                stillCurrent=!isRunning() && prefs.getLong("captureId",0L)==captureId &&
+                    path.equals(prefs.getString("path",""));
+                if(stillCurrent){
+                    savedUri=uri;
+                    lastMessage=message;
                 }
-                // The still-alive Service may hold a saved result in memory.
-                savedUri=uri;
-                lastMessage=message;
+            }
+            if(!stillCurrent){
+                try{context.getContentResolver().delete(Uri.parse(uri),null,null);}
+                catch(Exception ignored){}
+                return false;
             }
             NativeCaptureAuditStore.append(context,status(context));
             return true;
