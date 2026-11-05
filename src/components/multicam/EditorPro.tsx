@@ -2,7 +2,7 @@ import { PointerGestureRegistry } from "@/lib/pointer-gesture-registry";
 import { EditorVideoLayer } from "./EditorVideoLayer";
 import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
-import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
+import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/lib/editor-project-recovery";
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
@@ -487,9 +487,16 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     return () => {
       window.removeEventListener("pagehide", flushEditorProject);
       document.removeEventListener("visibilitychange", onHidden);
-      // On *unmount* (not every timeline edit), write the latest changes to
-      // retain project recovery across tab navigation and Activity teardown.
-      flushEditorProject();
+      // Unmount runs inside the React navigation commit. Defer JSON.stringify
+      // and localStorage until AFTER the new tab can paint. The module-level
+      // queue keeps the unsaved snapshot accessible to an immediate remount,
+      // while pagehide synchronously flushes for Android process teardown.
+      if (projectWriteTimer.current !== null) window.clearTimeout(projectWriteTimer.current);
+      projectWriteTimer.current = null;
+      if (projectDirty.current) {
+        projectDirty.current = false;
+        queueEditorProjectSave(latestProject.current);
+      }
     };
   }, [flushEditorProject]);
   // Keep the editor's strongly typed color controls while providing the
