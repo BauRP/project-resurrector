@@ -94,6 +94,26 @@ public final class UiFreezeMonitor {
         }
     }
 
+    public static void recordRendererGone(boolean crashed) {
+        ScheduledExecutorService executor = worker;
+        if (executor == null || executor.isShutdown()) return;
+        try {
+            executor.execute(() -> persistReport("MULTI-CAM POV: WebView renderer " +
+                (crashed ? "CRASHED" : "WAS KILLED BY ANDROID") +
+                ". Camera2 foreground service not automatically stopped. " +
+                actionContext(SystemClock.uptimeMillis())));
+        } catch (java.util.concurrent.RejectedExecutionException ignored) { }
+    }
+
+    public static void recordManualRecovery() {
+        ScheduledExecutorService executor = worker;
+        if (executor == null || executor.isShutdown()) return;
+        try {
+            executor.execute(() -> persistReport("MULTI-CAM POV: UI restart requested by user; " +
+                "saved clips preserved. " + actionContext(SystemClock.uptimeMillis())));
+        } catch (java.util.concurrent.RejectedExecutionException ignored) { }
+    }
+
     public static void recordRendererResponsive() {
         rendererUnresponsiveRecorded.set(false);
     }
