@@ -96,11 +96,16 @@ export class RecordingChunkSpool {
       } catch {
         // Write may have partially succeeded. The committed prefix remains
         // authoritative; incomplete bytes after it will be ignored.
+        // Keep ALL subsequent pieces in RAM: switching to IDB AFTER this
+        // failed chunk would reorder OPFS-prefix + IDB-suffix + RAM-chunk
+        // and corrupt the resulting video timeline.
         this.opfsFailed = true;
+        this.indexedDisabled = true;
         this.keepInMemory(chunk);
       }
     }).catch(() => {
       this.opfsFailed = true;
+      this.indexedDisabled = true;
       this.keepInMemory(chunk);
     });
   }
