@@ -1,20 +1,38 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { FoldScrollRestorer, readFoldScrollTop, saveFoldScrollTop } from "./fold-scroll-position";
+import { FoldScrollRestorer, flushFoldScrollWrites, readFoldScrollTop, saveFoldScrollTop } from "./fold-scroll-position";
 
 const values = new Map<string,string>();
 beforeEach(() => {
+  flushFoldScrollWrites();
   values.clear();
   vi.stubGlobal("localStorage", {
     getItem: (key:string) => values.get(key) ?? null,
     setItem: (key:string, value:string) => { values.set(key,value); },
   });
 });
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => { flushFoldScrollWrites(); vi.unstubAllGlobals(); });
 const port=(top=0,height=1000,viewport=250) =>
   ({scrollTop:top,scrollHeight:height,clientHeight:viewport});
 
 describe("fold/editor vertical scroll restoration", () => {
+  it("never writes localStorage synchronously during scroll or tab navigation", () => {
+    const writes = vi.spyOn(localStorage, "setItem");
+    const el = port(0, 1800, 300);
+    const restorer = new FoldScrollRestorer();
+    restorer.activate("editor", el);
+    restorer.enter("editor", el);
+    el.scrollTop = 520;
+    restorer.onScroll("editor", el);
+    restorer.capture(el);
+    restorer.pauseForTransition();
+    restorer.activate("settings", el);
+    expect(writes).not.toHaveBeenCalled();
+    expect(readFoldScrollTop("editor")).toBe(520);
+    flushFoldScrollWrites();
+    expect(writes).toHaveBeenCalledWith("multicam-fold-scroll-v1:editor", "520");
+    writes.mockRestore();
+  });
   it("preserves distinct editor and settings positions across tab transitions", () => {
     const port1=port(0,1000,250), restorer=new FoldScrollRestorer();
     restorer.activate("editor",port1);
