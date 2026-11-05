@@ -1501,3 +1501,17 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
  box-shadow:var(--reference-shadow);
 }
 
+
+/* Android WebView freeze evidence: at navigation camera -> settings, Android
+ * main was blocked in HardwareRenderer.syncAndDrawFrame. The fullscreen shell
+ * used translateZ(0), forcing a separate full-screen compositing surface on
+ * every tab repaint. Keep the exact gradients, buttons and sizing, but let
+ * Chromium choose whether a hardware layer is needed. Stop infinite demo
+ * background animation when native; real camera frames keep their own source.
+ */
+:root[data-multicam-native-webview="true"] .app-shell {
+  transform: none !important;
+}
+:root[data-multicam-native-webview="true"] .simulated-feed {
+  animation: none !important;
+}
