@@ -82,7 +82,8 @@ export function savePhoto(blob: Blob, meta: Record<string, unknown>): Promise<vo
 }
 
 /** Draws the current video frame (or an average of several frames) into a canvas with the preview filter. */
-export async function grabFrames(video: HTMLVideoElement, filter: string, frames: number, spanMs: number): Promise<Blob | null> {
+export async function grabFrames(video: HTMLVideoElement, filter: string, frames: number, spanMs: number, signal?: AbortSignal): Promise<Blob | null> {
+  if (signal?.aborted) return null;
   const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return null;
   const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return null;
   ctx.filter = filter || "none";
@@ -94,6 +95,7 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
     // >257 frames, automatically use Uint32 to avoid accumulator overflow.
     const acc = frames <= 257 ? new Uint16Array(w * h * 4) : new Uint32Array(w * h * 4);
     for (let k = 0; k < frames; k++) {
+      if (signal?.aborted) return null;
       ctx.drawImage(video, 0, 0, w, h); const d = ctx.getImageData(0, 0, w, h).data;
       // At 4K a single RGBA pass has over 33 million entries. Split the
       // accumulation into bounded UI tasks so Settings/navigation and Android
@@ -102,6 +104,7 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
       for (let base = 0; base < d.length; base += 4_194_304) {
         const end = Math.min(base + 4_194_304, d.length);
         for (let i = base; i < end; i++) acc[i]! += d[i]!;
+        if (signal?.aborted) return null;
         if (end < d.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
       if (k < frames - 1) await new Promise((r) => window.setTimeout(r, spanMs / frames));
@@ -110,6 +113,7 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
     for (let base = 0; base < acc.length; base += 4_194_304) {
       const end = Math.min(base + 4_194_304, acc.length);
       for (let i = base; i < end; i++) out.data[i] = acc[i]! / frames;
+      if (signal?.aborted) return null;
       if (end < acc.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
     }
     ctx.filter = "none"; ctx.putImageData(out, 0, 0);
@@ -122,10 +126,14 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
       if (finished) return;
       finished = true;
       window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
       if (error) reject(error); else resolve(blob);
     };
+    const onAbort = () => finish(null);
+    signal?.addEventListener("abort", onAbort, { once: true });
     const timer = window.setTimeout(
       () => finish(null, new Error("Кодирование фотографии не ответило вовремя")), 5000);
+    if (signal?.aborted) { finish(null); return; }
     try { c.toBlob(blob => finish(blob), "image/jpeg", 0.93); }
     catch (error) { finish(null, error); }
   });
