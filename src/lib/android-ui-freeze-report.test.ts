@@ -9,12 +9,13 @@ describe("Android freezes leave evidence without disabling features", () => {
     expect(src).toContain("ANR_THRESHOLD_MS = 6500L");
     expect(src).toContain("WEBVIEW_THRESHOLD_MS = 12000L");
     expect(src).toContain("webViewHeartbeat.get()");
-    expect(src).toContain("WebView JavaScript heartbeat missing");
-    expect(src).toContain("First WebView JavaScript heartbeat never arrived");
+    expect(src).toContain("WebView bridge heartbeat missing");
+    expect(src).toContain("First WebView bridge heartbeat never arrived");
     expect(src).toContain("webViewHeartbeat.set(now)");
     expect(src).toContain("actionContext(now)");
     expect(src).toContain('thread.setDaemon(true)');
-    expect(act).toContain("UiFreezeMonitor.start(getApplicationContext())");
+    expect(act).toContain("UiFreezeMonitor.start(getApplicationContext(),");
+    expect(src).toContain("Independent WebView JavaScript evaluation responded recently");
     expect(act).toContain("UiFreezeMonitor.setForeground(false)");
   });
   it("allows users to copy a saved UI stack trace after recovery", () => {
