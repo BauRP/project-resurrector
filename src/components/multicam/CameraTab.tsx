@@ -1,6 +1,7 @@
 import { nativeCapture } from "@/lib/native-capture";
 import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
+import { RecordingChunkSpool } from "@/lib/recording-chunk-spool";
 import { recordingInputLostReason } from "@/lib/recording-finalization";
 import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
@@ -555,7 +556,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
       const updateCurrentSession = (value: Parameters<typeof s.set>[0]) => {
         if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
       };
-      const chunks: Blob[] = [];
+      const spool = new RecordingChunkSpool("single-" + startedAt + "-" + Math.random().toString(36).slice(2));
       let foldTransitions: FoldTransitionEvidence[] = [];
       let foldLoggingStarted = false;
       const onFold = (event: Event) => {
@@ -607,7 +608,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
       };
       recorder.onpause = () => durationClock.pausedAtTime(performance.now());
       recorder.onresume = () => durationClock.resumedAt(performance.now());
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
+      recorder.ondataavailable = (event) => { if (event.data.size) spool.append(event.data); };
       recorder.onerror = (event) => {
         startGuard?.cancel();
         recorderError = (event as Event & { error?: Error }).error?.message || "Ошибка кодировщика";
@@ -616,14 +617,15 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
         recordingStopWatch.current?.();
         if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* already stopped */ }
       };
-      const finalizeRecording = () => {
+      const finalizeRecording = () => { void (async () => {
         // Stop callback time includes any delayed finalization; it is only an
         // approximate lower-confidence duration signal, never codec FPS proof.
         const elapsedMs = lapse ? null : durationClock.durationMs();
         cleanUp();
         updateCurrentSession({ recording: false, recordingStartedAt: null, paused: false });
         const stopReason = stopReasonRef.current;
-        const blob = new Blob(chunks, { type: mime });
+        updateCurrentSession({ recordingPhase: "saving" });
+        const blob = await spool.finish(mime);
         const plan = planRecordingFinalization(blob.size, recorderError, stopReason);
         if (!plan.attemptSave) {
           updateCurrentSession({ recordingPhase: "error", captureSaveError: plan.message });
@@ -636,6 +638,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
           playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
           foldTransitions, foldContinuityVerified: false,
         }).then(() => {
+          void spool.clearAfterSave();
           clearUnfinishedCapture("single", startedAt);
           // Save is durable and independently read back. Decoding is checked
           // separately: failure must not destroy or hide an already saved clip.
@@ -678,7 +681,9 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
         }).catch((error: unknown) => {
           updateCurrentSession({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
         });
-      };
+      })().catch((error: unknown) => {
+        updateCurrentSession({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+      }); };
       const guard = createRecordingStopGuard(finalizeRecording, () => {
         recorderError ||= "Видеокодировщик не подтвердил остановку за 12 секунд";
       });
