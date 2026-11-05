@@ -95,11 +95,23 @@ export async function grabFrames(video: HTMLVideoElement, filter: string, frames
     const acc = frames <= 257 ? new Uint16Array(w * h * 4) : new Uint32Array(w * h * 4);
     for (let k = 0; k < frames; k++) {
       ctx.drawImage(video, 0, 0, w, h); const d = ctx.getImageData(0, 0, w, h).data;
-      for (let i = 0; i < d.length; i++) acc[i]! += d[i]!;
+      // At 4K a single RGBA pass has over 33 million entries. Split the
+      // accumulation into bounded UI tasks so Settings/navigation and Android
+      // WebView can handle input between batches. All pixels and all frames
+      // are still used, preserving the requested photo resolution/quality.
+      for (let base = 0; base < d.length; base += 4_194_304) {
+        const end = Math.min(base + 4_194_304, d.length);
+        for (let i = base; i < end; i++) acc[i]! += d[i]!;
+        if (end < d.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      }
       if (k < frames - 1) await new Promise((r) => window.setTimeout(r, spanMs / frames));
     }
     const out = ctx.createImageData(w, h);
-    for (let i = 0; i < acc.length; i++) out.data[i] = acc[i]! / frames;
+    for (let base = 0; base < acc.length; base += 4_194_304) {
+      const end = Math.min(base + 4_194_304, acc.length);
+      for (let i = base; i < end; i++) out.data[i] = acc[i]! / frames;
+      if (end < acc.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    }
     ctx.filter = "none"; ctx.putImageData(out, 0, 0);
   }
   // Keep original resolution, all exposure modes and JPEG quality (0.93).
