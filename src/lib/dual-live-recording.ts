@@ -176,6 +176,10 @@ export function startDualRecording(
       }
     }
   };
+  // Missing OPFS and IndexedDB must never let two encoders consume all RAM.
+  // Stop both and salvage existing pieces instead of silently dropping frames.
+  for (const spool of spools) spool.onMemoryPressure(() =>
+    stop("Недостаточно памяти для продолжения двухкамерной записи без файлового буфера"));
   for (let i = 0; i < recorders.length; i++) {
     const recorder = recorders[i]!;
     recorder.onstart = () => {
