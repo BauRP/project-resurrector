@@ -1501,10 +1501,3 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
  box-shadow:var(--reference-shadow);
 }
 
-
-/* Android WebView compositor safety: do not promote the entire app-shell to
-   a 3D compositing layer. The 111/222 backgrounds, effects, gradients and
-   actual pane layouts remain; only the unnecessary GPU layer hint changes. */
-html[data-multicam-native-webview="true"] .app-shell {
-  transform: none;
-}

@@ -41,6 +41,7 @@ public final class UiFreezeMonitor {
     private static final AtomicLong rendererProbeSentAt = new AtomicLong();
     private static final AtomicLong rendererRepliedAt = new AtomicLong();
     private static final AtomicLong monitorEpoch = new AtomicLong();
+    private static final AtomicBoolean rendererUnresponsiveRecorded = new AtomicBoolean();
     private static volatile String rendererLastEvidence = "";
     private static ScheduledExecutorService worker;
     private static Context context;
@@ -55,6 +56,7 @@ public final class UiFreezeMonitor {
         rendererProbeSentAt.set(0L);
         rendererRepliedAt.set(0L);
         rendererLastEvidence = "";
+        rendererUnresponsiveRecorded.set(false);
         monitorEpoch.incrementAndGet();
         lastHeartbeat.set(SystemClock.uptimeMillis());
         webViewHeartbeat.set(SystemClock.uptimeMillis());
@@ -73,6 +75,29 @@ public final class UiFreezeMonitor {
         worker.scheduleWithFixedDelay(UiFreezeMonitor::check, 1500, 1500, TimeUnit.MILLISECONDS);
     }
 
+    /** Android 10+ can report that the Chromium renderer itself stopped
+     * responding. Observe only: never kill WebView or discard unsaved video. */
+    public static void recordRendererUnresponsive() {
+        if (!foreground || !rendererUnresponsiveRecorded.compareAndSet(false, true)) return;
+        ScheduledExecutorService executor = worker;
+        if (executor == null || executor.isShutdown()) return;
+        try {
+            executor.execute(() -> persistReport(
+                "MULTI-CAM POV: Android WebView renderer reported UNRESPONSIVE. " +
+                "This is a renderer stall, not merely a delayed Capacitor callback. " +
+                "Last renderer evidence: " + rendererLastEvidence +
+                actionContext(SystemClock.uptimeMillis()) +
+                " Capture renderer trace and logcat for the blocking operation."
+            ));
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {
+            // Activity is closing: diagnostics must never interfere with it.
+        }
+    }
+
+    public static void recordRendererResponsive() {
+        rendererUnresponsiveRecorded.set(false);
+    }
+
     public static void setForeground(boolean visible) {
         foreground = visible;
         final long now = SystemClock.uptimeMillis();
@@ -87,6 +112,7 @@ public final class UiFreezeMonitor {
         rendererProbePending.set(false);
         rendererProbeSentAt.set(0L);
         rendererRepliedAt.set(0L);
+        rendererUnresponsiveRecorded.set(false);
     }
 
     /** Called only by the running React JS loop. Native UI and JS renderer

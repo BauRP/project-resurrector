@@ -1,8 +1,11 @@
 package app.lovable.multicampov;
 
 import android.os.Bundle;
+import android.os.Build;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import android.webkit.WebViewRenderProcess;
+import android.webkit.WebViewRenderProcessClient;
 
 import com.getcapacitor.BridgeActivity;
 
@@ -50,6 +53,18 @@ public class MainActivity extends BridgeActivity {
             settings.setJavaScriptEnabled(true);
             settings.setMediaPlaybackRequiresUserGesture(false);
             webView.setBackgroundColor(0xFF12161F);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                // Monitor native renderer state, independent of Capacitor
+                // and of JavaScript heartbeats. Do not terminate it.
+                webView.setWebViewRenderProcessClient(new WebViewRenderProcessClient() {
+                    @Override public void onRenderProcessUnresponsive(WebView view, WebViewRenderProcess renderer) {
+                        UiFreezeMonitor.recordRendererUnresponsive();
+                    }
+                    @Override public void onRenderProcessResponsive(WebView view, WebViewRenderProcess renderer) {
+                        UiFreezeMonitor.recordRendererResponsive();
+                    }
+                });
+            }
         } catch (Exception error) {
             error.printStackTrace();
         }
