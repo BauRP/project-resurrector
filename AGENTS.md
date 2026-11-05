@@ -12,7 +12,7 @@
 - App renders inside a 9:16 .app-shell and Tailwind breakpoints are disabled — UI is always phone layout.
 - Native Android features live in android/.../MultiCamNativePlugin.java, accessed via src/lib/native.ts — web falls back to browser APIs.
 - Camera tab is a fixed full-height screen (no page scroll); extra options live in an internal scrolling sheet. Why: zero-scroll HUD requirement.
-- Editor shows one timeline; lanes render only when they hold clips and clip properties appear only in the selection Inspector. Why: contextual, clutter-free editor.
+- Editor shows one timeline with real persistent empty Video/Audio attachment lanes, functional track plus controls and a contextual selection Inspector. Track numbering must preserve saved clip placements; do not insert fake media.
 - ARCHITECTURE.md is the living inventory of controls and state; update it with UI changes.
 - Global state uses stable external-store actions and selector subscriptions; no-op mutations must not notify subscribers, preventing effect loops.
 - Camera acquisition and queued device commands use a shared controller with per-track queues; stale requests cannot take ownership of a new stream.
