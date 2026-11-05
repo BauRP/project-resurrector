@@ -1,5 +1,5 @@
 import { HelpDot } from "./Help";
-import { Component, Suspense, lazy, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,8 +37,14 @@ const copy: Record<string, { title:string; language:string; network:string; stor
  de:{title:"Einstellungen",language:"Sprache",network:"Netzwerkdiagnose",storage:"Speicher und Cache",engine:"Render-Engine",privacy:"Datenschutzrichtlinie",clear:"Cache leeren"},it:{title:"Impostazioni",language:"Lingua",network:"Diagnostica rete",storage:"Archivio e cache",engine:"Motore di rendering",privacy:"Informativa sulla privacy",clear:"Svuota cache"},tr:{title:"Ayarlar",language:"Dil",network:"Ağ tanılama",storage:"Depolama ve önbellek",engine:"İşleme motoru",privacy:"Gizlilik Politikası",clear:"Önbelleği temizle"},pl:{title:"Ustawienia",language:"Język",network:"Diagnostyka sieci",storage:"Pamięć i cache",engine:"Silnik renderowania",privacy:"Polityka prywatności",clear:"Wyczyść cache"},
  hi:{title:"सेटिंग्स",language:"भाषा",network:"मेश निदान",storage:"स्टोरेज और कैश",engine:"रेंडर इंजन",privacy:"गोपनीयता नीति",clear:"कैश साफ़ करें"},vi:{title:"Cài đặt",language:"Ngôn ngữ",network:"Chẩn đoán mạng",storage:"Bộ nhớ và bộ đệm",engine:"Bộ máy kết xuất",privacy:"Chính sách quyền riêng tư",clear:"Xóa bộ đệm"},id:{title:"Pengaturan",language:"Bahasa",network:"Diagnostik jaringan",storage:"Penyimpanan dan cache",engine:"Mesin render",privacy:"Kebijakan Privasi",clear:"Hapus cache"},
 };
+// If a freeze report ends before this checkpoint, the lazy chunk itself
+// stalled; if it ends before the layout commit, the initial Settings React
+// render or its synchronous child work did not finish.
+traceUiAction("settings: lazy module evaluated");
+
 export function SettingsTab() {
- const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers(); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
+ const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers();
+ useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);
  const confirmationDialog=useRef<HTMLDivElement>(null);
  const [confirmAction,setConfirmAction]=useState<"cache"|"reset"|null>(null);
