@@ -17,9 +17,9 @@ set +e
 result=$?
 set -e
 echo "===== Android instrumentation evidence (exit: $result) ====="
-find "$GITHUB_WORKSPACE/android/app/build/outputs/androidTest-results" \
+(find "$GITHUB_WORKSPACE/android/app/build/outputs/androidTest-results" \
      "$GITHUB_WORKSPACE/android/app/build/reports/androidTests" \
-     -type f \\( -name '*.xml' -o -name '*.html' \\) 2>/dev/null \
+     -type f \( -name '*.xml' -o -name '*.html' \) 2>/dev/null || true) \
      | while IFS= read -r report; do
        case "$report" in
          *.xml)
