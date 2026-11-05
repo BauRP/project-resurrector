@@ -5,6 +5,7 @@
 import { scheduleAfterPaintTask } from "./after-paint-task";
 
 const KEY="multicam-editor-project-v1";
+const LEGACY_KEY="multicam-pov-project-layout";
 const MAX_BYTES=220000;
 type AnyRecord=Record<string,unknown>;
 export interface RecoverableEditorProject {
@@ -13,6 +14,8 @@ export interface RecoverableEditorProject {
   transitions: AnyRecord[];
   hidden: Record<string,boolean>;
   muted: Record<string,boolean>;
+  vTracks: number;
+  aTracks: number;
 }
 const plain=(v:unknown):v is AnyRecord=>!!v&&typeof v==="object"&&!Array.isArray(v);
 const identifier=(v:unknown):v is string=>typeof v==="string"&&v.length>0&&v.length<=128;
@@ -66,11 +69,16 @@ const booleans=(v:unknown):Record<string,boolean>=>{
 };
 export function sanitizeEditorProject(value:unknown):RecoverableEditorProject {
   const v=plain(value)?value:{};
+  const items=(Array.isArray(v["items"])?v["items"]:[]).filter(validItem).slice(0,400).map(cleanItem);
+  const trackCount=(kind:string,key:"vTracks"|"aTracks") => Math.max(1,
+    Number.isInteger(v[key]) && finite(v[key],1,64) ? v[key] as number : 1,
+    ...items.filter(item=>item["kind"]===kind).map(item=>item["track"] as number));
   return {
-    items:(Array.isArray(v["items"])?v["items"]:[]).filter(validItem).slice(0,400).map(cleanItem),
+    items,
     overlays:(Array.isArray(v["overlays"])?v["overlays"]:[]).filter(validOverlay).slice(0,250).map(cleanOverlay),
     transitions:(Array.isArray(v["transitions"])?v["transitions"]:[]).filter(validTransition).slice(0,200).map(cleanTransition),
     hidden:booleans(v["hidden"]), muted:booleans(v["muted"]),
+    vTracks:trackCount("video","vTracks"), aTracks:trackCount("audio","aTracks"),
   };
 }
 // A tab switch must paint the next screen before serializing large editor
@@ -88,7 +96,7 @@ export function flushQueuedEditorProject(): boolean {
   if (pendingProject === snapshot) pendingProject = null;
   return true;
 }
-export function queueEditorProjectSave<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>}>(project:T): void {
+export function queueEditorProjectSave<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>;vTracks?:number;aTracks?:number}>(project:T): void {
   pendingProject = sanitizeEditorProject(project);
   cancelPendingFlush?.();
   // A zero-delay timer runs BEFORE the new tab's first frame on some
@@ -103,11 +111,15 @@ export function loadEditorProject():RecoverableEditorProject {
   if (pendingProject) return sanitizeEditorProject(pendingProject);
   try {
     const raw=localStorage.getItem(KEY);
-    if(!raw||raw.length>MAX_BYTES)return sanitizeEditorProject(null);
-    return sanitizeEditorProject(JSON.parse(raw));
+    if(raw) return raw.length>MAX_BYTES ? sanitizeEditorProject(null) : sanitizeEditorProject(JSON.parse(raw));
+    // Read Lovable's old snapshot only if there is no newer editor project.
+    // Never delete or overwrite the old data during migration.
+    const legacy=localStorage.getItem(LEGACY_KEY);
+    if(!legacy||legacy.length>MAX_BYTES)return sanitizeEditorProject(null);
+    return sanitizeEditorProject(JSON.parse(legacy));
   }catch{return sanitizeEditorProject(null);}
 }
-export function saveEditorProject<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>}>(project:T):boolean {
+export function saveEditorProject<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>;vTracks?:number;aTracks?:number}>(project:T):boolean {
   try {
     const raw=JSON.stringify(sanitizeEditorProject(project));
     if(raw.length>MAX_BYTES)return false;
