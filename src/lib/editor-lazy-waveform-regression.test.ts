@@ -18,3 +18,17 @@ describe("opening editor and transitions never decodes entire unused media libra
   expect(code).toContain("await new Promise<void>(resolve => window.setTimeout(resolve, 0))");
  });
 });
+
+// Cancellation of an old metadata decoder is required in addition to lazy
+// waveforms. The editor must never reopen a stream after a tab switch.
+import {readFileSync as readEditorMetadataSource} from "node:fs";
+import {describe as describeMetadata, it as metadataIt, expect as metadataExpect} from "vitest";
+describeMetadata("editor media decoder ownership after tab handoff",()=>{
+  metadataIt("aborts the previous library load before starting the next one",()=>{
+    const source=readEditorMetadataSource("src/components/multicam/EditorPro.tsx","utf8");
+    metadataExpect(source).toContain("activeLibraryLoad.current?.abort()");
+    metadataExpect(source).toContain("signal?.addEventListener(\"abort\", onAbort, { once: true })");
+    metadataExpect(source).toContain("analyse(clip, controller.signal)");
+    metadataExpect(source).toContain("activeLibraryLoad.current = null");
+  });
+});

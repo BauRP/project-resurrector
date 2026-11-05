@@ -183,21 +183,34 @@ async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortS
     v.load();
   }
 }
-async function analyse(clip: StoredClip): Promise<Media> {
+async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
+  if (signal?.aborted) throw new Error("Editor media load cancelled");
   const url = URL.createObjectURL(clip.blob);
   const cached = analysisCache.get(clip.id);
   if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
   const v = document.createElement("video"); v.preload = "metadata";
   let duration: number;
+  let abortMetadata: (() => void) | null = null;
   try {
     duration = await bounded(new Promise<number>((resolve, reject) => {
+      // A rapid Editor -> Settings -> Editor switch must terminate the OLD
+      // metadata decoder instead of leaving it active for six more seconds.
+      const onAbort = () => reject(new Error("Editor metadata cancelled"));
+      abortMetadata = onAbort;
+      signal?.addEventListener("abort", onAbort, { once: true });
       v.onloadedmetadata = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); else { v.currentTime = 1e7; v.ontimeupdate = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); }; } };
       v.onerror = () => reject(new Error("Не удалось прочитать видео"));
-      v.src = url;
-      v.load();
+      if (signal?.aborted) { onAbort(); return; }
+      try { v.src = url; v.load(); }
+      catch (error) { reject(error); }
     }), 6000, "Video metadata");
   } catch (error) { URL.revokeObjectURL(url); throw error; }
-  finally { v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null; v.removeAttribute("src"); v.load(); }
+  finally {
+    if (abortMetadata) signal?.removeEventListener("abort", abortMetadata);
+    v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null;
+    v.pause(); v.removeAttribute("src"); v.load();
+  }
+  if (signal?.aborted) { URL.revokeObjectURL(url); throw new Error("Editor metadata cancelled"); }
   // Library discovery needs metadata, not a full audio decode of every
   // original video. A 2 GiB MP4 previously allocated its entire ArrayBuffer
   // merely because the Editor tab was opened, even before touching the audio
@@ -306,7 +319,11 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const waveformAttempted = useRef(new Set<string>());
   const loadedProxyIds = useRef(new Set<string>());
   const loadGeneration = useRef(0);
+  const activeLibraryLoad = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
+    activeLibraryLoad.current?.abort();
+    const controller = new AbortController();
+    activeLibraryLoad.current = controller;
     const generation = ++loadGeneration.current; setLoading(true);
     const results: Array<{ media: Media; createdAt: number }> = [];
     const errors: string[] = [];
@@ -315,14 +332,14 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       library = await bounded(openClipLibrary(), 5000, "Media library", late => late.close());
       const ids = await bounded(readClipIds(library), 5000, "Media keys");
       for (const id of ids) {
-        if (generation !== loadGeneration.current) break;
+        if (generation !== loadGeneration.current || controller.signal.aborted) break;
         let clip: StoredClip | null;
         try { clip = await bounded(readClip(library, id), 5000, "Read clip"); }
         catch { errors.push(id); continue; }
         if (!clip) continue;
-        if (generation !== loadGeneration.current) break;
+        if (generation !== loadGeneration.current || controller.signal.aborted) break;
         try {
-          const mediaItem = await retry(() => analyse(clip));
+          const mediaItem = await retry(() => analyse(clip, controller.signal));
           results.push({ media: mediaItem, createdAt: clip.createdAt });
         } catch { errors.push(clip.name || clip.id); }
         // Release the event loop between records for Settings/navigation.
@@ -341,10 +358,16 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         setImportErr("Хранилище недоступно. Повторите открытие медиатеки.");
     } finally {
       library?.close();
+      if (activeLibraryLoad.current === controller) activeLibraryLoad.current = null;
       if (generation === loadGeneration.current) setLoading(false);
     }
   }, []);
-  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => { loadGeneration.current++; window.removeEventListener("multicam-clips-changed", on); }; }, [load]);
+  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => {
+    loadGeneration.current++;
+    activeLibraryLoad.current?.abort();
+    activeLibraryLoad.current = null;
+    window.removeEventListener("multicam-clips-changed", on);
+  }; }, [load]);
   // Analyse waveform ONLY for clips actually used by the timeline. This
   // leaves library browsing and opening Transition/Audio panels responsive.
   // No track, button or audio tool is disabled; timeline waves remain.
