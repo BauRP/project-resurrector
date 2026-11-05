@@ -34,7 +34,7 @@ describe("Camera2 preview-only sessions never masquerade as MP4 captures",()=>{
     service.indexOf("Android отказал в запуске службы камеры:")+350);
   expect(denial).toContain("currentCaptureId=Math.max(System.currentTimeMillis(),currentCaptureId+1L)");
   expect(denial).toContain('savedPath="";savedUri="";');
-  expect(denial).toContain("NativeCaptureAuditStore.append(this,status(this))");
+  expect(denial).toContain("STATE_WRITER.execute(() =>");
   expect(service).toContain('"Предпросмотр Camera2: "');
  });
  it("never overwrites durable MP4 audit with a later preview-only failure",()=>{
