@@ -625,20 +625,32 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     const blocks: Overlay[] = [];
     for (const it of items.filter((i) => i.kind === "video")) {
       const m = mediaById.get(it.mediaId); if (!m?.peaks.length) continue;
-      const per = m.duration / m.peaks.length; const thr = Math.max(0.04, Math.max(...m.peaks) * 0.25);
-      let startIdx = -1;
-      m.peaks.forEach((p, idx) => {
-        const loud = p >= thr;
-        if (loud && startIdx < 0) startIdx = idx;
-        if ((!loud || idx === m.peaks.length - 1) && startIdx >= 0) {
-          const s = startIdx * per; const e = (idx + 1) * per; startIdx = -1;
-          if (e - s < 0.4 || s < it.in || s > it.out) return;
-          blocks.push({ id: uid(), text: `Реплика ${blocks.length + 1}`, x: 50, y: 84, size: 18, color: "#ffffff", bg: true, font: FONTS[0]!, start: it.start + (s - it.in) / it.speed, end: it.start + (e - it.in) / it.speed, subtitle: true });
+      // Math.max(...peaks) overflows the JS argument stack on long recordings.
+      // Yield every 4096 peaks so Settings taps remain serviceable, and keep
+      // all detected subtitle regions. The feature and result are unchanged.
+      let maximum=0;
+      for(let idx=0;idx<m.peaks.length;idx++){
+        maximum=Math.max(maximum,m.peaks[idx]??0);
+        if(idx>0&&idx%4096===0)await new Promise<void>(r=>setTimeout(r,0));
+      }
+      const per=m.duration/m.peaks.length;
+      const thr=Math.max(0.04,maximum*0.25);
+      let startIdx=-1;
+      for(let idx=0;idx<m.peaks.length;idx++){
+        const p=m.peaks[idx]??0;
+        const loud=p>=thr;
+        if(loud&&startIdx<0)startIdx=idx;
+        if((!loud||idx===m.peaks.length-1)&&startIdx>=0){
+          const s=startIdx*per; const e=(idx+1)*per;startIdx=-1;
+          if(e-s>=0.4&&s>=it.in&&s<=it.out){
+            blocks.push({id:uid(),text:`Реплика ${blocks.length+1}`,x:50,y:84,size:18,color:"#ffffff",bg:true,font:FONTS[0]!,start:it.start+(s-it.in)/it.speed,end:it.start+(e-it.in)/it.speed,subtitle:true});
+          }
         }
-      });
+        if(idx>0&&idx%4096===0)await new Promise<void>(r=>setTimeout(r,0));
+      }
     }
-    setOverlays((o) => [...o.filter((x) => !x.subtitle), ...blocks]);
-    setSubState(blocks.length ? "on" : "off");
+    setOverlays(o=>[...o.filter(x=>!x.subtitle),...blocks]);
+    setSubState(blocks.length?"on":"off");
   };
 
   const dragOverlay = (id: string) => (e: React.PointerEvent) => {
