@@ -39,4 +39,16 @@ describe("actual navigation across the three app workspaces",()=>{
     fireEvent.click(screen.getByRole("button",{name:"Настройки"}));
     await waitFor(()=>expect(screen.getByTestId("settings-workspace")).toBeInTheDocument());
   },12000);
+  it("does not synchronously write Android localStorage before opening Settings",async()=>{
+    const setItem=vi.spyOn(Storage.prototype,"setItem");
+    render(<MulticamApp/>);
+    await waitFor(()=>expect(screen.getByTestId("camera-workspace")).toBeInTheDocument());
+    setItem.mockClear();
+    fireEvent.click(screen.getByRole("button",{name:"Настройки"}));
+    expect(setItem.mock.calls.some(([key])=>key==="multicam-view-state-v1")).toBe(false);
+    await waitFor(()=>expect(screen.getByTestId("settings-workspace")).toBeInTheDocument());
+    await waitFor(()=>expect(setItem.mock.calls.some(([key])=>key==="multicam-view-state-v1")).toBe(true),{timeout:1500});
+    setItem.mockRestore();
+  },12000);
+
 });

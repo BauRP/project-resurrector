@@ -186,10 +186,15 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         const tabChanged = view[0] !== previousView[0];
         previousView = view;
         pendingView = viewSnapshot(state);
-        // Persist navigation immediately. Debounce rapidly changing playhead
-        // updates to avoid synchronous localStorage writes on every frame.
-        if (tabChanged) flushView();
-        else if (viewTimer === null) viewTimer = setTimeout(flushView, 400);
+        // Never perform synchronous Android WebView storage I/O inside a tab
+        // button's click handler. A stalled LevelDB flush previously delayed
+        // the first Settings frame even though there was no camera recording.
+        // The latest navigation state remains pending and pagehide/visibility
+        // still flush it for Activity recreation; no project/media is lost.
+        if (tabChanged) {
+          if (viewTimer !== null) clearTimeout(viewTimer);
+          viewTimer = setTimeout(flushView, 100);
+        } else if (viewTimer === null) viewTimer = setTimeout(flushView, 400);
       }
       const changedKeys = persistedKeys.filter((key, index) => !Object.is(values[index], previous[index]));
       if (changedKeys.length === 0) return;
