@@ -78,6 +78,9 @@ public class NativeCaptureService extends Service {
     private static final int NOTIFICATION = 2017;
     private static final String STORE = "native_capture_v1";
     private static final Object STATE_LOCK = new Object();
+    // An interrupted-capture journal may perform slow durable disk commits.
+    // It must not hold the UI-facing live-camera lock while doing so.
+    private static final Object RECOVERY_LOCK = new Object();
     // Preserve publish ordering, but never execute disk IO on the Camera2 or
     // Android UI thread while STATE_LOCK is held. The queue is process-wide:
     // recreating the Service must not reorder pending final capture states.
@@ -204,8 +207,14 @@ public class NativeCaptureService extends Service {
      * the evidence history from the WebView. Repeated calls are idempotent.
      */
     public static void recoverAbandonedRecording(Context context) {
-        synchronized (STATE_LOCK) {
-            if (runningInstance != null) return;
+        recoverAbandonedRecording(context, null);
+    }
+    private static void recoverAbandonedRecording(Context context, NativeCaptureService permittedOwner) {
+        synchronized (RECOVERY_LOCK) {
+            synchronized (STATE_LOCK) {
+                if (runningInstance != null && runningInstance != permittedOwner) return;
+            }
+            if (permittedOwner != null && permittedOwner.serviceDestroyed) return;
             android.content.SharedPreferences preferences =
                 context.getSharedPreferences(STORE, MODE_PRIVATE);
             String previous = preferences.getString("state", "idle");
@@ -474,6 +483,8 @@ public class NativeCaptureService extends Service {
 
     private HandlerThread workerThread;
     private Handler worker;
+    private volatile boolean recoveryReady = false;
+    private volatile boolean serviceDestroyed = false;
     // Opening deadline must run outside the Camera2 worker: OEM calls can
     // block its Looper, preventing postDelayed on that same queue from firing.
     private HandlerThread openDeadlineThread;
@@ -1450,21 +1461,9 @@ public class NativeCaptureService extends Service {
     }
     @Override public void onCreate() {
         super.onCreate();
-        recoverAbandonedRecording(this);
-        android.content.SharedPreferences persisted=getSharedPreferences(STORE,MODE_PRIVATE);
-        synchronized (STATE_LOCK) {
-            currentCaptureId=Math.max(currentCaptureId,persisted.getLong("captureId",0L));
-            if("idle".equals(state) &&
-                "interrupted".equals(persisted.getString("state","idle"))) {
-                state="interrupted";
-                lastMessage=persisted.getString("message","Запись прервана");
-                selectedCameraId=persisted.getString("cameraId","");
-                selectedWidth=persisted.getInt("width",0);
-                selectedHeight=persisted.getInt("height",0);
-                selectedFps=persisted.getInt("fps",0);
-                recordingStartedAt=persisted.getLong("started",0L);
-            }
-        }
+        // Service.onCreate is invoked on Android MAIN. Recovering a previous
+        // process's journal may fsync flash and must run on the camera worker,
+        // before that worker begins any new Camera2 command.
         workerThread = new HandlerThread("Native-Camera2-Record");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
@@ -1478,6 +1477,29 @@ public class NativeCaptureService extends Service {
             runningInstance = this;
             previewConsumerVisible = previewOwnerId != null;
         }
+        worker.post(() -> {
+            try {
+                recoverAbandonedRecording(this, this);
+                android.content.SharedPreferences persisted=getSharedPreferences(STORE,MODE_PRIVATE);
+                synchronized (STATE_LOCK) {
+                    currentCaptureId=Math.max(currentCaptureId,persisted.getLong("captureId",0L));
+                    if("idle".equals(state) &&
+                        "interrupted".equals(persisted.getString("state","idle"))) {
+                        state="interrupted";
+                        lastMessage=persisted.getString("message","Запись прервана");
+                        selectedCameraId=persisted.getString("cameraId","");
+                        selectedWidth=persisted.getInt("width",0);
+                        selectedHeight=persisted.getInt("height",0);
+                        selectedFps=persisted.getInt("fps",0);
+                        recordingStartedAt=persisted.getLong("started",0L);
+                    }
+                }
+            } catch (Exception error) {
+                android.util.Log.e("NativeCaptureService", "Capture recovery failed", error);
+            } finally {
+                recoveryReady = true;
+            }
+        });
         NotificationManager notifications =
             (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         if (Build.VERSION.SDK_INT >= 26) notifications.createNotificationChannel(
@@ -1547,6 +1569,18 @@ public class NativeCaptureService extends Service {
         }
     }
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
+        // Replay commands in their original order after the worker completes
+        // interrupted-file recovery. Never block Android MAIN with a latch.
+        if (!recoveryReady) {
+            final Intent pendingIntent = intent == null ? null : new Intent(intent);
+            if (worker != null) worker.post(() -> {
+                if (serviceDestroyed) return;
+                new Handler(android.os.Looper.getMainLooper()).post(() -> {
+                    if (!serviceDestroyed) onStartCommand(pendingIntent, flags, startId);
+                });
+            });
+            return START_NOT_STICKY;
+        }
         if (intent != null && ACTION_STOP.equals(intent.getAction())) {
             stopRequested = true;
             if (worker != null) worker.post(this::finish);
@@ -3175,6 +3209,7 @@ public class NativeCaptureService extends Service {
         }
     }
     @Override public void onDestroy() {
+        serviceDestroyed = true;
         // Android calls Service.onDestroy on the MAIN thread. Camera close,
         // MediaRecorder.stop, MP4 inspection and Gallery publication can all
         // block. Keep that work on the dedicated camera worker, even when
