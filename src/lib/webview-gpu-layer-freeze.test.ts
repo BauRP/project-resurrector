@@ -17,8 +17,10 @@ describe("HardwareRenderer freeze after camera -> settings", () => {
     expect(app).toContain('dataset["multicamNativeWebview"] = String(Capacitor.isNativePlatform())');
     expect(app).toContain('tab === "settings" ? <SettingsCrashBoundary');
     expect(app).toContain("<SettingsEntryGate>");
-    expect(app).toContain("initial={nativeWebView ? false : { opacity: 0, y: 6 }}");
-    expect(app).toContain("animate={nativeWebView ? { opacity: 1 } : { opacity: 1, y: 0 }}");
-    expect(app).toContain("duration: nativeWebView ? 0 : .18");
+    expect(app).toContain("nativeWebView");
+    expect(app).toContain('nativeWebView\n        ? <div key={tab}');
+    expect(app).toContain('tab === "camera" ? <CameraWorkspace /> : <EditorTab />');
+    expect(app).toContain('<AnimatePresence mode="wait"><motion.div key={tab}');
+    expect(app).toContain("transition={{ duration: .18 }}");
   });
 });
