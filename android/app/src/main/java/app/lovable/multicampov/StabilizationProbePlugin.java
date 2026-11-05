@@ -30,6 +30,7 @@ import com.getcapacitor.annotation.Permission;
 
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Real Camera2 CaptureResult probe for EIS/OIS on one specific camera and YUV size.
@@ -45,6 +46,12 @@ public class StabilizationProbePlugin extends Plugin {
             Thread worker = new Thread(task, "multicam-stabilization-preflight");
             worker.setDaemon(true);
             return worker;
+        });
+    private final java.util.concurrent.ScheduledExecutorService deadlineWorker =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "multicam-stabilization-deadline");
+            thread.setDaemon(true);
+            return thread;
         });
     private final AtomicBoolean occupied = new AtomicBoolean(false);
     private volatile Probe active;
@@ -131,9 +138,13 @@ public class StabilizationProbePlugin extends Plugin {
     }
 
     @Override protected void handleOnDestroy() {
-        preflightWorker.shutdownNow();
         Probe p = active;
-        if (p != null) p.fail("Проверка прервана закрытием приложения");
+        if (p != null) {
+            try { deadlineWorker.execute(p::onDeadline); }
+            catch (java.util.concurrent.RejectedExecutionException ignored) { }
+        }
+        deadlineWorker.shutdown();
+        preflightWorker.shutdownNow();
         super.handleOnDestroy();
     }
 
@@ -173,7 +184,7 @@ public class StabilizationProbePlugin extends Plugin {
                 try { frame = images.acquireLatestImage(); } catch (Exception ignored) { }
                 finally { if (frame != null) frame.close(); }
             }, handler);
-            handler.postDelayed(() -> finish("unknown", "Не получено достаточного подтверждения CaptureResult за 7 секунд"), 7000);
+            deadlineWorker.schedule(this::onDeadline, 7000, TimeUnit.MILLISECONDS);
             manager.openCamera(id, new CameraDevice.StateCallback() {
                 @Override public void onOpened(CameraDevice opened) {
                     if (finished.get()) { opened.close(); return; }
@@ -232,6 +243,15 @@ public class StabilizationProbePlugin extends Plugin {
             }, handler);
         }
 
+        void onDeadline() {
+            if (!finished.compareAndSet(false, true)) return;
+            JSObject result = base(id, width, height, fps, choice, eis, preview, ois);
+            result.put("state", "unknown");
+            result.put("message", "Не получено подтверждения CaptureResult за 7 секунд");
+            call.resolve(result);
+            if (handler == null || !handler.post(this::cleanup)) cleanup();
+        }
+
         void finish(String state, String message) {
             if (!finished.compareAndSet(false, true)) return;
             JSObject obj = base(id, width, height, fps, choice, eis, preview, ois);
@@ -240,13 +260,13 @@ public class StabilizationProbePlugin extends Plugin {
             obj.put("confirmations", confirmed);
             obj.put("captureResultEis", lastEis < 0 ? JSObject.NULL : lastEis);
             obj.put("captureResultOis", lastOis < 0 ? JSObject.NULL : lastOis);
-            cleanup();
             call.resolve(obj);
+            cleanup();
         }
         void fail(String message) {
             if (!finished.compareAndSet(false, true)) return;
-            cleanup();
             call.reject(message);
+            cleanup();
         }
         void cleanup() {
             try { if (session != null) session.close(); } catch (Exception ignored) { }
