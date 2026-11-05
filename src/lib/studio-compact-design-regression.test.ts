@@ -9,13 +9,14 @@ describe("reference compact MULTI-CAM POV design", () => {
   const camera = readFileSync("src/components/multicam/CameraWorkspace.tsx", "utf8");
 
   it("always renders one real video and one real audio lane in a new empty project", () => {
-    expect(editor).toContain("const [vTracks, setVTracks] = useState(1)");
-    expect(editor).toContain("const [aTracks, setATracks] = useState(1)");
+    expect(editor).toContain("useTimelineTracks({");
+    expect(editor).toContain("video: initialEditorProject.vTracks");
+    expect(editor).toContain("audio: initialEditorProject.aTracks");
     expect(editor).toContain("const laneEls = useMemo(() => lanes.map((lane) =>");
     expect(editor).not.toContain("lanes.filter((lane) => items.some");
     expect(editor).toContain("{laneEls}");
-    expect(editor).toContain('label: n === 1 ? "Видео" : `Видео ${n}`');
-    expect(editor).toContain('label: n === 1 ? "Аудио" : `Аудио ${n}`');
+    expect(editor).toContain("const lanes = trackLanes(");
+    expect(editor).toContain("const lanes = trackLanes(");
     expect(editor).toContain('Добавить видео дорожку');
     expect(editor).toContain('Добавить аудио дорожку');
     expect(editor).toContain('const HEAD = 104;');
