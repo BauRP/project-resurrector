@@ -21,6 +21,7 @@ public class MainActivity extends BridgeActivity {
     private AlertDialog recoveryDialog;
     private boolean recoveryPromptShown;
     private boolean rendererTerminated;
+    private final Runnable webViewRecovery = () -> showRecoveryDialog(false);
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -35,6 +36,7 @@ public class MainActivity extends BridgeActivity {
         configureWebView();
         UiFreezeMonitor.start(getApplicationContext(),
             bridge != null ? bridge.getWebView() : null);
+        UiFreezeMonitor.setWebViewRecoveryListener(webViewRecovery);
     }
 
     @Override public void onResume() {
@@ -49,6 +51,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override public void onDestroy() {
         dismissRecoveryDialog();
+        UiFreezeMonitor.setWebViewRecoveryListener(null);
         UiFreezeMonitor.stop();
         super.onDestroy();
     }
