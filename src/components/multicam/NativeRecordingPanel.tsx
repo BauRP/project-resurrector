@@ -340,6 +340,14 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  useEffect(()=>{
   if(!isNative())return;
   let live=true,inFlight=false,visible=!document.hidden,latestFrameAt=0;
+  let timer=0;
+  // Fast cameras keep 250 ms JPEG feedback; slow emulators automatically
+  // back off after expensive bridge/decoder calls instead of piling on work.
+  let adaptiveDelay=Math.max(250,Math.min(previewIntervalMs,2000));
+  const schedule=()=>{
+    window.clearTimeout(timer);
+    if(live&&visible)timer=window.setTimeout(()=>{void read();},adaptiveDelay);
+  };
   // Each mounted viewer owns its Android preview lease. A late cleanup from
   // an old fold/Activity view cannot hide the new viewer.
   const ownerId="native-preview-"+Date.now().toString(36)+"-"+Math.random().toString(36).slice(2);
@@ -349,6 +357,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
   const read=async()=>{
     if(!live||!visible||inFlight)return;
     inFlight=true;
+    const started=performance.now();
     try {
       const frame=await bridge.previewFrame();
       if(!live||!visible)return;
@@ -362,23 +371,30 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
     }catch{
       // Keep the last valid frame for transient native bridge failures.
       // Missing/stopped camera frames are cleared by the empty response.
-    }finally{inFlight=false;}
+    }finally{
+      inFlight=false;
+      const elapsed=performance.now()-started;
+      adaptiveDelay=Math.max(250,Math.min(2000,Math.max(previewIntervalMs,elapsed*2)));
+      schedule();
+    }
   };
   const onVisibility=()=>{
     visible=!document.hidden;
     setVisible(visible);
     if(visible)void read();
-    else{latestFrameAt=0;setPreview(previous=>previous ? "" : previous);}
+    else{
+      window.clearTimeout(timer);
+      latestFrameAt=0;
+      setPreview(previous=>previous ? "" : previous);
+    }
   };
   document.addEventListener("visibilitychange",onVisibility);
   setVisible(visible);
   if(visible)void read();
-  // Bounded JPEG transport, not a 30/60 FPS native SurfaceView.
-  // In Settings lower the JPEG-to-base64 bridge load. Normal Camera2 mode
-  // keeps the faster original preview when no interval override is supplied.
-  const timer=window.setInterval(()=>{void read();},Math.max(250,Math.min(previewIntervalMs,2000)));
+  // Each successful frame schedules the next request; a slow emulator
+  // cannot accumulate camera bridge operations in the background.
   return ()=>{
-    live=false;window.clearInterval(timer);
+    live=false;window.clearTimeout(timer);
     document.removeEventListener("visibilitychange",onVisibility);
     setVisible(false);
   };
