@@ -32,6 +32,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.util.Collections;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.TimeUnit;
 
 /**
  * One-shot real RAW_SENSOR -> DngCreator capture. A camera advertising RAW
@@ -50,6 +51,12 @@ public class RawDngPlugin extends Plugin {
             Thread worker = new Thread(task, "multicam-raw-preflight");
             worker.setDaemon(true);
             return worker;
+        });
+    private final java.util.concurrent.ScheduledExecutorService deadlineWorker =
+        java.util.concurrent.Executors.newSingleThreadScheduledExecutor(task -> {
+            Thread thread = new Thread(task, "multicam-raw-deadline");
+            thread.setDaemon(true);
+            return thread;
         });
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private volatile RawSession session;
@@ -115,9 +122,13 @@ public class RawDngPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
-        preflightWorker.shutdownNow();
         RawSession active = session;
-        if (active != null) active.fail("Сессия закрыта до сохранения DNG");
+        if (active != null) {
+            try { deadlineWorker.execute(active::onDeadline); }
+            catch (java.util.concurrent.RejectedExecutionException ignored) { }
+        }
+        deadlineWorker.shutdown();
+        preflightWorker.shutdownNow();
         super.handleOnDestroy();
     }
 
@@ -152,7 +163,7 @@ public class RawDngPlugin extends Plugin {
                     finishIfReady();
                 } catch (Exception error) { fail("Не удалось получить RAW_IMAGE: " + error.getMessage()); }
             }, handler);
-            handler.postDelayed(() -> fail("Истекло время ожидания RAW-кадра (15 секунд)"), 15000);
+            deadlineWorker.schedule(this::onDeadline, 15000, TimeUnit.MILLISECONDS);
             manager.openCamera(cameraId, new CameraDevice.StateCallback() {
                 @Override public void onOpened(CameraDevice device) {
                     if (completed.get()) { device.close(); return; }
@@ -193,6 +204,16 @@ public class RawDngPlugin extends Plugin {
             }, handler);
         }
 
+        private void onDeadline() {
+            if (!completed.compareAndSet(false, true)) return;
+            call.reject("Истекло время ожидания RAW-кадра (15 секунд)");
+            Runnable release = () -> {
+                if (destination.isFile()) destination.delete();
+                cleanup();
+            };
+            if (handler == null || !handler.post(release)) release.run();
+        }
+
         private void finishIfReady() {
             if (pendingImage == null || metadata == null || completed.get()) return;
             try {
@@ -214,16 +235,16 @@ public class RawDngPlugin extends Plugin {
                 result.put("bytes", destination.length());
                 result.put("path", destination.getAbsolutePath());
                 result.put("format", "image/x-adobe-dng");
-                cleanup();
                 call.resolve(result);
+                cleanup();
             } catch (Exception error) { fail("DNG не сохранён: " + error.getMessage()); }
         }
 
         void fail(String message) {
             if (!completed.compareAndSet(false, true)) return;
             if (destination.isFile()) destination.delete();
-            cleanup();
             call.reject(message);
+            cleanup();
         }
 
         private void cleanup() {
