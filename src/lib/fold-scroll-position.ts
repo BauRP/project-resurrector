@@ -11,6 +11,26 @@ export interface ScrollPort {
 }
 const KEY = "multicam-fold-scroll-v1:";
 const MAX_SCROLL = 10_000_000;
+// Queue only the newest scroll position for each tab. localStorage writes are
+// synchronous on Android WebView; never perform them inside a tab click or
+// scroll handler. pagehide flushes pending values for Activity recreation.
+const deferredScroll = new Map<ScrollTab, number>();
+let scrollWriteTimer: ReturnType<typeof setTimeout> | null = null;
+function deferFoldScrollTop(tab: ScrollTab, top: number): boolean {
+  if (!scrollable(tab) || !validTop(top)) return false;
+  deferredScroll.set(tab, top);
+  if (scrollWriteTimer === null) {
+    scrollWriteTimer = setTimeout(flushFoldScrollWrites, 0);
+  }
+  return true;
+}
+export function flushFoldScrollWrites(): void {
+  if (scrollWriteTimer !== null) clearTimeout(scrollWriteTimer);
+  scrollWriteTimer = null;
+  const entries = [...deferredScroll.entries()];
+  deferredScroll.clear();
+  for (const [tab, top] of entries) saveFoldScrollTop(tab, top);
+}
 function scrollable(tab: ScrollTab): boolean {
   return tab === "editor" || tab === "settings";
 }
@@ -20,6 +40,8 @@ function validTop(value: unknown): value is number {
 }
 export function readFoldScrollTop(tab: ScrollTab): number | null {
   if (!scrollable(tab)) return null;
+  const staged = deferredScroll.get(tab);
+  if (staged !== undefined) return staged;
   try {
     const raw = localStorage.getItem(KEY + tab);
     if (!raw || raw.length > 18 || !/^(?:0|[1-9]\d*)(?:\.\d{1,3})?$/.test(raw))
@@ -30,6 +52,9 @@ export function readFoldScrollTop(tab: ScrollTab): number | null {
 }
 export function saveFoldScrollTop(tab: ScrollTab, top: number): boolean {
   if (!scrollable(tab) || !validTop(top)) return false;
+  // Direct callers intentionally request immediate persistence; it supersedes
+  // any earlier debounced write for this tab.
+  deferredScroll.delete(tab);
   try {
     localStorage.setItem(KEY + tab, String(Math.round(top * 1000) / 1000));
     return true;
@@ -53,7 +78,7 @@ export class FoldScrollRestorer {
     if (this.saveTimer !== null) { clearTimeout(this.saveTimer); this.saveTimer = null; }
     if (!this.tab || !scrollable(this.tab) || this.lastStableTop === null ||
         this.desired !== null || this.savedTop === this.lastStableTop) return;
-    if (saveFoldScrollTop(this.tab, this.lastStableTop)) {
+    if (deferFoldScrollTop(this.tab, this.lastStableTop)) {
       this.savedTop = this.lastStableTop;
       this.lastSaveAt = performance.now();
     }
