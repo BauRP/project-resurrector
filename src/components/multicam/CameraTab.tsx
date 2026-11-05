@@ -80,6 +80,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const recorderRef = useRef<MediaRecorder | null>(null);
   const stopReasonRef = useRef<string>("");
   const chunksRef = useRef<Blob[]>([]);
+  const activePhoto = useRef<AbortController | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
   const [previewRequested, setPreviewRequested] = useState(false);
@@ -818,8 +819,13 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const wbTint = s.wbKelvin === null ? "" : s.wbKelvin < 5600 ? ` sepia(${((5600 - s.wbKelvin) / 3100) * 0.35})` : ` hue-rotate(${((s.wbKelvin - 5600) / 2400) * -12}deg) saturate(.92)`;
   const previewFilter = [s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ");
   const notify = (m: string) => { setPhotoMsg(m); window.setTimeout(() => setPhotoMsg(""), 2500); };
+  // Closing/switching the camera cancels expensive photo pixel loops rather
+  // than letting a stale 40-frame exposure pin the old WebView memory.
+  useEffect(() => () => { activePhoto.current?.abort(); }, [stream]);
   const shootOnce = async () => {
     if (photoBusy.current) return;
+    const photoAbort = new AbortController();
+    activePhoto.current = photoAbort;
     photoBusy.current = true; setPhotoProcessing(true);
     try {
     if (s.shoot.raw) {
@@ -862,19 +868,24 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     const sh = s.shoot; const shots: Blob[] = []; let mode = "single";
     if (sh.bracket) {
       mode = "bracket"; const r = capRange(trackCaps(stream), "exposureCompensation");
-      for (const ev of [-2, 0, 2]) { if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) }); await wait(400); const b = await grabFrames(v, previewFilter, 1, 0); if (b) shots.push(b); }
+      for (const ev of [-2, 0, 2]) { if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) }); await wait(400); const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); }
       if (r) await applyAdvanced(stream, { exposureCompensation: 0 });
-    } else if (sh.burst) { mode = "burst"; for (let k = 0; k < 5; k++) { const b = await grabFrames(v, previewFilter, 1, 0); if (b) shots.push(b); await wait(120); } }
-    else if (sh.night) { mode = s.aiEnabled ? "night-ml" : "night"; const b = await grabFrames(v, previewFilter, s.aiEnabled ? 12 : 8, s.aiEnabled ? 900 : 600); if (b) shots.push(b); }
-    else if (sh.longExp) { mode = "long-exposure"; const b = await grabFrames(v, previewFilter, 40, 2000); if (b) shots.push(b); }
-    else { const b = await grabFrames(v, previewFilter, 1, 0); if (b) shots.push(b); }
+    } else if (sh.burst) { mode = "burst"; for (let k = 0; k < 5; k++) { const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); await wait(120); } }
+    else if (sh.night) { mode = s.aiEnabled ? "night-ml" : "night"; const b = await grabFrames(v, previewFilter, s.aiEnabled ? 12 : 8, s.aiEnabled ? 900 : 600, photoAbort.signal); if (b) shots.push(b); }
+    else if (sh.longExp) { mode = "long-exposure"; const b = await grabFrames(v, previewFilter, 40, 2000, photoAbort.signal); if (b) shots.push(b); }
+    else { const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); }
+    if (photoAbort.signal.aborted) return;
     if (!shots.length) { notify("Не удалось получить кадр"); return; }
-    for (const b of shots) await savePhoto(b, { mode, camera: s.activeCamera, facing: s.facing });
+    for (const b of shots) {
+      if (photoAbort.signal.aborted) return;
+      await savePhoto(b, { mode, camera: s.activeCamera, facing: s.facing });
+    }
     setFlash((f) => f + 1); setLastPhoto((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(shots[shots.length - 1]!); });
     notify(shots.length > 1 ? `Сохранено ${shots.length} кадров из видеопотока` : "Кадр видеопотока сохранён");
     } catch (error) {
       notify("Кадр не сохранён: " + (error instanceof Error ? error.message : String(error)));
     } finally {
+      if (activePhoto.current === photoAbort) activePhoto.current = null;
       photoBusy.current = false;
       if (cameraMounted.current) setPhotoProcessing(false);
     }
