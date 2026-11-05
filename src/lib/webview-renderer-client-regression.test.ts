@@ -10,7 +10,7 @@ describe("Android WebView renderer freeze callback",()=>{
    expect(main).toContain("UiFreezeMonitor.recordRendererResponsive()");
    expect(monitor).toContain("Android WebView renderer reported UNRESPONSIVE");
    expect(monitor).toContain("rendererUnresponsiveRecorded.compareAndSet(false, true)");
-   expect(monitor).toContain("executor.execute(() => persistReport(");
+   expect(monitor).toContain("executor.execute(() -> persistReport(");
    expect(main).not.toContain("renderer.terminate()");
  });
 });
