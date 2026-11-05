@@ -41,6 +41,7 @@ public final class UiFreezeMonitor {
     private static final AtomicLong rendererProbeSentAt = new AtomicLong();
     private static final AtomicLong rendererRepliedAt = new AtomicLong();
     private static final AtomicLong monitorEpoch = new AtomicLong();
+    private static volatile String rendererLastEvidence = "";
     private static ScheduledExecutorService worker;
     private static Context context;
 
@@ -53,6 +54,7 @@ public final class UiFreezeMonitor {
         rendererProbePending.set(false);
         rendererProbeSentAt.set(0L);
         rendererRepliedAt.set(0L);
+        rendererLastEvidence = "";
         monitorEpoch.incrementAndGet();
         lastHeartbeat.set(SystemClock.uptimeMillis());
         webViewHeartbeat.set(SystemClock.uptimeMillis());
@@ -138,12 +140,18 @@ public final class UiFreezeMonitor {
             }
             try {
                 // Static expression bypasses the Capacitor plugin queue.
-                webView.evaluateJavascript("1+1", value -> {
-                    if (epoch == monitorEpoch.get()) {
-                        rendererRepliedAt.set(SystemClock.uptimeMillis());
-                        rendererProbePending.set(false);
-                    }
-                });
+                // Read only in-memory navigation breadcrumbs. This is a pure
+                // expression, not a bridge call, permission prompt or camera task.
+                webView.evaluateJavascript(
+                    "(function(){return 'tab='+String(document.documentElement.dataset.activeMulticamTab||'unknown')+'; action='+String(window.__multicamFreezeLastAction||'unknown').slice(0,96)})()",
+                    value -> {
+                        if (epoch == monitorEpoch.get()) {
+                            rendererLastEvidence = value == null ? "" :
+                                value.substring(0, Math.min(240, value.length()));
+                            rendererRepliedAt.set(SystemClock.uptimeMillis());
+                            rendererProbePending.set(false);
+                        }
+                    });
             } catch (RuntimeException error) {
                 rendererProbePending.set(false);
                 Log.w("MultiCamUiFreeze", "Independent renderer probe unavailable", error);
@@ -181,7 +189,8 @@ public final class UiFreezeMonitor {
                         (receivedJsHeartbeat.get() ? "WebView bridge heartbeat missing for " :
                          "First WebView bridge heartbeat never arrived after ") +
                         webDelay + " ms while Android main thread remains responsive. " +
-                        diagnosis + " This report does not identify a confirmed culprit." +
+                        diagnosis + " Independent renderer evidence: " +
+                        rendererLastEvidence + ". This report does not identify a confirmed culprit." +
                         actionContext(now) + " Capture logcat for more detail.");
                 }
                 return;
