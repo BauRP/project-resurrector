@@ -48,7 +48,10 @@ public class UiFreezePlugin extends Plugin {
             call.reject("Нет отчёта для копирования");
             return;
         }
-        getActivity().runOnUiThread(() -> {
+        // ClipboardManager is a system binder service and may wait for the
+        // clipboard provider. Never call it on Android MAIN or on the WebView
+        // renderer thread during recovery from a previously reported hang.
+        new Thread(() -> {
             try {
                 ClipboardManager clipboard = (ClipboardManager)
                     getContext().getSystemService(Context.CLIPBOARD_SERVICE);
@@ -62,7 +65,7 @@ public class UiFreezePlugin extends Plugin {
             } catch (Exception error) {
                 call.reject("Не удалось скопировать отчёт: " + error.getMessage());
             }
-        });
+        }, "multicam-freeze-clipboard").start();
     }
 
     @PluginMethod public void clear(PluginCall call) {
