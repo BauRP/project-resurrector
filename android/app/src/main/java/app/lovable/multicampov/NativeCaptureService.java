@@ -1630,7 +1630,14 @@ public class NativeCaptureService extends Service {
                 mp4VideoSamples=0;mp4AudioSamples=0;
             }
             publish("error", "Android отказал в запуске службы камеры: " + error.getMessage());
-            NativeCaptureAuditStore.append(this,status(this));
+            // Service.onStartCommand is Android MAIN. Both status(this) and
+            // NativeCaptureAuditStore.append() can read/commit preferences.
+            // Preserve the failed attempt on the existing ordered writer,
+            // never inside the UI thread handling the rejected foreground
+            // service start.
+            final android.content.Context auditContext = getApplicationContext();
+            STATE_WRITER.execute(() ->
+                NativeCaptureAuditStore.append(auditContext, status(auditContext)));
             stopSelf(); return START_NOT_STICKY;
         }
         stopRequested = false;
