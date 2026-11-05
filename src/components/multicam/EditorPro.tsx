@@ -4,6 +4,7 @@ import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/edit
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
+import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -204,14 +205,16 @@ async function analyse(clip: StoredClip): Promise<Media> {
   return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks };
 }
 
-async function analyseWaveformForTimeline(clip: StoredClip, duration: number): Promise<number[]> {
+async function analyseWaveformForTimeline(clip: StoredClip, duration: number, signal?: AbortSignal): Promise<number[]> {
   try {
+    if (signal?.aborted) return [];
     const ctx = new OfflineAudioContext(1, 44100, 44100);
     const buf = await bounded(
       ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")),
       6000, "Audio analysis",
     );
-    return await extractWaveformPeaks(buf.getChannelData(0), duration);
+    if (signal?.aborted) return [];
+    return await extractWaveformPeaks(buf.getChannelData(0), duration, () => Boolean(signal?.aborted));
   } catch { return []; }
 }
 
@@ -310,6 +313,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // No track, button or audio tool is disabled; timeline waves remain.
   useEffect(() => {
     let live = true;
+    const abort = new AbortController();
     let db: IDBDatabase | null = null;
     const required = new Set(JSON.parse(timelineWaveformKey) as string[]);
     void (async () => {
@@ -322,8 +326,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
           const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
           if (!original || !live) { waveformAttempted.current.delete(m.id); continue; }
-          const peaks = await analyseWaveformForTimeline(original, m.duration);
-          if (!live) { waveformAttempted.current.delete(m.id); break; }
+          const peaks = await editorMediaWorkQueue.run(
+            () => analyseWaveformForTimeline(original, m.duration, abort.signal), abort.signal);
+          if (!live || abort.signal.aborted || !peaks) { waveformAttempted.current.delete(m.id); break; }
           analysisCache.set(m.id, { duration: m.duration, peaks });
           setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
         } catch {
@@ -333,7 +338,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
     })().finally(() => { db?.close(); });
-    return () => { live = false; };
+    return () => { live = false; abort.abort(); };
   }, [media, timelineWaveformKey]);
   useEffect(() => {
     const abort = new AbortController();
@@ -361,7 +366,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         try {
           let frames = thumbCache.get(m.id);
           if (!frames) {
-            frames = await makeThumbs(m.url, m.duration, 10, abort.signal);
+            frames = await editorMediaWorkQueue.run(
+              () => makeThumbs(m.url, m.duration, 10, abort.signal), abort.signal);
             if (frames.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
           }
           if (!live || abort.signal.aborted) return;
@@ -373,7 +379,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         if (!live || abort.signal.aborted) return;
         if (m.kind !== "video" || !neededIds.has(m.id) || loadedProxyIds.current.has(m.id)) continue;
         try {
-          const blob = await generateProxy(m.id, m.url, abort.signal);
+          const blob = await editorMediaWorkQueue.run(
+            () => generateProxy(m.id, m.url, abort.signal), abort.signal);
           if (blob && live && !abort.signal.aborted) {
             const url = URL.createObjectURL(blob);
             proxyUrls.current.add(url);
