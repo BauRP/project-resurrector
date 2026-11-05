@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# A new development commit supersedes the previous emulator run. Do not
+# overload GitHub runner capacity with multiple stale emulator instances.
+concurrency:
+  group: multicam-emulator-freeze-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   emulator-smoke:
     runs-on: ubuntu-latest
@@ -41,6 +47,7 @@ jobs:
           profile: pixel_6
           ram-size: 3072M
           disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu swiftshader_indirect -accel on
           # android-emulator-runner executes each script line separately.
           # Run cd/chmod/Gradle in the SAME shell command so cwd survives.
           script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
