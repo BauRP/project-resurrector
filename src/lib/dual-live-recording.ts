@@ -1,4 +1,5 @@
 import { recordingInputLostReason } from "./recording-finalization";
+import { RecordingChunkSpool } from "./recording-chunk-spool";
 import { probeVideoBlobCheckpoints } from "./clip-checkpoints";
 import { getActiveFoldBaseline } from "./fold-recording-evidence";
 import { readPersistedClip, saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
@@ -99,7 +100,8 @@ export function startDualRecording(
   const mime = selectMime();
   const captures = [first, second];
   const recorders = captures.map(stream => new MediaRecorder(stream, { mimeType: mime }));
-  const buffers: Blob[][] = [[], []];
+  const spools = [new RecordingChunkSpool("dual-" + Date.now() + "-" + Math.random().toString(36).slice(2) + "-1"),
+    new RecordingChunkSpool("dual-" + Date.now() + "-" + Math.random().toString(36).slice(2) + "-2")];
   const starts: (number | null)[] = [null, null];
   let stopAt: number | null = null;
   const failures: string[] = [];
@@ -138,14 +140,14 @@ export function startDualRecording(
     folds = appendFoldTransition(folds, reading);
   };
   window.addEventListener(FOLD_EVENT, onFold);
-  const finishers: ((value: Blob | null) => void)[] = [];
+  const finishers: ((value: boolean) => void)[] = [];
   const finished = [false, false];
-  const settle = (index: number, value: Blob | null) => {
+  const settle = (index: number, value: boolean) => {
     if (finished[index]) return;
     finished[index] = true;
     finishers[index]?.(value);
   };
-  const collected = recorders.map((_recorder, i) => new Promise<Blob | null>(resolve => {
+  const collected = recorders.map((_recorder, i) => new Promise<boolean>(resolve => {
     finishers[i] = resolve;
   }));
   const stop = (reason = "") => {
@@ -163,7 +165,8 @@ export function startDualRecording(
           // Some encoders never emit onstop after an error. Preserve already
           // delivered data for independent storage and decoder verification.
           // This session remains failed; partial bytes may be unplayable.
-          settle(i, salvageBufferedEncoderChunks(buffers[i]!, mime));
+          // Keep all emitted chunks, even when OEM never dispatches onstop.
+          settle(i, true);
         }
       }
     }, 12000);
@@ -192,16 +195,15 @@ export function startDualRecording(
         try { recorder.stop(); } catch { /* stop timer will resolve */ }
       }
     };
-    recorder.ondataavailable = e => { if (e.data.size) buffers[i]!.push(e.data); };
+    recorder.ondataavailable = e => { if (e.data.size) spools[i]!.append(e.data); };
     recorder.onerror = e => {
       failures.push("Камера " + (i+1) + ": " + ((e as Event & { error?: Error }).error?.message || "ошибка кодировщика"));
       stop("Один видеокодировщик отказал");
     };
     recorder.onstop = () => {
-      const blob = new Blob(buffers[i], { type: mime });
-      // A driver can emit data but omit onstart. Preserve real bytes even when
-      // startup was never confirmed; paired success still requires both starts.
-      settle(i, blob.size >= 1024 ? blob : null);
+      // A driver can emit data but omit onstart. The spool is drained before
+      // validating real file bytes; paired success still requires two starts.
+      settle(i, true);
       if (!stopRequested) {
         endedUnexpectedly = true;
         stop("Один из видеопотоков завершился раньше второго");
@@ -219,7 +221,17 @@ export function startDualRecording(
   // arm an obsolete watchdog after they already confirmed starting.
   if (!startedConfirmed) startupTimer = window.setTimeout(
     () => stop("Не обе камеры подтвердили запуск за 8 секунд"), 8000);
-  const done = Promise.all(collected).then(async blobs => {
+  const done = Promise.all(collected).then(async finishedEncoders => {
+    const blobs = await Promise.all(spools.map(async (spool, index) => {
+      if (!finishedEncoders[index]) return null;
+      try {
+        const blob = await spool.finish(mime);
+        return blob.size >= 1024 ? blob : null;
+      } catch (error) {
+        failures.push("Камера " + (index + 1) + ": временный видеофайл недоступен (" + String(error) + ")");
+        return null;
+      }
+    }));
     completed = true;
     window.clearTimeout(startupTimer);
     window.clearTimeout(stopTimer);
@@ -244,6 +256,7 @@ export function startDualRecording(
     // Persist all salvageable blobs first: a decoder crash must not discard
     // successfully encoded bytes. Verify persisted media, not temporary memory.
     await saveRecordedClipsAtomically(clips);
+    await Promise.all(spools.map(spool => spool.clearAfterSave()));
     const playable: RecordedClip[] = [];
     const fileDurations: (number | null)[] = [null, null];
     let sampledLaterClips = 0;
