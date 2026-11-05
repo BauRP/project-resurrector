@@ -42,7 +42,9 @@ export class RecordingChunkSpool {
     this.fallbackBytes += chunk.size;
     if (!this.pressureReported && this.fallbackBytes >= MAX_UNSPOOLED_BYTES) {
       this.pressureReported = true;
-      this.pressureCallback?.();
+      // A stop callback may throw on a destroyed OEM MediaRecorder. Never
+      // treat that as a storage error or push the same chunk a second time.
+      try { this.pressureCallback?.(); } catch { /* Retain original bytes. */ }
     }
   }
 
