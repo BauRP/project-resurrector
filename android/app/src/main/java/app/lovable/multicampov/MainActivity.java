@@ -72,7 +72,10 @@ public class MainActivity extends BridgeActivity {
             // Keep Capacitor's resource interception, navigation and plugin
             // callbacks: a plain android.webkit.WebViewClient would break them.
             // Register renderer recovery through the same BridgeWebViewClient.
-            webView.setWebViewClient(new BridgeWebViewClient(bridge) {
+            // RenderProcessGoneDetail first exists in Android 8.0 (API 26).
+            // Keep Android 7's Capacitor WebViewClient untouched; the
+            // independent native heartbeat still covers Android 7 stalls.
+            if (Build.VERSION.SDK_INT >= 26) webView.setWebViewClient(new BridgeWebViewClient(bridge) {
                 @Override public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
                     super.onRenderProcessGone(view, detail);
                     rendererTerminated = true;
