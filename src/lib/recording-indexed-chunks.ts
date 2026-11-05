@@ -115,12 +115,27 @@ export class RecordingIndexedChunks {
     const keys = [...this.confirmed];
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction("pieces", "readwrite");
-      tx.oncomplete = () => resolve();
-      tx.onabort = () => reject(tx.error ?? new Error("Cannot remove saved staging chunks"));
+      let finished = false;
+      const done = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        if (error) reject(error);
+        else resolve();
+      };
+      // Cleanup must not keep the whole dual-camera save promise pending.
+      // Once clips are confirmed in the durable library, abandoned staging
+      // pieces are safer than a permanently blocked Camera UI.
+      const timer = setTimeout(() => {
+        try { tx.abort(); } catch { /* Already finished */ }
+        done(new Error("Timed out cleaning temporary recording pieces"));
+      }, 8000);
+      tx.oncomplete = () => done();
+      tx.onabort = () => done(tx.error ?? new Error("Cannot remove saved staging chunks"));
       try {
         const store = tx.objectStore("pieces");
         for (const key of keys) store.delete(key);
-      } catch (error) { reject(error); }
+      } catch (error) { done(error instanceof Error ? error : new Error(String(error))); }
     });
     this.confirmed.length = 0;
   }
