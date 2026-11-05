@@ -1,13 +1,7 @@
 import { useEffect, useState } from "react";
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor } from "@capacitor/core";
 import { bounded } from "@/lib/async";
-
-interface UiFreezeBridge {
-  read(): Promise<{report: string; recordedAt: number}>;
-  clear(): Promise<void>;
-  pulse(): Promise<void>;
-}
-const uiFreeze = registerPlugin<UiFreezeBridge>("UiFreeze");
+import { uiFreeze } from "@/lib/ui-freeze-bridge";
 
 /** Never blocks startup; shows evidence of a real previous Android UI hang. */
 export function AndroidFreezeNotice() {
