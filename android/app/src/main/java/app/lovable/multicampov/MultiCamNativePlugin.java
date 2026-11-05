@@ -82,6 +82,12 @@ public class MultiCamNativePlugin extends Plugin {
             worker.setDaemon(true);
             return worker;
         });
+    private final java.util.concurrent.ExecutorService cameraOperationWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+            Thread worker = new Thread(task, "multicam-camera-control");
+            worker.setDaemon(true);
+            return worker;
+        });
     private HandlerThread thread;
     private Handler handler;
     private CameraManager.AvailabilityCallback availabilityWatcher;
@@ -145,6 +151,7 @@ public class MultiCamNativePlugin extends Plugin {
     @Override protected void handleOnDestroy() {
         cameraQueryWorker.shutdownNow();
         mp4InspectionWorker.shutdownNow();
+        cameraOperationWorker.shutdownNow();
         stopAvailability();
         cleanup();
         super.handleOnDestroy();
@@ -406,6 +413,12 @@ public class MultiCamNativePlugin extends Plugin {
 
     @PluginMethod
     public void listAudioInputs(PluginCall call) {
+        try { cameraOperationWorker.execute(() -> listAudioInputsOnWorker(call)); }
+        catch (java.util.concurrent.RejectedExecutionException e) {
+            call.reject("Служба управления камерой закрыта");
+        }
+    }
+    private void listAudioInputsOnWorker(PluginCall call) {
         AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         JSArray arr = new JSArray();
         for (AudioDeviceInfo d : am.getDevices(AudioManager.GET_DEVICES_INPUTS)) {
@@ -421,6 +434,12 @@ public class MultiCamNativePlugin extends Plugin {
 
     @PluginMethod
     public void setPreferredAudioInput(PluginCall call) {
+        try { cameraOperationWorker.execute(() -> setPreferredAudioInputOnWorker(call)); }
+        catch (java.util.concurrent.RejectedExecutionException e) {
+            call.reject("Служба управления камерой закрыта");
+        }
+    }
+    private void setPreferredAudioInputOnWorker(PluginCall call) {
         AudioManager am = (AudioManager) getContext().getSystemService(Context.AUDIO_SERVICE);
         String id = call.getString("id", "");
         boolean ok = false;
@@ -436,6 +455,12 @@ public class MultiCamNativePlugin extends Plugin {
 
     @PluginMethod
     public void startHighSpeedRecording(PluginCall call) {
+        try { cameraOperationWorker.execute(() -> startHighSpeedOnWorker(call)); }
+        catch (java.util.concurrent.RejectedExecutionException e) {
+            call.reject("Служба управления камерой закрыта");
+        }
+    }
+    private void startHighSpeedOnWorker(PluginCall call) {
         if (getPermissionState("camera") != PermissionState.GRANTED) { requestPermissionForAlias("camera", call, "permissionCallback"); return; }
         if (recorder != null) { call.reject("Запись уже идёт или запускается"); return; }
         // OEM cameras may emit multiple asynchronous callbacks (error,
@@ -751,6 +776,12 @@ public class MultiCamNativePlugin extends Plugin {
 
     @PluginMethod
     public void stopHighSpeedRecording(PluginCall call) {
+        try { cameraOperationWorker.execute(() -> stopHighSpeedOnWorker(call)); }
+        catch (java.util.concurrent.RejectedExecutionException e) {
+            call.reject("Служба управления камерой закрыта");
+        }
+    }
+    private void stopHighSpeedOnWorker(PluginCall call) {
         if (recorder == null || !highSpeedStarted) { call.reject("Подтверждённой записи нет"); return; }
         reportHighSpeedState("stopping", "Завершение видеокодирования");
         final File saved = output;

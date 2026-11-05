@@ -45,6 +45,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
     @Permission(alias = "camera", strings = {Manifest.permission.CAMERA})
 })
 public class RawDngPlugin extends Plugin {
+    private final java.util.concurrent.ExecutorService preflightWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+            Thread worker = new Thread(task, "multicam-raw-preflight");
+            worker.setDaemon(true);
+            return worker;
+        });
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private volatile RawSession session;
 
@@ -58,6 +64,12 @@ public class RawDngPlugin extends Plugin {
             call.reject("Другая RAW-съёмка ещё не закончена");
             return;
         }
+        try { preflightWorker.execute(() -> captureRawPreflight(call)); }
+        catch (java.util.concurrent.RejectedExecutionException e) {
+            busy.set(false); call.reject("RAW-проверка закрыта");
+        }
+    }
+    private void captureRawPreflight(PluginCall call) {
         String id = call.getString("cameraId", "");
         if (id.isEmpty()) {
             busy.set(false);
@@ -103,6 +115,7 @@ public class RawDngPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        preflightWorker.shutdownNow();
         RawSession active = session;
         if (active != null) active.fail("Сессия закрыта до сохранения DNG");
         super.handleOnDestroy();

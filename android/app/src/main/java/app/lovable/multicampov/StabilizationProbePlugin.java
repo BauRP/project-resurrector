@@ -40,6 +40,12 @@ import java.util.concurrent.atomic.AtomicBoolean;
     @Permission(alias = "camera", strings = {Manifest.permission.CAMERA})
 })
 public class StabilizationProbePlugin extends Plugin {
+    private final java.util.concurrent.ExecutorService preflightWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(task -> {
+            Thread worker = new Thread(task, "multicam-stabilization-preflight");
+            worker.setDaemon(true);
+            return worker;
+        });
     private final AtomicBoolean occupied = new AtomicBoolean(false);
     private volatile Probe active;
 
@@ -53,6 +59,12 @@ public class StabilizationProbePlugin extends Plugin {
             call.reject("Проверка другой камеры ещё выполняется");
             return;
         }
+        try { preflightWorker.execute(() -> probePreflight(call)); }
+        catch (java.util.concurrent.RejectedExecutionException e) {
+            occupied.set(false); call.reject("Проверка стабилизации закрыта");
+        }
+    }
+    private void probePreflight(PluginCall call) {
         final String cameraId = call.getString("cameraId", "");
         final int width = call.getInt("width", 1280);
         final int height = call.getInt("height", 720);
@@ -119,6 +131,7 @@ public class StabilizationProbePlugin extends Plugin {
     }
 
     @Override protected void handleOnDestroy() {
+        preflightWorker.shutdownNow();
         Probe p = active;
         if (p != null) p.fail("Проверка прервана закрытием приложения");
         super.handleOnDestroy();
