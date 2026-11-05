@@ -859,7 +859,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
       {visibleVideos.map(i=><svg key={i.id} className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${i.id}`} c={colorOf(i)} /></defs></svg>)}
-      {audible.map((i) => <audio key={i.id} ref={(el) => { audioRefs.current[i.id] = el; }} src={mediaById.get(i.mediaId)?.url} preload="auto" className="hidden" />)}
+      {audible.map((i) => <audio key={i.id} ref={(el) => { audioRefs.current[i.id] = el; }} src={mediaById.get(i.mediaId)?.url} preload="metadata" className="hidden" />)}
       {visibleVideos.length ? visibleVideos.map((i,index)=><EditorVideoLayer key={i.id}
         source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}
         timelineTime={t} start={i.start} inPoint={i.in} outPoint={i.out}
