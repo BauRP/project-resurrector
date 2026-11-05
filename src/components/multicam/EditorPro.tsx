@@ -3,6 +3,7 @@ import { EditorVideoLayer } from "./EditorVideoLayer";
 import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject } from "@/lib/editor-project-recovery";
+import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -198,8 +199,9 @@ async function analyse(clip: StoredClip): Promise<Media> {
   try {
     const ctx = new OfflineAudioContext(1, 44100, 44100);
     const buf = await bounded(ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")), 6000, "Audio analysis");
-    const data = buf.getChannelData(0); const n = Math.max(20, Math.round(duration * 20)); const step = Math.floor(data.length / n) || 1;
-    for (let i = 0; i < n; i++) { let m = 0; for (let j = i * step; j < (i + 1) * step && j < data.length; j++) m = Math.max(m, Math.abs(data[j]!)); peaks.push(m); }
+    // Same waveform resolution and amplitude values, but no multi-second
+    // synchronous scan on the WebView event loop.
+    peaks = await extractWaveformPeaks(buf.getChannelData(0), duration);
   } catch { peaks = []; }
   analysisCache.set(clip.id, { duration, peaks });
   return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks };
