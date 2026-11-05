@@ -215,12 +215,17 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   const declarations=block.match(/android\.content\.SharedPreferences\.Editor stateEditor\s*=/g)??[];
   expect(declarations).toHaveLength(1);
   expect(block).toContain("getSharedPreferences(STORE, MODE_PRIVATE).edit()");
-  expect(block).toContain("if(!stateEditor.commit())");
+  expect(block).toContain("STATE_WRITER.execute(() ->");
+  expect(block).toContain("if (!stateEditor.commit())");
   expect(block).toContain("stateEditor.apply()");
+  expect(block).toContain("criticalTransition");
+  // Critical commits must not run directly under STATE_LOCK or on the UI thread.
+  expect(block.indexOf("STATE_WRITER.execute(() ->")).toBeLessThan(block.indexOf("stateEditor.commit()"));
  });
  it("durably commits critical Camera2 capture transitions across Activity/process interruption",()=>{
   expect(service).toContain("android.content.SharedPreferences.Editor stateEditor=");
-  expect(service).toContain("if(!stateEditor.commit())");
+  expect(service).toContain("STATE_WRITER.execute(() ->");
+  expect(service).toContain("if (!stateEditor.commit())");
   expect(service).toContain('"saved_interrupted".equals(newState)');
   expect(service).toContain("stateEditor.apply()");
   expect(service).toContain("getString(\"state\",\"idle\")");
