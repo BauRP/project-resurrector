@@ -67,9 +67,18 @@ describe("lightweight appearance preferences", () => {
     }
     expect(screen.getByTestId("theme")).toHaveTextContent("light");
     expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-state-native")).toHaveLength(0);
-    expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-ui-prefs-native").length).toBeGreaterThan(0);
+    // Do not write LevelDB synchronously during any of the 40 click events.
+    expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-ui-prefs-native")).toHaveLength(0);
+    await waitFor(() => expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-ui-prefs-native")).toHaveLength(1));
   });
 
+  it("flushes the latest theme on pagehide before Android destroys WebView", () => {
+    render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+    fireEvent.click(screen.getByText("Switch theme"));
+    expect(localStorage.getItem("multicam-pov-ui-prefs-native")).toBeNull();
+    window.dispatchEvent(new Event("pagehide"));
+    expect(JSON.parse(localStorage.getItem("multicam-pov-ui-prefs-native") ?? "{}").theme).toBe("dark");
+  });
   it("retains legacy project serialization when project data actually changes", async () => {
     const writes = vi.spyOn(Storage.prototype, "setItem");
     render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
