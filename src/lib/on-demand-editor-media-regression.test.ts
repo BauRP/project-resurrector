@@ -12,10 +12,11 @@ describe("on-demand editor media work", () => {
     expect(code).toContain("setCacheRevision(n => n + 1)");
   });
   it("retains original playback and full proxy functions for timeline media",()=>{
-    expect(code).toContain('await makeThumbs(m.url, m.duration, 10, abort.signal)');
-    expect(code).toContain('await generateProxy(m.id, m.url, abort.signal)');
+    expect(code).toContain('() => makeThumbs(m.url, m.duration, 10, abort.signal)');
+    expect(code).toContain('() => generateProxy(m.id, m.url, abort.signal)');
     expect(code).toContain('source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}');
     expect(code).toContain('loadedProxyIds.current.clear()');
+    expect(code).toContain('editorMediaWorkQueue.run(');
   });
   it("releases late native subscriptions rather than leaking UI observers",()=>{
     const native=readFileSync("src/lib/native-capture.ts","utf8");
