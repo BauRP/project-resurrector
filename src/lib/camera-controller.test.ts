@@ -95,6 +95,29 @@ describe("camera ownership and serialized settings", () => {
     expect(app).toContain('const token = Symbol("camera-preview-generation")');
     expect(app).toContain('owner.current = token');
   });
+  it("does not start a second WebView camera request while a timed-out one is still pending", async () => {
+    vi.useFakeTimers();
+    let resolveOld!: (stream: MediaStream) => void;
+    const old = camera(), next = camera();
+    const getUserMedia = vi.fn()
+      .mockImplementationOnce(() => new Promise<MediaStream>(resolve => { resolveOld = resolve; }))
+      .mockResolvedValueOnce(next.stream);
+    vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
+    const opening = cameraController.acquire(Symbol("first"), { video: true });
+    await vi.advanceTimersByTimeAsync(6010);
+    await expect(opening).rejects.toThrow("Camera: timeout");
+    await expect(cameraController.acquire(Symbol("retry"), { video: true }))
+      .rejects.toBeInstanceOf(CameraBusyError);
+    expect(getUserMedia).toHaveBeenCalledTimes(1);
+    // When WebView finally returns, the obsolete stream is closed and a
+    // subsequent user request is allowed to acquire a fresh stream.
+    resolveOld(old.stream);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(old.track.stop).toHaveBeenCalledOnce();
+    await expect(cameraController.acquire(Symbol("fresh"), { video: true }))
+      .resolves.toBe(next.stream);
+    expect(getUserMedia).toHaveBeenCalledTimes(2);
+  });
   it("rejects an empty camera stream and releases the lease for another request", async () => {
     const stopped=vi.fn();
     const missing={getVideoTracks:()=>[],getTracks:()=>[{stop:stopped}]} as unknown as MediaStream;
