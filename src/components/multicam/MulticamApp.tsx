@@ -7,6 +7,7 @@ import { Capacitor } from "@capacitor/core";
 // Load the heavy editor only when opened; keep camera and settings light.
 const EditorTab = lazy(() => import("./EditorTab").then(mod => ({ default: mod.EditorTab })));
 import { SettingsEntryGate } from "./SettingsEntryGate";
+import { isStaleCapture, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 const SettingsTab = lazy(() => import("./SettingsTab").then(mod => ({ default: mod.SettingsTab })));
 import { SettingsCrashBoundary } from "./SettingsCrashBoundary";
 import { AndroidFreezeNotice } from "./AndroidFreezeNotice";
@@ -172,6 +173,13 @@ function MulticamAppContent() {
   const requestTab = useCallback((next: AppTab) => {
     if (next === tab) return;
     traceUiAction("navigate: " + tab + " -> " + next);
+    if(isStaleCapture(recording,recordingPhase)){
+      // No recorder can possibly deliver the expected saved notification.
+      setStore({recording:false,recordingPhase:"error",recordingStartedAt:null,
+        paused:false,captureSaveError:STALE_CAPTURE_MESSAGE});
+      setNavigationNotice(STALE_CAPTURE_MESSAGE);
+      return;
+    }
     if (recordingPhase === "starting") {
       setNavigationNotice("Запись запускается. Дождитесь подтверждения перед переходом.");
       return;
@@ -190,7 +198,7 @@ function MulticamAppContent() {
   }, [tab, recording, recordingPhase, setStore, setTab, captureTabScroll]);
   useEffect(() => {
     if (!pendingTab) return;
-    if (recordingPhase === "saved" && !recording) {
+    if ((recordingPhase === "saved" || recordingPhase === "idle") && !recording) {
       setNavigationNotice("");
       captureTabScroll();
       setTab(pendingTab);

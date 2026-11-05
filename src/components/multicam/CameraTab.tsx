@@ -1,4 +1,5 @@
 import { nativeCapture } from "@/lib/native-capture";
+import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
 import { recordingInputLostReason } from "@/lib/recording-finalization";
 import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
@@ -68,6 +69,10 @@ function applyManual(stream: MediaStream | null, c: Record<string, unknown>) {
 
 export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void) | undefined } = {}) {
   const s = useCameraStore();
+  // The unmount effect is registered once, but its phase must be the LAST
+  // rendered phase, not an obsolete closure from the first render.
+  const lastRecordingState = useRef({recording:s.recording,phase:s.recordingPhase});
+  lastRecordingState.current={recording:s.recording,phase:s.recordingPhase};
   const { t } = useT();
   const peers = useMeshPeers();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -461,6 +466,11 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     // A separate two-encoder recording session owns both live camera streams.
     if (s.dualCamera && s.captureKind === "video") return;
     if (!s.recording) {
+      if (!active && !dualSession.current && isStaleCapture(false,s.recordingPhase)) {
+        s.set({recording:false,recordingPhase:"error",recordingStartedAt:null,paused:false,
+          captureSaveError:STALE_CAPTURE_MESSAGE});
+        return;
+      }
       // A remote STOP can arrive before the first recorder exists. In that
       // case there is no onstop callback to clear the transient "stopping"
       // phase; settle it without inventing a saved video.
@@ -784,7 +794,16 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     // Recorder onstop owns encoder buffers until its save transaction completes.
     if (!recorder || recorder.state === "inactive") pipeRef.current?.stop();
     mesh.selfRecording = false;
-    s.set({ recording: false, recordingStartedAt: null, paused: false });
+    // MediaRecorder callbacks from the destroyed component are intentionally
+    // invalidated. Publish an uncertainty state instead of waiting forever
+    // for a "saved" callback that can no longer update shared navigation.
+    const latest=lastRecordingState.current;
+    if(interruptedOnCameraExit(latest.phase,Boolean(recorder||dualSession.current))){
+      s.set({recording:false,recordingPhase:"error",recordingStartedAt:null,paused:false,
+        captureSaveError:STALE_CAPTURE_MESSAGE});
+    } else {
+      s.set({recording:false,recordingStartedAt:null,paused:false});
+    }
   }, [s.set]);
   useEffect(() => {
     const r = recorderRef.current; if (!r) return;
