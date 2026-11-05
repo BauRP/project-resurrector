@@ -56,11 +56,15 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(stream); const an = ctx.createAnalyser(); an.fftSize = 1024; src.connect(an);
     const buf = new Float32Array(an.fftSize); let raf = 0; let last = 0;
     const tick = (t: number) => {
+      // Only sample the audio analyser at 25Hz, not once per 60/120Hz screen
+      // refresh. Keep the meter, peak hold and original recorder graph.
+      if (t - last < 40) { raf = requestAnimationFrame(tick); return; }
       an.getFloatTimeDomainData(buf); let sum = 0; let pk = 0;
       for (const v of buf) { sum += v * v; pk = Math.max(pk, Math.abs(v)); }
       const rms = 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-5); const peak = 20 * Math.log10(pk || 1e-5);
       peakRef.current = Math.max(peak, peakRef.current - 0.6);
-      if (t - last > 60) { last = t; setLevel({ rms: Math.max(-90, rms), peak: Math.max(-90, peakRef.current) }); }
+      last=t;
+      setLevel({ rms: Math.max(-90, rms), peak: Math.max(-90, peakRef.current) });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
