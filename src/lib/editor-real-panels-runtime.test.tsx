@@ -1,10 +1,13 @@
-import {afterEach,describe,expect,it} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
 import {MulticamStoreProvider} from "@/lib/multicam-store";
 import {EditorPro} from "@/components/multicam/EditorPro";
 import {SettingsTab} from "@/components/multicam/SettingsTab";
 
-afterEach(()=>{cleanup();localStorage.clear();});
+beforeEach(()=>vi.stubGlobal("ResizeObserver",class {
+ observe(){} unobserve(){} disconnect(){}
+}));
+afterEach(()=>{cleanup();localStorage.clear();vi.unstubAllGlobals();});
 describe("real transition and audio panels remain responsive without recorded clips",()=>{
  it("mounts actual editor, switches transition/audio panels repeatedly",async()=>{
    localStorage.clear();
