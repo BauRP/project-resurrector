@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { RecordingChunkSpool } from "./recording-chunk-spool";
+import { RecordingChunkSpool, MAX_UNSPOOLED_BYTES } from "./recording-chunk-spool";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -84,13 +84,47 @@ describe("MediaRecorder recording chunk spool", () => {
     expect(removeEntry).not.toHaveBeenCalled();
   });
 
+  it("warns exactly once when a legacy device cannot spool and its emergency RAM buffer fills", async () => {
+    vi.stubGlobal("navigator", { storage: undefined });
+    vi.stubGlobal("indexedDB", undefined);
+    const spool = new RecordingChunkSpool("no-spool");
+    const stop = vi.fn();
+    spool.onMemoryPressure(stop);
+    const nominal = new Blob(["minimal"]);
+    Object.defineProperty(nominal, "size", {value: MAX_UNSPOOLED_BYTES});
+    spool.append(nominal);
+    spool.append(new Blob(["more"]));
+    await spool.finish("video/webm");
+    expect(stop).toHaveBeenCalledOnce();
+  });
+
+  it("rejects indefinite OPFS writes instead of leaving the capture stuck in saving", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", {storage: {getDirectory: async () => ({
+      getFileHandle: async () => ({
+        createWritable: async () => ({
+          write: async () => new Promise<void>(() => {}),
+          close: async () => undefined,
+        }),
+      }),
+      removeEntry: async () => undefined,
+    })}});
+    const spool = new RecordingChunkSpool("stalled-disk");
+    spool.append(new Blob(["encoded"]));
+    const result = expect(spool.finish("video/webm")).rejects.toThrow("Pending recording chunks: timeout");
+    await vi.advanceTimersByTimeAsync(20010);
+    await result;
+    vi.useRealTimers();
+  });
   it("uses the same spool for single and simultaneous two-camera recording", () => {
     const single = readFileSync("src/components/multicam/CameraTab.tsx","utf8");
     const dual = readFileSync("src/lib/dual-live-recording.ts","utf8");
     expect(single).toContain("spool.append(event.data)");
+    expect(single).toContain("spool.onMemoryPressure(");
     expect(single).toContain("await spool.finish(mime)");
     expect(single).toContain("void spool.clearAfterSave()");
     expect(dual).toContain("spools[i]!.append(e.data)");
+    expect(dual).toContain("spool.onMemoryPressure(");
     expect(dual).toContain("await spool.finish(mime)");
     expect(dual).toContain("await saveRecordedClipsAtomically(clips)");
     expect(dual).toContain("spool.clearAfterSave()");
