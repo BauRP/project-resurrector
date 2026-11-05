@@ -78,6 +78,15 @@ public class NativeCaptureService extends Service {
     private static final int NOTIFICATION = 2017;
     private static final String STORE = "native_capture_v1";
     private static final Object STATE_LOCK = new Object();
+    // Preserve publish ordering, but never execute disk IO on the Camera2 or
+    // Android UI thread while STATE_LOCK is held. The queue is process-wide:
+    // recreating the Service must not reorder pending final capture states.
+    private static final java.util.concurrent.ExecutorService STATE_WRITER =
+        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "NativeCapture-StatePersistence");
+            thread.setDaemon(true);
+            return thread;
+        });
     private static volatile NativeCaptureService runningInstance;
     // A preview consumer can mount before the foreground service is created.
     // A stale WebView teardown must not hide a newer camera view.
@@ -1319,6 +1328,11 @@ public class NativeCaptureService extends Service {
     }
     private void publish(String newState, String message) {
         synchronized (STATE_LOCK) {
+            // Compare with the in-memory state, not a potentially blocking
+            // SharedPreferences read in the critical section.
+            final boolean criticalTransition = !newState.equals(state) ||
+                "saved".equals(newState) || "saved_interrupted".equals(newState) ||
+                "interrupted".equals(newState) || "error".equals(newState);
             state = newState;
             lastMessage = message;
             android.content.SharedPreferences.Editor stateEditor=
@@ -1416,19 +1430,18 @@ public class NativeCaptureService extends Service {
                 .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
                 .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
                 .putString("foldPointsMs",recordingFoldPointsMs);
-            // Persist critical transitions before returning to Android:
-            // asynchronous apply() can lose the last state on process death.
-            // Frequent same-state control updates remain asynchronous.
-            String persistedState=getSharedPreferences(STORE, MODE_PRIVATE)
-                .getString("state","idle");
-            if(!newState.equals(persistedState) ||
-                "saved".equals(newState) || "saved_interrupted".equals(newState) ||
-                "interrupted".equals(newState) || "error".equals(newState)){
-                if(!stateEditor.commit())
-                    android.util.Log.e("NativeCaptureService","Could not persist critical camera state: "+newState);
-            }else{
-                stateEditor.apply();
-            }
+            // Enqueue while locked to preserve capture-state order, then let a
+            // dedicated writer do the blocking commit outside STATE_LOCK.
+            // Important: even a small commit can be delayed by slow flash IO.
+            STATE_WRITER.execute(() -> {
+                if (criticalTransition) {
+                    if (!stateEditor.commit())
+                        android.util.Log.e("NativeCaptureService",
+                            "Could not persist critical camera state: " + newState);
+                } else {
+                    stateEditor.apply();
+                }
+            });
         }
     }
     @Override public void onCreate() {
@@ -3143,12 +3156,34 @@ public class NativeCaptureService extends Service {
         }
     }
     @Override public void onDestroy() {
-        if (encoder != null || camera != null) {
+        // Android calls Service.onDestroy on the MAIN thread. Camera close,
+        // MediaRecorder.stop, MP4 inspection and Gallery publication can all
+        // block. Keep that work on the dedicated camera worker, even when
+        // Android destroys the service before a normal STOP command arrives.
+        final boolean needsFinalization =
+            encoder != null || camera != null || recordingAttemptStarted;
+        if (needsFinalization) {
             stopRequested = true;
-            // Shutdown is owned by Android service, NOT Activity/WebView.
-            finish();
+            if (worker != null) {
+                worker.post(() -> {
+                    try { finish(); }
+                    finally {
+                        synchronized (STATE_LOCK) {
+                            if (runningInstance == this) runningInstance = null;
+                        }
+                    }
+                });
+            } else {
+                synchronized (STATE_LOCK) {
+                    if (runningInstance == this) runningInstance = null;
+                }
+            }
+        } else {
+            synchronized (STATE_LOCK) {
+                if (runningInstance == this) runningInstance = null;
+            }
         }
-        synchronized (STATE_LOCK) { if (runningInstance == this) runningInstance = null; }
+        // quitSafely drains already queued immediate work (including finish).
         if (workerThread != null) workerThread.quitSafely();
         if (previewThread != null) previewThread.quitSafely();
         super.onDestroy();
