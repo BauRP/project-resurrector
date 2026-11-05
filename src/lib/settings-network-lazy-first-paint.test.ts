@@ -14,6 +14,9 @@ describe("Settings JavaScript does not eagerly pull networking and WebRTC into t
     expect(settings).toContain("<SettingsNetworkContent />");
     expect(settings).toContain("Светлая");
     expect(settings).toContain("Тёмная");
+    expect(settings).not.toContain('import { cacheBytes, clearPreviewCache } from "@/lib/media-cache"');
+    expect(settings).toContain('const { cacheBytes } = await import("@/lib/media-cache")');
+    expect(settings).toContain('const { clearPreviewCache } = await import("@/lib/media-cache")');
   });
 
   it("preserves all mesh diagnostics and connection status once the network panel loads", () => {
