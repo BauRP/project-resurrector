@@ -95,7 +95,20 @@ public class MultiCamNativePlugin extends Plugin {
     // WebView tears down. Track every owner so old cleanup cannot stop the
     // current availability observer.
     private final Set<String> availabilityOwners = new LinkedHashSet<>();
-    private final Handler availabilityMainHandler = new Handler(Looper.getMainLooper());
+    private final java.util.concurrent.ExecutorService availabilityWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread thread = new Thread(r, "multicam-availability-control");
+            thread.setDaemon(true);
+            return thread;
+        });
+    private HandlerThread availabilityCallbackThread;
+    private Handler availabilityCallbackHandler;
+    private void ensureAvailabilityCallbackThread() {
+        if (availabilityCallbackThread != null) return;
+        availabilityCallbackThread = new HandlerThread("multicam-availability-events");
+        availabilityCallbackThread.start();
+        availabilityCallbackHandler = new Handler(availabilityCallbackThread.getLooper());
+    }
 
     @PluginMethod
     public void startCameraAvailability(PluginCall call) {
@@ -104,7 +117,9 @@ public class MultiCamNativePlugin extends Plugin {
             call.reject("Camera availability requires an ownerId"); return;
         }
         try {
-            synchronized (availabilityOwners) {
+            availabilityWorker.execute(() -> {
+             try {
+              synchronized (availabilityOwners) {
                 if (availabilityWatcher == null) {
                     CameraManager.AvailabilityCallback watcher = new CameraManager.AvailabilityCallback() {
                         @Override public void onCameraAvailable(String cameraId) {
@@ -120,13 +135,18 @@ public class MultiCamNativePlugin extends Plugin {
                     };
                     // Assign only after successful registration so an OEM
                     // exception never leaves a nonfunctional watcher installed.
-                    cameras().registerAvailabilityCallback(watcher, availabilityMainHandler);
+                    ensureAvailabilityCallbackThread();
+                    cameras().registerAvailabilityCallback(watcher, availabilityCallbackHandler);
                     availabilityWatcher = watcher;
                 }
                 availabilityOwners.add(ownerId);
-            }
-            call.resolve();
-        } catch (Exception e) { call.reject("Camera availability unavailable: " + e.getMessage()); }
+              }
+              call.resolve();
+             } catch (Exception e) { call.reject("Camera availability unavailable: " + e.getMessage()); }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            call.reject("Camera availability is shutting down");
+        }
     }
     @PluginMethod
     public void stopCameraAvailability(PluginCall call) {
@@ -134,25 +154,42 @@ public class MultiCamNativePlugin extends Plugin {
         if (ownerId == null || ownerId.isEmpty()) {
             call.reject("Camera availability requires an ownerId"); return;
         }
-        synchronized (availabilityOwners) {
-            availabilityOwners.remove(ownerId);
-            if (availabilityOwners.isEmpty()) stopAvailability();
+        try {
+            availabilityWorker.execute(() -> {
+                synchronized (availabilityOwners) {
+                    availabilityOwners.remove(ownerId);
+                    if (availabilityOwners.isEmpty()) stopAvailability();
+                }
+                call.resolve();
+            });
+        } catch (java.util.concurrent.RejectedExecutionException e) {
+            call.reject("Camera availability is shutting down");
         }
-        call.resolve();
     }
     private void stopAvailability() {
         synchronized (availabilityOwners) {
             availabilityOwners.clear();
             if (availabilityWatcher == null) return;
-            cameras().unregisterAvailabilityCallback(availabilityWatcher);
-            availabilityWatcher = null;
+            try { cameras().unregisterAvailabilityCallback(availabilityWatcher); }
+            finally {
+                availabilityWatcher = null;
+                if (availabilityCallbackThread != null) {
+                    availabilityCallbackThread.quitSafely();
+                    availabilityCallbackThread = null;
+                    availabilityCallbackHandler = null;
+                }
+            }
         }
     }
     @Override protected void handleOnDestroy() {
         cameraQueryWorker.shutdownNow();
         mp4InspectionWorker.shutdownNow();
         cameraOperationWorker.shutdownNow();
-        stopAvailability();
+        // Unregistering OEM CameraManager callbacks may block on a Binder.
+        // Plugin teardown is on Android MAIN: do not wait for that Binder here.
+        try { availabilityWorker.execute(this::stopAvailability); }
+        catch (java.util.concurrent.RejectedExecutionException ignored) { }
+        availabilityWorker.shutdown();
         cleanup();
         super.handleOnDestroy();
     }
