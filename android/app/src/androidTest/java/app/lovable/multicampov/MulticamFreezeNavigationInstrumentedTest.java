@@ -3,6 +3,8 @@ package app.lovable.multicampov;
 import android.app.Activity;
 import android.content.Intent;
 import android.view.View;
+import android.os.Looper;
+import android.util.Log;
 import android.view.ViewGroup;
 import android.webkit.WebView;
 
@@ -45,12 +47,31 @@ public class MulticamFreezeNavigationInstrumentedTest {
             result.set(value);
             reply.countDown();
         }));
-        assertTrue("WebView renderer stopped replying to " + javascript,
-            reply.await(12, TimeUnit.SECONDS));
+        if (!reply.await(12, TimeUnit.SECONDS)) {
+            // Android MAIN can be blocked inside HardwareRenderer while the
+            // JS script itself never ran. A test-thread stack is useless:
+            // capture MAIN and any RenderThread before assertion fails.
+            StringBuilder evidence = new StringBuilder("WebView did not reply: ").append(javascript);
+            Thread main = Looper.getMainLooper().getThread();
+            evidence.append("\\nAndroid MAIN [").append(main.getState()).append("]:");
+            for (StackTraceElement frame : main.getStackTrace())
+                evidence.append("\\n  at ").append(frame);
+            for (java.util.Map.Entry<Thread,StackTraceElement[]> thread :
+                     Thread.getAllStackTraces().entrySet()) {
+                if (!thread.getKey().getName().contains("RenderThread")) continue;
+                evidence.append("\\n").append(thread.getKey().getName())
+                    .append(" [").append(thread.getKey().getState()).append("]:");
+                for (StackTraceElement frame : thread.getValue())
+                    evidence.append("\\n  at ").append(frame);
+            }
+            Log.e("MultiCamFreezeTest", evidence.toString());
+            fail(evidence.toString());
+        }
         return result.get();
     }
 
     private static void eventually(Activity activity, WebView view, String expression) throws Exception {
+        Log.i("MultiCamFreezeTest", "Await: " + expression);
         long deadline = System.currentTimeMillis() + 12000;
         while (System.currentTimeMillis() < deadline) {
             if ("true".equals(eval(activity, view, expression))) return;
@@ -60,6 +81,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
     }
 
     private static void click(Activity activity, WebView view, String selector) throws Exception {
+        Log.i("MultiCamFreezeTest", "Click: " + selector);
         String script = "(function(){var b=document.querySelector(" +
             org.json.JSONObject.quote(selector) +
             ");if(!b)return false;b.click();return true})()";
