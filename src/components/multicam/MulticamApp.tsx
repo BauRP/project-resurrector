@@ -174,10 +174,15 @@ function MulticamAppContent() {
     if (next === tab) return;
     traceUiAction("navigate: " + tab + " -> " + next);
     if(isStaleCapture(recording,recordingPhase)){
-      // No recorder can possibly deliver the expected saved notification.
+      // The old recording callback can no longer arrive. Recover the state
+      // AND permit the requested navigation on this very tap (not the next).
+      // Never report a saved clip: any durable file remains in the library.
       setStore({recording:false,recordingPhase:"error",recordingStartedAt:null,
         paused:false,captureSaveError:STALE_CAPTURE_MESSAGE});
+      setPendingTab(null);
       setNavigationNotice(STALE_CAPTURE_MESSAGE);
+      captureTabScroll();
+      setTab(next);
       return;
     }
     if (recordingPhase === "starting") {
