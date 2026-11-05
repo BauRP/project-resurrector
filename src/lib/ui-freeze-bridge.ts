@@ -5,6 +5,7 @@ export interface UiFreezeBridge {
   read(): Promise<{ report: string; recordedAt: number }>;
   clear(): Promise<void>;
   pulse(): Promise<void>;
+  copyReport(options: { report: string }): Promise<void>;
 }
 
 /**
