@@ -69,6 +69,41 @@ describe("MediaRecorder recording chunk spool", () => {
     expect(writer.write).toHaveBeenCalledTimes(2);
   });
 
+  it("does not reorder chunks when OPFS write fails in the middle of a recording", async () => {
+    const persisted: Blob[] = [];
+    let writes = 0;
+    const getDirectory = vi.fn(async () => ({
+      getFileHandle: async () => ({
+        createWritable: async () => ({
+          write: async (piece: Blob) => {
+            writes++;
+            if (writes > 1) throw new Error("quota reached");
+            persisted.push(piece);
+          },
+          close: async () => undefined,
+        }),
+        getFile: async () => new Blob(persisted),
+      }),
+      removeEntry: async () => undefined,
+    }));
+    vi.stubGlobal("navigator", {storage: {getDirectory}});
+    const indexed = vi.fn();
+    vi.stubGlobal("indexedDB", {open: indexed});
+    const spool = new RecordingChunkSpool("ordered");
+    spool.append(new Blob(["first"]));
+    spool.append(new Blob(["second"]));
+    spool.append(new Blob(["third"]));
+    const data = await spool.finish("video/webm");
+    const result = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsText(data);
+    });
+    expect(result).toBe("firstsecondthird");
+    expect(indexed).not.toHaveBeenCalled();
+  });
+
   it("leaves the temporary file intact when a recording is not confirmed saved", async () => {
     const removeEntry = vi.fn();
     vi.stubGlobal("navigator", { storage: { getDirectory: async () => ({
