@@ -18,7 +18,8 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(StabilizationProbePlugin.class);
         super.onCreate(savedInstanceState);
         configureWebView();
-        UiFreezeMonitor.start(getApplicationContext());
+        UiFreezeMonitor.start(getApplicationContext(),
+            bridge != null ? bridge.getWebView() : null);
     }
 
     @Override public void onResume() {

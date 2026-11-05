@@ -5,6 +5,8 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
 import android.util.Log;
+import android.webkit.WebView;
+import java.lang.ref.WeakReference;
 
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -33,14 +35,25 @@ public final class UiFreezeMonitor {
     private static final AtomicBoolean pendingPulse = new AtomicBoolean();
     private static final AtomicBoolean captured = new AtomicBoolean();
     private static volatile boolean foreground = false;
+    // Bridge callbacks and WebView JavaScript can stall independently.
+    private static volatile WeakReference<WebView> observedWebView = new WeakReference<>(null);
+    private static final AtomicBoolean rendererProbePending = new AtomicBoolean();
+    private static final AtomicLong rendererProbeSentAt = new AtomicLong();
+    private static final AtomicLong rendererRepliedAt = new AtomicLong();
+    private static final AtomicLong monitorEpoch = new AtomicLong();
     private static ScheduledExecutorService worker;
     private static Context context;
 
     private UiFreezeMonitor() {}
 
-    public static synchronized void start(Context applicationContext) {
+    public static synchronized void start(Context applicationContext, WebView webView) {
         stop();
         context = applicationContext.getApplicationContext();
+        observedWebView = new WeakReference<>(webView);
+        rendererProbePending.set(false);
+        rendererProbeSentAt.set(0L);
+        rendererRepliedAt.set(0L);
+        monitorEpoch.incrementAndGet();
         lastHeartbeat.set(SystemClock.uptimeMillis());
         webViewHeartbeat.set(SystemClock.uptimeMillis());
         receivedJsHeartbeat.set(false);
@@ -69,6 +82,9 @@ public final class UiFreezeMonitor {
         webViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
+        rendererProbePending.set(false);
+        rendererProbeSentAt.set(0L);
+        rendererRepliedAt.set(0L);
     }
 
     /** Called only by the running React JS loop. Native UI and JS renderer
@@ -104,6 +120,37 @@ public final class UiFreezeMonitor {
         Log.e("MultiCamUiFreeze", report);
     }
 
+    private static void checkRendererIndependently(long now) {
+        if (observedWebView.get() == null || rendererProbePending.get() ||
+            now - rendererProbeSentAt.get() < 2500L) return;
+        if (!rendererProbePending.compareAndSet(false, true)) return;
+        rendererProbeSentAt.set(now);
+        final long epoch = monitorEpoch.get();
+        MAIN.post(() -> {
+            if (!foreground || epoch != monitorEpoch.get()) {
+                rendererProbePending.set(false);
+                return;
+            }
+            WebView webView = observedWebView.get();
+            if (webView == null) {
+                rendererProbePending.set(false);
+                return;
+            }
+            try {
+                // Static expression bypasses the Capacitor plugin queue.
+                webView.evaluateJavascript("1+1", value -> {
+                    if (epoch == monitorEpoch.get()) {
+                        rendererRepliedAt.set(SystemClock.uptimeMillis());
+                        rendererProbePending.set(false);
+                    }
+                });
+            } catch (RuntimeException error) {
+                rendererProbePending.set(false);
+                Log.w("MultiCamUiFreeze", "Independent renderer probe unavailable", error);
+            }
+        });
+    }
+
     private static void check() {
         if (!foreground) return;
         try {
@@ -119,14 +166,22 @@ public final class UiFreezeMonitor {
             if (blockedFor < ANR_THRESHOLD_MS) {
                 final long webLast = webViewHeartbeat.get();
                 final long webDelay = webLast == 0L ? 0L : now - webLast;
+                if (webDelay >= 4500L) checkRendererIndependently(now);
                 if (webDelay >= WEBVIEW_THRESHOLD_MS &&
                     webViewCaptured.compareAndSet(false, true)) {
+                    boolean independentRendererResponsive =
+                        rendererRepliedAt.get() > 0L &&
+                        now - rendererRepliedAt.get() <= 4500L;
+                    String diagnosis = observedWebView.get() == null
+                        ? "Independent WebView probe was unavailable."
+                        : independentRendererResponsive
+                            ? "Independent WebView JavaScript evaluation responded recently; the Capacitor bridge / plugin callback queue may be blocked."
+                            : "Independent WebView JavaScript probe did not respond recently; investigate event loop, renderer, or compositor.";
                     persistReport("MULTI-CAM POV: " +
-                        (receivedJsHeartbeat.get() ? "WebView JavaScript heartbeat missing for " :
-                         "First WebView JavaScript heartbeat never arrived after ") +
+                        (receivedJsHeartbeat.get() ? "WebView bridge heartbeat missing for " :
+                         "First WebView bridge heartbeat never arrived after ") +
                         webDelay + " ms while Android main thread remains responsive. " +
-                        "Possible stalled startup, WebView renderer, JavaScript loop, or " +
-                        "JS-to-native bridge; this is NOT proof of a specific cause." +
+                        diagnosis + " This report does not identify a confirmed culprit." +
                         actionContext(now) + " Capture logcat for more detail.");
                 }
                 return;
@@ -150,6 +205,9 @@ public final class UiFreezeMonitor {
 
     public static synchronized void stop() {
         foreground = false;
+        monitorEpoch.incrementAndGet();
+        rendererProbePending.set(false);
+        observedWebView.clear();
         if (worker != null) {
             worker.shutdownNow();
             worker = null;
