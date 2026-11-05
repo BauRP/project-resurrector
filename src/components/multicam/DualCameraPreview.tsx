@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { bounded } from "@/lib/async";
+import { openAuxiliaryCamera } from "@/lib/auxiliary-camera-open-guard";
 
 export interface CameraOption {
   deviceId: string;
@@ -107,10 +107,10 @@ export function DualCameraPreview({ primaryStream, onSecondaryStream, recording,
       setSecondStream(null);
     };
     mainTrack.addEventListener("ended", onMainEnded);
-    void bounded(navigator.mediaDevices.getUserMedia({
+    void openAuxiliaryCamera({
       video: { deviceId: { exact: selected }, width: { ideal: 640 }, height: { ideal: 480 }, frameRate: { ideal: 24 } },
       audio: false,
-    }), 7000, "Вторая камера", release).then(next => {
+    }, 7000, "Вторая камера").then(next => {
       if (!active) { release(next); return; }
       let secondTrack: MediaStreamTrack | null = null;
       try { secondTrack = next.getVideoTracks()[0] ?? null; }
