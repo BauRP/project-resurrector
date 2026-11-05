@@ -97,7 +97,7 @@ export class FoldScrollRestorer {
     this.lastContentHeight = port.scrollHeight;
     this.entered = false;
     this.programmaticTop = 0;
-    port.scrollTop = 0;
+    if (Math.abs(port.scrollTop) >= 1) port.scrollTop = 0;
   }
 
   enter(tab: ScrollTab, port: ScrollPort): void {
@@ -112,7 +112,7 @@ export class FoldScrollRestorer {
     if (!Number.isFinite(extent)) return;
     const top = Math.min(extent, this.desired);
     this.programmaticTop = top;
-    port.scrollTop = top;
+    if (Math.abs(port.scrollTop - top) >= 1) port.scrollTop = top;
     // Do not persist a clamped temporary value when the editor still loads.
     if (extent >= this.desired) {
       this.lastStableTop = this.desired;
