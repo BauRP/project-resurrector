@@ -270,7 +270,8 @@ describe("native Camera2 and fold audit persistence contract",()=>{
    expect(service).toContain('public static boolean retryGalleryPublication(Context context)');
    expect(service).toContain('new File(context.getFilesDir(),"native-video").getCanonicalFile()');
    expect(service).toContain('expectedDir.equals(source.getParentFile())');
-   expect(service).toContain('prefs.getLong("captureId",0L)!=captureId');
+   expect(service).toContain('prefs.getLong("captureId",0L)==captureId');
+   expect(service).toContain("savedCommit=STATE_WRITER.submit(() ->");
    expect(capturePlugin).toContain('new Thread(()->');
  });
  it("salvages readable MP4 after MediaRecorder.stop throws without certifying success",()=>{
