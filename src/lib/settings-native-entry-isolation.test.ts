@@ -18,7 +18,9 @@ describe("Settings first-paint transition on slow native WebViews", () => {
   it("keeps all Settings tools and themes, without auto-launching Camera2",()=>{
     for(const required of ["<NativeRecordingPanel previewIntervalMs={850} />",
       "<CameraDiagnostics />","s.set({theme:\"dark\"})","s.set({theme:\"light\"})",
-      "mesh.diagnose()","clearPreviewCache()","cacheBytes()"])expect(settings).toContain(required);
+      "<SettingsNetworkContent />","clearPreviewCache()","cacheBytes()"])expect(settings).toContain(required);
+    expect(settings).toContain('lazy(() => import("./SettingsNetworkContent")');
+    expect(settings).not.toContain('import { mesh } from "@/lib/mesh"');
     expect(settings).toContain('advancedPanel === "native" &&');
     expect(settings).toContain('advancedPanel === "diagnostics" &&');
   });
