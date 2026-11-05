@@ -270,6 +270,11 @@ public final class UiFreezeMonitor {
                         : independentRendererResponsive
                             ? "Independent WebView JavaScript evaluation responded recently; the Capacitor bridge / plugin callback queue may be blocked."
                             : "Independent WebView JavaScript probe did not respond recently; investigate event loop, renderer, or compositor.";
+                    // A JS-frozen WebView cannot render its own error notice.
+                    // Present a native dialog while Android MAIN is responsive.
+                    final Runnable recovery = webViewRecoveryListener.get();
+                    if (recovery != null)
+                        MAIN.post(() -> { if (foreground) recovery.run(); });
                     persistReport("MULTI-CAM POV: " +
                         (rendererUnresponsiveRecorded.get()
                             ? "Android reported WebView RENDERER UNRESPONSIVE. " : "") +
@@ -280,11 +285,6 @@ public final class UiFreezeMonitor {
                         rendererLastEvidence + ". This report does not identify a confirmed culprit." +
                         actionContext(now) + environmentEvidence() +
                         " Capture logcat for more detail.");
-                    // A JS-frozen WebView cannot render its own error notice.
-                    // Present a native dialog while Android MAIN is responsive.
-                    final Runnable recovery = webViewRecoveryListener.get();
-                    if (recovery != null)
-                        MAIN.post(() -> { if (foreground) recovery.run(); });
                 }
                 return;
             }
