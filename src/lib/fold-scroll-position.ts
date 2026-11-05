@@ -3,6 +3,8 @@
  * Camera is always allowed to start at the top and never persists scroll.
  * This intentionally stores only numbers, not media or camera identities.
  */
+import { scheduleAfterPaintTask } from "./after-paint-task";
+
 export type ScrollTab = "camera" | "editor" | "settings";
 export interface ScrollPort {
   scrollTop: number;
@@ -15,18 +17,20 @@ const MAX_SCROLL = 10_000_000;
 // synchronous on Android WebView; never perform them inside a tab click or
 // scroll handler. pagehide flushes pending values for Activity recreation.
 const deferredScroll = new Map<ScrollTab, number>();
-let scrollWriteTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelScrollFlush: (() => void) | null = null;
 function deferFoldScrollTop(tab: ScrollTab, top: number): boolean {
   if (!scrollable(tab) || !validTop(top)) return false;
   deferredScroll.set(tab, top);
-  if (scrollWriteTimer === null) {
-    scrollWriteTimer = setTimeout(flushFoldScrollWrites, 0);
+  if (cancelScrollFlush === null) {
+    // Pending scroll is already readable from the in-memory map.
+    // Avoid writing LevelDB during the incoming tab's first paint.
+    cancelScrollFlush = scheduleAfterPaintTask(flushFoldScrollWrites);
   }
   return true;
 }
 export function flushFoldScrollWrites(): void {
-  if (scrollWriteTimer !== null) clearTimeout(scrollWriteTimer);
-  scrollWriteTimer = null;
+  cancelScrollFlush?.();
+  cancelScrollFlush = null;
   const entries = [...deferredScroll.entries()];
   deferredScroll.clear();
   for (const [tab, top] of entries) saveFoldScrollTop(tab, top);

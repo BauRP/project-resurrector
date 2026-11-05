@@ -1484,9 +1484,12 @@ button:disabled { cursor: not-allowed; opacity: .45; }
 
 
 /* Android settings GPU safe paint: retain glass appearance without blur allocations */
+/* Avoid the universal descendant selector that forced style recalculation
+ * of every Settings control whenever the Android tab or theme changed.
+ * The shared native rules above already cover every actual blurred glass
+ * surface. Keep overlays explicitly guarded without restyling descendants. */
 html[data-active-multicam-tab="settings"][data-multicam-native-webview="true"]
- .app-shell :is(.settings-fold-workspace,.settings-fold-workspace *,
- .privacy-fold-overlay,.settings-confirm-overlay) {
+ .app-shell :is(.settings-fold-workspace, .privacy-fold-overlay, .settings-confirm-overlay) {
  -webkit-backdrop-filter:none !important;
  backdrop-filter:none !important;
 }

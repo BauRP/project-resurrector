@@ -7,11 +7,27 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
   if (signal.aborted || typeof MediaRecorder === "undefined") return null;
   const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
-  const stop = () => { cancelAnimationFrame(raf); video.pause(); if (recorder && recorder.state !== "inactive") { try { recorder.stop(); } catch { /* The encoder may already be closing. */ } } stream?.getTracks().forEach((track) => track.stop()); };
+  let rejectPending: ((error: Error) => void) | null = null;
+  const stop = () => {
+    // MediaRecorder.stop() is not guaranteed to send an onstop event when
+    // Android destroys its codec. Release the waiting editor queue on abort.
+    rejectPending?.(new Error("Proxy cancelled"));
+    rejectPending = null;
+    cancelAnimationFrame(raf);
+    video.pause();
+    if (recorder && recorder.state !== "inactive") {
+      try { recorder.stop(); } catch { /* The encoder may already be closing. */ }
+    }
+    stream?.getTracks().forEach((track) => track.stop());
+  };
   signal.addEventListener("abort", stop, { once: true });
   try {
-    await bounded(new Promise<void>((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
+      let finished = false;
       const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timeout);
         video.removeEventListener("loadeddata", onReady);
         video.removeEventListener("error", onError);
         signal.removeEventListener("abort", onAbort);
@@ -20,13 +36,15 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       const onReady = () => finish();
       const onError = () => finish(new Error("Cannot decode video"));
       const onAbort = () => finish(new Error("Proxy cancelled"));
+      const timeout = setTimeout(() => finish(new Error("Proxy metadata: timeout")), 5000);
       video.addEventListener("loadeddata", onReady, { once: true });
       video.addEventListener("error", onError, { once: true });
       signal.addEventListener("abort", onAbort, { once: true });
       if (signal.aborted) { onAbort(); return; }
-      video.src = source;
-      video.load();
-    }), 5000, "Proxy metadata");
+      try { video.src = source; video.load(); }
+      catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
+    });
+    if (signal.aborted) return null;
     if (Math.min(video.videoWidth, video.videoHeight) <= 480 || signal.aborted) return null;
     const canvas = document.createElement("canvas");
     const scale = 480 / Math.min(video.videoWidth, video.videoHeight);
@@ -38,11 +56,26 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
     const chunks: Blob[] = [];
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
     const done = new Promise<Blob>((resolve, reject) => {
-      if (!recorder) { reject(new Error("Recorder unavailable")); return; }
-      recorder.onstop = () => signal.aborted ? reject(new Error("Proxy cancelled")) : resolve(new Blob(chunks, { type: mime }));
-      recorder.onerror = () => reject(new Error("Proxy encoding failed"));
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        rejectPending = null;
+        reject(error);
+      };
+      const succeed = (blob: Blob) => {
+        if (settled) return;
+        settled = true;
+        rejectPending = null;
+        resolve(blob);
+      };
+      rejectPending = fail;
+      if (!recorder) { fail(new Error("Recorder unavailable")); return; }
+      recorder.onstop = () => signal.aborted
+        ? fail(new Error("Proxy cancelled")) : succeed(new Blob(chunks, { type: mime }));
+      recorder.onerror = () => fail(new Error("Proxy encoding failed"));
       video.onended = () => { if (recorder?.state !== "inactive") recorder?.stop(); };
-      video.onerror = () => reject(new Error("Video decode failed"));
+      video.onerror = () => fail(new Error("Video decode failed"));
     });
     // The encoder can fail before video.play() resolves. Observe its rejection
     // immediately, even when the playback setup never reaches await done.
@@ -60,6 +93,7 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       }
       raf = requestAnimationFrame(draw);
     };
+    if (signal.aborted) throw new Error("Proxy cancelled");
     recorder.start(1000); draw(performance.now()); await bounded(video.play(), 5000, "Proxy playback");
     const duration = Number.isFinite(video.duration) ? video.duration : 60;
     const blob = await bounded(done, Math.min(600000, duration * 1000 + 10000), "Proxy encoding");

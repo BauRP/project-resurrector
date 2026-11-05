@@ -73,3 +73,6 @@ describe("fold-safe editor project persistence",()=>{
   }finally{vi.unstubAllGlobals();}
  });
 });
+
+// Snapshot persistence remains behind at least one renderer frame. This is
+// important even after the editor has unmounted during navigation.

@@ -2,6 +2,8 @@
  * any device/camera permission, file system paths or active recorder.
  * Media stays independently in IndexedDB.
  */
+import { scheduleAfterPaintTask } from "./after-paint-task";
+
 const KEY="multicam-editor-project-v1";
 const MAX_BYTES=220000;
 type AnyRecord=Record<string,unknown>;
@@ -75,11 +77,11 @@ export function sanitizeEditorProject(value:unknown):RecoverableEditorProject {
 // metadata. Keep the exact sanitized snapshot available for an immediate
 // editor remount, and flush on pagehide for Android Activity recreation.
 let pendingProject: RecoverableEditorProject | null = null;
-let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let cancelPendingFlush: (() => void) | null = null;
 let pagehideRegistered = false;
 export function flushQueuedEditorProject(): boolean {
-  if (pendingTimer !== null) clearTimeout(pendingTimer);
-  pendingTimer = null;
+  cancelPendingFlush?.();
+  cancelPendingFlush = null;
   if (!pendingProject) return true;
   const snapshot = pendingProject;
   if (!saveEditorProject(snapshot)) return false;
@@ -88,8 +90,10 @@ export function flushQueuedEditorProject(): boolean {
 }
 export function queueEditorProjectSave<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>}>(project:T): void {
   pendingProject = sanitizeEditorProject(project);
-  if (pendingTimer !== null) clearTimeout(pendingTimer);
-  pendingTimer = setTimeout(flushQueuedEditorProject, 0);
+  cancelPendingFlush?.();
+  // A zero-delay timer runs BEFORE the new tab's first frame on some
+  // WebViews. Keep instant in-memory restoration, but do disk I/O after paint.
+  cancelPendingFlush = scheduleAfterPaintTask(flushQueuedEditorProject);
   if (!pagehideRegistered && typeof window !== "undefined") {
     window.addEventListener("pagehide", flushQueuedEditorProject);
     pagehideRegistered = true;
