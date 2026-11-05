@@ -271,6 +271,8 @@ public final class UiFreezeMonitor {
                             ? "Independent WebView JavaScript evaluation responded recently; the Capacitor bridge / plugin callback queue may be blocked."
                             : "Independent WebView JavaScript probe did not respond recently; investigate event loop, renderer, or compositor.";
                     persistReport("MULTI-CAM POV: " +
+                        (rendererUnresponsiveRecorded.get()
+                            ? "Android reported WebView RENDERER UNRESPONSIVE. " : "") +
                         (receivedJsHeartbeat.get() ? "WebView bridge heartbeat missing for " :
                          "First WebView bridge heartbeat never arrived after ") +
                         webDelay + " ms while Android main thread remains responsive. " +
