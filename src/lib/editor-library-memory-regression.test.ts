@@ -15,7 +15,8 @@ describe("editor library memory and functionality regression", () => {
 
   it("retains every clip, chronological ordering, audio waveform analysis and editing features", () => {
     expect(editor).toContain("for (const id of ids)");
-    expect(editor).toContain("await retry(() => analyse(clip))");
+    expect(editor).toContain("await retry(() => analyse(clip, controller.signal))");
+    expect(editor).toContain("activeLibraryLoad.current?.abort()");
     expect(editor).toContain("results.sort((a, b) => a.createdAt - b.createdAt)");
     expect(editor).toContain("setMedia(results.map(");
     expect(editor).toContain("decodeAudioData(");
