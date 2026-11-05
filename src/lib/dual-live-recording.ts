@@ -330,7 +330,7 @@ export function startDualRecording(
     stop("Второй кодировщик не удалось запустить");
     // A start() that throws without firing onstop must not block forever.
     for (let i=0;i<recorders.length;i++) if (recorders[i]!.state === "inactive" && starts[i] === null)
-      settle(i, null);
+      settle(i, false);
   }
   return { stop: (reason?: string) => { if (!completed) stop(reason); }, done };
 }
