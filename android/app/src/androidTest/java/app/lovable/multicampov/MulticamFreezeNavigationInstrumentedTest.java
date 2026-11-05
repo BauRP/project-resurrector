@@ -76,12 +76,14 @@ public class MulticamFreezeNavigationInstrumentedTest {
             assertNotNull(activity);
             Activity running = activity;
             AtomicReference<WebView> web = new AtomicReference<>();
-            running.runOnUiThread(() -> {
-                // Read the view hierarchy, not BridgeActivity's protected
-                // bridge field (which instrumentation cannot legally access).
-                web.set(findWebView(running.getWindow().getDecorView()));
-            });
-            // JavaScript polls until the initial React navigation is visible.
+            // runOnUiThread is asynchronous when invoked from test thread.
+            // The old test read the reference immediately and falsely failed
+            // "WebView is missing" before the runnable had even executed.
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
             WebView view = web.get();
             assertNotNull("Capacitor WebView is missing", view);
             eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
