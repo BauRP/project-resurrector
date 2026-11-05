@@ -57,16 +57,22 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
     recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
     const done = new Promise<Blob>((resolve, reject) => {
       let settled = false;
+      let stopWatchdog: ReturnType<typeof setTimeout> | null = null;
+      const finish = () => {
+        if (stopWatchdog !== null) clearTimeout(stopWatchdog);
+        stopWatchdog = null;
+        rejectPending = null;
+      };
       const fail = (error: Error) => {
         if (settled) return;
         settled = true;
-        rejectPending = null;
+        finish();
         reject(error);
       };
       const succeed = (blob: Blob) => {
         if (settled) return;
         settled = true;
-        rejectPending = null;
+        finish();
         resolve(blob);
       };
       rejectPending = fail;
@@ -74,7 +80,15 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       recorder.onstop = () => signal.aborted
         ? fail(new Error("Proxy cancelled")) : succeed(new Blob(chunks, { type: mime }));
       recorder.onerror = () => fail(new Error("Proxy encoding failed"));
-      video.onended = () => { if (recorder?.state !== "inactive") recorder?.stop(); };
+      video.onended = () => {
+        if (recorder?.state !== "inactive") {
+          try { recorder?.stop(); }
+          catch { fail(new Error("Proxy encoder could not stop")); return; }
+        }
+        // Some Android MediaCodec implementations never emit onstop after
+        // end-of-video. Do not hold all subsequent editor jobs for ten minutes.
+        stopWatchdog ??= setTimeout(() => fail(new Error("Proxy encoder stop timeout")), 2500);
+      };
       video.onerror = () => fail(new Error("Video decode failed"));
     });
     // The encoder can fail before video.play() resolves. Observe its rejection
