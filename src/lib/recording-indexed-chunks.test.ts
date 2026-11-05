@@ -53,6 +53,14 @@ function fakeIndexedDB() {
   });
   return pieces;
 }
+function readText(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsText(blob);
+  });
+}
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe("legacy WebView IndexedDB MediaRecorder chunk spool", () => {
@@ -64,7 +72,7 @@ describe("legacy WebView IndexedDB MediaRecorder chunk spool", () => {
     await spool.append(new Blob(["last"]));
     expect(pieces.size).toBe(3);
     const parts = await spool.materialize();
-    expect(await new Blob(parts).text()).toBe("firstmiddlelast");
+    expect(await readText(new Blob(parts))).toBe("firstmiddlelast");
     await spool.clearAfterSave();
     expect(pieces.size).toBe(0);
   });
@@ -73,8 +81,8 @@ describe("legacy WebView IndexedDB MediaRecorder chunk spool", () => {
     const one = new RecordingIndexedChunks("rear");
     const two = new RecordingIndexedChunks("front");
     await Promise.all([one.append(new Blob(["rear-1"])),two.append(new Blob(["front-1"]))]);
-    expect(await new Blob(await one.materialize()).text()).toBe("rear-1");
-    expect(await new Blob(await two.materialize()).text()).toBe("front-1");
+    expect(await readText(new Blob(await one.materialize()))).toBe("rear-1");
+    expect(await readText(new Blob(await two.materialize()))).toBe("front-1");
   });
   it("falls back to memory safely if IndexedDB is unavailable", async () => {
     vi.stubGlobal("indexedDB", undefined);
