@@ -158,6 +158,40 @@ public final class UiFreezeMonitor {
         lastJsActionAt = SystemClock.uptimeMillis();
     }
 
+    /** System-level context for differentiating Chromium/OOM/GPU stalls.
+     * All system-service queries run on the independent monitor thread.
+     * Never include camera media, clip names, device identifiers or user data.
+     */
+    private static String environmentEvidence() {
+        StringBuilder info = new StringBuilder();
+        try {
+            Context app = context;
+            android.app.ActivityManager manager = app == null ? null :
+                (android.app.ActivityManager) app.getSystemService(Context.ACTIVITY_SERVICE);
+            if (manager != null) {
+                android.app.ActivityManager.MemoryInfo memory =
+                    new android.app.ActivityManager.MemoryInfo();
+                manager.getMemoryInfo(memory);
+                info.append(" Android free RAM MB: ")
+                    .append(memory.availMem / 1048576L)
+                    .append("; low memory: ").append(memory.lowMemory).append('.');
+            }
+            Runtime runtime = Runtime.getRuntime();
+            info.append(" Java heap used/max MB: ")
+                .append((runtime.totalMemory() - runtime.freeMemory()) / 1048576L)
+                .append('/').append(runtime.maxMemory() / 1048576L).append('.');
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                android.content.pm.PackageInfo webView =
+                    android.webkit.WebView.getCurrentWebViewPackage();
+                if (webView != null) info.append(" WebView: ")
+                    .append(webView.versionName == null ? "unknown" : webView.versionName).append('.');
+            }
+        } catch (RuntimeException error) {
+            Log.w("MultiCamUiFreeze", "Environment evidence unavailable", error);
+        }
+        return info.toString();
+    }
+
     private static String actionContext(long now) {
         return " Last action: " + lastJsAction +
             "; action age: " + Math.max(0L, now - lastJsActionAt) + " ms.";
@@ -242,7 +276,8 @@ public final class UiFreezeMonitor {
                         webDelay + " ms while Android main thread remains responsive. " +
                         diagnosis + " Independent renderer evidence: " +
                         rendererLastEvidence + ". This report does not identify a confirmed culprit." +
-                        actionContext(now) + " Capture logcat for more detail.");
+                        actionContext(now) + environmentEvidence() +
+                        " Capture logcat for more detail.");
                     // A JS-frozen WebView cannot render its own error notice.
                     // Present a native dialog while Android MAIN is responsive.
                     final Runnable recovery = webViewRecoveryListener.get();
@@ -256,7 +291,7 @@ public final class UiFreezeMonitor {
             StringBuilder details = new StringBuilder();
             details.append("MULTI-CAM POV: Android UI thread blocked for ")
                 .append(blockedFor).append(" ms")
-                .append(actionContext(now));
+                .append(actionContext(now)).append(environmentEvidence());
             int limit = Math.min(stack.length, 28);
             for (int i = 0; i < limit; i++) {
                 details.append("\n").append(stack[i].toString());
