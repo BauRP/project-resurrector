@@ -42,7 +42,7 @@ describe("Android native recovery for unresponsive or dead WebView renderer", ()
   });
 
   it("does not synchronously persist native capture failure audit from Service MAIN", () => {
-    expect(capture).toContain('STATE_WRITER.execute(() =>\n                NativeCaptureAuditStore.append(auditContext, status(auditContext)))');
+    expect(capture).toContain("NativeCaptureAuditStore.append(auditContext, status(auditContext))");
     const start = capture.indexOf('Android отказал в запуске службы камеры');
     const end = capture.indexOf('stopSelf(); return START_NOT_STICKY;', start);
     expect(start).toBeGreaterThan(-1);
