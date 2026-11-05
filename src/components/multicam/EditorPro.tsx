@@ -195,16 +195,24 @@ async function analyse(clip: StoredClip): Promise<Media> {
     }), 6000, "Video metadata");
   } catch (error) { URL.revokeObjectURL(url); throw error; }
   finally { v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null; v.removeAttribute("src"); v.load(); }
-  let peaks: number[] = [];
-  try {
-    const ctx = new OfflineAudioContext(1, 44100, 44100);
-    const buf = await bounded(ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")), 6000, "Audio analysis");
-    // Same waveform resolution and amplitude values, but no multi-second
-    // synchronous scan on the WebView event loop.
-    peaks = await extractWaveformPeaks(buf.getChannelData(0), duration);
-  } catch { peaks = []; }
+  // Library discovery needs metadata, not a full audio decode of every
+  // original video. A 2 GiB MP4 previously allocated its entire ArrayBuffer
+  // merely because the Editor tab was opened, even before touching the audio
+  // or transition panels. Waveforms are still generated for timeline media.
+  const peaks: number[] = [];
   analysisCache.set(clip.id, { duration, peaks });
   return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks };
+}
+
+async function analyseWaveformForTimeline(clip: StoredClip, duration: number): Promise<number[]> {
+  try {
+    const ctx = new OfflineAudioContext(1, 44100, 44100);
+    const buf = await bounded(
+      ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")),
+      6000, "Audio analysis",
+    );
+    return await extractWaveformPeaks(buf.getChannelData(0), duration);
+  } catch { return []; }
 }
 
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
@@ -252,6 +260,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const timelineVideoKey = useMemo(() => JSON.stringify(
     [...new Set(items.filter(i => i.kind === "video").map(i => i.mediaId))].sort()
   ), [items]);
+  const timelineWaveformKey = useMemo(() => JSON.stringify(
+    [...new Set(items.map(i => i.mediaId))].sort()
+  ), [items]);
+  const waveformAttempted = useRef(new Set<string>());
   const loadedProxyIds = useRef(new Set<string>());
   const loadGeneration = useRef(0);
   const load = useCallback(async () => {
@@ -293,6 +305,36 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     }
   }, []);
   useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => { loadGeneration.current++; window.removeEventListener("multicam-clips-changed", on); }; }, [load]);
+  // Analyse waveform ONLY for clips actually used by the timeline. This
+  // leaves library browsing and opening Transition/Audio panels responsive.
+  // No track, button or audio tool is disabled; timeline waves remain.
+  useEffect(() => {
+    let live = true;
+    let db: IDBDatabase | null = null;
+    const required = new Set(JSON.parse(timelineWaveformKey) as string[]);
+    void (async () => {
+      for (const m of media) {
+        if (!live) break;
+        if (!required.has(m.id) || waveformAttempted.current.has(m.id)) continue;
+        if (m.peaks.length > 0) { waveformAttempted.current.add(m.id); continue; }
+        waveformAttempted.current.add(m.id);
+        try {
+          db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
+          const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
+          if (!original || !live) { waveformAttempted.current.delete(m.id); continue; }
+          const peaks = await analyseWaveformForTimeline(original, m.duration);
+          if (!live) { waveformAttempted.current.delete(m.id); break; }
+          analysisCache.set(m.id, { duration: m.duration, peaks });
+          setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
+        } catch {
+          if (!live) waveformAttempted.current.delete(m.id);
+          // A failed waveform never hides the original video or audio.
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      }
+    })().finally(() => { db?.close(); });
+    return () => { live = false; };
+  }, [media, timelineWaveformKey]);
   useEffect(() => {
     const abort = new AbortController();
     let live = true;
