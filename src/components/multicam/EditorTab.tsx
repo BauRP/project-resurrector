@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
 import { downloadProjectZip, downloadText } from "@/lib/downloads";
-import { useMulticamStore } from "@/lib/multicam-store";
+import { useMulticamStore, useProjectStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 
@@ -29,16 +29,16 @@ export function EditorTab() {
 }
 
 function ChromaPanel() {
-  const s = useMulticamStore(); const { t } = useT();
+  const s = useProjectStore(); const { t } = useT();
   return <div className="grid gap-3"><label className="flex items-center justify-between gap-3 py-1.5"><span>{t("chroma")} <input type="color" value={s.chromaColor} onChange={(e) => s.set({ chromaColor: e.target.value })} /></span><Switch checked={s.chromaEnabled} onCheckedChange={(chromaEnabled) => s.set({ chromaEnabled })} /></label><MiniSlider label={<span className="flex items-center gap-1">{t("tolerance")}<HelpDot id="chromaTol" /></span>} value={s.chromaTolerance} min={0} max={100} onChange={(chromaTolerance) => s.set({ chromaTolerance })} /><MiniSlider label={<span className="flex items-center gap-1">{t("smoothness")}<HelpDot id="chromaSmooth" /></span>} value={s.chromaSmoothness} min={0} max={100} onChange={(chromaSmoothness) => s.set({ chromaSmoothness })} /></div>;
 }
 function AudioPanel() {
-  const s = useMulticamStore(); const { t } = useT();
+  const s = useProjectStore(); const { t } = useT();
   return <div><div className="w-full overflow-hidden rounded-md bg-timeline"><div className="grid w-full grid-cols-10 gap-0 px-0.5 py-2">{s.eq.map((value, i) => <label key={frequencies[i]} className="flex min-w-0 flex-col items-center gap-2"><span className="text-[8px] leading-none text-muted-foreground">{frequencies[i]}</span><input aria-label={`${frequencies[i]} Hz EQ`} type="range" min={-12} max={12} value={value} onChange={(e) => s.setEqBand(i, Number(e.target.value))} className="eq-fader" /><span className="font-mono text-[8px] leading-none">{value}</span></label>)}</div></div><div className="mt-2 grid gap-1 divide-y divide-border/50"><label className="flex items-center justify-between gap-3 py-1.5"><span className="flex items-center gap-1">{t("deEsser")}<HelpDot id="deEsser" /></span> <Switch checked={s.deEsser} onCheckedChange={(deEsser) => s.set({ deEsser })} /></label><label className="flex items-center justify-between gap-3 py-1.5"><span className="flex items-center gap-1">{t("autoGain")}<HelpDot id="autoGain" /></span> <Switch checked={s.autoGain} onCheckedChange={(autoGain) => s.set({ autoGain })} /></label><MiniSlider label={t("noise")} value={s.noiseReduction} min={0} max={100} onChange={(noiseReduction) => s.set({ noiseReduction })} /></div></div>;
 }
 
 function ExportDrawer() {
-  const s = useMulticamStore(); const { t } = useT(); const cfg = s.exportConfig;
+  const s = useProjectStore(); const { t } = useT(); const cfg = s.exportConfig;
   const change = (patch: Partial<typeof cfg>) => s.set({ exportConfig: { ...cfg, ...patch } });
   const [renderError,setRenderError] = useState("");
   const [busy,setBusy] = useState(false);

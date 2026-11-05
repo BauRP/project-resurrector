@@ -4,6 +4,26 @@ import {sanitizeEditorProject,saveEditorProject,loadEditorProject,queueEditorPro
 const item={id:"one",mediaId:"stored-video",kind:"video",track:1,start:0,in:0,out:10,
  speed:1,reverse:false,scale:100,posX:0,opacity:100,look:"Без цвета"};
 describe("fold-safe editor project persistence",()=>{
+ it("restores Lovable track counts even if the extra lanes are empty",()=>{
+   const p=sanitizeEditorProject({items:[item],overlays:[],transitions:[],
+     hidden:{},muted:{},vTracks:4,aTracks:3});
+   expect(p.vTracks).toBe(4);
+   expect(p.aTracks).toBe(3);
+   expect(sanitizeEditorProject({items:[{...item,track:5}],vTracks:1}).vTracks).toBe(5);
+ });
+ it("loads site legacy projects without overwriting original media or metadata",()=>{
+   const map=new Map<string,string>();
+   map.set("multicam-pov-project-layout",JSON.stringify({items:[item],overlays:[],
+     transitions:[],hidden:{},muted:{},vTracks:3,aTracks:2}));
+   vi.stubGlobal("localStorage",{getItem:(key:string)=>map.get(key)??null,setItem:(key:string,v:string)=>map.set(key,v)});
+   try {
+     const p=loadEditorProject();
+     expect(p.items).toHaveLength(1);
+     expect(p.vTracks).toBe(3);
+     expect(p.aTracks).toBe(2);
+     expect(map.get("multicam-pov-project-layout")).toBeTruthy();
+   } finally {vi.unstubAllGlobals();}
+ });
  it("preserves clip layout without storing media blobs or recorder state",()=>{
   const state=sanitizeEditorProject({items:[item],overlays:[],transitions:[],
     hidden:{v1:true},muted:{a1:false},recording:true,cameraId:"private"});

@@ -268,3 +268,14 @@ const cameraEqual = (a: MulticamState, b: MulticamState) => Object.keys(a).every
 const settingsEqual = (a: MulticamState, b: MulticamState) => settingsKeys.every((k) => Object.is(a[k], b[k]));
 export const useCameraStore = () => useDomainStore(cameraEqual);
 export const useSettingsStore = () => useDomainStore(settingsEqual);
+
+/** Narrow project-only subscriptions imported from Lovable's original work.
+ * Camera preview FPS, ISO and thermal readings must not force export panels
+ * to re-render; keep actions stable and preserve all state fields. */
+const projectExcluded = new Set(["capture", "facing", "capMatrix", "zoom", "lensDeviceId",
+  "wbKelvin", "audioGain", "audioCeiling", "audioUi", "aiEnabled", "eyeAF",
+  "focusModeAI", "meterMode", "falseColor", "tint", "tuneContrast",
+  "tuneShadows", "tuneSaturation", "shoot", "diagnostics", "cacheMB"]);
+const projectEqual = (a: MulticamState, b: MulticamState) => Object.keys(a).every(
+  key => projectExcluded.has(key) || Object.is(a[key as keyof MulticamState], b[key as keyof MulticamState]));
+export const useProjectStore = () => useDomainStore(projectEqual);
