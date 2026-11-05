@@ -33,6 +33,9 @@ describe("Android freezes leave evidence without disabling features", () => {
     expect(settings).toContain('traceUiAction("settings: theme dark")');
     expect(settings).toContain('traceUiAction("settings: cache measurement")');
     expect(plugin).toContain('@PluginMethod public void trace(PluginCall call)');
-    expect(trace).toContain('registerPlugin<TraceBridge>("UiFreeze")');
+    const shared = readFileSync("src/lib/ui-freeze-bridge.ts","utf8");
+    expect(trace).toContain('import { uiFreeze } from "./ui-freeze-bridge"');
+    expect(notice).toContain('import { uiFreeze } from "@/lib/ui-freeze-bridge"');
+    expect(shared).toContain('registerPlugin<UiFreezeBridge>("UiFreeze")');
   });
 });
