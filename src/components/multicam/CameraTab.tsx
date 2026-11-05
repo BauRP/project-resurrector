@@ -68,6 +68,20 @@ function applyManual(stream: MediaStream | null, c: Record<string, unknown>) {
   void cameraController.apply(stream, adv);
 }
 
+/** Keep the 0.1 s recording clock precise without rendering the full
+ * GPU-heavy camera preview tree ten times every second. */
+export function CameraRecordingTimecode({ recording, startedAt }: { recording: boolean; startedAt: number | null }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!recording || !startedAt) { setElapsed(0); return; }
+    const update = () => setElapsed((Date.now() - startedAt) / 1000);
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [recording, startedAt]);
+  return <span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span>;
+}
+
 export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void) | undefined } = {}) {
   const s = useCameraStore();
   // The unmount effect is registered once, but its phase must be the LAST
@@ -85,7 +99,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
   const [previewRequested, setPreviewRequested] = useState(false);
   const [nativeOwnsCamera,setNativeOwnsCamera] = useState(false);
-  const [elapsed, setElapsed] = useState(0);
+
   const facingMode = s.facing === "front" ? "user" : "environment";
   // UI selection and actual camera ownership are intentionally separate.
   // Never re-acquire getUserMedia while MediaRecorder owns a live capture.
@@ -435,11 +449,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     };
   }, [s.set]);
 
-  useEffect(() => {
-    if (!s.recording || !s.recordingStartedAt) { setElapsed(0); return; }
-    const started = s.recordingStartedAt; const update = () => setElapsed((Date.now() - started) / 1000);
-    update(); const timer = window.setInterval(update, 100); return () => window.clearInterval(timer);
-  }, [s.recording, s.recordingStartedAt]);
+
 
   // Manual parameters from the HUD are pushed to the hardware track.
   useEffect(() => { const [n, d] = s.shutter.split("/").map(Number); if (n && d) applyManual(stream, { exposureMode: "manual", exposureTime: Math.round((n / d) * 10000) }); }, [s.shutter, stream]);
@@ -1018,7 +1028,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
           <Button size="icon" variant={sheet ? "default" : "secondary"} aria-label="Параметры" aria-expanded={sheet} onClick={() => { setHud(null); setSheet(!sheet); }}><SlidersHorizontal /></Button>
         </>}</div>
         <div className="flex flex-col items-center gap-2">{!clean && <>
-          <div className="flex flex-col items-center pt-1"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span></div>
+          <div className="flex flex-col items-center pt-1"><CameraRecordingTimecode recording={s.recording} startedAt={s.recordingStartedAt} /></div>
           <div className="segmented-mini" role="radiogroup" aria-label="Фото или видео">{(["photo", "video"] as const).map((k) => <button key={k} role="radio" aria-checked={s.captureKind === k} disabled={s.recording || intervalOn} onClick={() => s.set({ captureKind: k })} className={s.captureKind === k ? "active" : ""}>{k === "photo" ? "ФОТО" : "ВИДЕО"}</button>)}</div>
         </>}
           <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || photoProcessing || ["starting", "stopping", "saving"].includes(s.recordingPhase)} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
