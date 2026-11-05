@@ -104,8 +104,11 @@ describe("camera ownership and serialized settings", () => {
       .mockResolvedValueOnce(next.stream);
     vi.stubGlobal("navigator", { mediaDevices: { getUserMedia } });
     const opening = cameraController.acquire(Symbol("first"), { video: true });
+    // Register the rejection assertion before advancing fake timers so
+    // Vitest never sees an unhandled timeout rejection.
+    const timeoutAssertion = expect(opening).rejects.toThrow("Camera: timeout");
     await vi.advanceTimersByTimeAsync(6010);
-    await expect(opening).rejects.toThrow("Camera: timeout");
+    await timeoutAssertion;
     await expect(cameraController.acquire(Symbol("retry"), { video: true }))
       .rejects.toBeInstanceOf(CameraBusyError);
     expect(getUserMedia).toHaveBeenCalledTimes(1);
