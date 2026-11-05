@@ -86,13 +86,27 @@ class CameraController {
   // A timed-out applyConstraints can still complete inside an OEM driver.
   // Never submit a competing newer setting to that same uncertain track.
   private timedOutTracks = new WeakSet<MediaStreamTrack>();
+  // getUserMedia cannot be cancelled by a JS timeout. Keep the underlying
+  // request tracked until the browser actually settles it. Starting another
+  // request while the old one is still inside the camera driver can deadlock
+  // some Android WebView implementations.
+  private pendingOpen: Promise<MediaStream> | null = null;
   async acquire(owner: symbol, constraints: MediaStreamConstraints, options: { preempt?: boolean } = {}): Promise<MediaStream> {
+    // A previous browser request may still be opening even after its six
+    // second timeout. Do not race it with another hardware open.
+    if (this.pendingOpen) throw new CameraBusyError();
     // User acquisition may supersede a diagnostic, but never the reverse.
     if (options.preempt === false && this.owner !== null && this.owner !== owner) throw new CameraBusyError();
     this.release(); this.owner = owner; const generation = this.generation;
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
-      const stream = await bounded(navigator.mediaDevices.getUserMedia(constraints), 6000, "Camera",
+      const pending = Promise.resolve().then(() => navigator.mediaDevices.getUserMedia(constraints));
+      this.pendingOpen = pending;
+      // Clear the guard only when the *actual* driver operation settles,
+      // whether it resolves, rejects, or outlives the timeout.
+      void pending.then(() => { if (this.pendingOpen === pending) this.pendingOpen = null; },
+        () => { if (this.pendingOpen === pending) this.pendingOpen = null; });
+      const stream = await bounded(pending, 6000, "Camera",
         (late) => late.getTracks().forEach(t => t.stop()));
       if (generation !== this.generation || owner !== this.owner) {
         stream.getTracks().forEach(t => t.stop());
