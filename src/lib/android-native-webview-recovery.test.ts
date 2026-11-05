@@ -9,6 +9,8 @@ describe("Android native recovery for unresponsive or dead WebView renderer", ()
   it("handles terminated Chromium renderer using the Capacitor-aware WebViewClient", () => {
     expect(activity).toContain("new BridgeWebViewClient(bridge)");
     expect(activity).toContain("onRenderProcessGone(WebView view, RenderProcessGoneDetail detail)");
+    expect(activity).toContain("if (Build.VERSION.SDK_INT >= 26) webView.setWebViewClient");
+    expect(activity).toContain("UiFreezeMonitor.start(getApplicationContext(),");
     expect(activity).toContain("((ViewGroup) parent).removeView(view)");
     expect(activity).toContain("view.destroy()");
     expect(activity).toContain("return true;");
