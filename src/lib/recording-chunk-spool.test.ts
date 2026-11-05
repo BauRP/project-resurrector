@@ -133,6 +133,19 @@ describe("MediaRecorder recording chunk spool", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 
+  it("never duplicates an emergency-memory fragment when the recorder stop callback throws", async () => {
+    vi.stubGlobal("navigator", {storage: undefined});
+    vi.stubGlobal("indexedDB", undefined);
+    const spool = new RecordingChunkSpool("on-pressure-throws");
+    spool.onMemoryPressure(() => { throw new Error("OEM recorder already closed"); });
+    const big = new Blob(["original"]);
+    Object.defineProperty(big, "size", {value: MAX_UNSPOOLED_BYTES});
+    spool.append(big);
+    const result = await spool.finish("video/webm");
+    // The mock size forces the pressure threshold; only ONE piece survives.
+    expect(result.size).toBe(8);
+  });
+
   it("rejects indefinite OPFS writes instead of leaving the capture stuck in saving", async () => {
     vi.useFakeTimers();
     vi.stubGlobal("navigator", {storage: {getDirectory: async () => ({
