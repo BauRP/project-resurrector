@@ -474,6 +474,10 @@ public class NativeCaptureService extends Service {
 
     private HandlerThread workerThread;
     private Handler worker;
+    // Opening deadline must run outside the Camera2 worker: OEM calls can
+    // block its Looper, preventing postDelayed on that same queue from firing.
+    private HandlerThread openDeadlineThread;
+    private Handler openDeadlineHandler;
     // JPEG conversion is optional and expensive. Never run it on the Camera2
     // control/capture-callback thread that also owns MP4 recording state.
     private HandlerThread previewThread;
@@ -596,15 +600,15 @@ public class NativeCaptureService extends Service {
         }
     }
     private File media;
-    private boolean encoderStarted;
+    private volatile boolean encoderStarted;
     private boolean encoderPaused;
-    private boolean stopRequested;
+    private volatile boolean stopRequested;
     private boolean wantAudio;
     private boolean interruptedByCamera;
     // Preview-only Camera2 sessions cannot become MP4 capture attempts.
     private boolean recordingAttemptStarted;
     private volatile int generation = 0;
-    private Runnable openingTimeout;
+    private volatile Runnable openingTimeout;
     private Runnable storageMonitor;
     private CaptureRequest.Builder liveRequest;
     private CameraCaptureSession.CaptureCallback liveCallback;
@@ -1464,6 +1468,9 @@ public class NativeCaptureService extends Service {
         workerThread = new HandlerThread("Native-Camera2-Record");
         workerThread.start();
         worker = new Handler(workerThread.getLooper());
+        openDeadlineThread = new HandlerThread("Native-Camera2-OpenDeadline");
+        openDeadlineThread.start();
+        openDeadlineHandler = new Handler(openDeadlineThread.getLooper());
         previewThread = new HandlerThread("Native-Camera2-JPEG-Preview");
         previewThread.start();
         previewHandler = new Handler(previewThread.getLooper());
@@ -1658,9 +1665,9 @@ public class NativeCaptureService extends Service {
         // foreground session instead of leaving the camera busy indefinitely.
         openingTimeout = () -> {
             if (session == generation && !encoderStarted && !stopRequested)
-                fail(new IllegalStateException("Истекло время открытия Camera2"));
+                onOpenDeadline(session, "Истекло время открытия Camera2");
         };
-        worker.postDelayed(openingTimeout, 12000L);
+        openDeadlineHandler.postDelayed(openingTimeout, 12000L);
         worker.post(() -> {
             if (handoff) releaseCamera();
             if (session == generation && !stopRequested) open(session, id, width, height, fps);
@@ -1691,9 +1698,9 @@ public class NativeCaptureService extends Service {
         publish("starting","Открываю нативный предпросмотр");
         openingTimeout=()->{
             if(token==generation && !"previewing".equals(state) && !stopRequested)
-                fail(new IllegalStateException("Тайм-аут предпросмотра Camera2"));
+                onOpenDeadline(token, "Тайм-аут предпросмотра Camera2");
         };
-        worker.postDelayed(openingTimeout,12000);
+        openDeadlineHandler.postDelayed(openingTimeout,12000);
         worker.post(()->{
             try {
                 CameraManager manager=(CameraManager)getSystemService(Context.CAMERA_SERVICE);
@@ -1831,7 +1838,7 @@ public class NativeCaptureService extends Service {
                         capture.setRepeatingRequest(request.build(),liveCallback,worker);
                         directPreviewActive=direct;
                         if(openingTimeout!=null){
-                            worker.removeCallbacks(openingTimeout);openingTimeout=null;
+                            openDeadlineHandler.removeCallbacks(openingTimeout);openingTimeout=null;
                         }
                         publish("previewing",direct?
                             "Прямой Camera2 TextureView предпросмотр активен; FPS на устройстве не измерен":
@@ -2157,7 +2164,7 @@ public class NativeCaptureService extends Service {
                                         liveCallback=captureFeedback();
                                         capture.setRepeatingRequest(request.build(),liveCallback,worker);
                                         if (openingTimeout != null) {
-                                            worker.removeCallbacks(openingTimeout);
+                                            openDeadlineHandler.removeCallbacks(openingTimeout);
                                             openingTimeout = null;
                                         }
                                         encoder.start();
@@ -2214,7 +2221,7 @@ public class NativeCaptureService extends Service {
                                                     try {
                                                         capture.setRepeatingRequest(only.build(),liveCallback,worker);
                                                         if(openingTimeout!=null){
-                                                            worker.removeCallbacks(openingTimeout);
+                                                            openDeadlineHandler.removeCallbacks(openingTimeout);
                                                             openingTimeout=null;
                                                         }
                                                         encoder.start();
@@ -2256,6 +2263,18 @@ public class NativeCaptureService extends Service {
                 }
             }, worker);
         } catch (Exception error) { fail(error); }
+    }
+    /** The dedicated deadline thread may signal an OEM-blocked Camera2 worker,
+     * but must NEVER close CameraDevice/MediaRecorder itself. Cleanup stays on
+     * the camera worker to prevent concurrent MediaRecorder.stop and close.
+     * If the driver is permanently stuck, publish a truthful error without
+     * blocking Android's main/UI thread or promising an impossible cancel.
+     */
+    private void onOpenDeadline(int session, String reason) {
+        if (session != generation || stopRequested || finalizationStarted.get()) return;
+        stopRequested = true;
+        publish("error", reason);
+        if (worker != null) worker.post(this::finish);
     }
     private void fail(Exception error) {
         if (stopRequested) return;
@@ -2712,7 +2731,7 @@ public class NativeCaptureService extends Service {
             // Even if Camera2 opened, preview has no recorder to finalize.
             // Preserve a real error, but never overwrite an earlier MP4 audit.
             generation++;
-            if(openingTimeout!=null){worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+            if(openingTimeout!=null){openDeadlineHandler.removeCallbacks(openingTimeout);openingTimeout=null;}
             releaseCamera();
             if(!"error".equals(state))
                 publish("idle","Предпросмотр остановлен, MP4 не создавался");
@@ -2722,7 +2741,7 @@ public class NativeCaptureService extends Service {
         }
         if ("previewing".equals(state) && encoder == null) {
             generation++;
-            if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+            if (openingTimeout != null) {openDeadlineHandler.removeCallbacks(openingTimeout);openingTimeout=null;}
             releaseCamera();
             publish("idle", "Предпросмотр остановлен, MP4 не создавался");
             stopForeground(true);
@@ -2731,7 +2750,7 @@ public class NativeCaptureService extends Service {
         }
         if (encoder == null && camera == null) {
             generation++;
-            if (openingTimeout != null) {worker.removeCallbacks(openingTimeout);openingTimeout=null;}
+            if (openingTimeout != null) {openDeadlineHandler.removeCallbacks(openingTimeout);openingTimeout=null;}
             releaseCamera();
             if ("starting".equals(state) || "previewing".equals(state))
                 publish("idle","Открытие камеры остановлено без MP4");
@@ -2746,7 +2765,7 @@ public class NativeCaptureService extends Service {
         }
         generation++;
         if (openingTimeout != null) {
-            worker.removeCallbacks(openingTimeout);
+            openDeadlineHandler.removeCallbacks(openingTimeout);
             openingTimeout = null;
         }
         boolean previouslyRecording = encoderStarted;
@@ -3185,6 +3204,7 @@ public class NativeCaptureService extends Service {
         }
         // quitSafely drains already queued immediate work (including finish).
         if (workerThread != null) workerThread.quitSafely();
+        if (openDeadlineThread != null) openDeadlineThread.quitSafely();
         if (previewThread != null) previewThread.quitSafely();
         super.onDestroy();
     }
