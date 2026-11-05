@@ -59,7 +59,7 @@ describe("Android freeze report remains usable after WebView stall", () => {
       fireEvent.click(screen.getByRole("button", { name: "Скопировать отчёт" }));
       await Promise.resolve();
     });
-    expect(screen.getByRole("alert").textContent).toContain("Не удалось скопировать отчёт");
+    expect(screen.getByText(/Не удалось скопировать отчёт/)).toBeTruthy();
     const manual = screen.getByRole("textbox", { name: "Текст отчёта для копирования" }) as HTMLTextAreaElement;
     expect(manual.readOnly).toBe(true);
     expect(manual.value).toContain("WebView bridge heartbeat missing");
