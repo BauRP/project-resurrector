@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, render, screen } from "@testing-library/react";
+import { createElement } from "react";
 import { CameraRecordingTimecode } from "@/components/multicam/CameraTab";
 import { readFileSync } from "node:fs";
 
@@ -9,7 +10,7 @@ describe("10 Hz camera recording clock does not repaint the whole WebView camera
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-11-05T00:00:00.000Z"));
     const start = Date.now();
-    const ui = render(<CameraRecordingTimecode recording={true} startedAt={start} />);
+    const ui = render(createElement(CameraRecordingTimecode, { recording: true, startedAt: start }));
     expect(screen.getByText("00:00.0")).toBeTruthy();
     act(() => { vi.advanceTimersByTime(1100); });
     expect(screen.getByText("00:01.1")).toBeTruthy();
