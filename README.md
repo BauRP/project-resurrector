@@ -206,3 +206,13 @@ cd <repository-name>
 npm i
 npm run dev
 ```
+
+
+## Повторяемая сборка
+Официальный менеджер пакетов для этого репозитория: **Bun 1.4.4**.
+Установите Bun 1.4.4, затем используйте `bun install --frozen-lockfile`.
+Для проверки: `bun run test`, `bunx tsc --noEmit`, `bun run build:android`,
+`bunx cap sync android`, затем Gradle. Не смешивайте `npm install`
+и `bun install` в одной рабочей копии: `bun.lock` фиксирует зависимости CI.
+Файлы `android/capacitor-cordova-android-plugins` генерируются
+командой `bunx cap sync android`; они не обязаны лежать в исходном ZIP.
