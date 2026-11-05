@@ -126,7 +126,9 @@ function QrFlow() {
   const [error, setError] = useState(""); const [paste, setPaste] = useState("");
 
   const operation = useRef(0); const alive = useRef(true); const busy = useRef(false);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; operation.current++; }; }, []);
+  useEffect(() => { alive.current = true; return () => {
+    alive.current = false; operation.current++; mesh.cancelPairing();
+  }; }, []);
   const current = (id: number) => alive.current && id === operation.current;
   const show = async (c: string, a: string[], id: number) => {
     const image = await retry(() => bounded(QRCode.toDataURL(c, { errorCorrectionLevel: "L", margin: 1, width: 480 }), 4000, "QR generation"));
@@ -138,7 +140,7 @@ function QrFlow() {
     const session = s.role === "host" ? s.sessionCode : `POV-${Math.floor(100 + Math.random() * 900)}`;
     try { const r = await bounded(mesh.createOffer(session), 16000, "Connection offer"); if (!current(id)) return; s.set({ role: "host", sessionCode: session }); await show(r.code, r.addresses, id); }
     catch { if (current(id)) { setError(t("scanError")); setPhase("idle"); } }
-    finally { busy.current = false; }
+    finally { if (current(id)) busy.current = false; }
   };
   const handleCode = async (text: string) => {
     if (busy.current) return; busy.current = true; const id = ++operation.current; setError(""); setPhase("busy");
@@ -146,12 +148,12 @@ function QrFlow() {
       if (host) { await bounded(mesh.acceptAnswer(text), 12000, "Connection answer"); if (current(id)) setPhase("done"); }
       else { const r = await bounded(mesh.answerOffer(text), 16000, "Connection answer"); if (!current(id)) return; s.set({ role: "slave", sessionCode: r.session }); await show(r.code, r.addresses, id); }
     } catch { if (current(id)) { setError(t("scanError")); setPhase(host && qr ? "show" : "idle"); } }
-    finally { busy.current = false; }
+    finally { if (current(id)) busy.current = false; }
   };
   useEffect(() => { if (!host && phase === "show" && peers.length) setPhase("done"); }, [host, phase, peers.length]);
 
   return <div>
-    <RoleSwitch host={host} onChange={(h) => { operation.current++; busy.current = false; setHost(h); setPhase("idle"); setQr(null); }} />
+    <RoleSwitch host={host} onChange={(h) => { operation.current++; mesh.cancelPairing(); busy.current = false; setHost(h); setPhase("idle"); setQr(null); }} />
     {phase === "busy" && <p className="py-10 text-center text-sm text-muted-foreground">{t("generating")}</p>}
     {phase === "idle" && (host ? <Button className="w-full" size="lg" onClick={() => void makeOffer()}><QrCode />{t("createSession")}</Button>
       : <Scanner label={t("scanHostQr")} onCode={(c) => void handleCode(c)} />)}

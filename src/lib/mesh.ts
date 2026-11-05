@@ -330,6 +330,19 @@ export class Mesh {
     };
     this.start(); void this.sendTelemetry();
   }
+  /** Discard only unfinished QR handshakes, never connected cameras. */
+  cancelPairing() {
+    this.generation++;
+    this.answerEpoch++;
+    if (this.pending) {
+      const pc = this.pending; this.pending = null;
+      pc.close(); this.connections.delete(pc);
+    }
+    if (this.pendingAnswer) {
+      const pc = this.pendingAnswer; this.pendingAnswer = null;
+      pc.close(); this.connections.delete(pc);
+    }
+  }
   leave() {
     this.generation++;
     this.answerEpoch++;
