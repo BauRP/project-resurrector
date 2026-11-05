@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { RecordingIndexedChunks } from "./recording-indexed-chunks";
+import { RecordingChunkSpool } from "./recording-chunk-spool";
 
 type Req = { result?: unknown; error?: Error | null; onupgradeneeded?: () => void; onsuccess?: () => void; onerror?: () => void; onblocked?: () => void };
 type Tx = {
@@ -83,6 +84,20 @@ describe("legacy WebView IndexedDB MediaRecorder chunk spool", () => {
     await Promise.all([one.append(new Blob(["rear-1"])),two.append(new Blob(["front-1"]))]);
     expect(await readText(new Blob(await one.materialize()))).toBe("rear-1");
     expect(await readText(new Blob(await two.materialize()))).toBe("front-1");
+  });
+  it("automatically uses disk-backed pieces when OPFS is absent and cleans up after durable save", async () => {
+    const pieces = fakeIndexedDB();
+    vi.stubGlobal("navigator", {storage: undefined});
+    const recording = new RecordingChunkSpool("legacy-phone");
+    recording.append(new Blob(["one"]));
+    recording.append(new Blob(["two"]));
+    expect(pieces.size).toBe(0); // writes have not finished yet
+    const result = await recording.finish("video/webm");
+    expect(result.size).toBe(6);
+    expect(await readText(result)).toBe("onetwo");
+    expect(pieces.size).toBe(2);
+    await recording.clearAfterSave();
+    expect(pieces.size).toBe(0);
   });
   it("falls back to memory safely if IndexedDB is unavailable", async () => {
     vi.stubGlobal("indexedDB", undefined);
