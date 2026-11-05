@@ -42,8 +42,8 @@ jobs:
           ram-size: 2048M
           disable-animations: true
           script: |
-            cd android
-            chmod +x gradlew
+            cd "$GITHUB_WORKSPACE/android"
+            chmod +x ./gradlew
             ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
       - name: Upload instrumentation evidence
         if: always()
