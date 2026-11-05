@@ -559,6 +559,11 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (!selected || !items.some(x=>x.id === selected && x.kind === "video") || i.id === selected)).sort((a,b)=>a.track-b.track),[items,t,hidden,selected]);
   /** Items whose sound is heard: audio clips on unmuted lanes, and video clips with attached (not detached) audio on unmuted lanes. Visibility does not affect sound. */
   const audible = useMemo(() => items.filter((i) => i.kind === "audio" ? !muted[`a${i.track}`] : !muted[`v${i.track}`] && !items.some((a) => a.kind === "audio" && a.mediaId === i.mediaId)), [items, muted]);
+  // A large timeline can contain hundreds of clips, but only overlapping
+  // audio requires a live decoder. Mount just the current sources (and a short
+  // warm-up interval) instead of keeping every hidden <audio> open in WebView.
+  const activeAudible = useMemo(() => audible.filter(i =>
+    t >= i.start - 0.5 && t < i.start + len(i)), [audible, t]);
 
   const validTr = useMemo(() => transitions.filter((tr) => { const a = items.find((i) => i.id === tr.aId); const b = items.find((i) => i.id === tr.bId); return a && b && a.kind === "video" && b.kind === "video" && a.track === tr.track && b.track === tr.track && Math.abs(a.start + len(a) - b.start) < 0.15; }), [transitions, items]);
   const trStyle = useMemo<{ filter: string; transform: string; opacity: number; clip?: string }>(() => {
@@ -866,7 +871,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
       {visibleVideos.map(i=><svg key={i.id} className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${i.id}`} c={colorOf(i)} /></defs></svg>)}
-      {audible.map((i) => <audio key={i.id} ref={(el) => { audioRefs.current[i.id] = el; }} src={mediaById.get(i.mediaId)?.url} preload="metadata" className="hidden" />)}
+      {activeAudible.map((i) => <audio key={i.id} ref={(el) => { if (el) audioRefs.current[i.id] = el; else delete audioRefs.current[i.id]; }} src={mediaById.get(i.mediaId)?.url} preload="metadata" className="hidden" />)}
       {visibleVideos.length ? visibleVideos.map((i,index)=><EditorVideoLayer key={i.id}
         source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}
         timelineTime={t} start={i.start} inPoint={i.in} outPoint={i.out}
