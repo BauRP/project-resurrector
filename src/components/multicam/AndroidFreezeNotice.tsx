@@ -2,11 +2,14 @@ import { useEffect, useState } from "react";
 import { Capacitor } from "@capacitor/core";
 import { bounded } from "@/lib/async";
 import { uiFreeze } from "@/lib/ui-freeze-bridge";
+import { traceUiAction } from "@/lib/freeze-action-trace";
 
 /** Never blocks startup; shows evidence of a real previous Android UI hang. */
 export function AndroidFreezeNotice() {
   const [report, setReport] = useState("");
   const [copied, setCopied] = useState(false);
+  const [copyError, setCopyError] = useState("");
+  const [copying, setCopying] = useState(false);
   useEffect(() => {
     if (!Capacitor.isNativePlatform() || !Capacitor.isPluginAvailable("UiFreeze")) return;
     let live = true;
@@ -37,21 +40,21 @@ export function AndroidFreezeNotice() {
   }, []);
   if (!report) return null;
   const copyReport = () => {
-    // Clicking also works in Android WebViews without async Clipboard support.
-    const copyFallback = () => {
-      const field = document.createElement("textarea");
-      field.value = report;
-      field.style.position = "fixed";
-      field.style.opacity = "0";
-      document.body.appendChild(field);
-      field.select();
-      const ok = document.execCommand("copy");
-      field.remove();
-      if (ok) setCopied(true);
-    };
-    if (navigator.clipboard?.writeText) {
-      void navigator.clipboard.writeText(report).then(() => setCopied(true), copyFallback);
-    } else copyFallback();
+    if (copying || !report) return;
+    setCopyError("");
+    setCopying(true);
+    traceUiAction("freeze report: copy requested");
+    // Never allocate/select a textarea or use synchronous execCommand(copy).
+    // On native Android ClipboardManager writes outside the WebView renderer.
+    const copy = Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("UiFreeze")
+      ? uiFreeze.copyReport({ report })
+      : navigator.clipboard?.writeText
+        ? navigator.clipboard.writeText(report)
+        : Promise.reject(new Error("Clipboard API unavailable"));
+    void bounded(copy, 2000, "Copy freeze report")
+      .then(() => setCopied(true))
+      .catch(() => setCopyError("Не удалось скопировать отчёт. Скопируй текст из выделяемого поля ниже."))
+      .finally(() => setCopying(false));
   };
   const dismiss = () => {
     setReport("");
@@ -61,8 +64,10 @@ export function AndroidFreezeNotice() {
     <p className="font-semibold">Обнаружено зависание Android-интерфейса в прошлом запуске.</p>
     <p className="mt-1">Приложение сохранило технический отчёт. Скопируй его и отправь сюда, чтобы установить точную причину зависания.</p>
     <div className="mt-2 flex flex-wrap gap-2">
-      <button type="button" onClick={copyReport} className="rounded-full bg-primary px-3 py-2 text-primary-foreground">{copied ? "Скопировано" : "Скопировать отчёт"}</button>
+      <button type="button" onClick={copyReport} disabled={copying} className="rounded-full bg-primary px-3 py-2 text-primary-foreground">{copied ? "Скопировано" : copying ? "Копирую…" : "Скопировать отчёт"}</button>
       <button type="button" onClick={dismiss} className="rounded-full border border-border px-3 py-2">Закрыть</button>
     </div>
+    {copyError && <p role="alert" className="mt-2 text-warning">{copyError}</p>}
+    {copyError && <textarea aria-label="Текст отчёта для копирования" className="mt-2 w-full rounded-md border border-border bg-background p-2 text-xs" rows={3} readOnly value={report} onFocus={event => event.currentTarget.select()} />}
   </aside>;
 }
