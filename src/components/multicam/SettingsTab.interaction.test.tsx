@@ -70,7 +70,9 @@ describe("settings actions remain interactive", () => {
     fakes.cacheBytes.mockImplementation(() => new Promise<number>(resolve => { finish = resolve; }));
     view();
     fireEvent.click(screen.getByRole("button", { name: /Измерить размер/i }));
-    expect(fakes.cacheBytes).toHaveBeenCalledTimes(1);
+    // The cache module is intentionally imported on demand. Allow its
+    // asynchronous chunk to load before asserting the actual IDB call.
+    await waitFor(() => expect(fakes.cacheBytes).toHaveBeenCalledTimes(1));
     const clearButton = screen.getByRole("button", { name: /Очистить кэш/i });
     expect(clearButton).toBeDisabled();
     finish(1048576);
