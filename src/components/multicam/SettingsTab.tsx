@@ -6,10 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
-import { mesh } from "@/lib/mesh";
-import { useMeshPeers } from "./useMesh";
 import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
-import { bounded } from "@/lib/async";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 import { traceUiAction } from "@/lib/freeze-action-trace";
 import { Capacitor } from "@capacitor/core";
@@ -17,6 +14,7 @@ import { Capacitor } from "@capacitor/core";
 // Load native recording and camera diagnosis only if explicitly opened.
 const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
 const CameraDiagnostics = lazy(() => import("./CameraDiagnostics").then(m => ({ default: m.CameraDiagnostics })));
+const SettingsNetworkContent = lazy(() => import("./SettingsNetworkContent").then(m => ({ default: m.SettingsNetworkContent })));
 
 const languages = [
   ["en","English"],["ru","Русский"],["kk","Қазақ тілі"],["pt","Português"],["es","Español"],["fr","Français"],["ar","العربية"],["zh","中文"],["ko","한국어"],["ja","日本語"],["de","Deutsch"],["it","Italiano"],["tr","Türkçe"],["pl","Polski"],["hi","हिन्दी"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],
@@ -44,7 +42,7 @@ const copy: Record<string, { title:string; language:string; network:string; stor
 traceUiAction("settings: lazy module evaluated");
 
 export function SettingsTab() {
- const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers();
+ const s=useSettingsStore(); const {t:tr}=useT();
  const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
  useEffect(() => {
    if (readyBody) return;
@@ -74,7 +72,7 @@ export function SettingsTab() {
    if(!privacy||!privacyDialog.current)return;
    return activateAccessibleDialog(privacyDialog.current,()=>setPrivacy(false));
  },[privacy]);
- const alive = useRef(true); const busy = useRef(false); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
+ const alive = useRef(true); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
  const [measuringCache, setMeasuringCache] = useState(false);
  const [cacheMeasured, setCacheMeasured] = useState(false);
  // IndexedDB can hold large video proxy blobs. Never enumerate them on entry
@@ -116,15 +114,6 @@ export function SettingsTab() {
    } catch { if (alive.current) setOperationError("Не удалось измерить кэш. Попробуйте повторить."); }
    finally { measurementBusy.current = false; if (alive.current) setMeasuringCache(false); }
  };
- const diagnose = async () => {
-   traceUiAction("settings: network diagnosis");
-   if (busy.current) return; busy.current = true; setChecking(true); setOperationError("");
-   // mesh.diagnose already has a bounded peer-response window. Retrying a
-    // failed connection immediately doubles work but cannot repair it.
-    try { const result = await bounded(mesh.diagnose(), 3500, "Network diagnostics"); if (alive.current) s.set({ diagnostics: result }); }
-   catch { if (alive.current) setOperationError("Нет ответа от устройств. Проверьте соединение и повторите тест."); }
-   finally { busy.current = false; if (alive.current) setChecking(false); }
- };
  const clearCache = async () => {
    traceUiAction("settings: clear cache");
    if (cacheBusy.current || measurementBusy.current) return;
@@ -145,7 +134,11 @@ export function SettingsTab() {
   <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ traceUiAction("settings: theme light"); setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ traceUiAction("settings: theme dark"); setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
  {readyBody && <>
-  <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
+  <Group help="network" title={t.network}>
+   <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка сетевых инструментов…</p>}>
+     <SettingsNetworkContent />
+   </Suspense>
+  </Group>
  <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>setConfirmAction("reset")}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
@@ -201,4 +194,3 @@ class SettingsToolsBoundary extends Component<{ children: ReactNode; onClose: ()
 }
 
 function Group({title,help,children}:{title?:string;help?:string;children:ReactNode}){return <section><h2 className="mb-1 flex items-center gap-1 px-2 text-[11px] font-semibold uppercase text-muted-foreground">{title}{help&&<HelpDot id={help}/>}</h2><div className="overflow-hidden rounded-lg bg-card">{children}</div></section>}
-function Stat({label,value}:{label:string;value:string}){return <div className="bg-card p-3 text-center"><p className="text-[9px] text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>}
