@@ -7,7 +7,8 @@ describe("Settings first-paint transition on slow native WebViews", () => {
   const settings=readFileSync("src/components/multicam/SettingsTab.tsx","utf8");
   const folds=readFileSync("src/lib/display-topology.ts","utf8");
   it("does not mount the full Settings module in the Camera teardown commit",()=>{
-    expect(app).toContain('const SettingsTab = lazy(() => import("./SettingsTab")');
+    expect(app).toContain('const SettingsTab = lazy(() => loadSettingsModule().then');
+    expect(app).toContain("return scheduleSettingsPreload()");
     expect(app).toContain("<SettingsEntryGate><Suspense");
     expect(gate).toContain("window.requestAnimationFrame");
     expect(gate).toContain("window.setTimeout(enter, 0)");
