@@ -174,8 +174,31 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       if (projectTimer !== null) clearTimeout(projectTimer);
       projectTimer = setTimeout(flushProject, 320);
     };
-    const onVisibility = () => { if (document.hidden) { flushView(); flushProject(); } };
-    const onPageHide = () => { flushView(); flushProject(); };
+    // WebView localStorage.setItem is synchronous. Never perform that disk
+    // access inside the theme/language switch callback: coalesce repeated
+    // switches, and synchronously flush only at lifecycle boundaries.
+    let prefsTimer: ReturnType<typeof setTimeout> | null = null;
+    let prefsDirty = false;
+    const flushPrefs = () => {
+      if (prefsTimer !== null) clearTimeout(prefsTimer);
+      prefsTimer = null;
+      if (!prefsDirty) return;
+      prefsDirty = false;
+      const latest = store.getSnapshot();
+      try {
+        window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
+          theme: latest.theme, language: latest.language,
+          hardwareAcceleration: latest.hardwareAcceleration,
+        }));
+      } catch { /* Keep latest appearance in memory. */ }
+    };
+    const schedulePrefs = () => {
+      prefsDirty = true;
+      if (prefsTimer !== null) clearTimeout(prefsTimer);
+      prefsTimer = setTimeout(flushPrefs, 80);
+    };
+    const onVisibility = () => { if (document.hidden) { flushView(); flushProject(); flushPrefs(); } };
+    const onPageHide = () => { flushView(); flushProject(); flushPrefs(); };
     // Activity destruction may dispatch pagehide without visibilitychange.
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
@@ -199,15 +222,10 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       const changedKeys = persistedKeys.filter((key, index) => !Object.is(values[index], previous[index]));
       if (changedKeys.length === 0) return;
       previous = values;
-      // Theme, language and hardware toggles write only a tiny value.
-      // Retain legacy full persistence for actual editor/project changes.
+      // The preference snapshot is tiny, but even small localStorage writes
+      // can stall the JavaScript thread on a busy Android WebView database.
       if (changedKeys.some(key => key === "theme" || key === "language" || key === "hardwareAcceleration")) {
-        try {
-          window.localStorage.setItem(UI_PREFS_KEY, JSON.stringify({
-            theme: state.theme, language: state.language,
-            hardwareAcceleration: state.hardwareAcceleration,
-          }));
-        } catch { /* In-memory UI state remains available. */ }
+        schedulePrefs();
       }
       if (changedKeys.some(key => (projectPersistedKeys as readonly string[]).includes(key))) {
         scheduleProject();
@@ -219,6 +237,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", onVisibility);
       flushView();
       flushProject();
+      flushPrefs();
     };
   }, [store]);
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
