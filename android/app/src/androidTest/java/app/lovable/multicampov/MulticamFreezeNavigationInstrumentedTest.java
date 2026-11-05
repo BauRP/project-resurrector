@@ -2,6 +2,8 @@ package app.lovable.multicampov;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.WebView;
 
 import androidx.test.ext.junit.runners.AndroidJUnit4;
@@ -24,6 +26,18 @@ import static org.junit.Assert.*;
  */
 @RunWith(AndroidJUnit4.class)
 public class MulticamFreezeNavigationInstrumentedTest {
+    private static WebView findWebView(View node) {
+        if (node instanceof WebView) return (WebView) node;
+        if (node instanceof ViewGroup) {
+            ViewGroup group = (ViewGroup) node;
+            for (int i = 0; i < group.getChildCount(); i++) {
+                WebView found = findWebView(group.getChildAt(i));
+                if (found != null) return found;
+            }
+        }
+        return null;
+    }
+
     private static String eval(Activity activity, WebView view, String javascript) throws Exception {
         CountDownLatch reply = new CountDownLatch(1);
         AtomicReference<String> result = new AtomicReference<>("");
@@ -63,8 +77,9 @@ public class MulticamFreezeNavigationInstrumentedTest {
             Activity running = activity;
             AtomicReference<WebView> web = new AtomicReference<>();
             running.runOnUiThread(() -> {
-                if (((MainActivity)running).bridge != null)
-                    web.set(((MainActivity)running).bridge.getWebView());
+                // Read the view hierarchy, not BridgeActivity's protected
+                // bridge field (which instrumentation cannot legally access).
+                web.set(findWebView(running.getWindow().getDecorView()));
             });
             // JavaScript polls until the initial React navigation is visible.
             WebView view = web.get();
