@@ -397,7 +397,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           if (!frames) {
             frames = await editorMediaWorkQueue.run(
               () => makeThumbs(m.url, m.duration, 10, abort.signal), abort.signal);
-            if (frames.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
+            if (frames?.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
           }
           if (!live || abort.signal.aborted) return;
           setThumbs(cur => cur[m.id] === frames ? cur : { ...cur, [m.id]: frames ?? [] });
