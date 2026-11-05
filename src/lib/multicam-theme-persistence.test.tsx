@@ -59,7 +59,7 @@ describe("lightweight appearance preferences", () => {
     expect(writes.mock.calls.filter(args => args[0] === "multicam-pov-state-native")).toHaveLength(0);
   });
 
-  it("stays responsive to 40 rapid theme toggles without writing bulky project storage", () => {
+  it("stays responsive to 40 rapid theme toggles without writing bulky project storage", async () => {
     const writes = vi.spyOn(Storage.prototype, "setItem");
     render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
     for (let i = 0; i < 40; i++) {
