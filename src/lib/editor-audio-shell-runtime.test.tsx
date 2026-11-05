@@ -1,4 +1,4 @@
-import {afterEach,describe,expect,it,vi} from "vitest";
+import {afterEach,beforeEach,describe,expect,it,vi} from "vitest";
 import {fireEvent,cleanup,render,screen,act} from "@testing-library/react";
 import {MulticamStoreProvider} from "@/lib/multicam-store";
 import {EditorTab} from "@/components/multicam/EditorTab";
@@ -10,7 +10,12 @@ vi.mock("@/components/multicam/EditorPro",()=>({
    return <div data-testid="real-editor-shell">{audio}</div>;
  }
 }));
-afterEach(()=>{cleanup();counts.renders=0;});
+beforeEach(()=>{
+ vi.stubGlobal("ResizeObserver", class {
+   observe(){} unobserve(){} disconnect(){}
+ });
+});
+afterEach(()=>{cleanup();counts.renders=0;vi.unstubAllGlobals();});
 describe("audio sliders should not rerender the entire video editor",()=>{
  it("keeps transition/timeline shell stable while real EQ is adjusted",()=>{
    render(<MulticamStoreProvider><EditorTab/></MulticamStoreProvider>);
