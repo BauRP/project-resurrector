@@ -86,7 +86,7 @@ export function flushQueuedEditorProject(): boolean {
   if (pendingProject === snapshot) pendingProject = null;
   return true;
 }
-export function queueEditorProjectSave(project: RecoverableEditorProject): void {
+export function queueEditorProjectSave<T extends {items:readonly object[];overlays:readonly object[];transitions:readonly object[];hidden:Record<string,boolean>;muted:Record<string,boolean>}>(project:T): void {
   pendingProject = sanitizeEditorProject(project);
   if (pendingTimer !== null) clearTimeout(pendingTimer);
   pendingTimer = setTimeout(flushQueuedEditorProject, 0);
