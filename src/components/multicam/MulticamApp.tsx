@@ -7,8 +7,9 @@ import { Capacitor } from "@capacitor/core";
 // Load the heavy editor only when opened; keep camera and settings light.
 const EditorTab = lazy(() => import("./EditorTab").then(mod => ({ default: mod.EditorTab })));
 import { SettingsEntryGate } from "./SettingsEntryGate";
+import { loadSettingsModule, scheduleSettingsPreload } from "@/lib/settings-module-loader";
 import { isStaleCapture, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
-const SettingsTab = lazy(() => import("./SettingsTab").then(mod => ({ default: mod.SettingsTab })));
+const SettingsTab = lazy(() => loadSettingsModule().then(mod => ({ default: mod.SettingsTab })));
 import { SettingsCrashBoundary } from "./SettingsCrashBoundary";
 import { AndroidFreezeNotice } from "./AndroidFreezeNotice";
 import { SplashScreen } from "./SplashScreen";
@@ -157,13 +158,17 @@ function MulticamAppContent() {
   useMeshBridge();
   // Keep the logical screen authoritative while Framer Motion temporarily
   // keeps both old and new tab DOM trees mounted during a fold transition.
-  useEffect(() => {
+  // Before Settings is painted, apply its native GPU-safe CSS rules.
+  useLayoutEffect(() => {
     document.documentElement.dataset["activeMulticamTab"] = tab;
     return () => { delete document.documentElement.dataset["activeMulticamTab"]; };
   }, [tab]);
   // Window changes only rearrange UI; they never restart the camera pipeline.
   useEffect(() => startDisplayAdaptation(), []);
-  useEffect(() => { traceUiAction("app: mounted"); }, []);
+  useEffect(() => {
+    traceUiAction("app: mounted");
+    return scheduleSettingsPreload();
+  }, []);
   useEffect(() => { traceUiAction("tab: " + tab); }, [tab]);
   useLayoutEffect(() => {
     if (tab === "settings") traceUiAction("settings: React commit complete");
@@ -173,7 +178,7 @@ function MulticamAppContent() {
   }, [tab]);
   // Translucent theme surfaces remain, but native WebViews avoid full-panel
   // backdrop blur on each settings repaint.
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.dataset["multicamNativeWebview"] = String(Capacitor.isNativePlatform());
     return () => { delete document.documentElement.dataset["multicamNativeWebview"]; };
   }, []);
