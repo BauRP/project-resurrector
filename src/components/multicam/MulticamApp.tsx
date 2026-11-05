@@ -115,9 +115,21 @@ function MulticamAppContent() {
         timers.push(window.setTimeout(() => restorer.retry(tab, port), delay));
       }
     }
+    // Both ResizeObserver and MutationObserver can fire many times while
+    // timeline media or an Audio/Transitions panel mounts. A synchronous
+    // scrollHeight read in every callback forces repeated layout and can
+    // starve Android WebView's compositor. Read geometry once per frame.
+    let editorReflowFrame = 0;
+    const scheduleEditorReflow = () => {
+      if (editorReflowFrame) return;
+      editorReflowFrame = window.requestAnimationFrame(() => {
+        editorReflowFrame = 0;
+        if (port.isConnected) restorer.onViewportReflow(tab, port);
+      });
+    };
     let observer: ResizeObserver | null = null;
     if (tab === "editor" && typeof ResizeObserver !== "undefined") {
-      observer = new ResizeObserver(() => restorer.onViewportReflow(tab, port));
+      observer = new ResizeObserver(scheduleEditorReflow);
       observer.observe(port);
       if (tab === "editor" && port.firstElementChild instanceof HTMLElement)
         observer.observe(port.firstElementChild);
@@ -125,9 +137,7 @@ function MulticamAppContent() {
     // Editor clips can finish loading long after the initial fold animation.
     // Watch content additions rather than guessing a fixed load duration.
     const contentObserver = tab !== "editor" || typeof MutationObserver === "undefined" ? null :
-      new MutationObserver(() => {
-        restorer.onViewportReflow(tab, port);
-      });
+      new MutationObserver(scheduleEditorReflow);
     contentObserver?.observe(port, {childList: true, subtree: true});
     const onPageHide = () => { restorer.capture(port); flushFoldScrollWrites(); };
     window.addEventListener("pagehide", onPageHide);
@@ -135,6 +145,7 @@ function MulticamAppContent() {
       timers.forEach(t => window.clearTimeout(t));
       observer?.disconnect();
       contentObserver?.disconnect();
+      if (editorReflowFrame) window.cancelAnimationFrame(editorReflowFrame);
       window.removeEventListener("pagehide", onPageHide);
       // A tab switch may have already rendered the next screen into this
       // scroll container. Capture happens before setTab, not in cleanup.
