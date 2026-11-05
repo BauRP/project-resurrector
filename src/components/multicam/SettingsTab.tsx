@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
-import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 import { traceUiAction } from "@/lib/freeze-action-trace";
 import { Capacitor } from "@capacitor/core";
@@ -109,6 +108,7 @@ export function SettingsTab() {
    measurementBusy.current = true;
    setMeasuringCache(true); setOperationError("");
    try {
+     const { cacheBytes } = await import("@/lib/media-cache");
      const bytes = await cacheBytes();
      if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); }
    } catch { if (alive.current) setOperationError("Не удалось измерить кэш. Попробуйте повторить."); }
@@ -119,7 +119,8 @@ export function SettingsTab() {
    if (cacheBusy.current || measurementBusy.current) return;
    cacheBusy.current=true;
    setClearing(true); setOperationError("");
-   try { const bytes = await clearPreviewCache(); if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); } }
+   try { const { clearPreviewCache } = await import("@/lib/media-cache");
+     const bytes = await clearPreviewCache(); if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); } }
    catch { if (alive.current) setOperationError("Не удалось очистить кэш. Исходные клипы не изменены."); }
    finally { cacheBusy.current=false; if (alive.current) setClearing(false); }
  };
