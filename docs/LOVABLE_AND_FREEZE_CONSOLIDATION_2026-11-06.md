@@ -37,3 +37,6 @@ Date: 2026-11-06. GitHub repository: BauRP/project-resurrector.
 - Independent work: retained at `chatgpt/independent-preview-20261023` as immutable reference for this merger.
 - Integration code: `integration/lovable-site-and-freeze-20261106` is the candidate. Review through GitHub PR into main, then fast-forward/merge only after checks and sign-off.
 - Two pre-existing specification documents remain paused. Historical progress percentages are not evidence of hardware acceptance.
+
+## Archive of the older separate repository
+A complete tree comparison of `BauRP/multicam-studio` main (2026-10-06) against this integration branch found 152 tracked files in the old tree: 110 unchanged byte-for-byte, 40 updated here, and only TWO files absent here. Both missing historic Lovable planning documents were copied into the integration tree under their original paths. No old production file is missing by path. The 40 changed production/configuration/documentation files reflect newer functionality; they were not overwritten with the October code. The old repository's `.lovable/project.json` has a DIFFERENT template revision and must not overwrite the current project's identity or site linkage.
