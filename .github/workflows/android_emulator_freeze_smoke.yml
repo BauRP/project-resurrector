@@ -39,11 +39,11 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          ram-size: 2048M
+          ram-size: 3072M
           disable-animations: true
           # android-emulator-runner executes each script line separately.
           # Run cd/chmod/Gradle in the SAME shell command so cwd survives.
-          script: cd "$GITHUB_WORKSPACE/android" && chmod +x ./gradlew && ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
+          script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
       - name: Upload instrumentation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -53,3 +53,4 @@ jobs:
           path: |
             android/app/build/reports/androidTests/connected/
             android/app/build/outputs/androidTest-results/connected/
+            android-freeze-emulator-logcat.txt
