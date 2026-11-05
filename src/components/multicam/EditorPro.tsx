@@ -205,14 +205,43 @@ async function analyse(clip: StoredClip): Promise<Media> {
   return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks };
 }
 
+/** FileReader can be aborted when the editor closes. Blob.arrayBuffer()
+ * cannot cancel a pending multi-gigabyte read on Android WebView. */
+function readWaveformData(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer> {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    let done = false;
+    const finish = (data?: ArrayBuffer, error?: Error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reader.onload = null; reader.onerror = null; reader.onabort = null;
+      if (error) reject(error);
+      else if (data) resolve(data);
+      else reject(new Error("Waveform read was cancelled"));
+    };
+    const onAbort = () => {
+      try { if (reader.readyState === FileReader.LOADING) reader.abort(); } catch { /* Already closed */ }
+      finish(undefined, new Error("Waveform read cancelled"));
+    };
+    const timer = setTimeout(onAbort, 4000);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) { onAbort(); return; }
+    reader.onload = () => finish(reader.result instanceof ArrayBuffer ? reader.result : undefined);
+    reader.onerror = () => finish(undefined, reader.error ?? new Error("Waveform read failed"));
+    reader.onabort = () => finish(undefined, new Error("Waveform read aborted"));
+    try { reader.readAsArrayBuffer(blob); } catch (error) { finish(undefined, error instanceof Error ? error : new Error(String(error))); }
+  });
+}
+
 async function analyseWaveformForTimeline(clip: StoredClip, duration: number, signal?: AbortSignal): Promise<number[]> {
   try {
     if (signal?.aborted) return [];
+    const bytes = await readWaveformData(clip.blob, signal);
+    if (signal?.aborted) return [];
     const ctx = new OfflineAudioContext(1, 44100, 44100);
-    const buf = await bounded(
-      ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")),
-      6000, "Audio analysis",
-    );
+    const buf = await bounded(ctx.decodeAudioData(bytes), 6000, "Audio analysis");
     if (signal?.aborted) return [];
     return await extractWaveformPeaks(buf.getChannelData(0), duration, () => Boolean(signal?.aborted));
   } catch { return []; }
