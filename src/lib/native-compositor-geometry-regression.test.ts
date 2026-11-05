@@ -4,7 +4,8 @@ import {readFileSync} from "node:fs";
 describe("native WebView compositor and pane geometry stability",()=>{
   it("keeps editor transitions/audio fully functional but does not animate panel height through JS frames",()=>{
     const code=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
-    expect(code).toContain('role="tabpanel" initial={{ opacity: 0, y: -6 }}');
+    expect(code).toContain('role="tabpanel" initial={nativeWebView ? false : { opacity: 0, y: -6 }}');
+    expect(code).toContain('key={nativeWebView ? "native-editor-panel" : panel}');
     expect(code).toContain('panel === "transitions"');
     expect(code).toContain('panel === "audio" && audio');
     expect(code).not.toContain('animate={{ height: "auto", opacity: 1 }}');
