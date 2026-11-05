@@ -566,6 +566,16 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
         if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
       };
       let recorderError = "";
+      spool.onMemoryPressure(() => {
+        if (recorder.state === "inactive") return;
+        const message = "Хранилище видео недоступно: заполнен аварийный буфер памяти";
+        recorderError ||= message;
+        stopReasonRef.current ||= message;
+        updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: message });
+        recordingStartCancel.current?.();
+        recordingStopWatch.current?.();
+        try { recorder.stop(); } catch { /* Stop watchdog salvages confirmed fragments. */ }
+      });
       const sourceInputTracks = stream.getTracks();
       const lostInputHandlers: Array<{track: MediaStreamTrack; handler: EventListener}> = [];
       detachLostInputHandlers = () => lostInputHandlers.forEach(({track,handler}) => track.removeEventListener("ended",handler));
