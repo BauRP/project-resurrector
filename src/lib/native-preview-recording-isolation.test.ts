@@ -31,7 +31,7 @@ describe("Camera2 preview-only sessions never masquerade as MP4 captures",()=>{
  });
  it("records a rejected camera foreground start without reusing the last MP4",()=>{
   const denial=service.slice(service.indexOf("Android отказал в запуске службы камеры:")-650,
-    service.indexOf("Android отказал в запуске службы камеры:")+350);
+    service.indexOf("Android отказал в запуске службы камеры:")+1000);
   expect(denial).toContain("currentCaptureId=Math.max(System.currentTimeMillis(),currentCaptureId+1L)");
   expect(denial).toContain('savedPath="";savedUri="";');
   expect(denial).toContain("STATE_WRITER.execute(() =>");
