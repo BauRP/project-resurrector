@@ -153,6 +153,31 @@ describe("fold/editor vertical scroll restoration", () => {
     expect(writes.mock.calls.length).toBeLessThan(15);
     writes.mockRestore();
   });
+  it("does not force repeat DOM scroll writes while 100 editor layout notifications arrive", () => {
+    saveFoldScrollTop("editor", 520);
+    const element = port(0, 1800, 300);
+    let current = 0;
+    const writes = vi.fn((value: number) => { current = value; });
+    Object.defineProperty(element, "scrollTop", {
+      get: () => current, set: writes, configurable: true,
+    });
+    const restorer = new FoldScrollRestorer();
+    restorer.activate("editor", element);
+    restorer.enter("editor", element);
+    expect(current).toBe(520);
+    expect(writes).toHaveBeenCalledTimes(1);
+    for (let i = 0; i < 100; i++) restorer.onViewportReflow("editor", element);
+    expect(writes).toHaveBeenCalledTimes(1);
+  });
+  it("coalesces both editor ResizeObserver and DOM MutationObserver in one animation frame", () => {
+    const code = readFileSync("src/components/multicam/MulticamApp.tsx", "utf8");
+    expect(code).toContain("const scheduleEditorReflow = () => {");
+    expect(code).toContain("if (editorReflowFrame) return;");
+    expect(code).toContain("editorReflowFrame = window.requestAnimationFrame(");
+    expect(code).toContain("new ResizeObserver(scheduleEditorReflow)");
+    expect(code).toContain("new MutationObserver(scheduleEditorReflow)");
+    expect(code).toContain("window.cancelAnimationFrame(editorReflowFrame)");
+  });
   it("refuses corrupted, oversized, impossible, and camera-only scroll state", () => {
     expect(saveFoldScrollTop("camera",200)).toBe(false);
     expect(saveFoldScrollTop("editor",-1)).toBe(false);
