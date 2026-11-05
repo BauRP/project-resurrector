@@ -114,12 +114,9 @@ public final class UiFreezeMonitor {
     }
 
     public static void recordManualRecovery() {
-        ScheduledExecutorService executor = worker;
-        if (executor == null || executor.isShutdown()) return;
-        try {
-            executor.execute(() -> persistReport("MULTI-CAM POV: UI restart requested by user; " +
-                "saved clips preserved. " + actionContext(SystemClock.uptimeMillis())));
-        } catch (java.util.concurrent.RejectedExecutionException ignored) { }
+        // Do not overwrite the actual ANR/renderer trace with a trivial
+        // "user restarted" entry: the next launch must show the real cause.
+        Log.i("MultiCamUiFreeze", "Manual recovery requested; previous report retained.");
     }
 
     public static void recordRendererResponsive() {
@@ -277,7 +274,9 @@ public final class UiFreezeMonitor {
         rendererProbePending.set(false);
         observedWebView.clear();
         if (worker != null) {
-            worker.shutdownNow();
+            // Let an already queued crash report reach SharedPreferences.
+            // The periodic monitor is disabled by foreground=false above.
+            worker.shutdown();
             worker = null;
         }
     }
