@@ -12,6 +12,10 @@ import { RecordingIndexedChunks } from "./recording-indexed-chunks";
  * Older WebViews with no durable chunk storage retain the original in-memory
  * Blob workflow. Never certify bytes without a completed storage write.
  */
+/** A no-disk WebView is allowed a bounded emergency RAM buffer. Its caller
+ * must stop the encoder on pressure and salvage the already received data. */
+export const MAX_UNSPOOLED_BYTES = 32 * 1024 * 1024;
+
 export class RecordingChunkSpool {
   private readonly filename: string;
   private readonly id: string;
@@ -27,6 +31,19 @@ export class RecordingChunkSpool {
   private indexedDisabled = false;
   private settled = false;
   private assembled: Promise<Blob> | null = null;
+  private fallbackBytes = 0;
+  private pressureReported = false;
+  private pressureCallback: (() => void) | null = null;
+
+  onMemoryPressure(callback: () => void): void { this.pressureCallback = callback; }
+  private keepInMemory(chunk: Blob): void {
+    this.fallback.push(chunk);
+    this.fallbackBytes += chunk.size;
+    if (!this.pressureReported && this.fallbackBytes >= MAX_UNSPOOLED_BYTES) {
+      this.pressureReported = true;
+      this.pressureCallback?.();
+    }
+  }
 
   constructor(id: string) {
     this.id = id;
@@ -69,7 +86,7 @@ export class RecordingChunkSpool {
             this.indexedDisabled = true;
           }
         }
-        this.fallback.push(chunk);
+        this.keepInMemory(chunk);
         return;
       }
       try {
@@ -79,11 +96,11 @@ export class RecordingChunkSpool {
         // Write may have partially succeeded. The committed prefix remains
         // authoritative; incomplete bytes after it will be ignored.
         this.opfsFailed = true;
-        this.fallback.push(chunk);
+        this.keepInMemory(chunk);
       }
     }).catch(() => {
       this.opfsFailed = true;
-      this.fallback.push(chunk);
+      this.keepInMemory(chunk);
     });
   }
 
@@ -92,7 +109,14 @@ export class RecordingChunkSpool {
     if (this.assembled) return this.assembled;
     this.settled = true;
     this.assembled = (async () => {
-      await this.tail;
+      // A WebView storage promise can hang indefinitely if its renderer or
+      // underlying filesystem stalls. Reject the save rather than leave the
+      // camera UI stuck in "saving"; never delete the uncertain staging file.
+      await Promise.race([
+        this.tail,
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error("Timed out waiting for pending recording chunks")), 20000)),
+      ]);
       if (this.writer) await this.writer.close();
       let prefix: Blob | null = null;
       if (this.confirmedBytes > 0) {
