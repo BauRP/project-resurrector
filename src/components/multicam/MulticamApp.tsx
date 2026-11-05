@@ -21,7 +21,7 @@ import { nextRemoteReceiptStatus } from "@/lib/remote-record-receipts";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
 import { traceUiAction } from "@/lib/freeze-action-trace";
-import { FoldScrollRestorer } from "@/lib/fold-scroll-position";
+import { FoldScrollRestorer, flushFoldScrollWrites } from "@/lib/fold-scroll-position";
 
 const nav: { id: AppTab; icon: typeof Camera }[] = [{ id: "camera", icon: Camera }, { id: "editor", icon: SlidersHorizontal }, { id: "settings", icon: Settings }];
 const labels: Record<string, string[]> = { kk: ["Камера", "Редактор", "Баптаулар"], pt: ["Câmera", "Editor", "Ajustes"], es: ["Cámara", "Editor", "Ajustes"], fr: ["Caméra", "Montage", "Réglages"], ar: ["الكاميرا", "المحرر", "الإعدادات"], zh: ["相机", "编辑", "设置"], ko: ["카메라", "편집기", "설정"], ja: ["カメラ", "編集", "設定"], de: ["Kamera", "Editor", "Einstellungen"], it: ["Camera", "Editor", "Impostazioni"], tr: ["Kamera", "Kurgu", "Ayarlar"], pl: ["Kamera", "Edytor", "Ustawienia"], hi: ["कैमरा", "संपादक", "सेटिंग्स"], vi: ["Máy quay", "Biên tập", "Cài đặt"], id: ["Kamera", "Editor", "Pengaturan"] };
@@ -129,7 +129,7 @@ function MulticamAppContent() {
         restorer.onViewportReflow(tab, port);
       });
     contentObserver?.observe(port, {childList: true, subtree: true});
-    const onPageHide = () => restorer.capture(port);
+    const onPageHide = () => { restorer.capture(port); flushFoldScrollWrites(); };
     window.addEventListener("pagehide", onPageHide);
     return () => {
       timers.forEach(t => window.clearTimeout(t));
