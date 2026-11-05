@@ -4,6 +4,7 @@ import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/edit
 import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
 import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/lib/editor-project-recovery";
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
+import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -238,6 +239,11 @@ function readWaveformData(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer
 async function analyseWaveformForTimeline(clip: StoredClip, duration: number, signal?: AbortSignal): Promise<number[]> {
   try {
     if (signal?.aborted) return [];
+    // Avoid loading an entire multi-gigabyte MP4 or expanding hours of PCM
+    // into WebView memory. Large original clips remain playable and editable;
+    // only this optional full-file waveform cache is deferred.
+    const memoryGiB = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    if (!canDecodeWaveformInMemory(clip.blob.size, duration, memoryGiB)) return [];
     const bytes = await readWaveformData(clip.blob, signal);
     if (signal?.aborted) return [];
     const ctx = new OfflineAudioContext(1, 44100, 44100);
