@@ -41,10 +41,9 @@ jobs:
           profile: pixel_6
           ram-size: 2048M
           disable-animations: true
-          script: |
-            cd "$GITHUB_WORKSPACE/android"
-            chmod +x ./gradlew
-            ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
+          # android-emulator-runner executes each script line separately.
+          # Run cd/chmod/Gradle in the SAME shell command so cwd survives.
+          script: cd "$GITHUB_WORKSPACE/android" && chmod +x ./gradlew && ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace
       - name: Upload instrumentation evidence
         if: always()
         uses: actions/upload-artifact@v4
