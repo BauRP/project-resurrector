@@ -1,3 +1,4 @@
+import { bounded } from "./async";
 import { RecordingIndexedChunks } from "./recording-indexed-chunks";
 
 /**
@@ -112,16 +113,12 @@ export class RecordingChunkSpool {
       // A WebView storage promise can hang indefinitely if its renderer or
       // underlying filesystem stalls. Reject the save rather than leave the
       // camera UI stuck in "saving"; never delete the uncertain staging file.
-      await Promise.race([
-        this.tail,
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error("Timed out waiting for pending recording chunks")), 20000)),
-      ]);
-      if (this.writer) await this.writer.close();
+      await bounded(this.tail, 20000, "Pending recording chunks");
+      if (this.writer) await bounded(this.writer.close(), 12000, "Recording file close");
       let prefix: Blob | null = null;
       if (this.confirmedBytes > 0) {
         if (!this.handle) throw new Error("Temporary recording file lost");
-        const file = await this.handle.getFile();
+        const file = await bounded(this.handle.getFile(), 12000, "Recording file read");
         if (file.size < this.confirmedBytes)
           throw new Error("Temporary recording was truncated; original data retained");
         prefix = file.slice(0, this.confirmedBytes);
