@@ -45,6 +45,14 @@ public final class UiFreezeMonitor {
     private static volatile String rendererLastEvidence = "";
     private static ScheduledExecutorService worker;
     private static Context context;
+    private static volatile java.lang.ref.WeakReference<Runnable> webViewRecoveryListener =
+        new java.lang.ref.WeakReference<>(null);
+
+    /** Runs only when native MAIN is alive but Chromium JS is nonresponsive. */
+    public static void setWebViewRecoveryListener(Runnable listener) {
+        webViewRecoveryListener = new java.lang.ref.WeakReference<>(listener);
+    }
+
 
     private UiFreezeMonitor() {}
 
@@ -238,6 +246,11 @@ public final class UiFreezeMonitor {
                         diagnosis + " Independent renderer evidence: " +
                         rendererLastEvidence + ". This report does not identify a confirmed culprit." +
                         actionContext(now) + " Capture logcat for more detail.");
+                    // A JS-frozen WebView cannot render its own error notice.
+                    // Present a native dialog while Android MAIN is responsive.
+                    final Runnable recovery = webViewRecoveryListener.get();
+                    if (recovery != null)
+                        MAIN.post(() -> { if (foreground) recovery.run(); });
                 }
                 return;
             }
