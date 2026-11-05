@@ -71,7 +71,32 @@ export function sanitizeEditorProject(value:unknown):RecoverableEditorProject {
     hidden:booleans(v["hidden"]), muted:booleans(v["muted"]),
   };
 }
+// A tab switch must paint the next screen before serializing large editor
+// metadata. Keep the exact sanitized snapshot available for an immediate
+// editor remount, and flush on pagehide for Android Activity recreation.
+let pendingProject: RecoverableEditorProject | null = null;
+let pendingTimer: ReturnType<typeof setTimeout> | null = null;
+let pagehideRegistered = false;
+export function flushQueuedEditorProject(): boolean {
+  if (pendingTimer !== null) clearTimeout(pendingTimer);
+  pendingTimer = null;
+  if (!pendingProject) return true;
+  const snapshot = pendingProject;
+  if (!saveEditorProject(snapshot)) return false;
+  if (pendingProject === snapshot) pendingProject = null;
+  return true;
+}
+export function queueEditorProjectSave(project: RecoverableEditorProject): void {
+  pendingProject = sanitizeEditorProject(project);
+  if (pendingTimer !== null) clearTimeout(pendingTimer);
+  pendingTimer = setTimeout(flushQueuedEditorProject, 0);
+  if (!pagehideRegistered && typeof window !== "undefined") {
+    window.addEventListener("pagehide", flushQueuedEditorProject);
+    pagehideRegistered = true;
+  }
+}
 export function loadEditorProject():RecoverableEditorProject {
+  if (pendingProject) return sanitizeEditorProject(pendingProject);
   try {
     const raw=localStorage.getItem(KEY);
     if(!raw||raw.length>MAX_BYTES)return sanitizeEditorProject(null);
