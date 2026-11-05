@@ -53,16 +53,16 @@ public class MulticamFreezeNavigationInstrumentedTest {
             // capture MAIN and any RenderThread before assertion fails.
             StringBuilder evidence = new StringBuilder("WebView did not reply: ").append(javascript);
             Thread main = Looper.getMainLooper().getThread();
-            evidence.append("\\nAndroid MAIN [").append(main.getState()).append("]:");
+            evidence.append("\nAndroid MAIN [").append(main.getState()).append("]:");
             for (StackTraceElement frame : main.getStackTrace())
-                evidence.append("\\n  at ").append(frame);
+                evidence.append("\n  at ").append(frame);
             for (java.util.Map.Entry<Thread,StackTraceElement[]> thread :
                      Thread.getAllStackTraces().entrySet()) {
                 if (!thread.getKey().getName().contains("RenderThread")) continue;
-                evidence.append("\\n").append(thread.getKey().getName())
+                evidence.append("\n").append(thread.getKey().getName())
                     .append(" [").append(thread.getKey().getState()).append("]:");
                 for (StackTraceElement frame : thread.getValue())
-                    evidence.append("\\n  at ").append(frame);
+                    evidence.append("\n  at ").append(frame);
             }
             Log.e("MultiCamFreezeTest", evidence.toString());
             fail(evidence.toString());
