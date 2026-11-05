@@ -164,6 +164,27 @@ describe("MediaRecorder recording chunk spool", () => {
     await result;
     vi.useRealTimers();
   });
+  it("cannot leave an already saved recording stuck during OPFS cleanup", async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal("navigator", { storage: { getDirectory: async () => ({
+      getFileHandle: async () => ({
+        createWritable: async () => ({
+          write: async () => undefined,
+          close: async () => undefined,
+        }),
+        getFile: async () => new Blob(["saved"]),
+      }),
+      removeEntry: async () => new Promise<void>(() => {}),
+    }) } });
+    const spool = new RecordingChunkSpool("cleanup-timeout");
+    spool.append(new Blob(["saved"]));
+    await spool.finish("video/webm");
+    const cleanup = spool.clearAfterSave();
+    await vi.advanceTimersByTimeAsync(8010);
+    await expect(cleanup).resolves.toBeUndefined();
+    vi.useRealTimers();
+  });
+
   it("uses the same spool for single and simultaneous two-camera recording", () => {
     const single = readFileSync("src/components/multicam/CameraTab.tsx","utf8");
     const dual = readFileSync("src/lib/dual-live-recording.ts","utf8");
