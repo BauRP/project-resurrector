@@ -149,7 +149,8 @@ export class RecordingChunkSpool {
       try { await this.indexed.clearAfterSave(); } catch { /* Keep original staged pieces. */ }
     }
     if (this.root && this.handle) {
-      try { await this.root.removeEntry(this.filename); } catch { /* Retain safe temporary data. */ }
+      try { await bounded(this.root.removeEntry(this.filename), 8000, "Recording staging cleanup"); }
+      catch { /* Retain safe temporary data. */ }
     }
   }
 }
