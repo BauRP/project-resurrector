@@ -12,6 +12,7 @@ import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
 import { bounded } from "@/lib/async";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 import { traceUiAction } from "@/lib/freeze-action-trace";
+import { Capacitor } from "@capacitor/core";
 
 // Load native recording and camera diagnosis only if explicitly opened.
 const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
@@ -44,6 +45,21 @@ traceUiAction("settings: lazy module evaluated");
 
 export function SettingsTab() {
  const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers();
+ const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
+ useEffect(() => {
+   if (readyBody) return;
+   let active = true;
+   let frame = 0, next = 0;
+   const show = () => { if (active) { traceUiAction("settings: body mounting"); setReadyBody(true); } };
+   frame = requestAnimationFrame(() => { next = window.setTimeout(show, 0); });
+   const fallback = window.setTimeout(show, 400);
+   return () => {
+     active = false;
+     cancelAnimationFrame(frame);
+     clearTimeout(next);
+     clearTimeout(fallback);
+   };
+ }, [readyBody]);
  useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);
  const confirmationDialog=useRef<HTMLDivElement>(null);
@@ -128,7 +144,8 @@ export function SettingsTab() {
   return <div className="settings-fold-workspace pb-[calc(4rem+env(safe-area-inset-bottom))] text-foreground"><header className="px-4 pb-2 pt-3"><h1 className="text-lg font-semibold">{t.title}</h1></header><main className="mx-auto max-w-2xl space-y-2.5 px-3">
   <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ traceUiAction("settings: theme light"); setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ traceUiAction("settings: theme dark"); setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
- <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
+ {readyBody && <>
+  <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
  <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>setConfirmAction("reset")}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
@@ -152,7 +169,8 @@ export function SettingsTab() {
    </Suspense>
   </SettingsToolsBoundary>
  </section>
- {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main>
+ {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}
+  </>}</main>
  {confirmAction && <div className="settings-confirm-overlay fixed inset-x-0 top-0 bottom-[var(--nav-h)] z-50 flex items-center justify-center overflow-y-auto px-4 py-6" ref={confirmationDialog} role="alertdialog" aria-modal="true" aria-labelledby="settings-confirm-title" tabIndex={-1}>
    <div className="settings-confirm-card w-full max-w-sm rounded-2xl border border-border p-5 text-foreground">
      <h2 id="settings-confirm-title" className="text-base font-semibold">{confirmAction==="cache" ? "Очистить кэш?" : "Сбросить проект?"}</h2>
