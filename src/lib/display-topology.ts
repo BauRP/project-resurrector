@@ -317,9 +317,13 @@ export function startDisplayAdaptation(): () => void {
     // can move the *visible content* without changing window.innerHeight.
     // Include only geometry used by layout(), while deduplicating paint work.
     const viewport = window.visualViewport;
-    const scroll = document.querySelector(".app-scroll")?.getBoundingClientRect();
-    const header = document.querySelector(".app-header")?.getBoundingClientRect();
-    const camera = document.querySelector(".camera-screen")?.getBoundingClientRect();
+    // Normal phones and Android emulators have no pane split. DOM
+    // measurements on every Settings/editor layout can force Chromium
+    // style/layout work; only real folding features need these rectangles.
+    const hasFoldBounds = lastNative?.foldingFeatures.some(f => f.separating) === true;
+    const scroll = hasFoldBounds ? document.querySelector(".app-scroll")?.getBoundingClientRect() : null;
+    const header = hasFoldBounds ? document.querySelector(".app-header")?.getBoundingClientRect() : null;
+    const camera = hasFoldBounds ? document.querySelector(".camera-screen")?.getBoundingClientRect() : null;
     const hinges = lastNative?.foldingFeatures.map(f => [
       f.leftPx,f.topPx,f.rightPx,f.bottomPx,f.orientation,f.state,
       f.occlusion,f.separating,
@@ -414,6 +418,28 @@ export function startDisplayAdaptation(): () => void {
     if (root.dataset["occludingFold"] !== (String(geometry.occluded))) root.dataset["occludingFold"] = String(geometry.occluded);
     // Keep all reported hinge bounds: two separate hinges stay two separate features.
     if (root.dataset["foldRegions"] !== (String(geometry.regions.length))) root.dataset["foldRegions"] = String(geometry.regions.length);
+    // A single-screen window needs no pane geometry. This short-circuit
+    // prevents DOM read/write/ResizeObserver feedback on every Settings
+    // expansion, Camera HUD tap or editor panel animation. It preserves
+    // genuine fold observations above, including non-separating postures.
+    if (geometry.hinges.length === 0) {
+      if (root.dataset["foldWorkspace"] !== "normal") root.dataset["foldWorkspace"] = "normal";
+      if (root.dataset["cameraSplit"] !== "none") root.dataset["cameraSplit"] = "none";
+      if (root.dataset["cameraTabletop"] !== "false") root.dataset["cameraTabletop"] = "false";
+      workspaceTarget = null; workspaceYOffset = 0;
+      const ordinaryVars = [
+        "--fold-work-left","--fold-work-width","--fold-work-height",
+        "--fold-work-top","--fold-work-y-offset",
+        "--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width",
+        "--camera-control-pane-left","--camera-control-pane-width",
+        "--camera-upper-height","--camera-lower-top",
+      ];
+      for (const pane of ["preview","hud","settings","controls"])
+        for (const axis of ["left","top","width","height"])
+          ordinaryVars.push("--camera-quad-" + pane + "-" + axis);
+      for (const name of ordinaryVars) clearCss(name);
+      return;
+    }
     // Keep non-camera working surfaces fully inside an available pane if a real
     // hinge cuts across the app window. Unlike camera this region is chosen
     // by usable size rather than a hard-coded left/right position.
