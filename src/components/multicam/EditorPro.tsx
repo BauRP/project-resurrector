@@ -1,3 +1,4 @@
+import { Capacitor } from "@capacitor/core";
 import { PointerGestureRegistry } from "@/lib/pointer-gesture-registry";
 import { EditorVideoLayer } from "./EditorVideoLayer";
 import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
@@ -254,6 +255,7 @@ async function analyseWaveformForTimeline(clip: StoredClip, duration: number, si
 }
 
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
+  const nativeWebView = Capacitor.isNativePlatform();
   const dragRegistry = useRef<PointerGestureRegistry | null>(null);
   if (!dragRegistry.current) dragRegistry.current = new PointerGestureRegistry();
   useEffect(() => () => dragRegistry.current?.dispose(), []);
@@ -1023,7 +1025,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     </motion.div>}</AnimatePresence>
     <div className="-mx-1 rounded-lg bg-card p-1.5">
       <div className="grid grid-cols-3 gap-1" role="tablist">{([["transitions", "Переходы"], ["color", "Цвет"], ["audio", "Звук"]] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={panel === id} onClick={() => setPanel((p) => p === id ? null : id)} className={`editor-tab ${panel === id ? "active" : ""}`}>{label}</button>)}</div>
-      <AnimatePresence initial={false}>{panel && <motion.div role="tabpanel" initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .18, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden"><motion.div key={panel} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .15 }} className="min-h-56 px-1.5 pb-2 pt-3">
+      {/* Avoid overlapping decoder-heavy Audio and Transition panels inside Android
+       WebView: retain the exact controls, but do not animate/remount the whole
+       panel on every switch. Desktop web keeps the original transitions. */}
+      <AnimatePresence initial={false}>{panel && <motion.div role="tabpanel" initial={nativeWebView ? false : { opacity: 0, y: -6 }} animate={nativeWebView ? { opacity: 1 } : { opacity: 1, y: 0 }} exit={nativeWebView ? { opacity: 1 } : { opacity: 0, y: -6 }} transition={{ duration: nativeWebView ? 0 : .18, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden"><motion.div key={nativeWebView ? "native-editor-panel" : panel} initial={nativeWebView ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: nativeWebView ? 0 : .15 }} className="min-h-56 px-1.5 pb-2 pt-3">
         {(panel !== "color" || selItem?.kind === "video") && <div className="mb-1 flex justify-end"><HelpDot id={panel} /></div>}
         {panel === "transitions" && <><div className="flex min-h-40 gap-2">
           <div className="flex w-24 shrink-0 flex-col gap-1">{TRANSITION_CATS.map((c) => <button key={c.id} onClick={() => setTrCat(c.id)} className={`rounded-md px-2 py-2 text-start text-[11px] ${trCat === c.id ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{c.label}</button>)}</div>
