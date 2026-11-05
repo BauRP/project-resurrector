@@ -1,7 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { CameraRecordingTimecode } from "@/components/multicam/CameraTab";
 import { readFileSync } from "node:fs";
 
 describe("10 Hz camera recording clock does not repaint the whole WebView camera UI", () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  it("updates only its own decisecond clock and cancels timers on unmount", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-11-05T00:00:00.000Z"));
+    const start = Date.now();
+    const ui = render(<CameraRecordingTimecode recording={true} startedAt={start} />);
+    expect(screen.getByText("00:00.0")).toBeTruthy();
+    act(() => { vi.advanceTimersByTime(1100); });
+    expect(screen.getByText("00:01.1")).toBeTruthy();
+    ui.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it("isolates decisecond clock state in a child component", () => {
     const camera = readFileSync("src/components/multicam/CameraTab.tsx", "utf8");
     const begin = camera.indexOf("export function CameraRecordingTimecode(");
