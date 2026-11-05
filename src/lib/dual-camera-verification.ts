@@ -1,4 +1,5 @@
 import { bounded } from "./async";
+import { openAuxiliaryCamera } from "./auxiliary-camera-open-guard";
 import { saveRecordedClipsAtomically, type RecordedClip } from "./clip-persistence";
 
 /** Independent WebView devices are not automatically equivalent to Camera2 IDs. */
@@ -115,12 +116,10 @@ export async function verifyDualCameraRecording(firstId: string, secondId: strin
       video: { deviceId: { exact: id }, width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 } },
       audio: false,
     });
-    const first = await bounded(navigator.mediaDevices.getUserMedia(constraints(firstId)), 7000,
-      "Первая камера", stopStream);
+    const first = await openAuxiliaryCamera(constraints(firstId), 7000, "Первая камера");
     streams.push(first);
     if (signal.aborted) throw new Error("Испытание отменено");
-    const second = await bounded(navigator.mediaDevices.getUserMedia(constraints(secondId)), 7000,
-      "Вторая камера", stopStream);
+    const second = await openAuxiliaryCamera(constraints(secondId), 7000, "Вторая камера");
     streams.push(second);
     if (signal.aborted) throw new Error("Испытание отменено");
     const tracks = [first, second].map(s => s.getVideoTracks()[0]);
