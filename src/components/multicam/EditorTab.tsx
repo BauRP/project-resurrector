@@ -18,10 +18,13 @@ const transitions = ["Dissolve", "Fade B/W", "Wipe", "Zoom", "Blur", "Slide", "S
 const frequencies = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"];
 
 export function EditorTab() {
-  const s = useMulticamStore(); const { t } = useT();
+  // The editor shell only cares about export visibility. Subscribing to the
+  // entire global snapshot re-rendered the heavy timeline on every EQ slider
+  // or audio option tap, even when no video was playing.
+  const exportOpen = useMulticamStore(state => state.exportOpen);
   return <div className="editor-fold-workspace pb-[calc(6.5rem+env(safe-area-inset-bottom))] text-foreground">
     <EditorPro chroma={<ChromaPanel />} audio={<AudioPanel />} />
-    <AnimatePresence>{s.exportOpen && <ExportDrawer />}</AnimatePresence>
+    <AnimatePresence>{exportOpen && <ExportDrawer />}</AnimatePresence>
   </div>;
 }
 
