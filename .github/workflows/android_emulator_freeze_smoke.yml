@@ -2,7 +2,7 @@ name: Android Emulator Freeze Smoke
 
 on:
   push:
-    branches: [chatgpt/independent-preview-20261023]
+    branches: [chatgpt/independent-preview-20261023, integration/lovable-site-and-freeze-20261106]
   workflow_dispatch:
 
 permissions:
