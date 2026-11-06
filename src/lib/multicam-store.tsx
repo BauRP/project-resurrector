@@ -1,4 +1,5 @@
 import { restoreViewState, saveViewState } from "./fold-ui-recovery";
+import { scheduleAfterPaintTask } from "./after-paint-task";
 import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
 import type React from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
@@ -136,31 +137,45 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     const restoredView = restoreViewState();
     // On Activity recreation a previously frozen Settings screen must not
     // reopen by itself. Keep all editor/project data but start in Camera.
+    let cancelStartupViewRepair: (() => void) | null = null;
     if (restoredView.tab === "settings") {
       restoredView.tab = "camera";
-      saveViewState(restoredView);
+      // Do not synchronously write LevelDB during first Activity mount.
+      // Keep the corrected view state in memory and durably save after paint.
+      const correctedView = { ...restoredView };
+      cancelStartupViewRepair = scheduleAfterPaintTask(() => saveViewState(correctedView), 5000);
     }
     store.getSnapshot().set({ ...patch, ...restoredView });
     let previous = persistedKeys.map((k) => store.getSnapshot()[k]);
     let previousView = [store.getSnapshot().tab, store.getSnapshot().playhead,
       store.getSnapshot().editMode, store.getSnapshot().aspect, store.getSnapshot().captureKind];
     let pendingView: ReturnType<typeof viewSnapshot> | null = null;
-    let viewTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelViewPaint: (() => void) | null = null;
     const flushView = () => {
-      if (viewTimer !== null) clearTimeout(viewTimer);
-      viewTimer = null;
+      cancelViewPaint?.();
+      cancelViewPaint = null;
       if (pendingView) saveViewState(pendingView);
       pendingView = null;
+    };
+    const scheduleView = () => {
+      // A tab click must not flush localStorage 100ms later while the native
+      // GPU compositor is still retiring Camera/Editor surfaces. The exact
+      // latest state is in memory until a paint boundary or pagehide.
+      cancelViewPaint?.();
+      cancelViewPaint = scheduleAfterPaintTask(flushView, 5000);
     };
     // Delay full editor snapshots, not tiny appearance preferences. Repeated
     // timeline edits must not JSON.stringify a large project on every tap.
     // pagehide/visibilitychange/cleanup still synchronously flush the latest
     // state to avoid losing edits when Android destroys the Activity.
     let projectTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelProjectPaint: (() => void) | null = null;
     let projectDirty = false;
     const flushProject = () => {
       if (projectTimer !== null) clearTimeout(projectTimer);
       projectTimer = null;
+      cancelProjectPaint?.();
+      cancelProjectPaint = null;
       if (!projectDirty) return;
       projectDirty = false;
       const latest = store.getSnapshot();
@@ -172,16 +187,24 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     const scheduleProject = () => {
       projectDirty = true;
       if (projectTimer !== null) clearTimeout(projectTimer);
-      projectTimer = setTimeout(flushProject, 320);
+      cancelProjectPaint?.();
+      cancelProjectPaint = null;
+      projectTimer = setTimeout(() => {
+        projectTimer = null;
+        cancelProjectPaint = scheduleAfterPaintTask(flushProject, 5000);
+      }, 320);
     };
     // WebView localStorage.setItem is synchronous. Never perform that disk
     // access inside the theme/language switch callback: coalesce repeated
     // switches, and synchronously flush only at lifecycle boundaries.
     let prefsTimer: ReturnType<typeof setTimeout> | null = null;
+    let cancelPrefsPaint: (() => void) | null = null;
     let prefsDirty = false;
     const flushPrefs = () => {
       if (prefsTimer !== null) clearTimeout(prefsTimer);
       prefsTimer = null;
+      cancelPrefsPaint?.();
+      cancelPrefsPaint = null;
       if (!prefsDirty) return;
       prefsDirty = false;
       const latest = store.getSnapshot();
@@ -195,7 +218,12 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     const schedulePrefs = () => {
       prefsDirty = true;
       if (prefsTimer !== null) clearTimeout(prefsTimer);
-      prefsTimer = setTimeout(flushPrefs, 80);
+      cancelPrefsPaint?.();
+      cancelPrefsPaint = null;
+      prefsTimer = setTimeout(() => {
+        prefsTimer = null;
+        cancelPrefsPaint = scheduleAfterPaintTask(flushPrefs, 5000);
+      }, 80);
     };
     const onVisibility = () => { if (document.hidden) { flushView(); flushProject(); flushPrefs(); } };
     const onPageHide = () => { flushView(); flushProject(); flushPrefs(); };
@@ -214,10 +242,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         // the first Settings frame even though there was no camera recording.
         // The latest navigation state remains pending and pagehide/visibility
         // still flush it for Activity recreation; no project/media is lost.
-        if (tabChanged) {
-          if (viewTimer !== null) clearTimeout(viewTimer);
-          viewTimer = setTimeout(flushView, 100);
-        } else if (viewTimer === null) viewTimer = setTimeout(flushView, 400);
+        if (tabChanged || cancelViewPaint === null) scheduleView();
       }
       const changedKeys = persistedKeys.filter((key, index) => !Object.is(values[index], previous[index]));
       if (changedKeys.length === 0) return;
@@ -232,6 +257,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       }
     });
     return () => {
+      cancelStartupViewRepair?.();
       unsubscribe();
       window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
