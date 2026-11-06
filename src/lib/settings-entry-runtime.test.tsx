@@ -38,7 +38,7 @@ describe("real Settings mount / remount and slow WebView repaint",()=>{
     vi.stubGlobal("cancelAnimationFrame",vi.fn());
     for(let i=0;i<12;i++){
       const ui=render(<SettingsEntryGate><button>Theme switch</button></SettingsEntryGate>);
-      act(()=>vi.advanceTimersByTime(180));
+      act(()=>vi.runAllTimers());
       expect(screen.getByText("Theme switch")).toBeTruthy();
       ui.unmount();
     }
