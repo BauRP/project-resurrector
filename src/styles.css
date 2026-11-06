@@ -1554,3 +1554,25 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   .connect-pill { padding-inline:.4rem; font-size:10px; }
   .connect-pill svg { width:14px; height:14px; }
 }
+
+
+/* Native Android WebView compositor safety for 111/222 glass themes.
+ * The same reference gradients/rims remain visible. Avoid promoting two
+ * enormous, rotated 142%-wide decorative pseudo-elements into independent
+ * GPU surfaces when Camera -> Settings changes its content tree.
+ * Desktop/browser keeps the original reference styling. */
+:root[data-multicam-native-webview="true"] .app-shell::before,
+:root[data-multicam-native-webview="true"] .app-shell::after {
+  transform: none;
+  width: 75%;
+  height: 37%;
+  will-change: auto;
+}
+:root[data-multicam-native-webview="true"] .app-shell::before {
+  left: -32%;
+  top: -8%;
+}
+:root[data-multicam-native-webview="true"] .app-shell::after {
+  right: -34%;
+  bottom: -9%;
+}

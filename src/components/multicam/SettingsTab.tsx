@@ -8,6 +8,7 @@ import { useSettingsStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 import { traceUiAction } from "@/lib/freeze-action-trace";
+import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
 import { Capacitor } from "@capacitor/core";
 
 // Load native recording and camera diagnosis only if explicitly opened.
@@ -45,17 +46,12 @@ export function SettingsTab() {
  const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
  useEffect(() => {
    if (readyBody) return;
-   let active = true;
-   let frame = 0, next = 0;
-   const show = () => { if (active) { traceUiAction("settings: body mounting"); setReadyBody(true); } };
-   frame = requestAnimationFrame(() => { next = window.setTimeout(show, 0); });
-   const fallback = window.setTimeout(show, 400);
-   return () => {
-     active = false;
-     cancelAnimationFrame(frame);
-     clearTimeout(next);
-     clearTimeout(fallback);
-   };
+   // The theme/language controls paint first; defer optional network and
+   // Camera2 launchers until after TWO frames, never in the first GPU draw.
+   return scheduleAfterPaintTask(() => {
+     traceUiAction("settings: body mounting after first paint");
+     setReadyBody(true);
+   }, 1000);
  }, [readyBody]);
  useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);
