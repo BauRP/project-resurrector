@@ -1,6 +1,7 @@
 package app.lovable.multicampov;
 
 import android.app.Activity;
+import android.content.Context;
 import android.content.Intent;
 import android.view.View;
 import android.os.Looper;
@@ -64,6 +65,14 @@ public class MulticamFreezeNavigationInstrumentedTest {
                 for (StackTraceElement frame : thread.getValue())
                     evidence.append("\n  at ").append(frame);
             }
+            // The native monitor runs independently of the hung Chromium
+            // renderer. Include its last persisted snapshot, especially when
+            // Android MAIN is idle while WebView JavaScript cannot reply.
+            String monitorReport = activity.getSharedPreferences(
+                UiFreezeMonitor.PREFS, Context.MODE_PRIVATE).getString(
+                UiFreezeMonitor.REPORT, "");
+            if (!monitorReport.isEmpty()) evidence.append("\nNative freeze watchdog:\n")
+                .append(monitorReport);
             Log.e("MultiCamFreezeTest", evidence.toString());
             fail(evidence.toString());
         }

@@ -25,6 +25,7 @@ public final class UiFreezeMonitor {
     static final String RECORDED_AT = "recordedAt";
     private static final long ANR_THRESHOLD_MS = 6500L;
     private static final long WEBVIEW_THRESHOLD_MS = 12000L;
+    private static final long EARLY_WEBVIEW_THRESHOLD_MS = 7500L;
     private static final Handler MAIN = new Handler(Looper.getMainLooper());
     private static final AtomicLong lastHeartbeat = new AtomicLong();
     private static final AtomicLong webViewHeartbeat = new AtomicLong();
@@ -32,6 +33,7 @@ public final class UiFreezeMonitor {
     private static volatile String lastJsAction = "Android activity created";
     private static volatile long lastJsActionAt = 0L;
     private static final AtomicBoolean webViewCaptured = new AtomicBoolean();
+    private static final AtomicBoolean earlyWebViewCaptured = new AtomicBoolean();
     private static final AtomicBoolean pendingPulse = new AtomicBoolean();
     private static final AtomicBoolean captured = new AtomicBoolean();
     private static volatile boolean foreground = false;
@@ -72,6 +74,7 @@ public final class UiFreezeMonitor {
         lastJsAction = "Android activity created; waiting for WebView";
         lastJsActionAt = SystemClock.uptimeMillis();
         webViewCaptured.set(false);
+        earlyWebViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
         foreground = true;
@@ -132,6 +135,7 @@ public final class UiFreezeMonitor {
         // Start a watchdog even before React has mounted.
         webViewHeartbeat.set(now);
         webViewCaptured.set(false);
+        earlyWebViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
         rendererProbePending.set(false);
@@ -147,6 +151,7 @@ public final class UiFreezeMonitor {
         receivedJsHeartbeat.set(true);
         webViewHeartbeat.set(SystemClock.uptimeMillis());
         webViewCaptured.set(false);
+        earlyWebViewCaptured.set(false);
     }
 
     /** A lightweight diagnostic breadcrumb, kept in memory until a freeze is
@@ -260,6 +265,21 @@ public final class UiFreezeMonitor {
                 final long webLast = webViewHeartbeat.get();
                 final long webDelay = webLast == 0L ? 0L : now - webLast;
                 if (webDelay >= 4500L) checkRendererIndependently(now);
+                // The instrumented test has a 12s JavaScript callback budget.
+                // Persist evidence earlier or the test may close the Activity
+                // before the regular 12s watchdog gets to sample the freeze.
+                // Never show a dialog or restart/stop camera during this stage.
+                if (webDelay >= EARLY_WEBVIEW_THRESHOLD_MS &&
+                    earlyWebViewCaptured.compareAndSet(false, true)) {
+                    boolean rendererProbeAnswered = rendererRepliedAt.get() > 0L &&
+                        now - rendererRepliedAt.get() <= 4500L;
+                    persistReport("MULTI-CAM POV: Early WebView responsiveness warning after " +
+                        webDelay + " ms; Android MAIN alive. Independent renderer callback " +
+                        (rendererProbeAnswered ? "responded" : "has not replied recently") +
+                        ". Last renderer evidence: " + rendererLastEvidence +
+                        actionContext(now) + environmentEvidence() +
+                        " No app functions or camera operation were stopped.");
+                }
                 if (webDelay >= WEBVIEW_THRESHOLD_MS &&
                     webViewCaptured.compareAndSet(false, true)) {
                     boolean independentRendererResponsive =
