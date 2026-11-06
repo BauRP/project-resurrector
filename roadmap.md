@@ -1,4 +1,10 @@
 # MULTI-CAM POV roadmap
+## GitHub preview recovery — 6 November 2026
+- [x] Verify authoritative main commit and compare every tracked file without replacing local work
+- [ ] Resolve the reproduced preview rendering error without reverting GitHub features
+- [ ] Verify Camera, Editor, Settings, themes, real attachments, and existing tests
+- [ ] Record recovery evidence and platform Git-sync limitations
+
 - [x] Shared offline state and Android packaging foundation
 - [x] Camera and recording workflow
 - [x] Multicam editor and timeline tools
