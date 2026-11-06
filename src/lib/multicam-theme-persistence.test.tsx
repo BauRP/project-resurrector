@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, cleanup } from "@testing-library/react";
 import { MulticamStoreProvider, createMulticamStore, useMulticamStore } from "./multicam-store";
 
 function ThemeProbe() {
@@ -103,18 +103,61 @@ describe("lightweight appearance preferences", () => {
     expect(writes.mock.calls.filter(([key]) => key === "multicam-pov-state-native")).toHaveLength(1);
   });
 
-  it("recovers from a previously frozen settings tab without resetting the editor playhead", async () => {
+  it("recovers the camera immediately but persists the repaired tab only after paint", () => {
+    vi.useFakeTimers();
     window.localStorage.setItem("multicam-view-state-v1", JSON.stringify({
       tab: "settings", playhead: 12.5, aspect: "16:9", captureKind: "video",
     }));
+    const writes = vi.spyOn(Storage.prototype, "setItem");
     function TabProbe() {
       const tab = useMulticamStore(state => state.tab);
       return <output data-testid="tab">{tab}</output>;
     }
-    render(<MulticamStoreProvider><TabProbe /></MulticamStoreProvider>);
-    await waitFor(() => expect(screen.getByTestId("tab")).toHaveTextContent("camera"));
-    const restored = JSON.parse(window.localStorage.getItem("multicam-view-state-v1") ?? "{}");
-    expect(restored).toMatchObject({ tab: "camera", playhead: 12.5, aspect: "16:9" });
+    try {
+      const ui = render(<MulticamStoreProvider><TabProbe /></MulticamStoreProvider>);
+      expect(screen.getByTestId("tab")).toHaveTextContent("camera");
+      expect(writes).not.toHaveBeenCalledWith("multicam-view-state-v1", expect.any(String));
+      act(() => vi.runAllTimers());
+      const restored = JSON.parse(localStorage.getItem("multicam-view-state-v1") ?? "{}");
+      expect(restored).toMatchObject({ tab: "camera", playhead: 12.5, aspect: "16:9" });
+      ui.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("does not overwrite a fresh Editor navigation with a delayed frozen-settings repair", () => {
+    vi.useFakeTimers();
+    localStorage.setItem("multicam-view-state-v1", JSON.stringify({
+      tab: "settings", playhead: 7.25, aspect: "16:9", captureKind: "video",
+    }));
+    function TabProbe() {
+      const tab = useMulticamStore(state => state.tab);
+      const setTab = useMulticamStore(state => state.setTab);
+      return <><output data-testid="tab">{tab}</output>
+        <button onClick={() => setTab("editor")}>Open editor</button></>;
+    }
+    try {
+      const ui = render(<MulticamStoreProvider><TabProbe /></MulticamStoreProvider>);
+      expect(screen.getByTestId("tab")).toHaveTextContent("camera");
+      fireEvent.click(screen.getByText("Open editor"));
+      expect(screen.getByTestId("tab")).toHaveTextContent("editor");
+      act(() => vi.runAllTimers());
+      expect(JSON.parse(localStorage.getItem("multicam-view-state-v1") ?? "{}")).toMatchObject({
+        tab: "editor", playhead: 7.25,
+      });
+      ui.unmount();
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("flushes corrected startup state on pagehide without waiting for a frame", () => {
+    vi.useFakeTimers();
+    localStorage.setItem("multicam-view-state-v1", JSON.stringify({ tab: "settings", playhead: 24 }));
+    try {
+      const ui = render(<MulticamStoreProvider><ThemeProbe /></MulticamStoreProvider>);
+      window.dispatchEvent(new Event("pagehide"));
+      expect(JSON.parse(localStorage.getItem("multicam-view-state-v1") ?? "{}"))
+        .toMatchObject({ tab: "camera", playhead: 24 });
+      ui.unmount();
+    } finally { vi.useRealTimers(); }
   });
 
   it("prefers the new stored theme over legacy appearance data", async () => {

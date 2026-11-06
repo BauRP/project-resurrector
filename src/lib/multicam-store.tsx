@@ -225,8 +225,18 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         cancelPrefsPaint = scheduleAfterPaintTask(flushPrefs, 5000);
       }, 80);
     };
-    const onVisibility = () => { if (document.hidden) { flushView(); flushProject(); flushPrefs(); } };
-    const onPageHide = () => { flushView(); flushProject(); flushPrefs(); };
+    const repairOrFlushView = () => {
+      if (cancelStartupViewRepair) {
+        cancelStartupViewRepair();
+        cancelStartupViewRepair = null;
+        // A previous frozen Settings tab must not be written back on exit.
+        // If no new navigation is pending, persist the corrected Camera state.
+        if (!pendingView) pendingView = viewSnapshot(store.getSnapshot());
+      }
+      flushView();
+    };
+    const onVisibility = () => { if (document.hidden) { repairOrFlushView(); flushProject(); flushPrefs(); } };
+    const onPageHide = () => { repairOrFlushView(); flushProject(); flushPrefs(); };
     // Activity destruction may dispatch pagehide without visibilitychange.
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
@@ -234,7 +244,10 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       const state = store.getSnapshot(); const values = persistedKeys.map((k) => state[k]);
       const view = [state.tab, state.playhead, state.editMode, state.aspect, state.captureKind];
       if (!view.every((value, index) => Object.is(value, previousView[index]))) {
-        const tabChanged = view[0] !== previousView[0];
+        // Latest user intent always beats an old startup repair. Otherwise a
+        // delayed Camera recovery write could overwrite an Editor navigation.
+        cancelStartupViewRepair?.();
+        cancelStartupViewRepair = null;
         previousView = view;
         pendingView = viewSnapshot(state);
         // Never perform synchronous Android WebView storage I/O inside a tab
@@ -261,7 +274,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       unsubscribe();
       window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
-      flushView();
+      repairOrFlushView();
       flushProject();
       flushPrefs();
     };
