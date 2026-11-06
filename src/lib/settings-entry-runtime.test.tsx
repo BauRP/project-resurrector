@@ -18,7 +18,7 @@ describe("real Settings mount / remount and slow WebView repaint",()=>{
     const ui=render(<SettingsEntryGate><button>Camera2 settings button</button></SettingsEntryGate>);
     expect(screen.queryByText("Camera2 settings button")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("Открываю настройки");
-    act(()=>{vi.advanceTimersByTime(180);});
+    act(()=>{vi.advanceTimersByTime(1100);});
     expect(screen.getByText("Camera2 settings button")).toBeTruthy();
     ui.unmount();
   });
@@ -28,7 +28,7 @@ describe("real Settings mount / remount and slow WebView repaint",()=>{
     vi.stubGlobal("cancelAnimationFrame",vi.fn());
     const ui=render(<SettingsEntryGate><button>Real Settings</button></SettingsEntryGate>);
     ui.unmount();
-    act(()=>vi.advanceTimersByTime(1000));
+    act(()=>vi.advanceTimersByTime(1500));
     expect(screen.queryByText("Real Settings")).toBeNull();
     expect(window.cancelAnimationFrame).toHaveBeenCalledWith(3);
   });

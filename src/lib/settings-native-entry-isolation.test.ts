@@ -10,10 +10,12 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(app).toContain('const SettingsTab = lazy(() => loadSettingsModule().then');
     expect(app).toContain("return scheduleSettingsPreload()");
     expect(app).toContain("<SettingsEntryGate><Suspense");
-    expect(gate).toContain("window.requestAnimationFrame");
-    expect(gate).toContain("window.setTimeout(enter, 0)");
-    expect(gate).toContain("window.setTimeout(enter, 180)");
-    expect(gate).toContain("window.cancelAnimationFrame(frame)");
+    expect(gate).toContain("scheduleAfterPaintTask(");
+    expect(gate).toContain("}, 1100)");
+    const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
+    expect(scheduler).toContain("requestAnimationFrame");
+    expect(scheduler).toContain("cancelAnimationFrame");
+    expect(scheduler).toContain("setTimeout(fire, fallbackMs)");
   });
   it("keeps all Settings tools and themes, without auto-launching Camera2",()=>{
     for(const required of ["<NativeRecordingPanel previewIntervalMs={850} />",
