@@ -34,15 +34,25 @@ export function scheduleSettingsPreload(): () => void {
     requestIdleCallback?: (callback: IdleRequestCallback, options?: IdleRequestOptions) => number;
     cancelIdleCallback?: (id: number) => void;
   };
+  // Starting the lazy Settings import 1.8s after startup overlapped the
+  // user's first Settings tap in the real Android freeze logs. Do not compile
+  // a large JS chunk while Camera is being torn down and Settings paints.
+  // Native WebView enters this warmup later; actual navigation can cancel it.
   timer = window.setTimeout(() => {
     if (cancelled) return;
     if (typeof target.requestIdleCallback === "function")
       idle = target.requestIdleCallback(start, { timeout: 4000 });
     else start();
-  }, 1800);
-  return () => {
+  }, 3500);
+  const cancel = () => {
     cancelled = true;
     if (timer !== null) window.clearTimeout(timer);
     if (idle !== null) target.cancelIdleCallback?.(idle);
+  };
+  const onNavigation = () => cancel();
+  window.addEventListener("multicam-settings-navigation-start", onNavigation, { once: true });
+  return () => {
+    window.removeEventListener("multicam-settings-navigation-start", onNavigation);
+    cancel();
   };
 }

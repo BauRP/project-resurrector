@@ -190,6 +190,11 @@ function MulticamAppContent() {
   const requestTab = useCallback((next: AppTab) => {
     if (next === tab) return;
     traceUiAction("navigate: " + tab + " -> " + next);
+    if (next === "settings") {
+      // Prevent a pending idle Settings import from racing the same click's
+      // camera/editor teardown. The real Settings lazy import remains enabled.
+      window.dispatchEvent(new Event("multicam-settings-navigation-start"));
+    }
     if(isStaleCapture(recording,recordingPhase)){
       // The old recording callback can no longer arrive. Recover the state
       // AND permit the requested navigation on this very tap (not the next).

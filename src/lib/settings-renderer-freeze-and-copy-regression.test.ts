@@ -7,6 +7,9 @@ describe("Settings gate diagnosis for a healthy Android MAIN but blocked WebView
     const app=readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
     expect(loader).toContain('import("@/components/multicam/SettingsTab")');
     expect(loader).toContain("requestIdleCallback(start, { timeout: 4000 })");
+    expect(loader).toContain('window.addEventListener("multicam-settings-navigation-start"');
+    expect(loader).toContain("}, 3500)");
+    expect(app).toContain('window.dispatchEvent(new Event("multicam-settings-navigation-start"))');
     expect(loader).toContain("settingsModulePromise = null");
     expect(app).toContain("return scheduleSettingsPreload()");
     expect(app).toContain('lazy(() => loadSettingsModule().then');
