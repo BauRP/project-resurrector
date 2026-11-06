@@ -1,17 +1,62 @@
-import { Capacitor, registerPlugin } from "@capacitor/core";
+import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
+import { bounded } from "./async";
 
-export interface NativeCameraProfile { cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
-export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[] }
-export interface NativeThermal { status: number; label: string; temperatureC: number | null }
+export interface NativeCameraProfile { dynamicRangeApiAvailable?: boolean; tenBitOutputDeclared?: boolean; hdrRecordedAndVerified?: false; dynamicRangeProfiles?: { id: number; name: string; extraLatencyDeclared: boolean; compatibleProfiles: string[] }[];  videoOutputSizes?: { width: number; height: number; minFrameDurationNs?: number; theoreticalMaxFps?: number }[]; sensorOrientation?: number; sensorSizeMm?: [number, number]; focalLengthsMm?: number[]; eisModes?: number[]; oisModes?: number[]; eisDeclared?: boolean; oisDeclared?: boolean; exposureTimeNs?: [number, number];  physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
+export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[]; concurrentCameraGroups?: string[][] }
+export interface NativeThermal { status: number; available?: boolean; label: string; temperatureC: number | null }
 export interface NativeAudioInput { id: string; name: string; type: string }
+export interface NativeMp4Inspection {
+  path: string;
+  bytes: number;
+  mime: string;
+  width: number | null; height: number | null;
+  declaredFrameRate: number | null; durationUs: number | null;
+  colorStandard: number | null; colorTransfer: number | null; colorRange: number | null;
+  hdrStaticInfoPresent: boolean;
+  hdrRecordingVerified: false;
+  source: string;
+  samplesRead: number; timestampSpanUs: number;
+  audioTrackCount?: number; audioMime?: string | null; audioSamplesDecoded?: false;
+  audioSamplesRead?: number; audioSampleTimestampRollbacks?: number;
+  audioSampleTimestampDuplicates?: number; audioSampleInspectionFailed?: boolean;
+  audioFidelityVerified?: false;
+  outOfOrderPresentationTimes: number;
+  estimatedSampleFps: number | null;
+  sampleLimitReached: boolean;
+  tailSamplesRead?: number; tailFirstPresentationTimeUs?: number | null;
+  tailLastPresentationTimeUs?: number | null; tailOutOfOrderPresentationTimes?: number;
+  tailDuplicatePresentationTimes?: number; tailSampleNearDeclaredEnd?: boolean | null;
+  tailEstimatedSampleFps?: number | null; fileEndVerified?: false;
+  rotationDegrees?: number | null;
+  fpsMethod: string;
+}
+export interface NativeEncoderSupport {
+  width: number; height: number; fps: number; source: string;
+  encoders: {
+    mime: string; encoderName: string; declaredSizeRate: boolean;
+    hardwareAccelerated: "yes" | "no" | "unknown";
+    widthMin: number; widthMax: number; heightMin: number; heightMax: number;
+    bitrateMin: number; bitrateMax: number;
+    codecProfiles?: { profileId: number; levelId: number }[];
+    hevcTenBitCandidate?: boolean;
+    hdr10ProfileDeclared?: boolean;
+    hdrEditingFeatureDeclared?: boolean;
+  }[];
+}
 
 interface MultiCamNativePlugin {
   getCapabilities(): Promise<NativeCapabilities>;
+  inspectVideoFile(options: { path: string }): Promise<NativeMp4Inspection>;
+  getEncoderSupport(options: { width: number; height: number; fps: number }): Promise<NativeEncoderSupport>;
+  startCameraAvailability(options:{ownerId:string}): Promise<void>;
+  stopCameraAvailability(options:{ownerId:string}): Promise<void>;
+  addListener(eventName: "cameraAvailabilityChanged", listener: (event: { cameraId: string; available: boolean }) => void): Promise<PluginListenerHandle>;
   getThermalStatus(): Promise<NativeThermal>;
   listAudioInputs(): Promise<{ inputs: NativeAudioInput[] }>;
   setPreferredAudioInput(options: { id: string }): Promise<{ ok: boolean }>;
   startHighSpeedRecording(options: { cameraId: string; width: number; height: number; fps: number }): Promise<{ path: string }>;
-  stopHighSpeedRecording(): Promise<{ path: string; durationMs: number }>;
+  stopHighSpeedRecording(): Promise<{ path: string; durationMs: number; bytes: number; inspection?: NativeMp4Inspection; inspectionError?: string }>;
+  addListener(eventName: "highSpeedStateChanged", listener: (event: {state: string; message: string}) => void): Promise<PluginListenerHandle>;
   /** Hybrid AI (ML Kit semantics + YUV physics). Optional on the native side — callers must handle rejection. */
   toggleHybridAI(options: { enabled: boolean }): Promise<{ enabled: boolean; engines: string[] }>;
   setFocusMode(options: { mode: HybridFocusMode }): Promise<{ mode: HybridFocusMode }>;
@@ -21,7 +66,33 @@ interface MultiCamNativePlugin {
 export type HybridFocusMode = "continuous" | "face" | "hybrid_nearest_priority";
 export interface HybridAIStatus { enabled: boolean; engines: string[]; detections: { kind: "face" | "hand" | "text" | "food"; x: number; y: number; w: number; h: number; score: number }[]; histogram?: number[]; contrast?: number }
 
-export const MultiCamNative = registerPlugin<MultiCamNativePlugin>("MultiCamNative");
+const rawMultiCamNative = registerPlugin<MultiCamNativePlugin>("MultiCamNative");
+/** Camera2 HAL on some emulators never returns a callback. Bound the JS
+ * wait, but never interpret timeout as success, saved recording or STOP.
+ * A native late reply is ignored; the real camera/service owns its state. */
+const nativeDeadline = <T>(promise: Promise<T>, ms: number, name: string, late?: (result:T)=>void): Promise<T> =>
+  bounded(promise, ms, `MultiCamNative ${name}: Android не подтвердил операцию`, late);
+export const MultiCamNative: MultiCamNativePlugin = {
+  getCapabilities: () => nativeDeadline(rawMultiCamNative.getCapabilities(), 12000, "getCapabilities"),
+  inspectVideoFile: options => nativeDeadline(rawMultiCamNative.inspectVideoFile(options), 30000, "inspectVideoFile"),
+  getEncoderSupport: options => nativeDeadline(rawMultiCamNative.getEncoderSupport(options), 12000, "getEncoderSupport"),
+  startCameraAvailability: options => nativeDeadline(rawMultiCamNative.startCameraAvailability(options), 10000, "startCameraAvailability"),
+  stopCameraAvailability: options => nativeDeadline(rawMultiCamNative.stopCameraAvailability(options), 10000, "stopCameraAvailability"),
+  addListener: (name, listener) => nativeDeadline(
+    name === "cameraAvailabilityChanged"
+      ? rawMultiCamNative.addListener(name, listener as (event: {cameraId:string;available:boolean}) => void)
+      : rawMultiCamNative.addListener("highSpeedStateChanged", listener as (event: {state:string;message:string}) => void),
+    8000, "addListener", late => { void late.remove().catch(() => undefined); }),
+  getThermalStatus: () => nativeDeadline(rawMultiCamNative.getThermalStatus(), 7000, "getThermalStatus"),
+  listAudioInputs: () => nativeDeadline(rawMultiCamNative.listAudioInputs(), 7000, "listAudioInputs"),
+  setPreferredAudioInput: options => nativeDeadline(rawMultiCamNative.setPreferredAudioInput(options), 9000, "setPreferredAudioInput"),
+  startHighSpeedRecording: options => nativeDeadline(rawMultiCamNative.startHighSpeedRecording(options), 30000, "startHighSpeedRecording"),
+  stopHighSpeedRecording: () => nativeDeadline(rawMultiCamNative.stopHighSpeedRecording(), 45000, "stopHighSpeedRecording"),
+  toggleHybridAI: options => nativeDeadline(rawMultiCamNative.toggleHybridAI(options), 10000, "toggleHybridAI"),
+  setFocusMode: options => nativeDeadline(rawMultiCamNative.setFocusMode(options), 9000, "setFocusMode"),
+  setMeteringMode: options => nativeDeadline(rawMultiCamNative.setMeteringMode(options), 9000, "setMeteringMode"),
+  getHybridAIStatus: () => nativeDeadline(rawMultiCamNative.getHybridAIStatus(), 9000, "getHybridAIStatus"),
+};
 export const isNative = () => Capacitor.isNativePlatform() && Capacitor.isPluginAvailable("MultiCamNative");
 
 const thermalLabels = ["Норма", "Слабый нагрев", "Умеренный нагрев", "Сильный нагрев", "Критично", "Аварийно", "Отключение"];

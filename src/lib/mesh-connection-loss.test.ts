@@ -1,0 +1,238 @@
+import {afterEach,describe,expect,it,vi} from "vitest";
+import {mesh,isValidMeshMessage} from "./mesh";
+const internal=mesh as unknown as {
+  channels:Map<RTCDataChannel,string|null>;
+  peers:Map<string,{id:string;name:string;via:string;lastSeen:number;recording:boolean;battery:null;storageMB:null;latency:null}>;
+  wire:(ch:RTCDataChannel)=>void;
+  handle:(message:unknown,via:"webrtc"|"local",channel?:RTCDataChannel)=>void;
+};
+const peer=(id:string)=>({id,name:"Camera",via:"webrtc",lastSeen:Date.now(),recording:false,battery:null,storageMB:null,latency:null});
+const channel=(send=vi.fn())=>({readyState:"open",send,close:vi.fn()} as unknown as RTCDataChannel);
+afterEach(()=>{internal.channels.clear();internal.peers.clear();});
+describe("multi-phone mesh message trust and isolation",()=>{
+ it("rejects unknown/oversized IDs and impossible telemetry",()=>{
+   for(const m of [
+     null,{type:"ping",from:"",t:1},{type:"ping",from:"x".repeat(100),t:1},
+     {type:"ping",from:"bad peer",t:1},{type:"ping",from:"phone",t:NaN},
+     {type:"record",from:"phone",on:"yes",at:1},
+     {type:"telemetry",from:"phone",name:"A",recording:true,battery:200,storageMB:0},
+     {type:"dangerous",from:"phone"}]){
+     expect(isValidMeshMessage(m)).toBe(false);
+     internal.handle(m,"local");
+   }
+   expect(internal.peers.size).toBe(0);
+ });
+ it("never elevates an unpaired first record packet into a connected director",()=>{
+   const received=vi.fn();
+   const off=mesh.onMessage(received);
+   try {
+     internal.handle({type:"record",from:"rogue",on:true,at:Date.now()},"local");
+     expect(internal.peers.has("rogue")).toBe(false);
+     expect(received).not.toHaveBeenCalled();
+     internal.handle({type:"telemetry",from:"director",name:"Phone",
+       battery:75,storageMB:500,recording:false},"local");
+     received.mockClear();
+     internal.handle({type:"record",from:"director",on:true,at:Date.now()},"local");
+     expect(received).toHaveBeenCalledOnce();
+   } finally { off(); }
+ });
+ it("maintains multiple distinct remote phones without collapsing their identities",()=>{
+   const m=(from:string)=>({type:"telemetry",from,name:from,
+     battery:75,storageMB:1024,recording:false});
+   internal.handle(m("phone1"),"webrtc");
+   internal.handle(m("phone2"),"webrtc");
+   expect(internal.peers.size).toBe(2);
+   expect(internal.peers.has("phone1")).toBe(true);
+   expect(internal.peers.has("phone2")).toBe(true);
+   internal.handle({type:"bye",from:"phone1"},"webrtc");
+   expect(internal.peers.has("phone2")).toBe(true);
+   expect(internal.peers.has("phone1")).toBe(false);
+ });
+});
+describe("local session switch on fold or re-pair",()=>{
+ it("ignores delayed commands queued on the retired BroadcastChannel",()=>{
+  const all:Array<{onmessage:((e:{data:unknown})=>void)|null;close:ReturnType<typeof vi.fn>}>=[];
+  class FakeChannel {
+    onmessage:((e:{data:unknown})=>void)|null=null;
+    close=vi.fn();
+    postMessage=vi.fn();
+    constructor(_name:string){all.push(this);}
+  }
+  const handler=vi.fn(),off=mesh.onMessage(handler);
+  const old=globalThis.BroadcastChannel;
+  vi.stubGlobal("BroadcastChannel",FakeChannel);
+  try {
+    mesh.joinLocal("111");
+    mesh.joinLocal("222");
+    expect(all[0]?.close).toHaveBeenCalledOnce();
+    all[0]?.onmessage?.({data:{type:"telemetry",from:"stale",
+      name:"Old Camera",battery:50,storageMB:500,recording:false}});
+    expect(internal.peers.has("stale")).toBe(false);
+    all[1]?.onmessage?.({data:{type:"telemetry",from:"new",
+      name:"New Camera",battery:50,storageMB:500,recording:false}});
+    expect(internal.peers.has("new")).toBe(true);
+    expect(handler).toHaveBeenCalledOnce();
+  } finally {
+    mesh.leave();
+    off();
+    vi.stubGlobal("BroadcastChannel",old);
+  }
+ });
+});
+describe("truthful remote recording status acknowledgements",()=>{
+ it("rejects forged, malformed and misdirected results",()=>{
+   expect(isValidMeshMessage({type:"record-result",from:"camera",to:"host",
+     at:100,status:"saved"})).toBe(true);
+   for (const invalid of [
+     {type:"record-result",from:"camera",to:"host",at:0,status:"saved"},
+     {type:"record-result",from:"camera",to:"host",at:100,status:"success"},
+     {type:"record-result",from:"camera",to:"not a valid id",at:100,status:"saved"},
+   ]) expect(isValidMeshMessage(invalid)).toBe(false);
+   internal.handle({type:"record-result",from:"unknown",to:mesh.selfId,
+     at:100,status:"saved"},"webrtc");
+   expect(internal.peers.has("unknown")).toBe(false);
+ });
+ it("never lets late command receipts downgrade a saved or failed camera",()=>{
+   internal.handle({type:"telemetry",from:"cam-ack",name:"Cam",
+     battery:70,storageMB:500,recording:false},"webrtc");
+   const result=(at:number,status:string)=>({type:"record-result",
+     from:"cam-ack",to:mesh.selfId,at,status});
+   // Only receipts for actual director commands may affect camera state.
+   mesh.send({type:"record",from:mesh.selfId,on:true,at:200});
+   internal.handle(result(200,"received"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("received");
+   internal.handle(result(200,"recording"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("recording");
+   internal.handle(result(200,"saved"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
+   expect(mesh.peers.get("cam-ack")?.recording).toBe(false);
+   internal.handle(result(200,"received"),"webrtc");
+   internal.handle(result(199,"error"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
+   internal.handle(result(201,"error"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("saved");
+   mesh.send({type:"record",from:mesh.selfId,on:false,at:201});
+   internal.handle(result(201,"error"),"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordStatus).toBe("error");
+   expect(mesh.peers.get("cam-ack")?.recordCommandAt).toBe(201);
+   internal.handle({ ...result(202,"saved"),to:"other-host"},"webrtc");
+   expect(mesh.peers.get("cam-ack")?.recordCommandAt).toBe(201);
+ });
+ it("rejects unsolicited completed/saved replies even from an already known camera",()=>{
+   internal.handle({type:"telemetry",from:"connected",name:"Cam",
+     battery:70,storageMB:500,recording:false},"webrtc");
+   internal.handle({type:"record-result",from:"connected",to:mesh.selfId,
+     at:500,status:"saved"},"webrtc");
+   expect(mesh.peers.get("connected")?.recordStatus).toBeUndefined();
+   mesh.send({type:"record",from:mesh.selfId,on:true,at:501});
+   internal.handle({type:"record-result",from:"connected",to:mesh.selfId,
+     at:500,status:"saved"},"webrtc");
+   expect(mesh.peers.get("connected")?.recordStatus).toBeUndefined();
+   internal.handle({type:"record-result",from:"connected",to:mesh.selfId,
+     at:501,status:"received"},"webrtc");
+   expect(mesh.peers.get("connected")?.recordStatus).toBe("received");
+ });
+ it("requires a channel identity before accepting recording receipts",()=>{
+   const ch=channel();
+   internal.channels.set(ch,null);
+   internal.peers.set("remote",peer("remote"));
+   internal.handle({type:"record-result",from:"remote",to:mesh.selfId,at:100,
+     status:"saved"},"webrtc",ch);
+   expect(mesh.peers.get("remote")?.recordStatus).toBeUndefined();
+   expect(internal.channels.get(ch)).toBeNull();
+ });
+});
+describe("peer connection loss must not hide healthy remote cameras",()=>{
+ it("rejects oversized and binary WebRTC messages before parsing",()=>{
+  const ch=channel();
+  internal.wire(ch);
+  const listener=vi.fn();
+  const off=mesh.onMessage(listener);
+  try {
+    ch.onmessage?.({data:"x".repeat(100000)} as MessageEvent);
+    ch.onmessage?.({data:new Uint8Array([1,2,3])} as unknown as MessageEvent);
+    expect(listener).not.toHaveBeenCalled();
+    expect(internal.peers.size).toBe(0);
+    ch.onmessage?.({data:JSON.stringify({type:"telemetry",from:"valid",name:"Camera",
+      battery:55,storageMB:700,recording:false})} as MessageEvent);
+    expect(internal.peers.has("valid")).toBe(true);
+  } finally {off();}
+ });
+ it("does not break remote WebRTC peers when local BroadcastChannel closes mid-send",()=>{
+  const ch=channel();internal.channels.set(ch,"phone1");internal.peers.set("phone1",peer("phone1"));
+  const broken={postMessage:vi.fn(()=>{throw Error("closed")}),close:vi.fn()};
+  (mesh as unknown as {bc:unknown;localId:string|null}).bc=broken;
+  (mesh as unknown as {bc:unknown;localId:string|null}).localId="session";
+  expect(()=>mesh.send({type:"ping",from:"self",t:1})).not.toThrow();
+  expect(broken.close).toHaveBeenCalledOnce();
+  expect((mesh as unknown as {bc:unknown;localId:string|null}).bc).toBeNull();
+  expect(internal.peers.has("phone1")).toBe(true);
+  expect(ch.send).toHaveBeenCalledOnce();
+ });
+ it("drops a failed send without throwing into the recording UI",()=>{
+  const broken=channel(vi.fn(()=>{throw Error("NetworkLost")}));
+  internal.channels.set(broken,"peer1");internal.peers.set("peer1",peer("peer1"));
+  expect(()=>mesh.send({type:"ping",from:"self",t:1})).not.toThrow();
+  expect(internal.channels.has(broken)).toBe(false);
+  expect(internal.peers.has("peer1")).toBe(false);
+ });
+ it("a failed old connection cannot delete a newer channel for the same phone",()=>{
+  const old=channel(vi.fn(()=>{throw Error("offline")}));
+  const next=channel();
+  internal.channels.set(old,"peer1");internal.channels.set(next,"peer1");
+  internal.peers.set("peer1",peer("peer1"));
+  mesh.send({type:"ping",from:"self",t:1});
+  expect(internal.peers.has("peer1")).toBe(true);
+  expect(internal.channels.has(next)).toBe(true);
+ });
+ it("cannot impersonate an existing director with the first packet on an unbound channel",()=>{
+  const rogue=channel();
+  internal.channels.set(rogue,null);
+  internal.peers.set("director",peer("director"));
+  const listener=vi.fn();
+  const off=mesh.onMessage(listener);
+  try {
+    internal.handle({type:"record",from:"director",on:true,at:Date.now()},"webrtc",rogue);
+    expect(listener).not.toHaveBeenCalled();
+    expect(internal.channels.get(rogue)).toBeNull();
+    internal.handle({type:"telemetry",from:"director",name:"Director",battery:70,
+      storageMB:500,recording:false},"webrtc",rogue);
+    expect(internal.channels.get(rogue)).toBe("director");
+    listener.mockClear();
+    internal.handle({type:"record",from:"director",on:true,at:Date.now()},"webrtc",rogue);
+    expect(listener).toHaveBeenCalledOnce();
+  } finally {off();}
+ });
+ it("cannot rebind an authenticated data channel to another remote camera",()=>{
+  const ch=channel();internal.channels.set(ch,"phone1");
+  internal.handle({type:"telemetry",from:"phone2",name:"spoof",
+    battery:70,storageMB:200,recording:false},"webrtc",ch);
+  expect(internal.peers.has("phone2")).toBe(false);
+  expect(internal.channels.get(ch)).toBe("phone1");
+ });
+ it("a stale local bye does not delete a live WebRTC peer",()=>{
+  const live=channel();
+  internal.channels.set(live,"phone1");
+  internal.peers.set("phone1",peer("phone1"));
+  internal.handle({type:"bye",from:"phone1"},"local");
+  expect(internal.peers.has("phone1")).toBe(true);
+  expect(internal.channels.has(live)).toBe(true);
+ });
+ it("a stale bye must not hide the active replacement camera channel",()=>{
+  const old=channel(),next=channel();
+  internal.channels.set(old,"phone1");internal.channels.set(next,"phone1");
+  internal.peers.set("phone1",peer("phone1"));
+  internal.handle({type:"bye",from:"phone1"},"webrtc",old);
+  expect(internal.peers.has("phone1")).toBe(true);
+  expect(internal.channels.has(next)).toBe(true);
+ });
+ it("closing a stale connection cannot remove a reconnected peer",()=>{
+  const old=channel(),next=channel();
+  internal.wire(old);internal.wire(next);
+  internal.channels.set(old,"peer1");internal.channels.set(next,"peer1");
+  internal.peers.set("peer1",peer("peer1"));
+  old.onclose?.(new Event("close") as CloseEvent);
+  expect(internal.peers.has("peer1")).toBe(true);
+  expect(internal.channels.has(next)).toBe(true);
+ });
+});

@@ -1,0 +1,61 @@
+/** One diagnostic operation owns the camera test workflow at a time.
+ * A state-render delay cannot allow RAW, EIS/OIS, two-encoder probes or
+ * slow-motion to open overlapping camera sessions.
+ *
+ * The native Camera2 owner is separately verified just before acquisition.
+ */
+export type DiagnosticOperation = "mode-scan" | "raw" | "stabilization" | "dual" | "high-speed";
+export interface DiagnosticLease {
+  readonly operation: DiagnosticOperation;
+  isCurrent(): boolean;
+  release(): void;
+}
+export class DiagnosticCaptureGate {
+  private current: symbol | null = null;
+  private operation: DiagnosticOperation | null = null;
+  private revision = 0;
+  private listeners = new Set<() => void>();
+  subscribe = (listener: () => void) => {
+    this.listeners.add(listener);
+    return () => { this.listeners.delete(listener); };
+  };
+  getSnapshot = () => this.revision;
+  private notify(): void {
+    this.revision++;
+    this.listeners.forEach(listener => listener());
+  }
+
+  acquire(operation: DiagnosticOperation): DiagnosticLease | null {
+    if (this.current !== null) return null;
+    const token = Symbol(operation);
+    this.current = token;
+    this.operation = operation;
+    this.notify();
+    return {
+      operation,
+      isCurrent: () => this.current === token,
+      release: () => {
+        // Stale async completions may not unlock a different probe.
+        if (this.current === token) {
+          this.current = null;
+          this.operation = null;
+          this.notify();
+        }
+      },
+    };
+  }
+
+  activeOperation(): DiagnosticOperation | null { return this.operation; }
+  reset(): void {
+    if (this.current === null) return;
+    this.current = null;
+    this.operation = null;
+    this.notify();
+  }
+}
+
+/** Shared across CameraTab, store and diagnostics, including React remounts.
+ * Never clear this gate on Activity recreation while an async probe may still
+ * be holding the physical camera. Only the owning probe releases its lease.
+ */
+export const diagnosticCaptureGate = new DiagnosticCaptureGate();

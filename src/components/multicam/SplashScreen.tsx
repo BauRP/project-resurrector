@@ -1,66 +1,23 @@
-import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import { emptyCapabilityMatrix, probeDeviceSafe, type CapabilityMatrix } from "@/lib/capabilities";
+import { useEffect } from "react";
+import { emptyCapabilityMatrix, loadMatrix, type CapabilityMatrix } from "@/lib/capabilities";
 
-const STAGES = [
-  "Запрос разрешений...",
-  "Проверяю основную камеру...",
-  "Проверяю фронтальную камеру...",
-  "Проверяю все функции, кодеки и системные возможности...",
-];
-const STARTUP_TIMEOUT_MS = 9000;
-
+/** Do not race camera permission requests against the Android WebView preview.
+ * Device diagnostics remain available by explicit user request. */
 export function SplashScreen({ onDone }: { onDone: (matrix: CapabilityMatrix) => void }) {
-  const [stage, setStage] = useState(0);
-  const [progress, setProgress] = useState(0);
-
   useEffect(() => {
     let alive = true;
-    let completed = false;
-
-    const finish = (matrix: CapabilityMatrix) => {
-      if (!alive || completed) return;
-      completed = true;
-      onDone(matrix);
-    };
-
-    const timeout = window.setTimeout(() => {
-      console.warn("Capability probe timeout; continuing without camera capabilities");
-      finish(emptyCapabilityMatrix({ camera: "timeout", microphone: "unavailable", storage: "unavailable" }));
-    }, STARTUP_TIMEOUT_MS);
-
-    void probeDeviceSafe((nextStage, nextProgress) => {
-      if (alive) {
-        setStage(nextStage);
-        setProgress(nextProgress);
-      }
-    })
-      .then(finish)
-      .catch((error: unknown) => {
-        console.warn("Capability probe failed; continuing without camera", error);
-        finish(emptyCapabilityMatrix({ camera: "error", microphone: "unavailable", storage: "unavailable" }));
-      })
-      .finally(() => window.clearTimeout(timeout));
-
-    return () => {
-      alive = false;
-      window.clearTimeout(timeout);
-    };
+    const id = window.setTimeout(() => {
+      if (alive) onDone(loadMatrix() ?? emptyCapabilityMatrix({
+        camera: "not-requested", microphone: "not-requested", storage: "unavailable",
+      }));
+    }, 80);
+    return () => { alive = false; window.clearTimeout(id); };
   }, [onDone]);
 
-  return (
-    <div className="absolute inset-0 z-[100] flex flex-col items-center justify-center gap-6 bg-background px-8 text-center">
-      <p className="text-sm font-semibold uppercase tracking-[0.25em]">MULTI-CAM POV</p>
-      <div className="h-1.5 w-full overflow-hidden rounded-full bg-secondary">
-        <motion.div
-          className="h-full bg-primary"
-          animate={{ width: `${progress}%` }}
-          transition={{ type: "spring", stiffness: 120, damping: 20 }}
-        />
-      </div>
-      <p aria-live="polite" className="min-h-10 text-xs text-muted-foreground">
-        {STAGES[stage] ?? STAGES[0]}
-      </p>
-    </div>
-  );
+  return <div role="status" className="app-splash absolute inset-0 z-[100] flex flex-col items-center justify-center gap-5 px-8 text-center">
+    <div className="multicam-brand-mark app-splash-logo" aria-hidden="true" />
+    <p className="app-splash-title text-sm font-semibold uppercase tracking-[.25em]">MULTI-CAM POV</p>
+    <div className="app-splash-progress h-1.5 w-full max-w-xs overflow-hidden rounded-full"><div className="h-full w-1/3 rounded-full" /></div>
+    <p className="text-xs text-muted-foreground">Подготовка интерфейса…</p>
+  </div>;
 }

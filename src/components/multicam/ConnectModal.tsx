@@ -9,6 +9,13 @@ import { useMulticamStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
 import { useMeshPeers } from "./useMesh";
 import { bounded, retry } from "@/lib/async";
+import { cameraController } from "@/lib/camera-controller";
+import { qrScanDimensions } from "@/lib/qr-scan-frame";
+import { nativeCapture } from "@/lib/native-capture";
+import { acquireWebViewPreviewWithNativeGuard } from "@/lib/camera-preview-acquisition";
+import { isNative } from "@/lib/native";
+import { activateAccessibleDialog } from "@/lib/accessible-dialog";
+import { planConnectedCaptureDeparture } from "@/lib/recording-finalization";
 
 type Step = "choose" | "id" | "qr";
 
@@ -17,11 +24,32 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
   const s = useMulticamStore();
   const peers = useMeshPeers();
   const [step, setStep] = useState<Step>("choose");
-  const leave = () => { mesh.leave(); s.set({ role: "solo", sessionCode: "POV-842" }); };
+  const [leaveNotice, setLeaveNotice] = useState("");
+  const dialogRef=useRef<HTMLDivElement>(null);
+  const latestClose=useRef(onClose);latestClose.current=onClose;
+  useEffect(()=>{
+    if(!dialogRef.current)return;
+    return activateAccessibleDialog(dialogRef.current,()=>latestClose.current());
+  },[]);
+  const leave = () => {
+    const action = planConnectedCaptureDeparture(s.recording, s.recordingPhase);
+    if (action === "request-stop") {
+      s.set({ recording: false, recordingPhase: "stopping" });
+      setLeaveNotice("Останавливаю запись. Дождитесь сохранения видео, затем нажмите «Выйти» ещё раз.");
+      return;
+    }
+    if (action === "wait") {
+      setLeaveNotice("Завершение файла ещё не подтверждено. Подключение сохраняется до окончания записи.");
+      return;
+    }
+    mesh.leave();
+    s.set({ role: "solo", sessionCode: "POV-842" });
+    setLeaveNotice("");
+  };
 
-  return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-[60] grid place-items-center bg-overlay p-4" onClick={onClose}>
+  return <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="connect-fold-modal fixed inset-0 z-[60] grid place-items-center overflow-y-auto overscroll-contain bg-overlay p-4" onClick={onClose}>
     <motion.div initial={{ scale: .94, y: 12 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .96, opacity: 0 }} transition={{ type: "spring", damping: 26, stiffness: 320 }}
-      onClick={(e) => e.stopPropagation()} className="glass-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-5">
+      ref={dialogRef} role="dialog" aria-modal="true" aria-label={t("howConnect")} tabIndex={-1} onClick={(e) => e.stopPropagation()} className="glass-panel max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto rounded-2xl p-5">
       <div className="mb-4 flex items-center justify-between gap-2">
         {step !== "choose" ? <Button size="icon" variant="ghost" aria-label={t("back")} onClick={() => setStep("choose")}><ChevronLeft /></Button> : <span className="size-9" />}
         <h2 className="min-w-0 flex-1 text-center text-lg font-semibold">{step === "choose" ? t("howConnect") : step === "id" ? t("byId") : t("byQr")}</h2>
@@ -32,8 +60,24 @@ export function ConnectModal({ onClose }: { onClose: () => void }) {
         <Choice icon={<QrCode />} title={t("byQr")} sub={t("byQrHint")} onClick={() => setStep("qr")} />
         {s.role !== "solo" && <div className="rounded-xl bg-card p-3 text-sm">
           <p className="mb-2 text-xs text-muted-foreground">{t("peers")} · {peers.length}</p>
-          {peers.length === 0 ? <p className="text-muted-foreground">{t("noPeers")}</p> : peers.map((p) => <p key={p.id} className="flex justify-between"><span>{p.name}</span><span className="text-muted-foreground">{p.latency ?? "–"} ms</span></p>)}
+          {peers.length === 0 ? <p className="text-muted-foreground">{t("noPeers")}</p> : peers.map((p) =>
+            <p key={p.id} className="flex flex-wrap items-center justify-between gap-2">
+              <span>{p.name}</span>
+              <span className="flex items-center gap-2 text-muted-foreground">
+                {s.role === "host" && p.recordStatus &&
+                  <span role="status" aria-label={`Remote recording status: ${p.recordStatus}`}
+                    className={p.recordStatus === "error" ? "font-semibold text-record" :
+                      p.recordStatus === "recording" ? "font-semibold text-status" : ""}>
+                    {p.recordStatus === "received" ? "ACK" :
+                      p.recordStatus === "recording" ? t("recording") :
+                      p.recordStatus === "stopping" ? "STOP…" :
+                      p.recordStatus === "saved" ? t("ready") : "ERROR"}
+                  </span>}
+                {p.latency ?? "–"} ms
+              </span>
+            </p>)}
           <Button className="mt-3 w-full" variant="outline" onClick={leave}><LogOut />{t("leave")}</Button>
+          {leaveNotice && <p role="status" className="mt-2 text-xs text-muted-foreground">{leaveNotice}</p>}
         </div>}
       </div>}
       {step === "id" && <IdFlow />}
@@ -82,7 +126,9 @@ function QrFlow() {
   const [error, setError] = useState(""); const [paste, setPaste] = useState("");
 
   const operation = useRef(0); const alive = useRef(true); const busy = useRef(false);
-  useEffect(() => { alive.current = true; return () => { alive.current = false; operation.current++; }; }, []);
+  useEffect(() => { alive.current = true; return () => {
+    alive.current = false; operation.current++; mesh.cancelPairing();
+  }; }, []);
   const current = (id: number) => alive.current && id === operation.current;
   const show = async (c: string, a: string[], id: number) => {
     const image = await retry(() => bounded(QRCode.toDataURL(c, { errorCorrectionLevel: "L", margin: 1, width: 480 }), 4000, "QR generation"));
@@ -94,7 +140,7 @@ function QrFlow() {
     const session = s.role === "host" ? s.sessionCode : `POV-${Math.floor(100 + Math.random() * 900)}`;
     try { const r = await bounded(mesh.createOffer(session), 16000, "Connection offer"); if (!current(id)) return; s.set({ role: "host", sessionCode: session }); await show(r.code, r.addresses, id); }
     catch { if (current(id)) { setError(t("scanError")); setPhase("idle"); } }
-    finally { busy.current = false; }
+    finally { if (current(id)) busy.current = false; }
   };
   const handleCode = async (text: string) => {
     if (busy.current) return; busy.current = true; const id = ++operation.current; setError(""); setPhase("busy");
@@ -102,12 +148,12 @@ function QrFlow() {
       if (host) { await bounded(mesh.acceptAnswer(text), 12000, "Connection answer"); if (current(id)) setPhase("done"); }
       else { const r = await bounded(mesh.answerOffer(text), 16000, "Connection answer"); if (!current(id)) return; s.set({ role: "slave", sessionCode: r.session }); await show(r.code, r.addresses, id); }
     } catch { if (current(id)) { setError(t("scanError")); setPhase(host && qr ? "show" : "idle"); } }
-    finally { busy.current = false; }
+    finally { if (current(id)) busy.current = false; }
   };
   useEffect(() => { if (!host && phase === "show" && peers.length) setPhase("done"); }, [host, phase, peers.length]);
 
   return <div>
-    <RoleSwitch host={host} onChange={(h) => { operation.current++; busy.current = false; setHost(h); setPhase("idle"); setQr(null); }} />
+    <RoleSwitch host={host} onChange={(h) => { operation.current++; mesh.cancelPairing(); busy.current = false; setHost(h); setPhase("idle"); setQr(null); }} />
     {phase === "busy" && <p className="py-10 text-center text-sm text-muted-foreground">{t("generating")}</p>}
     {phase === "idle" && (host ? <Button className="w-full" size="lg" onClick={() => void makeOffer()}><QrCode />{t("createSession")}</Button>
       : <Scanner label={t("scanHostQr")} onCode={(c) => void handleCode(c)} />)}
@@ -132,21 +178,71 @@ function Scanner({ label, onCode }: { label: string; onCode: (code: string) => v
   const [blocked, setBlocked] = useState(false);
   const callback = useRef(onCode); callback.current = onCode;
   useEffect(() => {
-    let stream: MediaStream | null = null; let raf = 0; let alive = true;
-    bounded(navigator.mediaDevices?.getUserMedia({ video: { facingMode: "environment" } }) ?? Promise.reject(new Error("Camera unavailable")), 6000, "QR camera", (late) => late.getTracks().forEach((track) => track.stop())).then((st) => {
-      if (!alive) { st.getTracks().forEach((x) => x.stop()); return; }
-      stream = st; if (video.current) { video.current.srcObject = st; void video.current.play().catch(() => { if (alive) setBlocked(true); }); }
-      const tick = () => {
-        const v = video.current; const c = canvas.current;
-        if (v && c && v.videoWidth) {
-          c.width = v.videoWidth; c.height = v.videoHeight; const ctx = c.getContext("2d", { willReadFrequently: true });
-          if (ctx) { ctx.drawImage(v, 0, 0); const img = ctx.getImageData(0, 0, c.width, c.height); const hit = jsQR(img.data, img.width, img.height); if (hit?.data) { alive = false; stream?.getTracks().forEach((track) => track.stop()); callback.current(hit.data); return; } }
+    const owner=Symbol("qr-scanner");
+    let raf=0, alive=true, lastScanAt=0;
+    const release=()=>{
+      cancelAnimationFrame(raf);
+      // This owner may have been superseded. Never release another camera.
+      cameraController.release(owner);
+      if(video.current)video.current.srcObject=null;
+    };
+    // QR pairing is an auxiliary reader: never evict a real preview/recording
+    // session. The same controller handles late getUserMedia and leases.
+    const acquireQr=()=>{
+      // Use the SAME guarded path as the full camera UI. Check native Camera2
+      // again after WebView getUserMedia resolves: the user could start
+      // recording while Android is showing the QR permission dialogue.
+      return acquireWebViewPreviewWithNativeGuard(owner,{
+        video:{facingMode:{ideal:"environment"}},audio:false,
+      },isNative()?()=>nativeCapture.status():null,
+      {preempt:false,isCurrent:()=>alive});
+    };
+    void acquireQr().then(st=>{
+      if(!alive){release();return;}
+      if(!st.getVideoTracks().some(track=>track.readyState==="live")){
+        setBlocked(true);release();return;
+      }
+      if(video.current){
+        video.current.srcObject=st;
+        void video.current.play().catch(()=>{
+          if(alive){setBlocked(true);release();}
+        });
+      }
+      const tick=()=>{
+        if(!alive)return;
+        const now=performance.now();
+        // Decoding a full video frame at 60 Hz heats mobile CPUs and
+        // competes with recording. ~6 checks/sec is adequate for QR pairing.
+        if(now-lastScanAt<150 || document.visibilityState==="hidden"){
+          raf=requestAnimationFrame(tick);return;
         }
-        if (alive) raf = requestAnimationFrame(tick);
+        lastScanAt=now;
+        const v=video.current,c=canvas.current;
+        if(v&&c&&v.videoWidth&&v.videoHeight){
+          const size=qrScanDimensions(v.videoWidth,v.videoHeight);
+          if(!size){raf=requestAnimationFrame(tick);return;}
+          // Retain aspect ratio across fold and app-window resizing.
+          c.width=size.width;c.height=size.height;
+          const ctx=c.getContext("2d",{willReadFrequently:true});
+          if(ctx){
+            try{
+              ctx.drawImage(v,0,0,c.width,c.height);
+              const img=ctx.getImageData(0,0,c.width,c.height);
+              const hit=jsQR(img.data,img.width,img.height);
+              if(hit?.data){
+                alive=false;release();callback.current(hit.data);return;
+              }
+            }catch{
+              // An OEM can invalidate the video surface during fold/resize.
+              setBlocked(true);alive=false;release();return;
+            }
+          }
+        }
+        if(alive)raf=requestAnimationFrame(tick);
       };
-      raf = requestAnimationFrame(tick);
-    }).catch(() => { if (alive) setBlocked(true); });
-    return () => { alive = false; cancelAnimationFrame(raf); stream?.getTracks().forEach((x) => x.stop()); if (video.current) video.current.srcObject = null; };
+      raf=requestAnimationFrame(tick);
+    }).catch(()=>{if(alive){setBlocked(true);release();}});
+    return ()=>{alive=false;release();};
   }, []);
   return <div><p className="mb-2 text-center text-xs text-muted-foreground">{label}</p>
     {blocked ? <p className="rounded-xl bg-card p-4 text-center text-sm text-warning">{t("cameraBlocked")}</p>

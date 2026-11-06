@@ -86,19 +86,19 @@
   --card-foreground: oklch(0.21 0.04 265);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.21 0.04 265);
-  --primary: oklch(0.58 0.14 230); /* sky-blue accent */
-  --primary-foreground: oklch(0.18 0.03 240);
+  --primary: oklch(0.55 0.23 296); /* original violet accent */
+  --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.945 0.01 260);
   --secondary-foreground: oklch(0.37 0.03 265); /* #334155-ish */
   --muted: oklch(0.95 0.008 260);
   --muted-foreground: oklch(0.45 0.03 265);
-  --accent: oklch(0.92 0.03 230);
+  --accent: oklch(0.94 0.035 295);
   --accent-foreground: oklch(0.21 0.04 265);
   --destructive: oklch(0.577 0.245 27.325);
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.929 0.013 255.508 / .8); /* slate-200/80 */
   --input: oklch(0.895 0.012 260);
-  --ring: oklch(0.585 0.21 230);
+  --ring: oklch(0.62 0.21 295);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -123,13 +123,13 @@
   --tracking-foreground: oklch(0.12 0.03 140);
   --timeline: oklch(0.985 0.005 260);
   --track: oklch(0.93 0.012 260);
-  --playhead: oklch(0.56 0.24 230); /* recording boundary */
+  --playhead: oklch(0.56 0.24 296); /* recording boundary */
   --cut: oklch(0.98 0 0);
   --subtitle: oklch(0.72 0.16 95);
   --subtitle-foreground: oklch(0.1 0.02 95);
-  --primary-glow: oklch(0.62 0.24 230);
-  --gradient-primary: linear-gradient(135deg, #7DD3FC 0%, #38BDF8 50%, #0EA5E9 100%);
-  --gradient-stage: radial-gradient(120% 70% at 0% 0%, oklch(0.94 0.03 260) 0%, transparent 55%), radial-gradient(100% 60% at 100% 100%, oklch(0.95 0.03 230) 0%, transparent 60%), oklch(0.976 0.004 255);
+  --primary-glow: oklch(0.65 0.22 300);
+  --gradient-primary: linear-gradient(125deg, #7953F8 0%, #A94CDF 52%, #C443A5 100%);
+  --gradient-stage: radial-gradient(120% 70% at 0% 0%, oklch(0.95 0.025 290) 0%, transparent 55%), radial-gradient(100% 60% at 100% 100%, oklch(0.96 0.025 345) 0%, transparent 60%), oklch(0.976 0.004 255);
   --shadow-soft: 0 4px 12px oklch(0 0 0 / .04), 0 1px 0 oklch(1 0 0) inset;
   --shadow-glow: 0 8px 24px -6px color-mix(in oklab, var(--primary) 55%, transparent);
 }
@@ -141,39 +141,39 @@
   --card-foreground: oklch(0.976 0.004 255);
   --popover: oklch(0.28 0.035 265);
   --popover-foreground: oklch(0.976 0.004 255);
-  --primary: oklch(0.75 0.14 230); /* sky-blue accent */
-  --primary-foreground: oklch(0.18 0.03 240);
+  --primary: oklch(0.73 0.18 298); /* violet accent */
+  --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.33 0.03 265);
   --secondary-foreground: oklch(0.87 0.015 260); /* #CBD5E1 */
   --muted: oklch(0.33 0.03 265);
   --muted-foreground: oklch(0.78 0.02 260);
-  --accent: oklch(0.35 0.05 230);
+  --accent: oklch(0.34 0.055 294);
   --accent-foreground: oklch(0.976 0.004 255);
   --destructive: oklch(0.704 0.191 22.216);
   --destructive-foreground: oklch(0.984 0.003 247.858);
   --border: oklch(0.279 0.041 260.031 / .6); /* slate-800/60 */
   --input: oklch(0.42 0.03 265);
-  --ring: oklch(0.62 0.24 230);
-  --chart-1: oklch(0.7 0.14 230);
+  --ring: oklch(0.68 0.20 296);
+  --chart-1: oklch(0.488 0.243 264.376);
   --chart-2: oklch(0.696 0.17 162.48);
   --chart-3: oklch(0.769 0.188 70.08);
   --chart-4: oklch(0.627 0.265 230);
   --chart-5: oklch(0.645 0.246 16.439);
   --sidebar: oklch(0.28 0.035 265);
   --sidebar-foreground: oklch(0.976 0.004 255);
-  --sidebar-primary: oklch(0.62 0.24 230);
+  --sidebar-primary: oklch(0.64 0.20 296);
   --sidebar-primary-foreground: oklch(0.984 0.003 247.858);
   --sidebar-accent: oklch(0.33 0.03 265);
   --sidebar-accent-foreground: oklch(0.976 0.004 255);
   --sidebar-border: oklch(0.42 0.03 265);
-  --sidebar-ring: oklch(0.62 0.24 230);
+  --sidebar-ring: oklch(0.68 0.20 296);
   --panel: oklch(0.28 0.035 265);
   --glass: oklch(0.28 0.035 265 / 0.92);
   --overlay: oklch(0.24 0.03 265);
   --timeline: oklch(0.22 0.025 265);
   --track: oklch(0.33 0.03 265);
-  --gradient-stage: radial-gradient(120% 70% at 0% 0%, oklch(0.24 0.06 230 / .5) 0%, transparent 55%), radial-gradient(100% 60% at 100% 100%, oklch(0.22 0.05 230 / .45) 0%, transparent 60%), oklch(0.15 0.02 265);
-  --shadow-soft: 0 4px 12px oklch(0 0 0 / .22), 0 1px 0 oklch(1 0 0 / .04) inset;
+  --gradient-stage: radial-gradient(120% 70% at 0% 0%, oklch(0.26 0.07 295 / .5) 0%, transparent 55%), radial-gradient(100% 60% at 100% 100%, oklch(0.23 0.055 340 / .4) 0%, transparent 60%), oklch(0.15 0.02 265);
+  --shadow-soft: 0 4px 14px oklch(0 0 0 / .45), 0 0 0 1px oklch(0.42 0.03 265);
   --shadow-glow: 0 8px 28px -6px color-mix(in oklab, var(--primary) 65%, transparent);
 }
 
@@ -206,12 +206,12 @@
 @keyframes simulation-shift { to { background-position: 80% 50%; } }
 
 .app-stage { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: oklch(0.08 0 0); }
-.app-shell { --nav-h: calc(4.1rem + env(safe-area-inset-bottom)); position: relative; height: 100dvh; width: min(100vw, calc(100dvh * 9 / 16)); overflow: hidden; background: var(--background); transform: translateZ(0); container-type: inline-size; }
+.app-shell { --nav-h: calc(3.75rem + env(safe-area-inset-bottom)); position: relative; height: 100dvh; width: min(100vw, calc(100dvh * 9 / 16)); overflow: hidden; background: var(--background); transform: translateZ(0); container-type: inline-size; }
 .app-scroll { height: 100%; overflow-y: auto; overscroll-behavior: contain; }
 .grid-cross::before { background: linear-gradient(to right,transparent 49.8%,oklch(1 0 0/.5) 50%,transparent 50.2%); }
 .grid-cross::after { background: linear-gradient(to bottom,transparent 49.8%,oklch(1 0 0/.5) 50%,transparent 50.2%); }
 .bottom-nav { position: absolute; z-index: 40; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); width: 100%; height: var(--nav-h); padding-bottom: env(safe-area-inset-bottom); overflow: hidden; border-top: 1px solid var(--border); border-radius: 0; background: var(--card); }
-.bottom-nav button { position: relative; display: flex; height: 4.1rem; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; color: var(--muted-foreground); cursor: pointer; }
+.bottom-nav button { position: relative; display: flex; height: 3.75rem; flex-direction: column; align-items: center; justify-content: center; gap: .25rem; color: var(--muted-foreground); cursor: pointer; }
 .bottom-nav button svg { width: 1.25rem; height: 1.25rem; }
 .bottom-nav button span { font-size: .64rem; font-weight: 600; }
 .bottom-nav button.active { color: var(--foreground); }
@@ -240,9 +240,9 @@
 .waveform{height:100%;opacity:.35;background:repeating-linear-gradient(90deg,transparent 0 4px,var(--foreground) 5px 6px,transparent 7px 10px);clip-path:polygon(0 42%,5% 20%,10% 65%,15% 30%,20% 55%,25% 12%,30% 68%,35% 35%,40% 58%,45% 20%,50% 72%,55% 33%,60% 62%,65% 15%,70% 55%,75% 29%,80% 70%,85% 26%,90% 60%,95% 35%,100% 50%,100% 55%,0 55%)}
 .lut-tile { min-width:0; overflow:hidden; border:1px solid var(--border); border-radius:.4rem; background:var(--card); text-align:start; cursor:pointer; }.lut-tile span{display:block;aspect-ratio:16/9;background:linear-gradient(135deg,oklch(.45 .12 35),oklch(.23 .08 220))}.lut-tile small{display:block;overflow:hidden;padding:.45rem;white-space:nowrap;text-overflow:ellipsis;font-size:.62rem}.lut-tile.selected{border-color:var(--primary);box-shadow:0 0 0 1px var(--primary)}
 .upload-zone { display:flex; min-height:3.5rem; align-items:center; justify-content:center; gap:.5rem; border:1px dashed var(--border); border-radius:.45rem; color:var(--muted-foreground); font-size:.75rem; cursor:pointer; }
-.setting-row,.settings-item { display:flex; align-items:center; justify-content:space-between; gap:1rem; min-height:3.6rem; padding:.8rem 1rem; border-bottom:1px solid var(--border); font-size:.82rem; }.settings-item:last-child{border-bottom:0}.settings-item svg{width:1.1rem;height:1.1rem;flex:none}.settings-item button{white-space:normal}
+.setting-row,.settings-item { display:flex; align-items:center; justify-content:space-between; gap:.65rem; min-height:2.8rem; padding:.5rem .8rem; border-bottom:1px solid var(--border); font-size:.82rem; }.settings-item:last-child{border-bottom:0}.settings-item svg{width:1.1rem;height:1.1rem;flex:none}.settings-item button{white-space:normal}
 .vertical-slider { width:5.5rem; accent-color:var(--primary); transform:rotate(-90deg); margin:2rem -2rem; }
-@media (min-width: 768px){.settings-item{min-height:4rem}}
+@media (min-width: 768px){.settings-item{min-height:3.1rem}}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;scroll-behavior:auto!important}}
 
 /* Global header, connect button, adaptive camera frame */
@@ -285,8 +285,8 @@
 .eq-fader { writing-mode: vertical-lr; direction: rtl; width: 1.1rem; height: 6.5rem; margin: 0; accent-color: var(--primary); }
 .bg-letterbox { background: color-mix(in oklab, var(--background) 70%, oklch(0.25 0 0)); }
 
-/* Standard backdrop property; the compiler supplies platform prefixes. */
-.glass-panel, .bottom-nav { backdrop-filter: blur(12px); }
+/* Solid UI: no see-through blur anywhere */
+.glass-panel, .bottom-nav { -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); }
 /* Slim scrollbars */
 * { scrollbar-width: thin; scrollbar-color: color-mix(in oklab, var(--foreground) 22%, var(--background)) transparent; }
 *::-webkit-scrollbar { width: 5px; height: 5px; }
@@ -338,7 +338,7 @@
 .settings-item { border-width: 0 0 1px; box-shadow: none; }
 .settings-item:last-child { border-bottom-width: 0; }
 section > .bg-card, .overflow-hidden.rounded-lg.bg-card, .overflow-hidden.rounded-xl.bg-card {
-  border-radius: 8px;
+  border-radius: 20px;
 }
 button, [role="button"], .connect-pill, .hud-chip, .editor-tab, .segmented-mini, .upload-zone {
   border: 1px solid var(--border);
@@ -357,7 +357,7 @@ button:not(:disabled):active { transform: scale(.96); }
 }
 /* Dark mode: sky-tinted definition rings */
 .dark .bg-card, .dark .glass-panel, .dark .bg-timeline, .dark .editor-tab, .dark .segmented-mini, .dark .hud-chip {
-  border-color: var(--border);
+  border-color: color-mix(in oklab, var(--border) 70%, var(--primary) 30%);
 }
 .dark .app-header { border-bottom-color: var(--border); }
 .dark .bottom-nav { border-top-color: var(--border); }
@@ -366,23 +366,24 @@ button:not(:disabled):active { transform: scale(.96); }
 .bottom-nav button.active { color: var(--primary); }
 .dark .bottom-nav button.active { color: oklch(0.8 0.18 230); }
 /* Theme segment control */
-.theme-seg { display: flex; gap: .3rem; padding: .2rem; border-radius: 8px; border: 1px solid var(--border); background: var(--secondary); }
-.theme-seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: .45rem; min-height: 32px; border-radius: 6px; border: 1px solid transparent; font-size: .8rem; font-weight: 600; color: var(--muted-foreground); }
+.theme-seg { display: flex; gap: .4rem; padding: .3rem; border-radius: 16px; border: 1px solid var(--border); background: var(--secondary); }
+.theme-seg button { flex: 1; display: flex; align-items: center; justify-content: center; gap: .35rem; min-height: 36px; border-radius: 10px; border: 1px solid transparent; font-size: .75rem; font-weight: 600; color: var(--muted-foreground); }
 .theme-seg button.active { background: var(--gradient-primary); color: var(--primary-foreground); box-shadow: var(--shadow-glow); }
 .theme-seg button svg { width: 1rem; height: 1rem; }
 
 /* Studio boundary system: semantic surfaces, no palette overrides in views. */
-.app-header { grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; padding-inline: .75rem; border-bottom: 1px solid var(--border); background: var(--glass); backdrop-filter: blur(12px); }
+/* Compact reference header: single line, preserve safe area insets on fold displays. */
+.app-header { grid-template-columns: minmax(0,1fr) auto; gap: .35rem; padding-block: max(.45rem, env(safe-area-inset-top)) .45rem; border-bottom: 1px solid transparent; background: transparent; }
 .app-header > div:last-child { justify-content: flex-end; flex-wrap: nowrap; gap: .35rem; }
-.app-header p { white-space: nowrap; overflow: visible; letter-spacing: 0; font-size: 11px; }
-.connect-pill { min-height: 32px; max-width: 100%; padding-inline: .55rem; gap: .3rem; font-size: .7rem; border: 1px solid var(--border); border-radius: 8px; }
-button { cursor: pointer; }
+.app-header p { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: .16em; font-size: 11px; }
+.connect-pill { min-height: 2.25rem; max-width: 60vw; padding-inline: .75rem; border: 1px solid var(--border); border-radius: 999px; }
+/* Do not enlarge all studio controls: each button variant sets its own size. */
+button { min-height: 0; min-width: 0; }
 button:not([class*="bg-"]):not(.active):not(.record-shutter) { background-color: var(--glass); }
-.dark button:not([class*="bg-"]):not(.active):not(.record-shutter) { background-color: var(--card); color: var(--foreground); }
-.hud-chip { height: 28px; border-radius: 8px; background: var(--glass); box-shadow: var(--shadow-soft); }
-.editor-tab { min-height: 30px; border-color: var(--border); }
-.segmented { border: 1px solid var(--border); border-radius: 8px; }
-.segmented-mini { border-radius: 8px; }
+.hud-chip { height: 1.75rem; border-radius: 999px; background: var(--glass); box-shadow: var(--shadow-soft); }
+.editor-tab { min-height: 2rem; border-color: var(--border); }
+.segmented { border: 1px solid var(--border); border-radius: 16px; }
+.segmented-mini { border-radius: 14px; }
 .segmented-mini button { padding-inline: .7rem; letter-spacing: 0; }
 .theme-seg button { border-color: var(--border); }
 .bottom-nav button { border-color: transparent; min-width: 0; }
@@ -390,38 +391,1188 @@ button:not([class*="bg-"]):not(.active):not(.record-shutter) { background-color:
 .dark .bottom-nav button.active { color: var(--primary); }
 .gain-range::-webkit-slider-thumb { background: radial-gradient(circle, oklch(0 0 0) 0 7px, oklch(1 0 0) 7.5px 11px, transparent 11.5px); }
 .gain-range::-moz-range-thumb { background: radial-gradient(circle, oklch(0 0 0) 0 7px, oklch(1 0 0) 7.5px 11px, transparent 11.5px); }
-.gain-range::-webkit-slider-runnable-track { width: 48px; background: linear-gradient(to right, transparent 22px, var(--track) 22px 26px, transparent 26px); }
-.gain-range::-webkit-slider-thumb { margin: 0; }
 .timeline-lane { border-bottom: 1px solid var(--border); }
 .timeline-header { border-right: 1px solid var(--border); }
 .timeline-header button { min-width: 24px; min-height: 32px; }
 .timeline-clip { border: 1px solid var(--border); }
-.timeline-play { width: 42px; height: 42px; background: var(--gradient-primary); box-shadow: var(--shadow-glow); border-radius: 50%; }
-.zoom-slider { min-height: 28px; }
+.timeline-play { width: 2.65rem; height: 2.65rem; background: var(--gradient-primary); box-shadow: var(--shadow-glow); border-radius: 50%; }
+.zoom-slider { min-height: 1.75rem; }
 .zoom-slider > span:first-child { background: var(--gradient-primary); border: 1px solid var(--border); }
 .studio-monitor { border: 1px solid var(--border); box-shadow: var(--shadow-soft); }
 .studio-timecode { border: 1px solid var(--border); background: var(--glass); color: var(--foreground); }
 button:disabled { cursor: not-allowed; opacity: .45; }
 
-.gain-range-slot { position: relative; width: 48px; height: 192px; flex-shrink: 0; }
-.gain-range { position: absolute; left: 50%; top: 50%; width: 192px; height: 48px; writing-mode: horizontal-tb; direction: ltr; transform: translate(-50%, -50%) rotate(-90deg); }
-.gain-range::-webkit-slider-runnable-track { width: 100%; height: 48px; background: linear-gradient(to bottom, transparent 22px, var(--track) 22px 26px, transparent 26px); }
-.gain-range::-webkit-slider-thumb { width: 48px; height: 48px; margin: 0; }
-.gain-range::-moz-range-track { width: 100%; height: 4px; }
 
-.dark button.bg-secondary { background: var(--secondary); color: var(--secondary-foreground); }
-.dark .bottom-nav button { background: var(--card); color: var(--muted-foreground); }
-.dark .bottom-nav button.active { background: color-mix(in oklab, var(--primary) 15%, var(--card)); color: var(--primary); }
-.dark .connect-pill { color: var(--primary-foreground); }
-.dark .connect-pill.active { color: var(--foreground); }
-.timeline-header { flex-wrap: nowrap; align-items: center; gap: 2px; }
-.timeline-header > span { min-width: 0; flex: 1; font-size: 10px; }
-.timeline-header button { min-height: 22px; }
+/* Responsive windows / book-fold / tri-fold / tablets.
+   Never scale the app or invent a device posture from a screen resolution.
+   The UI keeps the original visual design and its export/connect/capture actions. */
+.app-stage { width: 100%; min-width: 0; height: 100dvh; }
+.app-shell {
+  width: min(100%, 1600px);
+  max-width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  min-height: 0;
+}
+.app-scroll {
+  min-width: 0;
+  height: calc(100% - var(--nav-h));
+  scrollbar-gutter: stable;
+}
+.app-header { min-width: 0; }
+.app-header > :last-child { min-width: 0; display: flex; flex-wrap: nowrap; justify-content: flex-end; }
+.app-header .connect-pill { max-width: 100%; white-space: nowrap; }
+.app-header .connect-pill > span { min-width: 0; }
+@media (max-width: 359px) {
+  /* Hide only the logo, not actions, on very narrow fold cover screens. */
+  .app-header { grid-template-columns: 1fr; gap: .25rem; padding-inline: max(.4rem, env(safe-area-inset-left)); }
+  .app-header > div:first-child { display: none; }
+  .app-header > :last-child { gap: .25rem; }
+  .app-header .connect-pill { padding-inline: .5rem; font-size: .68rem; }
+}
+@media (min-width: 600px) {
+  .app-shell { --nav-h: calc(4rem + env(safe-area-inset-bottom)); }
+  .app-header { padding-inline: max(1.25rem, env(safe-area-inset-left)); }
+  .bottom-nav { max-width: 100%; }
+  .bottom-nav button { height: 4rem; }
+}
+@media (min-width: 840px) {
+  .app-shell { --nav-h: calc(4.05rem + env(safe-area-inset-bottom)); }
+  .app-header { padding-inline: max(1.5rem, env(safe-area-inset-left)); }
+  .bottom-nav button { height: 4.05rem; }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  .app-shell { --nav-h: calc(3.1rem + env(safe-area-inset-bottom)); }
+  .bottom-nav button { height: 3.1rem; flex-direction: row; }
+  .bottom-nav button svg { width: 1rem; height: 1rem; }
+  .app-header { padding-block: .2rem; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-shell, .app-scroll { scroll-behavior: auto; }
+}
 
-.timeline-header button { min-width: 20px; width: 20px; height: 24px; padding: 0; box-shadow: none; border-color: transparent; }
-.timeline-slot { position: absolute; inset: 5px 6px 5px 0; min-width: 0; justify-content: flex-start; gap: .4rem; border: 1px dashed var(--border); border-radius: 5px; background: var(--glass); color: var(--muted-foreground); font-size: 10px; padding-inline: .5rem; box-shadow: none; }
-.timeline-slot svg { width: 13px; height: 13px; }
-.timeline-zero { position: sticky; left: 0; z-index: 15; display: inline-block; height: 20px; background: var(--timeline); }
-.timeline-lane { height: 44px; }
-.settings-item { min-height: 48px; padding: .6rem .75rem; }
-@container (max-width: 390px) { .app-header { gap: .3rem; padding-inline: .5rem; } .app-header p { font-size: 10px; } .app-header > div:last-child { gap: .25rem; } .connect-pill { padding-inline: .4rem; font-size: 10px; } .connect-pill svg { width: 14px; height: 14px; } }
+/* The scroll container already excludes bottom navigation; do not subtract it twice. */
+.app-scroll { position: relative; display: flex; flex-direction: column; }
+.app-scroll > div:not(.app-header) { min-height: 0; }
+.camera-screen { height: 100%; min-height: 0; width: 100%; }
+.camera-screen.clean { height: 100%; }
+/* Fold and compact-window fixes are layout-only and retain original color palette. */
+[data-separating-fold="true"] .app-header { isolation: isolate; }
+@media (min-width: 840px) and (min-height: 540px) {
+  .app-header .connect-pill { max-width: none; }
+  .camera-screen { max-height: 100%; }
+}
+
+/* Android 7–10 WebViews may not implement dynamic viewport units.
+   Keep shell, stage and scroll measurable on these systems, instead of
+   silently dropping their height declaration and hiding navigation.
+   WindowManager measurements, when present, remain the authority. */
+@supports not (height: 100dvh) {
+  .app-stage, .app-shell {
+    height: var(--app-viewport-height, 100vh);
+    min-height: 0;
+  }
+  .connect-fold-modal,
+  .export-fold-overlay,
+  .privacy-fold-overlay {
+    max-height: var(--app-viewport-height, 100vh);
+  }
+  [data-fold-workspace="pane"] .connect-fold-modal,
+  [data-fold-workspace="pane"] .export-fold-overlay,
+  [data-fold-workspace="pane"] .privacy-fold-overlay {
+    height: var(--fold-work-height, var(--app-viewport-height, 100vh));
+  }
+}
+
+/* Safety: keep control hit targets clear of an actually occluding vertical hinge.
+   A software fold crease with NONE occlusion gets no artificial black gap. */
+[data-separating-fold="true"] .app-header,
+[data-separating-fold="true"] .bottom-nav { padding-inline: max(1rem, env(safe-area-inset-left)) max(1rem, env(safe-area-inset-right)); }
+@media (min-width: 600px) {
+  [data-separating-fold="true"] .app-header { column-gap: max(1rem, var(--fold-occlusion-width, 0px)); }
+}
+
+
+/* Native WindowManager region geometry is applied ONLY for actually reported separating folds.
+   No simulated hinges. A side pane remains useful for controls without changing the camera session. */
+[data-camera-split="side"] .camera-live-view {
+  inset-inline-end: auto !important;
+  width: var(--camera-left-pane-width) !important;
+  max-width: 100%;
+  border-inline-end: 1px solid var(--border);
+}
+[data-camera-split="side"] .camera-record-dock {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: 0 !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  bottom: clamp(12px, 13vh, 90px);
+}
+[data-camera-split="side"] .camera-record-dock > div { width: 100%; max-width: 450px; }
+[data-camera-tabletop="true"] .camera-live-view {
+  inset-block-end: auto !important;
+  height: min(var(--camera-upper-height), 70%);
+}
+[data-camera-tabletop="true"] .camera-record-dock {
+  inset-block-start: var(--camera-lower-top);
+  inset-block-end: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+[data-camera-tabletop="true"] .camera-record-dock > div { width: min(100%, 480px); }
+@media (max-height: 480px) {
+  .camera-record-dock { bottom: 4px; }
+  .camera-record-dock .record-shutter { width: 3rem; height: 3rem; }
+  .camera-record-dock .record-shutter span { width: 2.3rem; height: 2.3rem; }
+}
+
+
+/* Fold geometry is relative to the live camera region, not the entire Activity.
+   Keep all interactive controls within one physically usable pane. */
+[data-camera-split="side"] .camera-hud {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: 0 !important;
+  padding-inline: .5rem;
+}
+[data-camera-split="side"] .camera-settings-sheet {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: .5rem !important;
+}
+[data-camera-split="side"][data-fold-surface="camera"] .app-shell > .bottom-nav {
+  left: var(--camera-right-pane-left) !important;
+  width: var(--camera-right-pane-width) !important;
+}
+[data-camera-tabletop="true"] .camera-settings-sheet {
+  top: var(--camera-lower-top) !important;
+}
+
+
+/* An actual triple-pane topology from Android WindowManager. Controls occupy
+   the third usable region; all values are recalculated from live window bounds.
+   This is not based on any manufacturer/device name or physical resolution. */
+[data-camera-split="tri"] .camera-live-view {
+  inset-inline-end: auto !important;
+  width: var(--camera-left-pane-width) !important;
+  max-width: 100%;
+  border-inline-end: 1px solid var(--border);
+}
+[data-camera-split="tri"] .camera-hud,
+[data-camera-split="tri"] .camera-settings-sheet {
+  inset-inline-start: var(--camera-right-pane-left) !important;
+  inset-inline-end: calc(100% - var(--camera-control-pane-left)) !important;
+  min-width: 0;
+}
+[data-camera-split="tri"] .camera-record-dock {
+  inset-inline-start: var(--camera-control-pane-left) !important;
+  inset-inline-end: 0 !important;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  bottom: clamp(12px, 13vh, 90px);
+}
+[data-camera-split="tri"] .camera-record-dock > div {
+  max-width: min(100%, var(--camera-control-pane-width));
+}
+[data-camera-split="tri"][data-fold-surface="camera"] .app-shell > .bottom-nav {
+  left: var(--camera-control-pane-left) !important;
+  width: var(--camera-control-pane-width) !important;
+}
+
+
+/* The editor and settings use actual reported WindowManager usable regions.
+   Do not let project controls cross an occluding hinge. Normal phones,
+   non-separating creases and unsupported screen geometries stay unchanged. */
+[data-fold-workspace="pane"] .editor-fold-workspace,
+[data-fold-workspace="pane"] .settings-fold-workspace {
+  position: relative;
+  margin-inline-start: var(--fold-work-left);
+  width: min(var(--fold-work-width), 100%);
+  max-width: 100%;
+  min-width: 0;
+  top: var(--fold-work-y-offset, 0px);
+  max-height: var(--fold-work-height, 100%);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+[data-fold-workspace="pane"] .editor-fold-workspace * ,
+[data-fold-workspace="pane"] .settings-fold-workspace * { min-width: 0; }
+
+
+/* Keep the persistent header and navigation on a real, usable pane in
+   editor/settings. The camera gets its own per-pane preview/shutter layout.
+   Non-folding windows remain fully unchanged. */
+[data-fold-workspace="pane"][data-fold-surface="editor"] .app-shell .app-header,
+[data-fold-workspace="pane"][data-fold-surface="settings"] .app-shell .app-header {
+  position: relative;
+  margin-inline-start: var(--fold-work-left);
+  width: min(100%, var(--fold-work-width));
+  max-width: min(100%, var(--fold-work-width));
+  min-width: 0;
+  flex-wrap: wrap;
+}
+[data-fold-workspace="pane"][data-fold-surface="editor"] .app-shell > .bottom-nav,
+[data-fold-workspace="pane"][data-fold-surface="settings"] .app-shell > .bottom-nav {
+  left: var(--fold-work-left) !important;
+  width: min(100%, var(--fold-work-width)) !important;
+  max-width: 100%;
+}
+/* Horizontal separating hinge: controls and dialogs stay on the lower pane.
+   Avoid introducing a synthetic black bar on zero-occlusion creases. */
+[data-camera-tabletop="true"] .camera-hud {
+  max-height: var(--camera-upper-height);
+  overflow-y: auto;
+}
+[data-camera-tabletop="true"] .camera-settings-sheet {
+  max-height: calc(100% - var(--camera-lower-top));
+}
+
+
+/* Actual two-axis WindowManager hinge layout: four verified usable panes.
+   Never infer a 2x2 screen from manufacturer names, resolution or CSS alone. */
+[data-camera-split="quad"] .camera-live-view {
+  inset: auto !important;
+  left: var(--camera-quad-preview-left) !important;
+  top: var(--camera-quad-preview-top) !important;
+  width: var(--camera-quad-preview-width) !important;
+  height: var(--camera-quad-preview-height) !important;
+  border: 1px solid var(--border);
+}
+[data-camera-split="quad"] .camera-hud {
+  inset: auto !important;
+  left: var(--camera-quad-hud-left) !important;
+  top: var(--camera-quad-hud-top) !important;
+  width: var(--camera-quad-hud-width) !important;
+  max-height: var(--camera-quad-hud-height);
+  overflow-y: auto;
+}
+[data-camera-split="quad"] .camera-settings-sheet {
+  inset: auto !important;
+  left: var(--camera-quad-settings-left) !important;
+  top: var(--camera-quad-settings-top) !important;
+  width: var(--camera-quad-settings-width) !important;
+  height: var(--camera-quad-settings-height) !important;
+  overflow-y: auto;
+}
+[data-camera-split="quad"] .camera-record-dock {
+  inset: auto !important;
+  left: var(--camera-quad-controls-left) !important;
+  top: var(--camera-quad-controls-top) !important;
+  width: var(--camera-quad-controls-width) !important;
+  height: var(--camera-quad-controls-height) !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: .5rem;
+}
+[data-camera-split="quad"] .camera-record-dock > div {
+  width: 100%;
+  max-width: 100%;
+}
+[data-camera-split="quad"][data-fold-surface="camera"] .app-shell > .bottom-nav {
+  left: var(--camera-quad-controls-left) !important;
+  width: var(--camera-quad-controls-width) !important;
+}
+
+/* Pairing and QR acquisition are real dialogs, not scaled screenshots.
+   Restrict the interactive modal to the measured usable pane whenever an
+   occluding fold divides the current WebView window. Never guess a hinge. */
+[data-fold-workspace="pane"] .connect-fold-modal {
+  left: var(--fold-work-left, 0px);
+  top: var(--fold-work-top, 0px);
+  bottom: auto;
+  height: var(--fold-work-height, 100dvh);
+  right: auto;
+  width: min(var(--fold-work-width, 100%), 100%);
+  max-width: 100%;
+  padding-top: max(1rem, env(safe-area-inset-top));
+  padding-bottom: max(1rem, env(safe-area-inset-bottom));
+}
+.connect-fold-modal > * {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(calc(100dvh - 2rem), var(--fold-work-height, 100dvh));
+  overflow-wrap: anywhere;
+}
+@media (max-height: 480px) {
+  .connect-fold-modal { place-items: start center; padding-block: .5rem; }
+  .connect-fold-modal > * { max-height: calc(100dvh - 1rem); }
+}
+
+/* Recovery/recording warnings must stay inside the measured editor pane.
+   The desktop and ordinary phone paths retain their existing placement. */
+[data-fold-workspace="pane"] .app-navigation-notice {
+  left: var(--fold-work-left, 0px) !important;
+  right: auto !important;
+  width: min(var(--fold-work-width, 100%), 100%);
+  top: calc(var(--fold-work-top, 0px) + var(--fold-work-height, 100dvh) - var(--nav-h) - .5rem);
+  bottom: auto !important;
+  transform: translateY(-100%);
+  max-height: max(0px, calc(var(--fold-work-height, 100dvh) - var(--nav-h) - 1rem));
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+}
+/* Dedicated editor/export and privacy overlays are fixed-position siblings of
+   the workspace. Confine them separately to an ACTUAL Android usable pane so
+   their close buttons and controls never cross an occluding fold/dual display. */
+[data-fold-workspace="pane"] .export-fold-overlay,
+[data-fold-workspace="pane"] .privacy-fold-overlay {
+  left: var(--fold-work-left, 0px);
+  top: var(--fold-work-top, 0px);
+  bottom: auto;
+  height: var(--fold-work-height, 100dvh);
+  right: auto;
+  width: min(var(--fold-work-width, 100%), 100%);
+  max-width: 100%;
+}
+.export-fold-overlay, .privacy-fold-overlay {
+  overscroll-behavior: contain;
+  min-width: 0;
+}
+.export-fold-overlay > *, .privacy-fold-overlay > * {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+@media (max-height: 480px) {
+  .export-fold-overlay { padding-block: .5rem; }
+  .privacy-fold-overlay { top: max(0px, env(safe-area-inset-top)); }
+  /* A compact landscape Activity may be split by a horizontal hinge.
+     The generic privacy top above must never override measured pane top. */
+  [data-fold-workspace="pane"] .privacy-fold-overlay {
+    top: var(--fold-work-top, 0px);
+  }
+  [data-fold-workspace="pane"] .connect-fold-modal > *,
+  [data-fold-workspace="pane"] .export-fold-overlay > * {
+    max-height: min(calc(100dvh - 1rem), var(--fold-work-height, 100dvh));
+  }
+}
+
+/* Readable export controls with large Android font scaling and a narrow
+   WindowManager pane. Three rigid columns otherwise clip labels and hide
+   tap targets on mini cover screens or resized multi-window activities. */
+.export-action-grid {
+  grid-template-columns:repeat(auto-fit,minmax(min(100%,9rem),1fr));
+  min-width:0;
+}
+.export-action-grid > * {
+  min-width:0;
+  height:auto;
+  min-height:2.75rem;
+  white-space:normal;
+  overflow-wrap:anywhere;
+}
+.connect-fold-modal button,.export-fold-overlay button,
+.privacy-fold-overlay button { flex-shrink:0; }
+@media (max-width:360px) {
+  .connect-fold-modal { padding-inline:.5rem; }
+  .connect-fold-modal .glass-panel { padding:.75rem; }
+  .export-fold-overlay { padding-inline:.5rem; }
+  .privacy-fold-overlay > header { padding-inline:.75rem; }
+}
+
+/* Compact cover screens and genuine miniature app windows: keep all three
+   sections usable without pretending the whole physical display is available.
+   Only viewport geometry triggers this rule, never a manufacturer name. */
+@media (max-width: 280px), (max-height: 280px) {
+  .app-header { grid-template-columns:minmax(0,1fr); gap:.25rem; padding:.25rem .5rem; }
+  .connect-pill { max-width:100%; width:100%; justify-content:center; padding:.25rem; white-space:normal; overflow-wrap:anywhere; }
+  .bottom-nav { height:clamp(3rem,18dvh,4rem); }
+  .bottom-nav button { height:100%; min-width:0; gap:0; }
+  .bottom-nav button span { font-size:clamp(.55rem,2.8vw,.7rem); overflow-wrap:anywhere; }
+  .camera-screen { height:calc(100% - clamp(3rem,18dvh,4rem)); }
+  .camera-hud { overflow-y:auto; max-height:50%; padding-inline:.25rem; }
+  .camera-record-dock { bottom:max(.25rem, env(safe-area-inset-bottom)); }
+  .camera-record-dock .record-shutter { width:2.75rem; height:2.75rem; }
+  .connect-fold-modal { padding:.25rem; place-items:start center; }
+  .connect-fold-modal .glass-panel { padding:.5rem; }
+  .export-fold-overlay { padding:.5rem; }
+  .privacy-fold-overlay > header { padding:.5rem; }
+}
+/* The rule above must not override real WindowManager pane geometry. */
+@media (max-width: 280px), (max-height: 280px) {
+  [data-fold-workspace="pane"] .connect-fold-modal,
+  [data-fold-workspace="pane"] .export-fold-overlay,
+  [data-fold-workspace="pane"] .privacy-fold-overlay {
+    top:var(--fold-work-top,0px);
+    left:var(--fold-work-left,0px);
+    width:min(var(--fold-work-width,100%),100%);
+    height:var(--fold-work-height,100dvh);
+  }
+}
+
+
+/* MULTI-CAM POV 111/222 theme reference: shared premium glass surface */
+/* Only paint changes between themes. Existing dimensions, hinge geometry,
+   camera preview and editor track positions remain untouched. */
+:root {
+  --background: oklch(.951 .022 278);
+  --foreground: oklch(.22 .045 270);
+  --card: oklch(.970 .016 276 / .78);
+  --popover: oklch(.972 .018 277 / .96);
+  --secondary: oklch(.925 .026 279 / .82);
+  --muted: oklch(.925 .02 278);
+  --muted-foreground: oklch(.42 .042 274);
+  --border: oklch(.71 .052 273 / .72);
+  --glass: oklch(.98 .014 278 / .57);
+  --panel: oklch(.97 .018 274 / .76);
+  --primary: oklch(.55 .23 296);
+  --primary-glow: oklch(.66 .21 304);
+  --gradient-primary: linear-gradient(112deg, #05c7ef 0%, #3860e8 42%, #851cea 79%, #c622ed 100%);
+  --gradient-stage:
+    radial-gradient(95% 55% at 4% 25%, oklch(.86 .055 243 / .48), transparent 78%),
+    radial-gradient(80% 65% at 94% 56%, oklch(.86 .060 303 / .46), transparent 78%),
+    linear-gradient(152deg, #f0f1ff 0%, #dde5fb 48%, #e9e4fa 100%);
+  --shadow-soft: 0 5px 16px oklch(.40 .08 285 / .15), inset 0 1px 0 oklch(1 0 0 / .83);
+  --shadow-glow: 0 5px 17px oklch(.48 .18 294 / .29);
+}
+.dark {
+  --background: oklch(.115 .030 245);
+  --foreground: oklch(.94 .018 265);
+  --card: oklch(.27 .040 252 / .64);
+  --popover: oklch(.23 .039 253 / .94);
+  --secondary: oklch(.26 .038 255 / .77);
+  --muted: oklch(.24 .032 255);
+  --muted-foreground: oklch(.74 .024 263);
+  --border: oklch(.58 .045 252 / .58);
+  --glass: oklch(.31 .043 251 / .48);
+  --panel: oklch(.28 .042 252 / .58);
+  --primary: oklch(.70 .19 295);
+  --primary-glow: oklch(.69 .19 302);
+  --gradient-stage:
+    radial-gradient(90% 58% at 1% 26%, oklch(.30 .083 238 / .52), transparent 79%),
+    radial-gradient(85% 60% at 99% 54%, oklch(.26 .075 292 / .48), transparent 82%),
+    linear-gradient(143deg, #05101e 0%, #07192a 43%, #080e22 100%);
+  --shadow-soft: 0 5px 16px oklch(.015 .025 245 / .36), inset 0 1px 0 oklch(.87 .02 255 / .18);
+  --shadow-glow: 0 4px 18px oklch(.52 .20 294 / .36);
+}
+/* The single design system applies to the camera HUD, editor tools and settings. */
+.app-shell { background: var(--gradient-stage); color: var(--foreground); }
+.app-header {
+  background: linear-gradient(145deg, color-mix(in oklab, var(--glass) 62%, transparent), transparent);
+  border-bottom: 1px solid color-mix(in oklab, var(--border) 60%, transparent);
+}
+.app-header .connect-pill:not(.active),
+.theme-seg button.active,
+.editor-tab.active,
+.segmented-mini button.active,
+.hud-chip.active {
+  background: var(--gradient-primary);
+  border: 1px solid color-mix(in oklab, white 72%, transparent);
+  color: white;
+  box-shadow: var(--shadow-glow), inset 0 1px 1px oklch(1 0 0 / .42);
+}
+.glass-panel, .bottom-nav, .hud-chip, .studio-timecode,
+.settings-fold-workspace section > div,
+.settings-tool-trigger, .theme-seg,
+.editor-tab, .segmented, .segmented-mini {
+  background-color: var(--glass);
+  border-color: var(--border);
+  box-shadow: var(--shadow-soft);
+}
+.bottom-nav {
+  background: color-mix(in oklab, var(--glass) 88%, var(--background) 12%);
+  border-radius: 1.6rem 1.6rem 0 0;
+  border-top: 1px solid var(--border);
+}
+.bottom-nav button.active {
+  background: color-mix(in oklab, var(--primary) 18%, var(--glass));
+  color: var(--primary);
+  border: 1px solid color-mix(in oklab, var(--primary) 40%, var(--border));
+  border-radius: 1.15rem;
+  box-shadow: var(--shadow-glow);
+}
+.settings-fold-workspace section > div { border: 1px solid var(--border); border-radius: 1rem; }
+.settings-fold-workspace .settings-item { background: transparent; }
+.settings-fold-workspace .theme-seg { border-radius: 999px; }
+.settings-fold-workspace .theme-seg button { border-radius: 999px; }
+.settings-fold-workspace .settings-tool-trigger { border: 1px solid var(--border); border-radius: .9rem; }
+/* Do not apply blurred glass to the full-screen editor/camera or the full
+   navigation surface: that can be costly in an Android WebView. */
+.glass-panel, .hud-chip, .studio-timecode,
+.settings-fold-workspace section > div {
+  -webkit-backdrop-filter: blur(7px);
+  backdrop-filter: blur(7px);
+}
+.bottom-nav { -webkit-backdrop-filter: none; backdrop-filter: none; }
+@media (prefers-reduced-motion: reduce) {
+  .app-shell *, .app-shell *::before, .app-shell *::after { transition-duration: .01ms !important; }
+}
+
+
+/* Settings entry performance and 111/222 brand identity */
+.multicam-brand { display:flex; align-items:center; gap:.7rem; min-width:0; }
+.multicam-brand p { color:var(--foreground); font-weight:650; letter-spacing:.16em; flex:0 1 auto; }
+.multicam-brand-mark {
+  display:inline-block; position:relative; flex:none;
+  width:2rem; height:1.7rem;
+  filter:drop-shadow(0 2px 4px color-mix(in oklab,var(--primary) 45%,transparent));
+}
+.multicam-brand-mark::before, .multicam-brand-mark::after {
+  content:""; position:absolute; top:.18rem;
+  width:1.34rem; height:1.26rem; transform:skew(-32deg);
+  border-radius:.38rem; border:.25rem solid transparent;
+  background:linear-gradient(var(--background),var(--background)) padding-box,
+             linear-gradient(140deg,#00c5ea,#386ee9,#9853f4) border-box;
+}
+.multicam-brand-mark::before { left:.05rem; }
+.multicam-brand-mark::after {
+  left:.70rem;
+  background:linear-gradient(var(--background),var(--background)) padding-box,
+             linear-gradient(145deg,#398be9,#773af4,#b954e9) border-box;
+}
+.app-navigation-notice {
+  background:var(--glass); border:1px solid var(--border);
+  border-radius:1rem; box-shadow:var(--shadow-soft);
+}
+/* Do not use CSS contain:layout on the entire settings workspace:
+   it would make fixed privacy dialogs relative to that ancestor, breaking
+   Android safe-area and fold-pane overlay positioning. */
+.settings-fold-workspace { contain:none; }
+/* Preserve the translucent paint but avoid GPU-heavy blur allocations on
+   Android WebViews where many panels repaint during theme changes. */
+[data-multicam-native-webview="true"] .glass-panel,
+[data-multicam-native-webview="true"] .hud-chip,
+[data-multicam-native-webview="true"] .studio-timecode,
+[data-multicam-native-webview="true"] .settings-fold-workspace section > div {
+  -webkit-backdrop-filter:none !important;
+  backdrop-filter:none !important;
+}
+@media (max-width:360px) {
+  .multicam-brand { gap:.35rem; }
+  .multicam-brand-mark { width:1.55rem; transform:scale(.82); transform-origin:left center; }
+  .multicam-brand p { letter-spacing:.1em; font-size:10px; }
+}
+
+
+/* 111 / 222: camera placeholder uses the active theme without tinting
+   live frames. Retry requests an actual new camera acquisition. */
+.camera-screen.camera-offline { background: var(--gradient-stage); }
+.camera-screen.camera-offline .camera-live-view.camera-preview-placeholder { background: transparent; }
+.camera-preview-status {
+  border: 1px solid var(--border);
+  background: var(--glass);
+  box-shadow: var(--shadow-soft);
+  color: var(--foreground);
+}
+.camera-preview-retry {
+  display: inline-flex; align-items: center; justify-content: center;
+  gap: .55rem; min-height: 2.4rem; padding: .4rem 1.15rem;
+  border-radius: 999px;
+  background: var(--gradient-primary);
+  border: 1px solid color-mix(in oklab, white 70%, transparent);
+  color: #fff; box-shadow: var(--shadow-glow);
+}
+.camera-preview-retry:focus-visible,
+.theme-seg button:focus-visible,
+.settings-tool-trigger:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 3px;
+}
+@media (prefers-reduced-motion:reduce) {
+  .camera-preview-status, .camera-preview-retry { animation:none; transition:none; }
+}
+
+
+/* Native-friendly, nonblocking confirmation for Settings actions.
+   Both 111/222 themes use the same geometry and semantic surface tokens. */
+.settings-confirm-overlay {
+  background: color-mix(in oklab, var(--background) 72%, transparent);
+  overscroll-behavior: contain;
+}
+.settings-confirm-card {
+  background: var(--popover);
+  border-color: var(--border);
+  box-shadow: var(--shadow-soft), 0 16px 44px color-mix(in oklab,var(--foreground) 15%,transparent);
+}
+.studio-tab-loading {
+  min-height: 6rem;
+  border: 1px solid var(--border);
+  background: var(--glass);
+  border-radius: 1rem;
+}
+[data-fold-workspace="pane"] .settings-confirm-overlay {
+  inset: auto;
+  left: var(--fold-work-left, 0px);
+  top: var(--fold-work-top, 0px);
+  width: min(var(--fold-work-width,100%),100%);
+  height: var(--fold-work-height,100dvh);
+  max-height: 100dvh;
+}
+
+
+/* Full-viewport backing is part of both screenshot themes. It must not stay
+   lavender when the Android/WebView shell switches to midnight navy. */
+:root { color-scheme: light; --app-stage-backdrop: #dfe6f5; }
+:root.dark { color-scheme: dark; --app-stage-backdrop: #071324; }
+.app-stage { background: var(--app-stage-backdrop); }
+.settings-fold-workspace select { color: var(--foreground); }
+.settings-fold-workspace select option {
+  color: var(--foreground);
+  background: var(--popover);
+}
+.settings-fold-workspace :is(button,select,[role="switch"]):focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.settings-error-state {
+  background: var(--glass); color: var(--foreground);
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  box-shadow: var(--shadow-soft);
+}
+
+
+/* Settings interaction states share one glass language in themes 111/222.
+   Preserve native touch hit areas and readable controls when busy. */
+.settings-fold-workspace .settings-item > span { min-width: 0; }
+.settings-fold-workspace .settings-item select {
+  min-width: 5rem;
+  border: 1px solid var(--border);
+  border-radius: .7rem;
+  padding: .35rem .5rem;
+  background-color: var(--glass);
+  color: var(--foreground);
+}
+.settings-fold-workspace button:disabled {
+  opacity: .55;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+.settings-fold-workspace [role="alert"] {
+  background: color-mix(in oklab, var(--destructive) 9%, var(--glass));
+  border: 1px solid color-mix(in oklab, var(--destructive) 48%, var(--border));
+  border-radius: .8rem;
+  padding: .6rem .8rem;
+}
+.dark .settings-fold-workspace select option { background: #172137; color: #f3f4ff; }
+
+
+/* Theme 111/222: visible, navigable empty-state for policy not yet supplied. */
+.settings-privacy-empty {
+  background: var(--glass);
+  color: var(--foreground);
+  box-shadow: var(--shadow-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  overflow-wrap: anywhere;
+}
+
+
+/* Reference 111/222 precision skin: global layout and camera surfaces */
+/* The screen composition is shared; only glass pigment changes with .dark. */
+:root {
+  --reference-rim: oklch(.77 .066 274 / .77);
+  --reference-top: oklch(.997 .014 279 / .84);
+  --reference-bottom: oklch(.90 .035 283 / .63);
+  --reference-surface: linear-gradient(155deg,var(--reference-top),var(--reference-bottom));
+  --reference-shadow: 0 11px 26px oklch(.46 .09 269 / .20),inset 0 1.5px 0 oklch(1 0 0 / .87),inset 0 -1px 0 oklch(.64 .05 280 / .24);
+  --reference-glow: 0 9px 19px oklch(.52 .18 293 / .28),inset 0 1px 0 oklch(1 0 0 / .7);
+  --reference-backdrop:
+    radial-gradient(ellipse 80% 57% at -18% 25%,oklch(.78 .10 238 / .34),transparent 80%),
+    radial-gradient(ellipse 78% 70% at 112% 53%,oklch(.81 .09 298 / .36),transparent 84%),
+    linear-gradient(153deg,oklch(.967 .016 278),oklch(.891 .044 258) 49%,oklch(.915 .04 290));
+}
+:root.dark {
+  --reference-rim: oklch(.71 .067 255 / .57);
+  --reference-top: oklch(.35 .048 249 / .75);
+  --reference-bottom: oklch(.18 .040 247 / .77);
+  --reference-surface: linear-gradient(155deg,var(--reference-top),var(--reference-bottom));
+  --reference-shadow: 0 12px 24px oklch(.018 .022 246 / .52),inset 0 1px 0 oklch(.88 .027 254 / .27),inset 0 -1px 0 oklch(.10 .02 247 / .43);
+  --reference-glow: 0 9px 23px oklch(.53 .16 297 / .33),inset 0 1px 0 oklch(.86 .03 262 / .27);
+  --reference-backdrop:
+    radial-gradient(ellipse 98% 55% at -16% 28%,oklch(.29 .092 235 / .54),transparent 83%),
+    radial-gradient(ellipse 90% 62% at 110% 53%,oklch(.23 .094 286 / .51),transparent 82%),
+    linear-gradient(153deg,oklch(.07 .026 245),oklch(.105 .037 246) 49%,oklch(.075 .027 257));
+}
+.app-stage, .app-shell { background:var(--reference-backdrop); }
+.app-shell { isolation:isolate; }
+.app-shell::before,.app-shell::after {
+  content:"";position:absolute;z-index:-1;pointer-events:none;
+  width:142%;height:57%;border-radius:50%;transform:rotate(-30deg);
+}
+.app-shell::before {
+  left:-76%;top:-11%;
+  border-bottom:1px solid oklch(.73 .115 236 / .60);
+  background:linear-gradient(160deg,transparent 35%,oklch(.78 .08 231 / .15),transparent 91%);
+}
+.app-shell::after {
+  right:-83%;bottom:-10%;
+  border-top:1px solid oklch(.70 .11 287 / .58);
+  background:linear-gradient(40deg,transparent 40%,oklch(.80 .10 290 / .12),transparent 93%);
+}
+.dark .app-shell::before {border-color:oklch(.64 .17 233 / .66);background:linear-gradient(160deg,transparent 34%,oklch(.38 .11 232 / .20),transparent 92%);}
+.dark .app-shell::after {border-color:oklch(.59 .16 290 / .60);background:linear-gradient(40deg,transparent 40%,oklch(.31 .12 290 / .22),transparent 92%);}
+.app-scroll {position:relative;z-index:1;}
+.app-header {
+  min-height:3.55rem;
+  background:linear-gradient(176deg,oklch(.99 .014 280 / .34),transparent);
+  border-bottom:1px solid oklch(.83 .05 258 / .36);
+  box-shadow:0 6px 20px oklch(.36 .07 276 / .07);
+}
+.dark .app-header {background:linear-gradient(176deg,oklch(.17 .032 247 / .46),transparent);border-bottom-color:oklch(.59 .064 252 / .18);}
+.app-header .multicam-brand {gap:.55rem;}
+.app-header .multicam-brand p {font-weight:700;letter-spacing:.17em;color:var(--foreground);}
+.app-header .connect-pill:not(.active) {
+  color:oklch(1 0 0);background:var(--gradient-primary);
+  border:1px solid oklch(.93 .05 230 / .83);
+  box-shadow:0 0 11px oklch(.63 .17 287 / .33),0 7px 17px oklch(.50 .16 275 / .24),inset 0 1px 0 oklch(1 0 0 / .7);
+}
+/* Only draw the reference stage when the video is not live. */
+.camera-screen.camera-offline,
+.camera-screen.camera-offline .camera-preview-placeholder { background:transparent; }
+.camera-screen.camera-offline .camera-live-view::before,
+.camera-screen.camera-offline .camera-live-view::after {
+  content:"";position:absolute;pointer-events:none;border-radius:50%;transform:rotate(-27deg);
+}
+.camera-screen.camera-offline .camera-live-view::before {
+  width:138%;height:66%;left:-90%;top:-8%;
+  border-bottom:1.1px solid oklch(.67 .14 235 / .55);
+}
+.camera-screen.camera-offline .camera-live-view::after {
+  width:145%;height:60%;right:-90%;bottom:-14%;
+  border-top:1.1px solid oklch(.70 .14 289 / .59);
+}
+.grid-thirds::before {background:linear-gradient(to right,transparent 33.14%,oklch(.63 .063 250 / .55) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.63 .063 250 / .55) 66.6%,transparent 66.77%);}
+.grid-thirds::after {background:linear-gradient(to bottom,transparent 33.14%,oklch(.63 .063 250 / .55) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.63 .063 250 / .55) 66.6%,transparent 66.77%);}
+.dark .grid-thirds::before {background:linear-gradient(to right,transparent 33.14%,oklch(.81 .065 240 / .41) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.81 .065 240 / .41) 66.6%,transparent 66.77%);}
+.dark .grid-thirds::after {background:linear-gradient(to bottom,transparent 33.14%,oklch(.81 .065 240 / .41) 33.27%,transparent 33.44%,transparent 66.48%,oklch(.81 .065 240 / .41) 66.6%,transparent 66.77%);}
+/* Four parts of the central lens-status card follow the reference geometry. */
+.camera-preview-status {
+  display:grid;grid-template-columns:3.75rem minmax(0,1fr);
+  grid-template-rows:auto auto;align-content:center;
+  gap:.65rem .9rem;
+  width:min(94%,32rem);max-width:100%;
+  border:1.5px solid var(--reference-rim);
+  border-radius:1.85rem;
+  background:var(--reference-surface);
+  box-shadow:var(--reference-shadow);
+  color:var(--foreground);
+  padding:1.1rem 1rem;
+}
+.camera-preview-status::before {
+  content:"";position:absolute;left:5.5rem;top:16%;bottom:16%;width:1px;
+  background:var(--reference-rim);
+}
+.camera-preview-status .camera-preview-symbol {
+  grid-column:1;grid-row:1/3;
+  width:3.65rem;height:3.65rem;
+  padding:.82rem;border-radius:1.2rem;
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);box-shadow:var(--reference-shadow);
+}
+.camera-preview-status p {
+  grid-column:2;grid-row:1;
+  text-align:left;font-size:clamp(.74rem,3.3vw,1rem);
+  font-weight:500;line-height:1.42;color:var(--foreground);
+}
+.camera-preview-retry {
+  grid-column:2;grid-row:2;justify-self:center;
+  width:100%;min-width:0;min-height:2.5rem;
+  border:1px solid oklch(.92 .055 235 / .85);
+  border-radius:999px;background:var(--gradient-primary);
+  box-shadow:var(--reference-glow);color:white;
+  font-size:clamp(.71rem,3.1vw,.88rem);
+  white-space:nowrap;
+}
+/* HUD, transport controls and persistent tab bar share the same rim treatment. */
+.camera-hud .hud-chip {
+  min-height:2rem;padding-inline:.56rem;
+  color:var(--foreground);font-weight:650;font-size:clamp(.62rem,2.4vw,.79rem);
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);box-shadow:var(--reference-shadow);
+}
+.camera-hud .hud-chip.active {background:var(--gradient-primary);color:white;}
+.camera-record-dock {bottom:1.35rem;}
+.camera-record-dock .glass-panel,
+.camera-record-dock .segmented-mini,
+.studio-timecode {
+  background:var(--reference-surface);
+  border:1px solid var(--reference-rim);
+  box-shadow:var(--reference-shadow);
+}
+.camera-record-dock .record-shutter {
+  border:3px solid var(--reference-rim);outline:2px solid oklch(.67 .14 282 / .63);
+  outline-offset:3px;box-shadow:0 0 11px oklch(.59 .16 278 / .25),var(--reference-shadow);
+}
+.camera-record-dock .record-shutter span {
+  background:oklch(.66 .255 25);
+  box-shadow:inset 0 2px 3px oklch(.95 .09 20 / .5);
+}
+.camera-record-dock button:not(.record-shutter) {
+  background:var(--reference-surface);border:1px solid var(--reference-rim);
+  border-radius:999px;box-shadow:var(--reference-shadow);
+}
+.camera-record-dock .segmented-mini button {border:0;box-shadow:none;}
+.camera-record-dock .segmented-mini button.active {
+  color:white;background:var(--gradient-primary);box-shadow:var(--reference-glow);
+}
+.bottom-nav {
+  border:1px solid var(--reference-rim);border-bottom:0;
+  border-radius:1.85rem 1.85rem 0 0;
+  background:var(--reference-surface);
+  box-shadow:0 -6px 24px oklch(.43 .10 264 / .16),inset 0 1px 0 oklch(1 0 0 / .29);
+}
+.bottom-nav button {height:100%;gap:.13rem;color:var(--foreground);}
+.bottom-nav button.active {
+  color:var(--primary);
+  background:linear-gradient(120deg,oklch(.82 .088 239 / .43),oklch(.74 .13 305 / .34));
+  border:1px solid oklch(.72 .15 290 / .47);
+  border-radius:1.65rem;box-shadow:var(--reference-glow);
+}
+.bottom-nav button i {height:.13rem;top:.3rem;background:var(--gradient-primary);}
+.editor-fold-workspace,
+.settings-fold-workspace {background:transparent;color:var(--foreground);}
+.editor-fold-workspace :is(.glass-panel,.bg-card,.bg-secondary,.editor-tab),
+.settings-fold-workspace :is(.glass-panel,.bg-card,.bg-secondary,.settings-tool-trigger) {
+  border-color:var(--reference-rim);box-shadow:var(--reference-shadow);
+}
+.editor-fold-workspace .editor-tab,
+.settings-fold-workspace .theme-seg,
+.settings-fold-workspace .settings-tool-trigger {
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);
+  box-shadow:var(--reference-shadow);
+}
+.editor-fold-workspace .editor-tab.active,
+.settings-fold-workspace .theme-seg button.active {
+  color:white;background:var(--gradient-primary);box-shadow:var(--reference-glow);
+}
+.editor-fold-workspace .bg-timeline {background:var(--reference-surface);}
+.settings-fold-workspace .settings-item {border-bottom:1px solid var(--reference-rim);box-shadow:none;}
+.settings-fold-workspace section > div {background:var(--reference-surface);}
+.app-splash {background:var(--reference-backdrop);color:var(--foreground);}
+.app-splash-progress {background:var(--reference-surface);border:1px solid var(--reference-rim);box-shadow:var(--reference-shadow);}
+.app-splash-progress > div {background:var(--gradient-primary);}
+.app-splash-logo {width:2.7rem;height:2.1rem;}
+@media (max-width:440px) {
+  .app-header .multicam-brand {gap:.35rem;}
+  .app-header .multicam-brand p {font-size:.66rem;letter-spacing:.12em;}
+  .camera-preview-status {width:94%;grid-template-columns:3.1rem minmax(0,1fr);padding:.85rem;gap:.45rem;}
+  .camera-preview-status::before {left:4.5rem;}
+  .camera-preview-status .camera-preview-symbol {width:3.1rem;height:3.1rem;padding:.72rem;}
+}
+@media (prefers-reduced-motion:reduce) {
+  .app-shell::before,.app-shell::after,.camera-live-view::before,.camera-live-view::after {animation:none;}
+}
+
+
+/* Compact circular Folder and Export actions; the Connect button is still
+   positioned by the same header grid as the Camera section. */
+.app-header .app-header-actions .header-icon-action {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex:0 0 2.25rem;
+  width:2.25rem;
+  height:2.25rem;
+  min-height:2.25rem;
+  padding:0;
+  border-radius:50%;
+}
+@media (max-width:390px) {
+ .app-header-editor .app-header-actions {gap:.2rem;}
+ .app-header-editor .app-header-actions .header-icon-action {flex-basis:2rem;width:2rem;height:2rem;min-height:2rem;}
+ .app-header-editor .app-header-actions .connect-pill:last-child {padding-inline:.48rem;gap:.3rem;font-size:.68rem;}
+}
+/* No tinted scrolling rectangle below the six camera HUD chips. Keep the
+   original placement and each button; scroll is retained on narrow phones. */
+.camera-hud-controls {
+ background:transparent;
+ border:0;
+ box-shadow:none;
+ outline:0;
+ overflow:visible;
+ scrollbar-gutter:auto;
+}
+@media (max-width:390px) {
+ .camera-hud-controls {overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;}
+}
+
+/* Small-screen editor: all three top actions remain usable without hiding
+   or truncating the brand. Camera and Settings retain the one-line header. */
+@media (max-width: 560px) {
+ /* Both camera and editor keep their Connect button on the same top row. */
+ .app-header-editor {display:grid;grid-template-columns:minmax(0,1fr) auto;row-gap:0;}
+ .app-header-editor > .multicam-brand {display:flex;min-width:0;max-width:100%;}
+ .app-header-editor .multicam-brand p {overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.72rem;letter-spacing:.14em;}
+ .app-header-editor .app-header-actions {display:flex;align-items:center;justify-content:flex-end;gap:.28rem;width:auto;min-width:0;flex-wrap:nowrap;}
+ .app-header-editor .app-header-actions .connect-pill:last-child {width:auto;max-width:100%;min-width:0;flex:0 1 auto;justify-content:center;}
+}
+/* Prior narrow-screen rule hid the brand altogether. The reference 111/222
+   always shows the full name, even with gesture navigation. */
+@media (max-width: 390px) {
+ .app-header > .multicam-brand:first-child {display:flex;}
+ .app-header {grid-template-columns:minmax(0,1fr) auto;}
+ .app-header .multicam-brand p {font-size:.56rem;letter-spacing:.08em;}
+ .app-header .multicam-brand-mark {width:1.55rem;transform:scale(.84);transform-origin:left center;}
+ .app-header-editor {grid-template-columns:minmax(0,1fr) auto;}
+ .app-header-editor .multicam-brand p {font-size:.69rem;letter-spacing:.12em;}
+}
+
+
+/* Reference-scale vertical layout: 111/222 reserve ~10% for the navigation,
+   and center the camera-status panel above the optical centre of the frame. */
+@media (min-height: 600px) and (min-width: 300px) {
+ .app-shell {--nav-h:calc(clamp(3.6rem,6.85dvh,4.05rem) + env(safe-area-inset-bottom));}
+ .camera-screen.camera-offline .camera-preview-status {transform:translateY(-8.4dvh);}
+}
+.camera-preview-status {width:min(90%,32rem);}
+@media (max-width:440px) {
+ .camera-preview-status {width:90%;}
+}
+
+
+/* Shared visual grammar: camera, timeline editor and settings use identical
+ * glass pigment, soft bevel rims, cyan-violet accents and compact controls. */
+.editor-fold-workspace .bg-card,
+.editor-fold-workspace .bg-secondary,
+.editor-fold-workspace .bg-timeline {
+  background:var(--reference-surface);
+  border-color:var(--reference-rim);
+}
+.editor-fold-workspace button:not(:disabled):not(.record-shutter),
+.editor-fold-workspace .timeline-header,
+.editor-fold-workspace .timeline-lane,
+.settings-fold-workspace button:not(:disabled) {
+  -webkit-tap-highlight-color:transparent;
+}
+.editor-fold-workspace .timeline-header {
+  border-right:1px solid var(--reference-rim);
+  background:var(--reference-surface);
+}
+.editor-fold-workspace .timeline-lane {border-bottom-color:var(--reference-rim);}
+.editor-fold-workspace .timeline-play,
+.editor-fold-workspace [role="toolbar"] button,
+.editor-fold-workspace .editor-tab,
+.editor-fold-workspace button[aria-label="Уменьшить масштаб"],
+.editor-fold-workspace button[aria-label="Увеличить масштаб"] {
+  border:1px solid var(--reference-rim);
+  background:var(--reference-surface);
+  border-radius:1.05rem;
+  box-shadow:var(--reference-shadow);
+}
+.editor-fold-workspace .timeline-play,
+.editor-fold-workspace .editor-tab.active,
+.editor-fold-workspace [role="toolbar"] button.bg-primary {
+  color:white;
+  background:var(--gradient-primary);
+  box-shadow:var(--reference-glow);
+}
+.editor-fold-workspace [role="toolbar"] button:disabled {
+  opacity:.48;
+  box-shadow:none;
+}
+.editor-fold-workspace .timeline-scroll {border:1px solid var(--reference-rim);}
+.editor-fold-workspace [role="tablist"] {
+  border-radius:1.05rem;
+  background:var(--reference-surface);
+  border:1px solid var(--reference-rim);
+}
+.editor-fold-workspace [role="tablist"] .editor-tab {
+  border-radius:.9rem;
+}
+.settings-fold-workspace section,
+.settings-fold-workspace .settings-advanced-tools {
+  border-radius:1.15rem;
+}
+.settings-fold-workspace .settings-tool-trigger,
+.settings-fold-workspace .theme-seg,
+.settings-fold-workspace .settings-item select {
+  background:var(--reference-surface);
+  border-color:var(--reference-rim);
+  box-shadow:var(--reference-shadow);
+}
+.settings-fold-workspace .theme-seg button:not(.active) {color:var(--foreground);}
+.settings-fold-workspace .theme-seg button.active {
+  background:var(--gradient-primary);
+  border:1px solid oklch(.93 .05 230 / .7);
+  box-shadow:var(--reference-glow);
+  color:white;
+}
+.settings-confirm-card,
+.settings-error-state,
+.settings-privacy-empty {
+  background:var(--reference-surface);
+  border:1px solid var(--reference-rim);
+  box-shadow:var(--reference-shadow);
+}
+.settings-fold-workspace button:focus-visible,
+.editor-fold-workspace button:focus-visible,
+.camera-screen button:focus-visible {
+  outline:2px solid var(--primary);
+  outline-offset:2px;
+}
+.bottom-nav button.active svg,
+.app-header .connect-pill svg {
+  filter:drop-shadow(0 0 3px oklch(.60 .16 290 / .35));
+}
+
+
+/* Reference 111/222 timeline: visible Video/Audio lane titles and unboxed
+   eye/speaker glyphs, rather than tiny square buttons and clipped "V". */
+.editor-fold-workspace .timeline-header {
+  min-width: 104px;
+  justify-content: space-between;
+  gap: 3px;
+  padding: 0 5px 0 7px;
+  border-right: 1px solid var(--reference-rim);
+  background: var(--reference-surface);
+  color: var(--foreground);
+}
+.editor-fold-workspace .timeline-header .timeline-lane-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: nowrap;
+  letter-spacing: -.02em;
+}
+.editor-fold-workspace .timeline-header button.timeline-lane-toggle,
+.editor-fold-workspace .timeline-header button.timeline-lane-toggle:not(:disabled) {
+  display: inline-flex;
+  flex: 0 0 22px;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  min-width: 22px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 0 !important;
+  border-radius: 999px;
+  background: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  outline-offset: -1px;
+  -webkit-tap-highlight-color: transparent;
+}
+.editor-fold-workspace .timeline-header .timeline-lane-toggle svg {width: 17px;height: 17px;}
+.editor-fold-workspace .timeline-header .timeline-lane-toggle.is-off {
+  color: var(--destructive);
+  opacity: .8;
+}
+.editor-fold-workspace .timeline-header button.timeline-lane-toggle:active {
+  background-color: color-mix(in oklab, var(--primary) 18%, transparent) !important;
+}
+.editor-fold-workspace .timeline-lane {
+  background: color-mix(in oklab, var(--reference-top) 55%, transparent);
+}
+.editor-fold-workspace .timeline-lane:nth-child(2n) {
+  background: color-mix(in oklab, var(--reference-bottom) 55%, transparent);
+}
+/* Camera HUD: individual outlined pill lenses like reference 111/222, not a
+   single flat strip. Keep original 8 controls and their touch bounds. */
+.camera-screen .camera-hud .hud-chip {
+  border-radius: 999px !important;
+  border: 1px solid var(--reference-rim);
+  background: var(--reference-surface);
+  padding-inline: clamp(.33rem, 1.65vw, .57rem);
+  box-shadow: var(--reference-shadow), 0 1px 4px color-mix(in oklab,var(--primary) 12%,transparent);
+  min-height: 2.1rem;
+  font-size: clamp(.58rem, 2.24vw, .78rem);
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--foreground);
+}
+.camera-screen .camera-hud .hud-chip.active {background:var(--gradient-primary);color:white;box-shadow:var(--reference-glow);}
+@media(max-width:390px) {
+  .camera-screen .camera-hud {gap: .22rem;}
+  .camera-screen .camera-hud .hud-chip {padding-inline:.29rem;font-size:.56rem;min-height:1.9rem;}
+}
+
+
+/* Android settings GPU safe paint: retain glass appearance without blur allocations */
+/* Avoid the universal descendant selector that forced style recalculation
+ * of every Settings control whenever the Android tab or theme changed.
+ * The shared native rules above already cover every actual blurred glass
+ * surface. Keep overlays explicitly guarded without restyling descendants. */
+html[data-active-multicam-tab="settings"][data-multicam-native-webview="true"]
+ .app-shell :is(.settings-fold-workspace, .privacy-fold-overlay, .settings-confirm-overlay) {
+ -webkit-backdrop-filter:none !important;
+ backdrop-filter:none !important;
+}
+/* All panels keep translucent reference gradients, rims and soft shadows. */
+html[data-active-multicam-tab="settings"] .settings-fold-workspace {
+ background:transparent;
+}
+html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
+ .theme-seg,.settings-tool-trigger,.settings-item select,.settings-confirm-card) {
+ background:var(--reference-surface);
+ border-color:var(--reference-rim);
+ box-shadow:var(--reference-shadow);
+}
+
+
+/* Android WebView freeze evidence: at navigation camera -> settings, Android
+ * main was blocked in HardwareRenderer.syncAndDrawFrame. The fullscreen shell
+ * used translateZ(0), forcing a separate full-screen compositing surface on
+ * every tab repaint. Keep the exact gradients, buttons and sizing, but let
+ * Chromium choose whether a hardware layer is needed. Stop infinite demo
+ * background animation when native; real camera frames keep their own source.
+ */
+:root[data-multicam-native-webview="true"] .app-shell {
+  transform: none !important;
+}
+:root[data-multicam-native-webview="true"] .simulated-feed {
+  animation: none !important;
+}
+
+/* Lovable 2-Nov compact restoration, merged without overriding our 111/222
+ * fold/window rules or re-enabling Android GPU-expensive backdrop blurs. */
+.app-header { grid-template-columns:minmax(0,1fr) auto; gap:.5rem; padding-inline:.75rem; }
+.app-header > div:last-child { justify-content:flex-end; flex-wrap:nowrap; gap:.35rem; }
+.app-header p { white-space:nowrap; letter-spacing:0; font-size:11px; }
+.connect-pill { max-width:100%; min-height:32px; padding-inline:.55rem; gap:.3rem; font-size:.7rem; border-radius:8px; }
+.hud-chip { border-radius:8px; }
+.editor-tab { min-height:30px; }
+.timeline-header { flex-wrap:nowrap; align-items:center; gap:2px; }
+.timeline-header .timeline-lane-title { min-width:0; font-size:10px; }
+.timeline-track-add { display:inline-flex; align-items:center; justify-content:center; flex:none; width:20px; height:24px; padding:0; border:1px solid transparent; border-radius:5px; }
+.timeline-track-add:focus-visible { outline:2px solid var(--primary); outline-offset:1px; }
+.timeline-header .timeline-track-add:hover { background:var(--secondary); }
+.timeline-slot { position:absolute; inset:5px 6px 5px 0; min-width:0; max-width:100%;
+  justify-content:flex-start; gap:.4rem; border:1px dashed var(--border);
+  border-radius:5px; background:var(--glass); color:var(--muted-foreground);
+  font-size:10px; padding-inline:.5rem; box-shadow:none; overflow:hidden; }
+.timeline-slot svg { width:13px; height:13px; flex:none; }
+.timeline-lane { border-bottom:1px solid var(--border); }
+.timeline-header { border-right:1px solid var(--border); }
+.timeline-clip { border:1px solid var(--border); }
+.gain-range-slot { position:relative; width:48px; height:192px; flex-shrink:0; }
+.gain-range-slot > .gain-range { position:absolute; left:50%; top:50%; width:192px; height:48px;
+  writing-mode:horizontal-tb; direction:ltr; transform:translate(-50%,-50%) rotate(-90deg); }
+.gain-range-slot .gain-range::-webkit-slider-runnable-track { width:100%; height:48px;
+  background:linear-gradient(to bottom, transparent 22px, var(--track) 22px 26px, transparent 26px); }
+.gain-range-slot .gain-range::-webkit-slider-thumb { width:48px; height:48px; margin:0; }
+.dark button.bg-secondary { background:var(--secondary); color:var(--secondary-foreground); }
+@container (max-width:390px) {
+  .app-header { gap:.3rem; padding-inline:.5rem; }
+  .app-header p { font-size:10px; }
+  .app-header > div:last-child { gap:.25rem; }
+  .connect-pill { padding-inline:.4rem; font-size:10px; }
+  .connect-pill svg { width:14px; height:14px; }
+}
+
+
+/* Native Android WebView compositor safety for 111/222 glass themes.
+ * The same reference gradients/rims remain visible. Avoid promoting two
+ * enormous, rotated 142%-wide decorative pseudo-elements into independent
+ * GPU surfaces when Camera -> Settings changes its content tree.
+ * Desktop/browser keeps the original reference styling. */
+:root[data-multicam-native-webview="true"] .app-shell::before,
+:root[data-multicam-native-webview="true"] .app-shell::after {
+  transform: none;
+  width: 75%;
+  height: 37%;
+  will-change: auto;
+}
+:root[data-multicam-native-webview="true"] .app-shell::before {
+  left: -32%;
+  top: -8%;
+}
+:root[data-multicam-native-webview="true"] .app-shell::after {
+  right: -34%;
+  bottom: -9%;
+}

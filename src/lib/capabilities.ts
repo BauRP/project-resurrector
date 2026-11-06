@@ -1,7 +1,9 @@
-import { MultiCamNative, isNative } from "./native";
+import { MultiCamNative, isNative, type NativeCameraProfile } from "./native";
 
 export interface CameraCaps {
   available: boolean; deviceId: string | null; label: string;
+  /** Candidate modes computed from maximum bounds; not verified supported modes. */
+  candidateResolutions?: string[]; candidateFps?: number[];
   maxWidth: number; maxHeight: number; maxFps: number;
   resolutions: string[]; fps: number[]; highSpeed: number[];
   iso: [number, number] | null; exposure: [number, number] | null; focus: [number, number] | null;
@@ -10,6 +12,8 @@ export interface CameraCaps {
 export interface CapabilityMatrix {
   probedAt: number; permissions: { camera: string; microphone: string; storage: string };
   rear: CameraCaps; front: CameraCaps; codecs: string[]; microphones: number; native: boolean;
+  /** Per-camera hardware declarations are not proof that a mode records correctly. */
+  hardwareCameras?: NativeCameraProfile[];
 }
 export type Facing = "rear" | "front";
 const KEY = "multicam-capability-matrix";
@@ -47,66 +51,186 @@ export function emptyCapabilityMatrix(permissions: CapabilityMatrix["permissions
 }
 export const makeUnavailableMatrix = emptyCapabilityMatrix;
 
+/** A corrupted or partially written passport must not crash the camera
+ * screen after Android kills and restarts the WebView. Ignore invalid data,
+ * never erase it, and permit a fresh explicit diagnosis later. */
 export function loadMatrix(): CapabilityMatrix | null {
-  try { const raw = window.localStorage.getItem(KEY); return raw ? JSON.parse(raw) as CapabilityMatrix : null; } catch { return null; }
+  try {
+    const raw = window.localStorage.getItem(KEY);
+    if (!raw || raw.length > 262144) return null;
+    const data: unknown = JSON.parse(raw);
+    if (!data || typeof data !== "object" || Array.isArray(data)) return null;
+    const matrix = data as Partial<CapabilityMatrix>;
+    const perms = matrix.permissions;
+    if (!perms || typeof perms.camera !== "string" ||
+        typeof perms.microphone !== "string" || typeof perms.storage !== "string") return null;
+    const validCamera = (v: unknown): v is CameraCaps => {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      const cam = v as Partial<CameraCaps>;
+      return typeof cam.available === "boolean" &&
+        (cam.deviceId === null || typeof cam.deviceId === "string") &&
+        Array.isArray(cam.resolutions) && Array.isArray(cam.fps) &&
+        Array.isArray(cam.highSpeed) &&
+        Number.isFinite(cam.maxWidth) && Number.isFinite(cam.maxHeight) &&
+        Number.isFinite(cam.maxFps);
+    };
+    if (!validCamera(matrix.rear) || !validCamera(matrix.front) ||
+        !Array.isArray(matrix.codecs) ||
+        typeof matrix.native !== "boolean" ||
+        !Number.isFinite(matrix.probedAt)) return null;
+    return matrix as CapabilityMatrix;
+  } catch { return null; }
 }
 
 async function probeCamera(facingMode: "environment" | "user"): Promise<CameraCaps> {
   let stream: MediaStream | null = null;
+  let usedUnspecifiedFallback=false;
   try {
     stream = await gum({ video: { facingMode: { exact: facingMode } }, audio: false });
   } catch {
     if (facingMode === "user") return empty();
-    try { stream = await gum({ video: true, audio: false }); } catch { return empty(); }
+    try {
+      stream = await gum({ video: true, audio: false });
+      usedUnspecifiedFallback=true;
+    } catch { return empty(); }
   }
-  const track = stream.getVideoTracks()[0];
-  const tc = (track?.getCapabilities?.() ?? {}) as Record<string, unknown>;
-  stream.getTracks().forEach((t) => t.stop());
-  const range = (k: string): [number, number] | null => { const r = tc[k] as { min?: number; max?: number } | undefined; return r && typeof r.max === "number" && r.max > (r.min ?? 0) ? [r.min ?? 0, r.max] : null; };
-  const w = (tc["width"] as { max?: number })?.max ?? 0; const h = (tc["height"] as { max?: number })?.max ?? 0; const f = (tc["frameRate"] as { max?: number })?.max ?? 0;
-  const long = Math.max(w, h); const short = Math.min(w, h);
-  const wbModes = (tc["whiteBalanceMode"] as string[] | undefined) ?? [];
-  return {
-    available: true, deviceId: (tc["deviceId"] as string) ?? track?.getSettings().deviceId ?? null, label: track?.label ?? "",
-    maxWidth: w, maxHeight: h, maxFps: f,
-    resolutions: Object.entries(RES).filter(([, [rw, rh]]) => !long || (rw <= long && rh <= short + 1)).map(([k]) => k),
-    fps: [24, 30, 60].filter((x) => !f || x <= f), highSpeed: [],
-    iso: range("iso"), exposure: range("exposureTime"), focus: range("focusDistance"),
-    whiteBalance: wbModes.includes("manual"), colorTemperature: range("colorTemperature"), torch: tc["torch"] === true, zoom: range("zoom"),
-  };
+  try {
+    const track=stream.getVideoTracks()[0];
+    // getUserMedia resolving is NOT proof that a usable lens was opened.
+    if(!track || track.readyState!=="live")return empty();
+    const tc=(track.getCapabilities?.() ?? {}) as Record<string,unknown>;
+    const settings=track.getSettings?.() ?? {};
+    // If the requested rear stream fell back to video:true, WebView may
+    // actually have opened a selfie camera. Never assign that camera the
+    // rear passport or lens capabilities when the observed facing disagrees.
+    const actualFacing=settings.facingMode;
+    // A generic video:true fallback does not establish rear lens identity.
+    // If the browser does not disclose facingMode, preserve unknown instead.
+    if((usedUnspecifiedFallback && actualFacing!=="environment") ||
+       (facingMode==="environment" && actualFacing==="user") ||
+       (facingMode==="user" && actualFacing==="environment"))
+      return empty();
+    const range=(k:string):[number,number]|null=>{
+      const r=tc[k] as {min?:number;max?:number}|undefined;
+      const min=r?.min,max=r?.max;
+      return typeof min==="number" && typeof max==="number" &&
+        Number.isFinite(min) && Number.isFinite(max) && min>=0 && max>min ?
+          [min,max] : null;
+    };
+    const max=(k:string)=>{
+      const raw=(tc[k] as {max?:number}|undefined)?.max;
+      return typeof raw==="number" && Number.isFinite(raw) && raw>0 ? raw : 0;
+    };
+    const w=max("width"),h=max("height"),f=max("frameRate");
+    const wbModes=tc["whiteBalanceMode"];
+    const id=typeof settings.deviceId==="string"&&settings.deviceId ?
+      settings.deviceId : null;
+    return {
+      available:true,deviceId:id,label:track.label??"",
+      maxWidth:w,maxHeight:h,maxFps:f,
+      // Capability maxima are candidates, never proof of decoded recording.
+      resolutions:[],candidateResolutions:Object.entries(RES)
+        .filter(([, [rw,rh]])=>!w||!h||(rw<=Math.max(w,h)&&rh<=Math.min(w,h)+1))
+        .map(([k])=>k),
+      fps:[],candidateFps:[24,30,60].filter(x=>!f||x<=f),highSpeed:[],
+      iso:range("iso"),exposure:range("exposureTime"),focus:range("focusDistance"),
+      whiteBalance:Array.isArray(wbModes)&&wbModes.includes("manual"),
+      colorTemperature:range("colorTemperature"),torch:tc["torch"]===true,zoom:range("zoom"),
+    };
+  }catch{
+    // Broken OEM getCapabilities/getSettings calls are unknown, not success.
+    return empty();
+  }finally{
+    // Including a missing-track stream or a throwing OEM capability getter.
+    stream.getTracks().forEach(t=>t.stop());
+  }
 }
 
 /** Runs real permission requests and hardware probes, reporting each stage. Duration = real execution time. */
-export async function probeDevice(onStage: (stage: number, progress: number) => void): Promise<CapabilityMatrix> {
-  onStage(0, 5);
+export async function probeDevice(
+  onStage: (stage: number, progress: number) => void, signal?: AbortSignal,
+): Promise<CapabilityMatrix> {
+  // The startup splash may already have timed out/unmounted. A late probe
+  // must never publish old camera results over the active session's passport.
+  const stage=(index:number,percent:number)=>{
+    if(!signal?.aborted)onStage(index,percent);
+  };
+  stage(0, 5);
   const permissions = { camera: "denied", microphone: "denied", storage: "denied" };
-  try { const s = await gum({ video: true, audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; permissions.microphone = "granted"; }
+  try {
+    const s=await gum({video:true,audio:true});
+    try{
+      // A resolved stream is not proof that an OEM supplied both tracks.
+      // Device permissions and functionality must be recorded separately.
+      if(s.getVideoTracks().some(t=>t.readyState==="live"))permissions.camera="granted";
+      if(s.getAudioTracks?.().some(t=>t.readyState==="live"))permissions.microphone="granted";
+    }finally{s.getTracks().forEach(t=>t.stop());}
+  }
   catch {
-    try { const s = await gum({ video: true }); s.getTracks().forEach((t) => t.stop()); permissions.camera = "granted"; } catch { /* camera refused */ }
-    try { const s = await gum({ audio: true }); s.getTracks().forEach((t) => t.stop()); permissions.microphone = "granted"; } catch { /* mic refused */ }
+    // A timed-out first-run check must not start *new* camera/microphone
+    // requests after the app UI has already opened or ownership changed.
+    if(!signal?.aborted){
+      try {
+        const s=await gum({video:true,audio:false});
+        try{if(s.getVideoTracks().some(t=>t.readyState==="live"))permissions.camera="granted";}
+        finally{s.getTracks().forEach(t=>t.stop());}
+      }catch{/* camera refused */}
+    }
+    if(!signal?.aborted){
+      try {
+        const s=await gum({audio:true,video:false});
+        try{if(s.getAudioTracks?.().some(t=>t.readyState==="live"))permissions.microphone="granted";}
+        finally{s.getTracks().forEach(t=>t.stop());}
+      }catch{/* mic refused */}
+    }
+  }
+  // If an OEM returns only one media track for the combined request, never
+  // mark the missing track granted just from the HTTP/API resolution.
+  if(permissions.camera!=="granted"&&!signal?.aborted){
+    try{
+      const s=await gum({video:true,audio:false});
+      try{if(s.getVideoTracks().some(t=>t.readyState==="live"))permissions.camera="granted";}
+      finally{s.getTracks().forEach(t=>t.stop());}
+    }catch{/* unavailable or denied; never fabricate a granted permission */}
+  }
+  if(permissions.microphone!=="granted"&&!signal?.aborted){
+    try{
+      const s=await gum({audio:true,video:false});
+      try{if(s.getAudioTracks?.().some(t=>t.readyState==="live"))permissions.microphone="granted";}
+      finally{s.getTracks().forEach(t=>t.stop());}
+    }catch{/* unavailable or denied */}
   }
   try { const persisted = await withTimeout(Promise.resolve(navigator.storage?.persist?.()), 2000, "storage.persist"); permissions.storage = persisted ? "granted" : "prompt"; if (!persisted) permissions.storage = "granted-temporary"; } catch { permissions.storage = "unavailable"; }
-  onStage(1, 30);
-  const rear = permissions.camera === "granted" ? await probeCamera("environment") : empty();
-  onStage(2, 60);
-  const front = permissions.camera === "granted" ? await probeCamera("user") : empty();
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
+  stage(1, 30);
+  const rear = !signal?.aborted && permissions.camera === "granted" ? await probeCamera("environment") : empty();
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
+  stage(2, 60);
+  const front = !signal?.aborted && permissions.camera === "granted" ? await probeCamera("user") : empty();
   if (front.available && rear.available && front.deviceId && front.deviceId === rear.deviceId) Object.assign(front, empty());
-  onStage(3, 80);
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
+  stage(3, 80);
   const devices = await withTimeout(navigator.mediaDevices?.enumerateDevices?.() ?? Promise.resolve([] as MediaDeviceInfo[]), 2000, "enumerateDevices").catch(() => [] as MediaDeviceInfo[]);
   const codecs = typeof MediaRecorder === "undefined" ? [] : Object.entries(CODEC_MIMES).filter(([, m]) => MediaRecorder.isTypeSupported(m)).map(([k]) => k);
-  if (isNative()) {
+  let hardwareCameras: NativeCameraProfile[] = [];
+  if (isNative() && !signal?.aborted) {
     try {
       const n = await withTimeout(MultiCamNative.getCapabilities(), 3000, "native capabilities");
+      hardwareCameras = n.cameras;
       for (const cam of n.cameras) {
         const target = cam.facing === "front" ? front : rear;
-        target.highSpeed = [...new Set([...target.highSpeed, ...cam.highSpeed.flatMap((h) => h.fps)])];
+        // High-speed capabilities belong to their actual native camera ID.
+        // Do not pool modes from incompatible lenses into front/rear UI controls.
         if (cam.isoRange && !target.iso) target.iso = cam.isoRange;
       }
     } catch { /* native plugin unavailable */ }
   }
-  const matrix: CapabilityMatrix = { probedAt: Date.now(), permissions, rear, front, codecs, microphones: devices.filter((d) => d.kind === "audioinput").length, native: isNative() };
+  const matrix: CapabilityMatrix = { probedAt: Date.now(), permissions, rear, front, codecs, microphones: devices.filter((d) => d.kind === "audioinput").length, native: isNative(), hardwareCameras };
+  // A stale response from Android/WebView is never allowed to overwrite
+  // the current cached passport after a splash timeout or unmount.
+  if(signal?.aborted)return emptyCapabilityMatrix({camera:"timeout",microphone:"unavailable",storage:"unavailable"});
   try { window.localStorage.setItem(KEY, JSON.stringify(matrix)); } catch { /* memory only */ }
-  onStage(3, 100);
+  stage(3, 100);
   return matrix;
 }
 
@@ -116,14 +240,25 @@ export async function probeDevice(onStage: (stage: number, progress: number) => 
  * On timeout/failure it returns the cached matrix if one exists, else an all-unavailable matrix,
  * so Camera (simulated feed), Editor and Settings unlock immediately.
  */
-export async function probeDeviceSafe(onStage: (stage: number, progress: number) => void, timeoutMs = PROBE_TIMEOUT_MS): Promise<CapabilityMatrix> {
+export async function probeDeviceSafe(
+  onStage: (stage: number, progress: number) => void,
+  timeoutMs = PROBE_TIMEOUT_MS, externalSignal?: AbortSignal,
+): Promise<CapabilityMatrix> {
+  const controller=new AbortController();
+  const onExternalAbort=()=>controller.abort();
+  externalSignal?.addEventListener("abort",onExternalAbort,{once:true});
+  if(externalSignal?.aborted)controller.abort();
   try {
-    return await withTimeout(probeDevice(onStage), timeoutMs, "device probe");
+    if(controller.signal.aborted)throw new ProbeTimeoutError("startup probe cancelled");
+    return await withTimeout(probeDevice(onStage,controller.signal), timeoutMs, "device probe");
   } catch (e) {
+    controller.abort();
     console.warn("[capabilities] probe fallback:", e instanceof Error ? e.message : e);
     const cached = loadMatrix();
     const m = cached ?? emptyCapabilityMatrix({ camera: e instanceof ProbeTimeoutError ? "timeout" : "denied", microphone: "unavailable", storage: "unavailable" });
-    onStage(3, 100);
+    if(!externalSignal?.aborted)onStage(3, 100);
     return m;
+  } finally {
+    externalSignal?.removeEventListener("abort",onExternalAbort);
   }
 }

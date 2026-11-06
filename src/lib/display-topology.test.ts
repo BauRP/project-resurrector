@@ -1,0 +1,376 @@
+import { describe, expect, it } from "vitest";
+import { validFoldRegionGeometry } from "./fold-recording-evidence";
+import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldVisibleContentBounds, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+
+const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
+  widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
+  density: 2, revision: 1, posture: "reported", source: "test",
+  foldingFeatures: features,
+});
+const hinge = (left: number, right: number, occlusion = "FULL") => ({
+  leftPx: left, rightPx: right, topPx: 0, bottomPx: 900,
+  orientation: "VERTICAL", state: "FLAT", occlusion, separating: true,
+});
+
+describe("adaptive window classes", () => {
+  it("bases classes on usable logical CSS width rather than physical screen pixels", () => {
+    expect(windowClass(360)).toBe("compact");
+    expect(windowClass(Number.NaN)).toBe("compact");
+    expect(windowClass(Number.POSITIVE_INFINITY)).toBe("compact");
+    expect(windowClass(0)).toBe("compact");
+    expect(windowClass(600)).toBe("medium");
+    expect(windowClass(839)).toBe("medium");
+    expect(windowClass(840)).toBe("expanded");
+    expect(windowClass(1200)).toBe("large");
+    expect(windowClass(1600)).toBe("extra-large");
+  });
+});
+describe("multi-hinge topology", () => {
+  it("preserves no fold when Android reports no fold", () => {
+    expect(calculateDisplayRegions(topology([]), 600, 450).regions).toHaveLength(1);
+  });
+  it("separates physical screen gaps without placing content inside hinge pixels", () => {
+    const result = calculateDisplayRegions(topology([hinge(590,610)]),600,450);
+    expect(result.regions).toHaveLength(2);
+    expect(result.regions[0]?.width).toBe(295);
+    expect(result.regions[1]?.left).toBe(305);
+    expect(result.occluded).toBe(true);
+  });
+  it("keeps adjacent fractional tri-fold panes nonoverlapping after CSS pixel rounding",()=>{
+    const real=topology([hinge(101,101,"NONE"),hinge(202,202,"NONE")]);
+    real.widthPx=1000;
+    const details=foldEventDetails(real,601,480);
+    expect(details.hingeCount).toBe(2);
+    expect(details.usableRegions).toBe(3);
+    expect(validFoldRegionGeometry(details.regionGeometry)).toBe(true);
+    const panes=details.regionGeometry.split(";").map(p=>p.split(",").map(Number));
+    expect(panes[0]![0]!+panes[0]![2]!).toBe(panes[1]![0]);
+    expect(panes[1]![0]!+panes[1]![2]!).toBe(panes[2]![0]);
+  });
+  it("rejects an OEM feature flood instead of guessing safe fold panes",()=>{
+    const flood=Array.from({length:33},(_,i)=>hinge(i*10,i*10+1));
+    const output=calculateDisplayRegions(topology(flood),600,450);
+    expect(output.regions).toEqual([]);
+    expect(output.hinges).toEqual([]);
+    expect(calculateDisplayRegions({...topology([]),source:"android-windowmanager-feature-overflow"},600,450).regions).toEqual([]);
+  });
+  it("caps anomalous WindowManager cross-hinges at 16 measured panes",()=>{
+    // Seven vertical and seven horizontal FULL separating lines can create
+    // dozens of fragments; such malformed topology must never allocate
+    // unbounded UI panes or invent more reported usable regions.
+    const many=[
+      ...Array.from({length:7},(_,i)=>({
+        ...hinge((i+1)*145,(i+1)*145+1),
+      })),
+      ...Array.from({length:7},(_,i)=>({
+        leftPx:0,rightPx:1200,topPx:(i+1)*105,bottomPx:(i+1)*105+1,
+        orientation:"HORIZONTAL",state:"FLAT",occlusion:"FULL",separating:true,
+      })),
+    ];
+    const output=calculateDisplayRegions(topology(many),600,450);
+    expect(output.regions.length).toBeLessThanOrEqual(16);
+    expect(output.regions.every(r=>r.width>0&&r.height>0)).toBe(true);
+    expect(foldEventDetails(topology(many),600,450).usableRegions).toBeLessThanOrEqual(16);
+  });
+  it("supports two actual Android hinge bounds for tri-fold devices", () => {
+    const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);
+    expect(result.regions).toHaveLength(3);
+  });
+  it("does not count non-separating short hinge segments as usable pane dividers", () => {
+    const short={...hinge(590,610),topPx:100,bottomPx:180};
+    const result=calculateDisplayRegions(topology([short]),600,450);
+    expect(result.hinges).toHaveLength(0);
+    expect(foldEventDetails(topology([short]),600,450).hingeCount).toBe(0);
+  });
+  it("ignores hinge segments that do not traverse the usable window", () => {
+    const short = { ...hinge(590, 610), topPx: 120, bottomPx: 160 };
+    expect(calculateDisplayRegions(topology([short]), 600, 450).regions).toHaveLength(1);
+  });
+  it("normalizes multi-hinge posture order without inventing a new fold", () => {
+    const closed = {...hinge(390,410),state:"HALF_OPENED"};
+    const open = {...hinge(790,810),state:"FLAT"};
+    const before=foldEventDetails(topology([closed,open]),600,450);
+    const after=foldEventDetails(topology([open,closed]),600,450);
+    expect(before.posture).toBe("HALF_OPENED,FLAT");
+    expect(before.posture).toBe(after.posture);
+    expect(before.regionGeometry).toBe(after.regionGeometry);
+  });
+  it("does not invent fold changes when the same two hinges arrive reordered", () => {
+    const first=foldEventDetails(topology([hinge(390,410),hinge(790,810)]),600,450);
+    const second=foldEventDetails(topology([hinge(790,810),hinge(390,410)]),600,450);
+    expect(first.regionGeometry).toBe(second.regionGeometry);
+    expect(first.hingeCount).toBe(second.hingeCount);
+  });
+  it("handles three pane regions even when Android reports hinges in reverse order", () => {
+    const state = topology([hinge(790,810), hinge(390,410)]);
+    const regions = calculateDisplayRegions(state, 600, 450).regions.sort((a,b)=>a.left-b.left);
+    expect(regions).toHaveLength(3);
+    expect(regions.map(r=>Math.round(r.width))).toEqual([195,190,195]);
+  });
+  it("never fabricates extra hinges from a physical three-panel screen resolution", () => {
+    const result = calculateDisplayRegions(topology([hinge(390,410)]),600,450);
+    expect(result.regions).toHaveLength(2);
+  });
+  it("does not invent an occlusion gap on a flexible crease", () => {
+    const result = calculateDisplayRegions(topology([hinge(600,600, "NONE")]),600,450);
+    expect(result.occluded).toBe(false);
+    expect(result.regions).toHaveLength(2);
+  });
+  it("distinguishes the same fold with resized usable panes", () => {
+    const fold=topology([hinge(590,610)]);
+    const before=foldEventDetails(fold,600,450);
+    const after=foldEventDetails(fold,800,450);
+    expect(before.hingeCount).toBe(after.hingeCount);
+    expect(before.regionGeometry).not.toBe(after.regionGeometry);
+  });
+  it("reports only real usable hinge regions, not physical panel model names", () => {
+    const s = topology([hinge(390,410),hinge(790,810)]);
+    expect(foldEventDetails(s,600,450)).toMatchObject({
+      revision: 1, hingeCount: 2, usableRegions: 3, layout: "vertical",
+    });
+    expect(foldEventDetails(topology([]),360,760)).toMatchObject({
+      hingeCount: 0, usableRegions: 1, layout: "none",
+    });
+  });
+  it("keeps mixed four-pane fold geometry and layout identical when OEM reverses feature order", () => {
+    const vertical=hinge(590,610);
+    const horizontal={leftPx:0,rightPx:1200,topPx:440,bottomPx:460,
+      orientation:"HORIZONTAL",state:"HALF_OPENED",occlusion:"FULL",separating:true};
+    const first=calculateDisplayRegions(topology([vertical,horizontal]),600,450);
+    const swapped=calculateDisplayRegions(topology([horizontal,vertical]),600,450);
+    expect(first.regions).toEqual(swapped.regions);
+    expect(first.split).toBe(swapped.split);
+    expect(foldEventDetails(topology([vertical,horizontal]),600,450))
+      .toEqual(foldEventDetails(topology([horizontal,vertical]),600,450));
+  });
+  it("splits multiple real hinge directions without inventing extra full-width panes", () => {
+    const vertical = hinge(590, 610);
+    const horizontal = {
+      leftPx: 0, rightPx: 1200, topPx: 440, bottomPx: 460,
+      orientation: "HORIZONTAL", state: "HALF_OPENED", occlusion: "FULL", separating: true,
+    };
+    const result = calculateDisplayRegions(topology([vertical, horizontal]), 600, 450);
+    expect(result.regions).toHaveLength(4);
+    expect(result.regions.every(r => r.width > 0 && r.height > 0)).toBe(true);
+    expect(result.occluded).toBe(true);
+  });
+  it("falls back to a real single viewport for invalid extreme native pixel ratios", () => {
+    const state=topology([hinge(390,410)]);
+    state.widthPx=Number.MIN_VALUE;
+    const result=calculateDisplayRegions(state,600,450);
+    expect(result.regions).toEqual([]);
+    expect(result.hinges).toHaveLength(0);
+    expect(result.split).toBe("none");
+  });
+  it("rejects unknown hinge directions instead of silently treating them as horizontal", () => {
+    const wrong = { ...hinge(590,610), orientation: "UNKNOWN" };
+    expect(calculateDisplayRegions(topology([wrong]),600,450).regions).toHaveLength(1);
+  });
+  it("does not divide a zero-sized WebView viewport", () => {
+    expect(calculateDisplayRegions(topology([hinge(590,610)]),0,450).regions).toHaveLength(0);
+  });
+  it("rejects out-of-window or nonsensical Android hinge bounds", () => {
+    const invalid = [
+      { ...hinge(590, 610), leftPx: Number.NaN },
+      { ...hinge(590, 610), leftPx: 700, rightPx: 600 },
+      { ...hinge(590, 610), leftPx: 1500, rightPx: 1520 },
+      { ...hinge(590, 610), topPx: 1200, bottomPx: 1300 },
+    ];
+    expect(calculateDisplayRegions(topology(invalid), 600, 450).regions).toHaveLength(1);
+  });
+
+});
+
+describe("native window pixels to an inset WebView viewport",()=>{
+  it("moves a real book hinge into WebView CSS coordinates without guessing a fold",()=>{
+    const state={...topology([hinge(590,610)]),
+      webViewBoundsPx:{left:100,top:100,right:1100,bottom:800}};
+    const result=calculateDisplayRegions(state,500,350);
+    expect(result.regions).toHaveLength(2);
+    expect(result.regions[0]?.width).toBe(245);
+    expect(result.regions[1]?.left).toBe(255);
+  });
+  it("keeps two actual hinges in order on a WebView inset from the window",()=>{
+    const state={...topology([hinge(390,410),hinge(790,810)]),
+      webViewBoundsPx:{left:100,top:100,right:1100,bottom:800}};
+    const r=calculateDisplayRegions(state,500,350);
+    expect(r.regions).toHaveLength(3);
+    expect(r.regions.map(x=>Math.round(x.width))).toEqual([145,190,145]);
+  });
+  it("ignores a physical hinge entirely outside the embedded WebView",()=>{
+    const state={...topology([hinge(590,610)]),
+      webViewBoundsPx:{left:700,top:0,right:1200,bottom:900}};
+    expect(calculateDisplayRegions(state,500,900).regions).toHaveLength(1);
+  });
+  it("never substitutes a full-screen pane for a misplaced/infinite native WebView",()=>{
+    const state={...topology([hinge(590,610)])};
+    for(const bounds of [
+      {left:-1,top:0,right:1200,bottom:900},
+      {left:0,top:0,right:Infinity,bottom:900},
+      {left:500,top:0,right:400,bottom:900},
+      {left:0,top:200,right:1200,bottom:100},
+    ]){
+      expect(calculateDisplayRegions({...state,webViewBoundsPx:bounds},600,450).regions).toEqual([]);
+    }
+  });
+  it("fails safe for impossible native WebView rectangles",()=>{
+    const state={...topology([hinge(590,610)]),
+      webViewBoundsPx:{left:200,top:10,right:150,bottom:900}};
+    const r=calculateDisplayRegions(state,600,450);
+    expect(r.regions).toHaveLength(0);
+    expect(r.hinges).toHaveLength(0);
+  });
+});
+describe("camera view below persistent header in a two-axis fold",()=>{
+  it("clips upper viewfinder to the actual camera screen before placing controls",()=>{
+    const original={left:0,top:0,width:295,height:220};
+    expect(clipFoldPaneToCamera(original,{left:0,top:60,width:600,height:390}))
+      .toEqual({left:0,top:60,width:295,height:160});
+    // Do not stretch 220px across the actual hinge at y=220.
+    expect(clipFoldPaneToCamera(original,{left:0,top:60,width:600,height:390})!.top+
+      clipFoldPaneToCamera(original,{left:0,top:60,width:600,height:390})!.height).toBe(220);
+  });
+  it("rejects panes wholly outside or invalid within the camera container",()=>{
+    expect(clipFoldPaneToCamera({left:0,top:0,width:295,height:100},
+      {left:0,top:150,width:600,height:300})).toBeNull();
+    expect(clipFoldPaneToCamera({left:0,top:0,width:Number.NaN,height:200},
+      {left:0,top:0,width:600,height:450})).toBeNull();
+  });
+});
+describe("visible fold workspace horizontal inset",()=>{
+  it("keeps editor within the actual visual viewport on both axes",()=>{
+    const shell={left:0,top:0,width:900,height:800};
+    const content={left:0,top:60,width:900,height:700};
+    expect(foldVisibleContentBounds(shell,content,60,
+      {offsetLeft:120,offsetTop:100,width:500,height:460}))
+      .toEqual({left:120,top:100,width:500,height:460});
+  });
+});
+describe("visible fold workspace during software keyboard",()=>{
+  it("keeps safe area tied to visual viewport vertical scroll position",()=>{
+    const shell={left:0,top:0,width:600,height:800};
+    const content={left:0,top:60,width:600,height:700};
+    expect(foldVisibleContentBounds(shell,content,60,{offsetTop:110,height:430}))
+      .toEqual({left:0,top:110,width:600,height:430});
+  });
+
+  it("clips tabletop editor below header and above keyboard",()=>{
+    const bounds=foldVisibleContentBounds(
+      {left:0,top:0,width:600,height:800},
+      {left:0,top:60,width:600,height:680},
+      60,{offsetTop:0,height:470});
+    expect(bounds).toEqual({left:0,top:60,width:600,height:410});
+  });
+  it("handles a shifted or unavailable visual viewport without inventing a hinge",()=>{
+    const shell={left:0,top:0,width:600,height:800};
+    const content={left:0,top:60,width:600,height:700};
+    expect(foldVisibleContentBounds(shell,content,60,{offsetTop:100,height:450}))
+      .toEqual({left:0,top:100,width:600,height:450});
+    expect(foldVisibleContentBounds(shell,content,60,{offsetTop:NaN,height:0}))
+      .toEqual({left:0,top:60,width:600,height:700});
+  });
+});
+describe("editor and settings use a real safe fold pane",()=>{
+  it("selects the lower tabletop region without crossing a horizontal hinge",()=>{
+    const regions=[
+      {left:0,top:0,width:600,height:215},
+      {left:0,top:235,width:600,height:225},
+    ];
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:60,width:600,height:400}))
+      .toEqual({left:0,top:235,width:600,height:225});
+  });
+  it("uses a real tiny pane under keyboard pressure rather than crossing the physical hinge",()=>{
+    const regions=[
+      {left:0,top:0,width:250,height:170},
+      {left:270,top:0,width:250,height:170},
+    ];
+    const visible={left:0,top:40,width:520,height:120};
+    expect(selectSafeFoldWorkspace(regions,visible)).toBeNull();
+    const fallback=selectSafeFoldWorkspace(regions,visible,1,1);
+    expect(fallback).toEqual({left:0,top:40,width:250,height:120});
+    expect(fallback!.left+fallback!.width).toBeLessThanOrEqual(270);
+  });
+  it("refuses inaccessible, tiny or invalid panes without fabricating safe space",()=>{
+    const regions=[
+      {left:0,top:0,width:200,height:200},
+      {left:210,top:0,width:200,height:200},
+    ];
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:0,width:420,height:200})).toBeNull();
+    expect(selectSafeFoldWorkspace(regions,{left:0,top:0,width:0,height:200})).toBeNull();
+  });
+});
+describe("real dual-axis four-pane camera workstation",()=>{
+  it("maps two perpendicular physical hinges to four separate working panes",()=>{
+    const vertical=hinge(590,610);
+    const horizontal={leftPx:0,rightPx:1200,topPx:440,bottomPx:460,
+      orientation:"HORIZONTAL",state:"HALF_OPENED",occlusion:"FULL",separating:true};
+    const regions=calculateDisplayRegions(topology([vertical,horizontal]),600,450).regions;
+    const layout=fourPaneCameraLayout(regions);
+    expect(layout).not.toBeNull();
+    expect(layout?.preview.left).toBe(0);
+    expect(layout?.hud.left).toBeGreaterThan(layout!.preview.left);
+    expect(layout?.settings.top).toBeGreaterThan(layout!.preview.top);
+    expect(layout?.controls.top).toBeGreaterThan(layout!.hud.top);
+    expect(fourPaneCameraLayout([...regions].reverse())).toEqual(layout);
+  });
+  it("refuses four decorative or undersized panes",()=>{
+    expect(fourPaneCameraLayout([])).toBeNull();
+    expect(fourPaneCameraLayout([
+      {left:0,top:0,width:100,height:100},
+      {left:100,top:0,width:100,height:100},
+      {left:0,top:100,width:100,height:100},
+      {left:100,top:100,width:100,height:100}
+    ])).toBeNull();
+  });
+});
+describe("fold capture journal chronology", () => {
+  it("advances on revision-only updates even when the measured panes do not move", () => {
+    expect(shouldPublishFoldObservation("two-panes", 8, "two-panes", 9)).toBe(true);
+    expect(shouldPublishFoldObservation("two-panes", 9, "two-panes", 9)).toBe(false);
+    expect(shouldPublishFoldObservation("two-panes", 9, "three-panes", 9)).toBe(true);
+    expect(shouldPublishFoldObservation("two-panes", 9, "two-panes", 8)).toBe(false);
+  });
+});
+describe("layout owner handoff during rapid tab remount", () => {
+  it("rejects invalid fold-time WebView sizes rather than producing invalid CSS", () => {
+    expect(safeViewportDimension(Number.NaN)).toBe(null);
+    expect(safeViewportDimension(Number.POSITIVE_INFINITY)).toBe(null);
+    expect(safeViewportDimension(0)).toBe(null);
+    expect(safeViewportDimension(-30)).toBe(null);
+    expect(safeViewportDimension(840)).toBe(840);
+  });
+  it("does not let a former screen remove the active screen's viewport styles", () => {
+    const first = startDisplayAdaptation();
+    const second = startDisplayAdaptation();
+    try {
+      expect(document.documentElement.dataset["windowClass"]).toBeDefined();
+      expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).not.toBe("");
+      first();
+      expect(document.documentElement.dataset["windowClass"]).toBeDefined();
+      expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).not.toBe("");
+    } finally {
+      second();
+    }
+    expect(document.documentElement.dataset["windowClass"]).toBeUndefined();
+    expect(document.documentElement.style.getPropertyValue("--app-viewport-height")).toBe("");
+  });
+});
+
+describe("strict in-window fold bounds",()=>{
+  it("rejects outward-extending hinge geometry rather than fabricating panes",()=>{
+    const acrossRight={...hinge(590,610),rightPx:1400};
+    const belowBottom={...hinge(590,610),bottomPx:1200};
+    expect(calculateDisplayRegions(topology([acrossRight]),600,450).regions).toHaveLength(1);
+    expect(calculateDisplayRegions(topology([belowBottom]),600,450).regions).toHaveLength(1);
+    expect(calculateDisplayRegions(topology([hinge(590,610)]),600,450).regions).toHaveLength(2);
+  });
+});
+
+describe("transient Activity fold resize dimensions",()=>{
+  it("preserves the last valid CSS dimension during an invalid native resize",()=>{
+    expect(retainedViewportDimension(0,720)).toBe(720);
+    expect(retainedViewportDimension(Number.NaN,720)).toBe(720);
+    expect(retainedViewportDimension(820,720)).toBe(820);
+    expect(retainedViewportDimension(0,null)).toBe(null);
+  });
+});

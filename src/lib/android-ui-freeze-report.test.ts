@@ -1,0 +1,41 @@
+import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+
+describe("Android freezes leave evidence without disabling features", () => {
+  it("monitors UI from a daemon, not the main Android thread", () => {
+    const src=readFileSync("android/app/src/main/java/app/lovable/multicampov/UiFreezeMonitor.java","utf8");
+    const act=readFileSync("android/app/src/main/java/app/lovable/multicampov/MainActivity.java","utf8");
+    expect(src).toContain("Looper.getMainLooper().getThread().getStackTrace()");
+    expect(src).toContain("ANR_THRESHOLD_MS = 6500L");
+    expect(src).toContain("WEBVIEW_THRESHOLD_MS = 12000L");
+    expect(src).toContain("webViewHeartbeat.get()");
+    expect(src).toContain("WebView bridge heartbeat missing");
+    expect(src).toContain("First WebView bridge heartbeat never arrived");
+    expect(src).toContain("webViewHeartbeat.set(now)");
+    expect(src).toContain("actionContext(now)");
+    expect(src).toContain('thread.setDaemon(true)');
+    expect(act).toContain("UiFreezeMonitor.start(getApplicationContext(),");
+    expect(src).toContain("Independent WebView JavaScript evaluation responded recently");
+    expect(act).toContain("UiFreezeMonitor.setForeground(false)");
+  });
+  it("allows users to copy a saved UI stack trace after recovery", () => {
+    const app=readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
+    const notice=readFileSync("src/components/multicam/AndroidFreezeNotice.tsx","utf8");
+    expect(app).toContain("<AndroidFreezeNotice />");
+    expect(notice).toContain("Скопировать отчёт");
+    expect(notice).toContain('bounded(uiFreeze.read(), 1500');
+    expect(notice).toContain("navigator.clipboard?.writeText");
+    expect(notice).toContain('window.setInterval(heartbeat, 2000)');
+    expect(notice).toContain('bounded(uiFreeze.pulse(), 1600');
+    const settings = readFileSync("src/components/multicam/SettingsTab.tsx", "utf8");
+    const plugin = readFileSync("android/app/src/main/java/app/lovable/multicampov/UiFreezePlugin.java", "utf8");
+    const trace = readFileSync("src/lib/freeze-action-trace.ts", "utf8");
+    expect(settings).toContain('traceUiAction("settings: theme dark")');
+    expect(settings).toContain('traceUiAction("settings: cache measurement")');
+    expect(plugin).toContain('@PluginMethod public void trace(PluginCall call)');
+    const shared = readFileSync("src/lib/ui-freeze-bridge.ts","utf8");
+    expect(trace).toContain('import { uiFreeze } from "./ui-freeze-bridge"');
+    expect(notice).toContain('import { uiFreeze } from "@/lib/ui-freeze-bridge"');
+    expect(shared).toContain('registerPlugin<UiFreezeBridge>("UiFreeze")');
+  });
+});

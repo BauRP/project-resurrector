@@ -1,3 +1,13 @@
+import { Capacitor } from "@capacitor/core";
+import { PointerGestureRegistry } from "@/lib/pointer-gesture-registry";
+import { EditorVideoLayer } from "./EditorVideoLayer";
+import { planSequentialVideoRender, renderSequentialVideoWebm } from "@/lib/editor-sequential-render";
+import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-render";
+import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/lib/editor-project-recovery";
+import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
+import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
+import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
+import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
@@ -8,10 +18,14 @@ import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 
 import { bounded, retry } from "@/lib/async";
+import { registerEditorRender } from "@/lib/editor-render-bridge";
+import { canExportOriginalClip } from "@/lib/editor-original-export";
+import { readPersistedClip } from "@/lib/clip-persistence";
 import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
+import { timelineMinZoom, timelineTime, visibleTiles, visibleRulerTicks } from "@/lib/timeline";
 import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, type TrackKind } from "@/lib/timeline-tracks";
-import { timelineMinZoom, timelineTime, visibleTiles } from "@/lib/timeline";
+import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
 
 interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
 interface Media { id: string; camera: number; kind: "video" | "audio"; name: string; url: string; duration: number; peaks: number[] }
@@ -67,7 +81,7 @@ const LOOKS: Record<string, string> = { "Без цвета": "none", Тёплы�
 const FONT_NAMES = ["Montserrat","Roboto","Open Sans","Raleway","Nunito","Rubik","Manrope","Jost","Exo 2","Ubuntu","Fira Sans","IBM Plex Sans","PT Sans","PT Serif","Playfair Display","Lora","Merriweather","Cormorant Garamond","Alice","Yeseva One","Oswald","Russo One","Unbounded","Comfortaa","Philosopher","Lobster","Pacifico","Caveat","Marck Script","Press Start 2P"];
 export const FONTS = FONT_NAMES.map((f) => `"${f}", sans-serif`);
 const ASPECTS: [string, string, number][] = [["16:9", "YouTube", 16 / 9], ["9:16", "Reels / TikTok", 9 / 16], ["1:1", "Квадрат", 1], ["4:3", "Классика", 4 / 3], ["4:5", "Instagram", 4 / 5], ["21:9", "Кино", 21 / 9]];
-const ROW = 44; const FRAME = 1 / 30; const HEAD = 108; const TILE = 64;
+const ROW = 44; const FRAME = 1 / 30; const HEAD = 104; const TILE = 64;
 const uid = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
 const len = (i: Item) => (i.out - i.in) / i.speed;
 const fmt = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${(t % 60).toFixed(2).padStart(5, "0")}`;
@@ -80,63 +94,196 @@ function saveClip(clip: StoredClip): Promise<void> {
     req.onsuccess = () => { const tx = req.result.transaction("clips", "readwrite"); tx.objectStore("clips").put(clip); tx.oncomplete = () => { req.result.close(); resolve(); }; tx.onerror = () => { req.result.close(); reject(tx.error); }; };
   });
 }
-function readClips(): Promise<StoredClip[]> {
+/** Keep video Blobs out of a single giant getAll() response. */
+function openClipLibrary(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open("multicam-pov-media", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("clips", { keyPath: "id" });
+    req.onupgradeneeded = () => {
+      if (!req.result.objectStoreNames.contains("clips"))
+        req.result.createObjectStore("clips", { keyPath: "id" });
+    };
+    req.onblocked = () => reject(new Error("Медиатека занята другой вкладкой"));
     req.onerror = () => reject(req.error);
-    req.onsuccess = () => { const all = req.result.transaction("clips").objectStore("clips").getAll(); all.onsuccess = () => { req.result.close(); resolve(all.result as StoredClip[]); }; all.onerror = () => { req.result.close(); reject(all.error); }; };
+    req.onsuccess = () => {
+      const db = req.result;
+      db.onversionchange = () => db.close();
+      resolve(db);
+    };
+  });
+}
+function readClipIds(db: IDBDatabase): Promise<string[]> {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("clips", "readonly").objectStore("clips").getAllKeys();
+    req.onsuccess = () => resolve(req.result.filter((id): id is string => typeof id === "string"));
+    req.onerror = () => reject(req.error);
+  });
+}
+function readClip(db: IDBDatabase, id: string): Promise<StoredClip | null> {
+  return new Promise((resolve, reject) => {
+    const req = db.transaction("clips", "readonly").objectStore("clips").get(id);
+    req.onsuccess = () => resolve((req.result as StoredClip | undefined) ?? null);
+    req.onerror = () => reject(req.error);
   });
 }
 
 /** Extracts evenly spaced JPEG frames for the filmstrip; cached per clip id. */
-async function makeThumbs(url: string, duration: number, n = 10): Promise<string[]> {
-  const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true; v.src = url;
+async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortSignal): Promise<string[]> {
+  const v = document.createElement("video"); v.muted = true; v.preload = "auto"; v.playsInline = true;
+  // A cancelled editor must release every decoder, including early errors.
   try {
-    await bounded(new Promise<void>((resolve, reject) => { v.onloadeddata = () => resolve(); v.onerror = () => reject(new Error("Frame decoding failed")); }), 4000, "Filmstrip metadata");
-    if (!v.videoWidth || !v.videoHeight) return [];
+    await new Promise<void>((res) => {
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        window.clearTimeout(timer);
+        v.removeEventListener("loadeddata", finish);
+        v.removeEventListener("error", finish);
+        signal?.removeEventListener("abort", finish);
+        res();
+      };
+      const timer = window.setTimeout(finish, 4000);
+      v.addEventListener("loadeddata", finish);
+      v.addEventListener("error", finish);
+      signal?.addEventListener("abort", finish, { once: true });
+      v.src = url;
+      v.load();
+    });
+    if (signal?.aborted || !v.videoWidth || !v.videoHeight) return [];
     const c = document.createElement("canvas"); c.height = 54; c.width = Math.round((54 * v.videoWidth) / v.videoHeight);
     const ctx = c.getContext("2d"); if (!ctx) return [];
     const out: string[] = [];
     for (let k = 0; k < n; k++) {
+      if (signal?.aborted) return [];
       const time = Math.min(Math.max(0, duration - 0.05), ((k + 0.5) * duration) / n);
-      await bounded(new Promise<void>((resolve, reject) => { v.onseeked = () => resolve(); v.onerror = () => reject(new Error("Frame seek failed")); v.currentTime = time; }), 1500, "Filmstrip seek");
-      ctx.drawImage(v, 0, 0, c.width, c.height); out.push(c.toDataURL("image/jpeg", 0.6));
+      await new Promise<void>((res) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          window.clearTimeout(timer);
+          v.removeEventListener("seeked", finish);
+          signal?.removeEventListener("abort", finish);
+          res();
+        };
+        const timer = window.setTimeout(finish, 1500);
+        v.addEventListener("seeked", finish);
+        signal?.addEventListener("abort", finish, { once: true });
+        try { v.currentTime = time; } catch { finish(); }
+      });
+      if (signal?.aborted) return [];
+      ctx.drawImage(v, 0, 0, c.width, c.height);
+      out.push(c.toDataURL("image/jpeg", 0.6));
+      // Yield so changing tabs, recording and Android UI callbacks can paint.
+      await new Promise<void>(resolve => window.setTimeout(resolve, 0));
     }
     return out;
-  } catch { return []; }
-  finally { v.onloadeddata = null; v.onseeked = null; v.onerror = null; v.removeAttribute("src"); v.load(); }
+  } finally {
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
+  }
 }
-async function analyse(clip: StoredClip): Promise<Media> {
+async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
+  if (signal?.aborted) throw new Error("Editor media load cancelled");
   const url = URL.createObjectURL(clip.blob);
   const cached = analysisCache.get(clip.id);
   if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
-  const v = document.createElement("video"); v.preload = "metadata"; v.src = url;
+  const v = document.createElement("video"); v.preload = "metadata";
   let duration: number;
+  let abortMetadata: (() => void) | null = null;
   try {
     duration = await bounded(new Promise<number>((resolve, reject) => {
+      // A rapid Editor -> Settings -> Editor switch must terminate the OLD
+      // metadata decoder instead of leaving it active for six more seconds.
+      const onAbort = () => reject(new Error("Editor metadata cancelled"));
+      abortMetadata = onAbort;
+      signal?.addEventListener("abort", onAbort, { once: true });
       v.onloadedmetadata = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); else { v.currentTime = 1e7; v.ontimeupdate = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); }; } };
       v.onerror = () => reject(new Error("Не удалось прочитать видео"));
+      if (signal?.aborted) { onAbort(); return; }
+      try { v.src = url; v.load(); }
+      catch (error) { reject(error); }
     }), 6000, "Video metadata");
   } catch (error) { URL.revokeObjectURL(url); throw error; }
-  finally { v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null; v.removeAttribute("src"); v.load(); }
-  let peaks: number[] = [];
-  try {
-    const ctx = new OfflineAudioContext(1, 44100, 44100);
-    const buf = await bounded(ctx.decodeAudioData(await bounded(clip.blob.arrayBuffer(), 4000, "Audio read")), 6000, "Audio analysis");
-    const data = buf.getChannelData(0); const n = Math.max(20, Math.round(duration * 20)); const step = Math.floor(data.length / n) || 1;
-    for (let i = 0; i < n; i++) { let m = 0; for (let j = i * step; j < (i + 1) * step && j < data.length; j++) m = Math.max(m, Math.abs(data[j]!)); peaks.push(m); }
-  } catch { peaks = []; }
+  finally {
+    if (abortMetadata) signal?.removeEventListener("abort", abortMetadata);
+    v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null;
+    v.pause(); v.removeAttribute("src"); v.load();
+  }
+  if (signal?.aborted) { URL.revokeObjectURL(url); throw new Error("Editor metadata cancelled"); }
+  // Library discovery needs metadata, not a full audio decode of every
+  // original video. A 2 GiB MP4 previously allocated its entire ArrayBuffer
+  // merely because the Editor tab was opened, even before touching the audio
+  // or transition panels. Waveforms are still generated for timeline media.
+  const peaks: number[] = [];
   analysisCache.set(clip.id, { duration, peaks });
   return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks };
 }
 
+/** FileReader can be aborted when the editor closes. Blob.arrayBuffer()
+ * cannot cancel a pending multi-gigabyte read on Android WebView. */
+function readWaveformData(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer> {
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    let done = false;
+    const finish = (data?: ArrayBuffer, error?: Error) => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      reader.onload = null; reader.onerror = null; reader.onabort = null;
+      if (error) reject(error);
+      else if (data) resolve(data);
+      else reject(new Error("Waveform read was cancelled"));
+    };
+    const onAbort = () => {
+      try { if (reader.readyState === FileReader.LOADING) reader.abort(); } catch { /* Already closed */ }
+      finish(undefined, new Error("Waveform read cancelled"));
+    };
+    const timer = setTimeout(onAbort, 4000);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    if (signal?.aborted) { onAbort(); return; }
+    reader.onload = () => finish(reader.result instanceof ArrayBuffer ? reader.result : undefined);
+    reader.onerror = () => finish(undefined, reader.error ?? new Error("Waveform read failed"));
+    reader.onabort = () => finish(undefined, new Error("Waveform read aborted"));
+    try { reader.readAsArrayBuffer(blob); } catch (error) { finish(undefined, error instanceof Error ? error : new Error(String(error))); }
+  });
+}
+
+async function analyseWaveformForTimeline(clip: StoredClip, duration: number, signal?: AbortSignal): Promise<number[]> {
+  try {
+    if (signal?.aborted) return [];
+    // Avoid loading an entire multi-gigabyte MP4 or expanding hours of PCM
+    // into WebView memory. Large original clips remain playable and editable;
+    // only this optional full-file waveform cache is deferred.
+    const memoryGiB = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
+    if (!canDecodeWaveformInMemory(clip.blob.size, duration, memoryGiB)) return [];
+    const bytes = await readWaveformData(clip.blob, signal);
+    if (signal?.aborted) return [];
+    const ctx = new OfflineAudioContext(1, 44100, 44100);
+    const buf = await bounded(ctx.decodeAudioData(bytes), 6000, "Audio analysis");
+    if (signal?.aborted) return [];
+    return await extractWaveformPeaks(buf.getChannelData(0), duration, () => Boolean(signal?.aborted));
+  } catch { return []; }
+}
+
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
+  const nativeWebView = Capacitor.isNativePlatform();
+  const dragRegistry = useRef<PointerGestureRegistry | null>(null);
+  if (!dragRegistry.current) dragRegistry.current = new PointerGestureRegistry();
+  useEffect(() => () => dragRegistry.current?.dispose(), []);
+
   const [media, setMedia] = useState<Media[]>([]);
-  const [items, setItems] = useState<Item[]>([]);
-  const [overlays, setOverlays] = useState<Overlay[]>([]);
-  const [muted, setMuted] = useState<Record<string, boolean>>({});
-  const [hidden, setHidden] = useState<Record<string, boolean>>({});
+  // Restore and sanitize the saved project only ONCE per editor mount. Each
+  // Loading it performs synchronous localStorage JSON.parse and
+  // validation of hundreds of clips; running it once per separate state
+  // field previously multiplied the WebView first-paint cost.
+  const [initialEditorProject] = useState(() => loadEditorProject());
+  const [items, setItems] = useState<Item[]>(() => initialEditorProject.items as unknown as Item[]);
+  const [overlays, setOverlays] = useState<Overlay[]>(() => initialEditorProject.overlays as unknown as Overlay[]);
+  const [muted, setMuted] = useState<Record<string, boolean>>(() => initialEditorProject.muted);
+  const [hidden, setHidden] = useState<Record<string, boolean>>(() => initialEditorProject.hidden);
   const [thumbs, setThumbs] = useState<Record<string, string[]>>({});
   const [panel, setPanel] = useState<"transitions" | "color" | "audio" | null>(null);
   const audioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
@@ -145,94 +292,288 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const setStore = useMulticamStore((x) => x.set); const mediaOpen = useMulticamStore((x) => x.mediaOpen); const setMediaOpen = (mediaOpen: boolean) => setStore({ mediaOpen });
   const [zoom, setZoom] = useState(8);
   const zoomTouched = useRef(false); const [scrollX, setScrollX] = useState(0);
+  const restoredScroll = useRef(false);
+  const scrollSaveTimer = useRef<number | null>(null);
+  const lastTimelineView = useRef({ left: 0, zoom: 8 });
+  lastTimelineView.current.zoom = zoom;
   const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
-  const [t, setT] = useState(0);
+  const [cacheRevision, setCacheRevision] = useState(0);
+  // Activity recreation must restore the last safe playhead, not restart the
+  // editor at zero after every fold. The view-state sanitizer rejects NaN and
+  // out-of-range positions and does not restore an active recorder.
+  const [t, setT] = useState(() => restoreViewState().playhead ?? 0);
   const [playing, setPlaying] = useState(false);
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [subState, setSubState] = useState<"off" | "working" | "on">("off");
   const [loading, setLoading] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Only clips placed on the timeline need thumbnails and 480p scrubbing
+  // copies. Library-only files remain untouched until actually edited.
+  const timelineVideoKey = useMemo(() => JSON.stringify(
+    [...new Set(items.filter(i => i.kind === "video").map(i => i.mediaId))].sort()
+  ), [items]);
+  const timelineWaveformKey = useMemo(() => JSON.stringify(
+    [...new Set(items.map(i => i.mediaId))].sort()
+  ), [items]);
+  const waveformAttempted = useRef(new Set<string>());
+  const loadedProxyIds = useRef(new Set<string>());
   const loadGeneration = useRef(0);
+  const activeLibraryLoad = useRef<AbortController | null>(null);
   const load = useCallback(async () => {
+    activeLibraryLoad.current?.abort();
+    const controller = new AbortController();
+    activeLibraryLoad.current = controller;
     const generation = ++loadGeneration.current; setLoading(true);
-    const results: Media[] = []; const errors: string[] = [];
+    const results: Array<{ media: Media; createdAt: number }> = [];
+    const errors: string[] = [];
+    let library: IDBDatabase | null = null;
     try {
-      const clips = await bounded(readClips(), 5000, "Media library"); clips.sort((a, b) => a.createdAt - b.createdAt);
-      for (const clip of clips) {
-        if (generation !== loadGeneration.current) break;
-        try { results.push(await retry(() => analyse(clip))); } catch { errors.push(clip.name || clip.id); }
+      library = await bounded(openClipLibrary(), 5000, "Media library", late => late.close());
+      const ids = await bounded(readClipIds(library), 5000, "Media keys");
+      for (const id of ids) {
+        if (generation !== loadGeneration.current || controller.signal.aborted) break;
+        let clip: StoredClip | null;
+        try { clip = await bounded(readClip(library, id), 5000, "Read clip"); }
+        catch { errors.push(id); continue; }
+        if (!clip) continue;
+        if (generation !== loadGeneration.current || controller.signal.aborted) break;
+        try {
+          const mediaItem = await retry(() => analyse(clip, controller.signal));
+          results.push({ media: mediaItem, createdAt: clip.createdAt });
+        } catch { errors.push(clip.name || clip.id); }
+        // Release the event loop between records for Settings/navigation.
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
-      if (generation !== loadGeneration.current) { results.forEach((m) => URL.revokeObjectURL(m.url)); return; }
-      setMedia(results); if (errors.length) setImportErr(`Не удалось открыть: ${errors.join(", ")}`);
-    } catch { if (generation === loadGeneration.current) setImportErr("Хранилище недоступно. Повторите открытие медиатеки."); }
-    finally { if (generation === loadGeneration.current) setLoading(false); }
+      if (generation !== loadGeneration.current) {
+        results.forEach(({ media: item }) => URL.revokeObjectURL(item.url));
+        return;
+      }
+      results.sort((a, b) => a.createdAt - b.createdAt);
+      setMedia(results.map(({ media: item }) => item));
+      if (errors.length) setImportErr(`Не удалось открыть: ${errors.join(", ")}`);
+    } catch {
+      results.forEach(({ media: item }) => URL.revokeObjectURL(item.url));
+      if (generation === loadGeneration.current)
+        setImportErr("Хранилище недоступно. Повторите открытие медиатеки.");
+    } finally {
+      library?.close();
+      if (activeLibraryLoad.current === controller) activeLibraryLoad.current = null;
+      if (generation === loadGeneration.current) setLoading(false);
+    }
   }, []);
-  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => { loadGeneration.current++; window.removeEventListener("multicam-clips-changed", on); }; }, [load]);
+  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => {
+    loadGeneration.current++;
+    activeLibraryLoad.current?.abort();
+    activeLibraryLoad.current = null;
+    window.removeEventListener("multicam-clips-changed", on);
+  }; }, [load]);
+  // Analyse waveform ONLY for clips actually used by the timeline. This
+  // leaves library browsing and opening Transition/Audio panels responsive.
+  // No track, button or audio tool is disabled; timeline waves remain.
   useEffect(() => {
+    let live = true;
     const abort = new AbortController();
-    void (async () => { for (const m of media) {
-      if (m.kind !== "video" || abort.signal.aborted) continue;
-      try { const blob = await generateProxy(m.id, m.url, abort.signal); if (blob && !abort.signal.aborted) { const url = URL.createObjectURL(blob); proxyUrls.current.add(url); setProxies((cur) => ({ ...cur, [m.id]: url })); } }
-      catch { /* Originals remain playable when proxy encoding is unavailable. */ }
-    } })();
-    const clear = () => { abort.abort(); proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)); proxyUrls.current.clear(); setProxies({}); setThumbs({}); };
-    window.addEventListener("multicam-preview-cache-cleared", clear);
-    return () => { abort.abort(); window.removeEventListener("multicam-preview-cache-cleared", clear); };
-  }, [media]);
-  useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
-  useEffect(() => { const now = new Set(media.map((m) => m.url)); urlsRef.current.forEach((u) => { if (!now.has(u)) URL.revokeObjectURL(u); }); urlsRef.current = now; }, [media]);
-  useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
-  useEffect(() => {
-    let alive = true;
+    let db: IDBDatabase | null = null;
+    const required = new Set(JSON.parse(timelineWaveformKey) as string[]);
     void (async () => {
       for (const m of media) {
-        if (m.kind !== "video") continue;
-        let th = thumbCache.get(m.id);
-        if (!th) { th = await makeThumbs(m.url, m.duration); if (th.length) thumbCache.set(m.id, th); }
-        if (!alive) return;
-        const frames = th;
-        setThumbs((cur) => cur[m.id] === frames ? cur : { ...cur, [m.id]: frames });
+        if (!live) break;
+        if (!required.has(m.id) || waveformAttempted.current.has(m.id)) continue;
+        if (m.peaks.length > 0) { waveformAttempted.current.add(m.id); continue; }
+        waveformAttempted.current.add(m.id);
+        try {
+          db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
+          const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
+          if (!original || !live) { waveformAttempted.current.delete(m.id); continue; }
+          const peaks = await editorMediaWorkQueue.run(
+            () => analyseWaveformForTimeline(original, m.duration, abort.signal), abort.signal);
+          if (!live || abort.signal.aborted || !peaks) { waveformAttempted.current.delete(m.id); break; }
+          analysisCache.set(m.id, { duration: m.duration, peaks });
+          setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
+        } catch {
+          if (!live) waveformAttempted.current.delete(m.id);
+          // A failed waveform never hides the original video or audio.
+        }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      }
+    })().finally(() => { db?.close(); });
+    return () => { live = false; abort.abort(); };
+  }, [media, timelineWaveformKey]);
+  useEffect(() => {
+    const abort = new AbortController();
+    let live = true;
+    const clear = () => {
+      abort.abort();
+      proxyUrls.current.forEach((url) => URL.revokeObjectURL(url));
+      proxyUrls.current.clear();
+      loadedProxyIds.current.clear();
+      setProxies({});
+      setThumbs({});
+      // Start a fresh AbortController on the next render; the cleared cache
+      // must regenerate thumbnails/proxies when the user keeps editing.
+      setCacheRevision(n => n + 1);
+    };
+    window.addEventListener("multicam-preview-cache-cleared", clear);
+    const neededIds = new Set<string>(JSON.parse(timelineVideoKey) as string[]);
+    void (async () => {
+      // One decoder pipeline at a time. Previously thumbnail seekers and
+      // full-length proxy encoders ran concurrently for every clip, exhausting
+      // GPU/MediaCodec capacity when Android switches between app sections.
+      for (const m of media) {
+        if (!live || abort.signal.aborted) return;
+        if (m.kind !== "video" || !neededIds.has(m.id)) continue;
+        try {
+          let frames = thumbCache.get(m.id);
+          if (!frames) {
+            frames = await editorMediaWorkQueue.run(
+              () => makeThumbs(m.url, m.duration, 10, abort.signal), abort.signal);
+            if (frames?.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
+          }
+          if (!live || abort.signal.aborted) return;
+          setThumbs(cur => cur[m.id] === frames ? cur : { ...cur, [m.id]: frames ?? [] });
+        } catch { /* An undecodable thumbnail never hides the original clip. */ }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      }
+      for (const m of media) {
+        if (!live || abort.signal.aborted) return;
+        if (m.kind !== "video" || !neededIds.has(m.id) || loadedProxyIds.current.has(m.id)) continue;
+        try {
+          const blob = await editorMediaWorkQueue.run(
+            () => generateProxy(m.id, m.url, abort.signal), abort.signal);
+          if (blob && live && !abort.signal.aborted) {
+            const url = URL.createObjectURL(blob);
+            proxyUrls.current.add(url);
+            loadedProxyIds.current.add(m.id);
+            setProxies(cur => ({ ...cur, [m.id]: url }));
+          }
+        } catch { /* Originals remain playable when proxy encoding fails. */ }
+        await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
     })();
-    return () => { alive = false; };
+    return () => {
+      live = false;
+      abort.abort();
+      window.removeEventListener("multicam-preview-cache-cleared", clear);
+    };
+  }, [media, timelineVideoKey, cacheRevision]);
+  useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
+  useEffect(() => {
+    const now = new Set(media.map((m) => m.url));
+    urlsRef.current.forEach((u) => { if (!now.has(u)) URL.revokeObjectURL(u); });
+    urlsRef.current = now;
   }, [media]);
+  useEffect(() => () => urlsRef.current.forEach((u) => URL.revokeObjectURL(u)), []);
   useEffect(() => { setStore({ exportMix: { excludedAudio: Object.keys(muted).filter((k) => muted[k]), hiddenVideo: Object.keys(hidden).filter((k) => hidden[k]) } }); }, [muted, hidden, setStore]);
 
-  const mediaEnd = useMemo(() => Math.max(0, ...items.map((i) => i.start + len(i))), [items]);
+  const mediaEnd = useMemo(() => Math.max(0, ...items.map(i => i.start + len(i))), [items]);
   const total = Math.max(10, mediaEnd);
+  // A recovered playhead can outlive a deleted/trimmed clip. Clamp against
+  // the restored timeline, never seek to a nonexistent media position.
+  useEffect(() => { setT((current) => Math.max(0, Math.min(current, total))); }, [total]);
   const first = 0;
   const [aspOpen, setAspOpen] = useState(false); const [snap, setSnap] = useState<{ v: boolean; h: boolean }>({ v: false, h: false }); const tlRef = useRef<HTMLDivElement>(null); const [tlW, setTlW] = useState(0);
-  useEffect(() => { const el = tlRef.current; if (!el) return; const ro = new ResizeObserver(() => setTlW(el.clientWidth)); ro.observe(el); setTlW(el.clientWidth); return () => ro.disconnect(); }, []);
-  const { vTracks, aTracks, setVTracks, setATracks, addTrack } = useTimelineTracks();
-  const [transitions, setTransitions] = useState<Transition[]>([]); const [selTr, setSelTr] = useState<string | null>(null);
-  const [layoutReady, setLayoutReady] = useState(false);
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem("multicam-pov-project-layout") ?? "null") as { items?: Item[]; overlays?: Overlay[]; transitions?: Transition[]; muted?: Record<string, boolean>; hidden?: Record<string, boolean>; vTracks?: number; aTracks?: number } | null;
-      if (saved) { if (Array.isArray(saved.items)) setItems(saved.items); if (Array.isArray(saved.overlays)) setOverlays(saved.overlays); if (Array.isArray(saved.transitions)) setTransitions(saved.transitions); setMuted(saved.muted ?? {}); setHidden(saved.hidden ?? {}); setVTracks(Math.max(saved.vTracks ?? 1, ...((saved.items ?? []).filter((i) => i.kind === "video").map((i) => i.track)))); setATracks(Math.max(saved.aTracks ?? 1, ...((saved.items ?? []).filter((i) => i.kind === "audio").map((i) => i.track)))); }
-    } catch { /* Restricted storage preserves session editing. */ }
-    setLayoutReady(true);
+    const el = tlRef.current; if (!el) return;
+    const measure = () => setTlW(el.clientWidth);
+    measure();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(measure);
+      ro.observe(el);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
+  }, []);
+  const { vTracks, aTracks, setVTracks, setATracks, addTrack } = useTimelineTracks({
+    video: initialEditorProject.vTracks, audio: initialEditorProject.aTracks,
+  });
+  const [transitions, setTransitions] = useState<Transition[]>(() => initialEditorProject.transitions as unknown as Transition[]); const [selTr, setSelTr] = useState<string | null>(null);
+  // Preserve the editor timeline across fold-driven Activity/WebView
+  // recreation. Only local metadata; original media stays in IndexedDB.
+  const latestProject = useRef({items,overlays,transitions,hidden,muted,vTracks,aTracks});
+  latestProject.current = {items,overlays,transitions,hidden,muted,vTracks,aTracks};
+  const projectWriteTimer = useRef<number | null>(null);
+  const projectDirty = useRef(false);
+  const flushEditorProject = useCallback(() => {
+    if (projectWriteTimer.current !== null) window.clearTimeout(projectWriteTimer.current);
+    projectWriteTimer.current = null;
+    if (!projectDirty.current) return;
+    projectDirty.current = false;
+    saveEditorProject(latestProject.current);
   }, []);
   useEffect(() => {
-    if (!layoutReady) return;
-    const timer = setTimeout(() => { try { localStorage.setItem("multicam-pov-project-layout", JSON.stringify({ items, overlays, transitions, muted, hidden, vTracks, aTracks })); } catch { /* Originals remain intact. */ } }, 150);
-    return () => { clearTimeout(timer); try { localStorage.setItem("multicam-pov-project-layout", JSON.stringify({ items, overlays, transitions, muted, hidden, vTracks, aTracks })); } catch { /* Restricted storage. */ } };
-  }, [layoutReady, items, overlays, transitions, muted, hidden, vTracks, aTracks]);
+    // On each timeline edit, update the deadline; do not serialize the whole
+    // project in an effect cleanup. React runs that cleanup on *every* edit,
+    // which previously defeated the 400ms debounce and stalled WebView.
+    projectDirty.current = true;
+    if (projectWriteTimer.current !== null) window.clearTimeout(projectWriteTimer.current);
+    projectWriteTimer.current = window.setTimeout(flushEditorProject, 400);
+  }, [items,overlays,transitions,hidden,muted,vTracks,aTracks,flushEditorProject]);
+  useEffect(() => {
+    const onHidden = () => { if (document.hidden) flushEditorProject(); };
+    window.addEventListener("pagehide", flushEditorProject);
+    document.addEventListener("visibilitychange", onHidden);
+    return () => {
+      window.removeEventListener("pagehide", flushEditorProject);
+      document.removeEventListener("visibilitychange", onHidden);
+      // Unmount runs inside the React navigation commit. Defer JSON.stringify
+      // and localStorage until AFTER the new tab can paint. The module-level
+      // queue keeps the unsaved snapshot accessible to an immediate remount,
+      // while pagehide synchronously flushes for Android process teardown.
+      if (projectWriteTimer.current !== null) window.clearTimeout(projectWriteTimer.current);
+      projectWriteTimer.current = null;
+      if (projectDirty.current) {
+        projectDirty.current = false;
+        queueEditorProjectSave(latestProject.current);
+      }
+    };
+  }, [flushEditorProject]);
+  // Keep the editor's strongly typed color controls while providing the
+  // renderer with an explicit plain numeric adjustment map.
+  const renderItems = useMemo(() => items.map(item => {
+    const {color, crop, ...source} = item;
+    return {
+      ...source,
+      ...(crop ? {crop} : {}),
+      ...(color ? {color: Object.fromEntries(Object.entries(color)) as Record<string,number>} : {}),
+    };
+  }), [items]);
   const [trCat, setTrCat] = useState("basic"); const [ghost, setGhost] = useState<{ type: string; x: number; y: number } | null>(null); const [dropErr, setDropErr] = useState("");
   const [pinMon, setPinMon] = useState(false); const [pinTl, setPinTl] = useState(false); const [headerH, setHeaderH] = useState(0); const [monH, setMonH] = useState(0);
   const monRef = useRef<HTMLDivElement>(null); const laneRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const [cropFor, setCropFor] = useState<string | null>(null); const [cropDraft, setCropDraft] = useState<CropBox | null>(null); const [addOpen, setAddOpen] = useState(false); const [importErr, setImportErr] = useState("");
+  const fileRef = useRef<HTMLInputElement>(null); const pendingRef = useRef<{ id: string; track: number } | null>(null);
   const attachRef = useRef<{ kind: TrackKind; track: number } | null>(null);
   const [attaching, setAttaching] = useState(false);
-  const attachMedia = useCallback((kind: TrackKind, track: number) => { attachRef.current = { kind, track }; if (fileRef.current) { fileRef.current.accept = `${kind}/*`; fileRef.current.click(); } }, []);
-  const fileRef = useRef<HTMLInputElement>(null); const pendingRef = useRef<{ id: string; track: number } | null>(null);
+  const attachMedia = useCallback((kind: TrackKind, track: number) => {
+    attachRef.current = { kind, track };
+    if (fileRef.current) {
+      fileRef.current.accept = kind === "video" ? "video/*" : "audio/*";
+      fileRef.current.click();
+    }
+  }, []);
   useEffect(() => {
     const h = document.querySelector<HTMLElement>(".app-header"); const m = monRef.current;
     const measure = () => { setHeaderH(h?.offsetHeight ?? 0); setMonH(m?.offsetHeight ?? 0); };
-    measure(); const ro = new ResizeObserver(measure); if (h) ro.observe(h); if (m) ro.observe(m); return () => ro.disconnect();
+    measure();
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(measure);
+      if (h) ro.observe(h);
+      if (m) ro.observe(m);
+      return () => ro.disconnect();
+    }
+    window.addEventListener("resize", measure);
+    window.addEventListener("orientationchange", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("orientationchange", measure);
+    };
   }, []);
   const mediaById = useMemo(() => new Map(media.map((m) => [m.id, m])), [media]);
 
@@ -249,27 +590,46 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     pendingRef.current = null; addMedia(m, p.track);
   }, [media]);
   const importFile = async (file?: File) => {
+    const requested = attachRef.current; attachRef.current = null;
     setAddOpen(false); setImportErr(""); if (!file) return;
     const kind = file.type.startsWith("audio") ? "audio" : file.type.startsWith("video") ? "video" : null;
     if (!kind) { setImportErr("Поддерживаются только видео и аудио файлы"); return; }
-    const target = attachRef.current; attachRef.current = null;
-    if (target && target.kind !== kind) { setImportErr("Тип файла не соответствует дорожке"); return; }
-    const track = target?.track ?? (selItem && selItem.kind === kind ? selItem.track : 1);
-    const id = `import-${uid()}`; setAttaching(true);
-    try { await saveClip({ id, createdAt: Date.now(), camera: track, blob: file, kind, name: file.name }); pendingRef.current = { id, track }; window.dispatchEvent(new Event("multicam-clips-changed")); }
-    catch { setImportErr("Не удалось сохранить файл в хранилище"); }
+    if (requested && requested.kind !== kind) { setImportErr("Выберите файл нужного типа для этой дорожки"); return; }
+    const track = requested ? requested.track : selItem && selItem.kind === kind ? selItem.track : 1;
+    const id = `import-${uid()}`;
+    setAttaching(true);
+    try {
+      await saveClip({ id, createdAt: Date.now(), camera: track, blob: file, kind, name: file.name });
+      pendingRef.current = { id, track };
+      window.dispatchEvent(new Event("multicam-clips-changed"));
+    } catch { setImportErr("Не удалось сохранить файл в хранилище"); }
     finally { setAttaching(false); }
   };
 
   // The indicator runs independently at display refresh rate; heavy preview state runs at 30 Hz.
   const timeRef = useRef(t); timeRef.current = t;
+  useEffect(() => {
+    const timer = window.setTimeout(() => setStore({ playhead: t }), 400);
+    return () => window.clearTimeout(timer);
+  }, [t, setStore]);
+  useEffect(() => {
+    const flush = () => setStore({ playhead: timeRef.current });
+    const hidden = () => { if (document.hidden) flush(); };
+    document.addEventListener("visibilitychange", hidden);
+    window.addEventListener("pagehide", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", hidden);
+      window.removeEventListener("pagehide", flush);
+      flush();
+    };
+  }, [setStore]);
   const playheadLine = useRef<HTMLDivElement>(null); const playheadHandle = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!playing) return;
     let raf = 0; let last = performance.now(); let publish = last; let clock = timeRef.current;
     const tick = (now: number) => {
       clock = Math.min(total, clock + (now - last) / 1000); last = now;
-      const left = `${pinnedPlayhead(clock, zoom, tlRef.current?.scrollLeft ?? 0, HEAD)}px`;
+      const left = `${HEAD + clock * zoom}px`;
       if (playheadLine.current) playheadLine.current.style.left = left;
       if (playheadHandle.current) playheadHandle.current.style.left = left;
       if (now - publish >= 33 || clock >= total) { publish = now; setT(clock); }
@@ -283,8 +643,14 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, [playing, total, zoom]);
 
   const active = useMemo(() => [...items].filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i)).sort((a, b) => a.track - b.track)[0] ?? null, [items, t, hidden]);
+  const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (!selected || !items.some(x=>x.id === selected && x.kind === "video") || i.id === selected)).sort((a,b)=>a.track-b.track),[items,t,hidden,selected]);
   /** Items whose sound is heard: audio clips on unmuted lanes, and video clips with attached (not detached) audio on unmuted lanes. Visibility does not affect sound. */
   const audible = useMemo(() => items.filter((i) => i.kind === "audio" ? !muted[`a${i.track}`] : !muted[`v${i.track}`] && !items.some((a) => a.kind === "audio" && a.mediaId === i.mediaId)), [items, muted]);
+  // A large timeline can contain hundreds of clips, but only overlapping
+  // audio requires a live decoder. Mount just the current sources (and a short
+  // warm-up interval) instead of keeping every hidden <audio> open in WebView.
+  const activeAudible = useMemo(() => audible.filter(i =>
+    t >= i.start - 0.5 && t < i.start + len(i)), [audible, t]);
 
   const validTr = useMemo(() => transitions.filter((tr) => { const a = items.find((i) => i.id === tr.aId); const b = items.find((i) => i.id === tr.bId); return a && b && a.kind === "video" && b.kind === "video" && a.track === tr.track && b.track === tr.track && Math.abs(a.start + len(a) - b.start) < 0.15; }), [transitions, items]);
   const trStyle = useMemo<{ filter: string; transform: string; opacity: number; clip?: string }>(() => {
@@ -330,24 +696,6 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     return none;
   }, [active, validTr, items, t]);
 
-  // Native playback while playing (no per-frame seeking); seeks only for scrubbing, reverse, or drift > 0.3 s.
-  useEffect(() => {
-    const v = videoRef.current; if (!v || !active) return;
-    const m = mediaById.get(active.mediaId); if (!m) return;
-    const source = proxies[m.id] ?? m.url;
-    if (v.dataset["src"] !== source) { v.dataset["src"] = source; v.src = source; }
-    v.muted = true;
-    const local = (t - active.start) * active.speed;
-    const target = Math.max(0, active.reverse ? active.out - local : active.in + local);
-    if (playing && !active.reverse) {
-      if (v.playbackRate !== active.speed) v.playbackRate = active.speed;
-      if (v.paused) { v.currentTime = target; void v.play().catch(() => undefined); }
-      else if (Math.abs(v.currentTime - target) > 0.3) v.currentTime = target;
-    } else {
-      if (!v.paused) v.pause();
-      if (!v.seeking && Math.abs(v.currentTime - target) > (playing ? 0.06 : 0.02)) v.currentTime = target;
-    }
-  }, [active, t, mediaById, playing, proxies]);
   useEffect(() => {
     for (const i of audible) {
       const el = audioRefs.current[i.id]; if (!el) continue;
@@ -407,7 +755,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const tr: Transition = { id: uid(), track, aId: a.id, bId: b.id, type, dur };
       setTransitions((cur) => [...cur.filter((x) => !(x.aId === a.id && x.bId === b.id)), tr]); setSelTr(tr.id); setSelected(null);
     };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    dragRegistry.current?.register(move, up, () => setGhost(null));
   };
   const colorOf = (i: Item | null): ColorAdj => ({ ...ZERO_COLOR, ...(i?.color ?? {}) });
   const setColor = (k: ColorKey, v: number) => { if (selItem?.kind === "video") setItems((cur) => cur.map((i) => i.id === selItem.id ? { ...i, color: { ...colorOf(i), [k]: v } } : i)); };
@@ -420,20 +768,32 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     const blocks: Overlay[] = [];
     for (const it of items.filter((i) => i.kind === "video")) {
       const m = mediaById.get(it.mediaId); if (!m?.peaks.length) continue;
-      const per = m.duration / m.peaks.length; const thr = Math.max(0.04, Math.max(...m.peaks) * 0.25);
-      let startIdx = -1;
-      m.peaks.forEach((p, idx) => {
-        const loud = p >= thr;
-        if (loud && startIdx < 0) startIdx = idx;
-        if ((!loud || idx === m.peaks.length - 1) && startIdx >= 0) {
-          const s = startIdx * per; const e = (idx + 1) * per; startIdx = -1;
-          if (e - s < 0.4 || s < it.in || s > it.out) return;
-          blocks.push({ id: uid(), text: `Реплика ${blocks.length + 1}`, x: 50, y: 84, size: 18, color: "#ffffff", bg: true, font: FONTS[0]!, start: it.start + (s - it.in) / it.speed, end: it.start + (e - it.in) / it.speed, subtitle: true });
+      // Math.max(...peaks) overflows the JS argument stack on long recordings.
+      // Yield every 4096 peaks so Settings taps remain serviceable, and keep
+      // all detected subtitle regions. The feature and result are unchanged.
+      let maximum=0;
+      for(let idx=0;idx<m.peaks.length;idx++){
+        maximum=Math.max(maximum,m.peaks[idx]??0);
+        if(idx>0&&idx%4096===0)await new Promise<void>(r=>setTimeout(r,0));
+      }
+      const per=m.duration/m.peaks.length;
+      const thr=Math.max(0.04,maximum*0.25);
+      let startIdx=-1;
+      for(let idx=0;idx<m.peaks.length;idx++){
+        const p=m.peaks[idx]??0;
+        const loud=p>=thr;
+        if(loud&&startIdx<0)startIdx=idx;
+        if((!loud||idx===m.peaks.length-1)&&startIdx>=0){
+          const s=startIdx*per; const e=(idx+1)*per;startIdx=-1;
+          if(e-s>=0.4&&s>=it.in&&s<=it.out){
+            blocks.push({id:uid(),text:`Реплика ${blocks.length+1}`,x:50,y:84,size:18,color:"#ffffff",bg:true,font:FONTS[0]!,start:it.start+(s-it.in)/it.speed,end:it.start+(e-it.in)/it.speed,subtitle:true});
+          }
         }
-      });
+        if(idx>0&&idx%4096===0)await new Promise<void>(r=>setTimeout(r,0));
+      }
     }
-    setOverlays((o) => [...o.filter((x) => !x.subtitle), ...blocks]);
-    setSubState(blocks.length ? "on" : "off");
+    setOverlays(o=>[...o.filter(x=>!x.subtitle),...blocks]);
+    setSubState(blocks.length?"on":"off");
   };
 
   const dragOverlay = (id: string) => (e: React.PointerEvent) => {
@@ -441,7 +801,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     e.stopPropagation(); const sx = e.clientX; const sy = e.clientY; let moved = false;
     const move = (ev: PointerEvent) => { if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 4) moved = true; if (!moved) return; setOverlays((o) => o.map((x) => x.id === id ? { ...x, x: Math.min(98, Math.max(2, ((ev.clientX - box.left) / box.width) * 100)), y: Math.min(98, Math.max(2, ((ev.clientY - box.top) / box.height) * 100)) } : x)); };
     const up = () => { setSnap({ v: false, h: false }); window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); if (!moved) setEditing(id); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    dragRegistry.current?.register(move, up, () => setSnap({ v: false, h: false }));
   };
 
   const dragItem = (it: Item) => (e: React.PointerEvent) => {
@@ -451,18 +811,54 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) { moved = true; window.clearTimeout(hold); }
       if (!moved) return;
       const start = Math.max(0, orig.start + (ev.clientX - sx) / zoom);
-      const destination = Object.entries(laneRefs.current).find(([key, lane]) => { if (!lane || !key.startsWith(it.kind === "audio" ? "a" : "v")) return false; const rect = lane.getBoundingClientRect(); return ev.clientY >= rect.top && ev.clientY <= rect.bottom; });
-      const track = destination ? Number(destination[0].slice(1)) : orig.track;
+      const track = Math.min(it.kind === "audio" ? aTracks : vTracks, Math.max(1, orig.track + Math.round((ev.clientY - sy) / ROW)));
       setItems((cur) => cur.map((x) => x.id === it.id ? { ...x, start, track } : x));
     };
     const up = () => { window.clearTimeout(hold); if (!moved) { setSelected(it.id); setSelTr(null); } window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    dragRegistry.current?.register(move, up, () => window.clearTimeout(hold));
   };
 
   const editOverlay = overlays.find((o) => o.id === editing) ?? null;
   const patchOverlay = (patch: Partial<Overlay>) => setOverlays((o) => o.map((x) => x.id === editing || (editOverlay?.subtitle && x.subtitle && !("text" in patch)) ? { ...x, ...patch } : x));
   const lanes = trackLanes({ video: vTracks, audio: aTracks });
 
+  useEffect(() => {
+    const token=Symbol("mounted editor");
+    return registerEditorRender(token, async (config, signal, progress) => {
+      const entry=items[0];
+      const source=entry && mediaById.get(entry.mediaId);
+      const choice=canExportOriginalClip(items,overlays.length,transitions.length,
+        source?.duration ?? 0,config,{hidden:!!hidden[`v${entry?.track}`],muted:!!muted[`v${entry?.track}`]});
+      if (!choice.allowed && items.length>=2) {
+        if(config.videoCodec!=="VP8"||config.audioCodec!=="Opus"||
+          config.resolution!=="720p"||config.fps!=="30")
+          throw Error("Для склейки выберите VP8 / Opus, 720p и 30 FPS.");
+        const plan=planSequentialVideoRender(renderItems,overlays,transitions.length,muted,hidden);
+        const files=await Promise.all(plan.parts.map(part=>readPersistedClip(part.segment.mediaId)));
+        if(signal.aborted)throw Error("Экспорт отменён");
+        return renderSequentialVideoWebm(plan,files.map(file=>file.blob),config,signal,progress);
+      }
+      if (!choice.allowed) {
+        const plan=planSimpleVideoRender(renderItems,overlays,transitions.length,
+          !!muted[`v${entry?.track}`],!!hidden[`v${entry?.track}`]);
+        if(!entry)throw Error("Исходный клип не найден");
+        if(config.videoCodec!=="VP8"||config.resolution!=="720p"||
+           config.fps!=="30"||config.audioCodec!=="Opus")
+          throw Error("Этот офлайн-рендер поддерживает только VP8, Opus, 720p, 30 FPS. Выберите эти параметры в экспорте.");
+        const persisted=await readPersistedClip(entry.mediaId);
+        return renderSimpleVideoWebm(plan,persisted.blob,config,signal,progress);
+      }
+      if (!source || !entry || signal.aborted) throw new Error("Видео недоступно или экспорт отменён");
+      const saved=await readPersistedClip(entry.mediaId);
+      if (signal.aborted) throw new Error("Экспорт отменён");
+      const mime=saved.blob.type.toLowerCase();
+      if (!mime.startsWith("video/")) throw new Error("Источник не является видеофайлом");
+      // This is an actual original video file with its original sound, not
+      // transcoding or a video containing unapplied editing parameters.
+      progress(100);
+      return {blob:saved.blob,filename:`multicam-original-${Date.now()}.${mime.includes("mp4")?"mp4":"webm"}`};
+    });
+  },[items,overlays,transitions,mediaById,hidden,muted]);
   const aspect = useMulticamStore((x) => x.aspect);
   const ratio = ASPECTS.find((a) => a[0] === aspect)?.[2] ?? 16 / 9;
   const canvasBox = ratio >= 16 / 9 ? { width: "100%", height: `${(16 / 9 / ratio) * 100}%` } : { height: "100%", width: `${(ratio / (16 / 9)) * 100}%` };
@@ -488,10 +884,43 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       setCropDraft({ x, y, w, h });
     };
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    dragRegistry.current?.register(move, up, () => setSnap({ v: false, h: false }));
   };
-  const minZoom = timelineMinZoom(tlW, total, HEAD);
+  const minZoom = timelineMinZoom(tlW, total);
+  const rulerTicks = useMemo(() => visibleRulerTicks(total, zoom, scrollX, tlW, HEAD), [total, zoom, scrollX, tlW]);
   useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
+  useEffect(() => {
+    if (restoredScroll.current || tlW <= 0 || zoom < minZoom) return;
+    const timeline = tlRef.current;
+    if (!timeline) return;
+    const savedTime = readTimelineAnchor();
+    const frame = requestAnimationFrame(() => {
+      if (!tlRef.current || restoredScroll.current) return;
+      if (savedTime !== null && items.length) {
+        timeline.scrollLeft = scrollForTimelineAnchor(savedTime, zoom, tlW,
+          Math.max(tlW, HEAD + total * zoom + 8));
+        setScrollX(timeline.scrollLeft);
+      }
+      lastTimelineView.current = { left: timeline.scrollLeft, zoom };
+      restoredScroll.current = true;
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [tlW, zoom, minZoom, total, items.length]);
+  useEffect(() => {
+    const flush = () => {
+      if (restoredScroll.current)
+        saveTimelineAnchor(lastTimelineView.current.left, lastTimelineView.current.zoom);
+    };
+    const hidden = () => { if (document.hidden) flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", hidden);
+    return () => {
+      if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", hidden);
+      flush();
+    };
+  }, []);
   const zoomPos = Math.round((Math.log(Math.max(zoom, minZoom) / minZoom) / Math.log(600 / minZoom || 1.0001)) * 100);
   const scrub = (e: React.PointerEvent) => {
     e.stopPropagation(); e.preventDefault(); setPlaying(false);
@@ -499,18 +928,25 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     at(e.clientX);
     const move = (ev: PointerEvent) => at(ev.clientX);
     const up = () => { window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", up); };
-    window.addEventListener("pointermove", move); window.addEventListener("pointerup", up);
+    dragRegistry.current?.register(move, up);
   };
   // Lanes do not depend on the playhead, so they are memoised and skipped during 60 fps playback re-renders.
   const laneEls = useMemo(() => lanes.map((lane) => <div key={lane.key} className="timeline-lane relative flex border-b border-border" style={{ height: ROW }}>
-    <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" style={{ width: HEAD }}>
-      <span>{lane.label}</span>
-      <Button size="icon" variant="ghost" title={`Добавить ${lane.label} дорожку`} aria-label={`Добавить ${lane.label} дорожку ${lane.track}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => addTrack(lane.kind)}><Plus className="size-3" /></Button>
-      {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} видео ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={hidden[lane.key] ? "text-record" : "text-muted-foreground"}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
-      <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={muted[lane.key] ? "text-record" : "text-muted-foreground"}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
+    <div className="timeline-header sticky left-0 z-10 flex shrink-0 items-center gap-1 bg-timeline px-1" role="group" aria-label={`Дорожка ${lane.label}`} style={{ width: HEAD }}>
+      <span className="timeline-lane-title min-w-0 flex-1 text-[11px] font-semibold">{lane.label}</span>
+      <button type="button" className="timeline-track-add" title={`Добавить ${lane.kind === "video" ? "видео" : "аудио"} дорожку`} aria-label={`Добавить ${lane.kind === "video" ? "видео" : "аудио"} дорожку ${lane.track}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => addTrack(lane.kind)}><Plus className="size-3" /></button>
+      {lane.kind === "video" && <button title={hidden[lane.key] ? "Показать видео" : "Скрыть видео"} aria-label={`${hidden[lane.key] ? "Показать" : "Скрыть"} ${lane.label}`} aria-pressed={!!hidden[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setHidden((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={`timeline-lane-toggle ${hidden[lane.key] ? "is-off text-record" : "text-foreground"}`}>{hidden[lane.key] ? <EyeOff className="size-3.5" /> : <Eye className="size-3.5" />}</button>}
+      <button title={muted[lane.key] ? "Включить звук" : "Выключить звук"} aria-label={`${muted[lane.key] ? "Включить" : "Выключить"} звук дорожки ${lane.label}`} aria-pressed={!!muted[lane.key]} onPointerDown={(e) => e.stopPropagation()} onClick={() => setMuted((m) => ({ ...m, [lane.key]: !m[lane.key] }))} className={`timeline-lane-toggle ${muted[lane.key] ? "is-off text-record" : "text-foreground"}`}>{muted[lane.key] ? <VolumeX className="size-3.5" /> : <Volume2 className="size-3.5" />}</button>
     </div>
-    <div className="relative min-w-0 flex-1" data-lane={lane.key} onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); attachRef.current = { kind: lane.kind, track: lane.track }; void importFile(e.dataTransfer.files[0]); }} ref={(el) => { laneRefs.current[lane.key] = el; }}>
-      {!items.some((i) => i.track === lane.track && i.kind === lane.kind) && <Button variant="outline" className="timeline-slot" disabled={attaching} aria-label={`Прикрепить медиа ${lane.label} ${lane.track}`} onPointerDown={(e) => e.stopPropagation()} onClick={() => attachMedia(lane.kind, lane.track)}>{lane.kind === "video" ? <ListVideo /> : <ListMusic />}<span>{attaching ? "Загрузка…" : "+ Медиа"}</span></Button>}
+    <div className="relative min-w-0 flex-1" data-lane={lane.key} ref={(el) => { laneRefs.current[lane.key] = el; }}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "copy"; }}
+      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); attachRef.current = { kind: lane.kind, track: lane.track }; void importFile(e.dataTransfer.files[0]); }}>
+      {!items.some((i) => i.track === lane.track && i.kind === lane.kind) &&
+        <Button variant="outline" size="sm" className="timeline-slot" disabled={attaching}
+          aria-label={`Прикрепить медиа ${lane.label} ${lane.track}`}
+          onPointerDown={(e) => e.stopPropagation()} onClick={() => attachMedia(lane.kind, lane.track)}>
+          {lane.kind === "video" ? <ListVideo /> : <ListMusic />}<span>{attaching ? "Загрузка…" : "+ Медиа"}</span>
+        </Button>}
       {items.filter((i) => i.track === lane.track && i.kind === lane.kind).map((i) => {
         const m = mediaById.get(i.mediaId); const w = Math.max(6, len(i) * zoom);
         const tiles = visibleTiles(HEAD + i.start * zoom, w, scrollX, tlW);
@@ -526,13 +962,23 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // eslint-disable-next-line react-hooks/exhaustive-deps
   [items, zoom, hidden, muted, selected, selTr, thumbs, mediaById, validTr, vTracks, aTracks, scrollX, tlW, addTrack, attachMedia, attaching]);
 
-  return <section className="mb-4 min-w-0 space-y-3 overflow-x-hidden px-4 pt-3 text-xs">
+  return <section className="mb-2 min-w-0 space-y-2 overflow-x-hidden px-3 pt-2 text-xs">
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
     <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
-      {active && <svg className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${active.id}`} c={colorOf(active)} /></defs></svg>}
-      {audible.map((i) => <audio key={i.id} ref={(el) => { audioRefs.current[i.id] = el; }} src={mediaById.get(i.mediaId)?.url} preload="auto" className="hidden" />)}
-      {active ? <video ref={videoRef} muted playsInline className="h-full w-full object-cover" style={{ filter: `url(#cc-${active.id}) ${LOOKS[active.look] === "none" ? "" : LOOKS[active.look]} ${trStyle.filter}`, opacity: (active.opacity / 100) * trStyle.opacity, clipPath: trStyle.clip, transform: `translateX(${active.posX}%) scale(${active.scale / 100}) ${trStyle.transform} ${cropFor === active.id ? "" : cropTransform(active.crop)}`, transformOrigin: "50% 50%" }} />
+      {visibleVideos.map(i=><svg key={i.id} className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${i.id}`} c={colorOf(i)} /></defs></svg>)}
+      {activeAudible.map((i) => <audio key={i.id} ref={(el) => { if (el) audioRefs.current[i.id] = el; else delete audioRefs.current[i.id]; }} src={mediaById.get(i.mediaId)?.url} preload="metadata" className="hidden" />)}
+      {visibleVideos.length ? visibleVideos.map((i,index)=><EditorVideoLayer key={i.id}
+        source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}
+        timelineTime={t} start={i.start} inPoint={i.in} outPoint={i.out}
+        speed={i.speed} reverse={i.reverse} playing={playing}
+        label={`Видео дорожки ${i.track}`}
+        zIndex={index+1}
+        style={{filter:`url(#cc-${i.id}) ${LOOKS[i.look] === "none" ? "" : LOOKS[i.look]} ${i.id === active?.id ? trStyle.filter : ""}`,
+          opacity:(i.opacity/100)*(i.id === active?.id ? trStyle.opacity : 1),
+          clipPath:i.id === active?.id ? trStyle.clip : undefined,
+          transform:`translateX(${i.posX}%) scale(${i.scale/100}) ${i.id === active?.id ? trStyle.transform : ""} ${cropFor === i.id ? "" : cropTransform(i.crop)}`,
+          transformOrigin:"50% 50%"}} />)
         : <div className="flex h-full items-center justify-center p-4 text-center text-muted-foreground">{loading ? "Загрузка клипов…" : "00:00.00"}</div>}
       {overlays.filter((o) => t >= o.start && t <= o.end).map((o) => <div key={o.id} onPointerDown={dragOverlay(o.id)} onClick={(e) => e.stopPropagation()} className={`absolute max-w-[90%] -translate-x-1/2 -translate-y-1/2 cursor-move select-none rounded px-2 py-0.5 text-center font-semibold [touch-action:none] ${editing === o.id ? "ring-2 ring-primary" : ""}`} style={{ left: `${o.x}%`, top: `${o.y}%`, fontSize: o.size, color: o.color, fontFamily: o.font, background: o.bg ? "rgb(0 0 0 / .55)" : "transparent" }}>{o.text}</div>)}
       {cropDraft && cropItem && <div className="absolute inset-0 z-20 [touch-action:none]" onClick={(e) => e.stopPropagation()}>
@@ -571,12 +1017,18 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
 
 
     <div className={pinTl ? "sticky z-10 -mx-4 bg-background px-4 pb-1" : "relative"} style={pinTl ? { top: headerH + (pinMon ? monH : 0) } : undefined}>
-    <div ref={tlRef} onScroll={(e) => setScrollX(Math.max(0, e.currentTarget.scrollLeft))} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
+    <div ref={tlRef} onScroll={(e) => {
+      const left = e.currentTarget.scrollLeft;
+      setScrollX(left);
+      if (!restoredScroll.current) return;
+      lastTimelineView.current = { left, zoom };
+      if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
+      scrollSaveTimer.current = window.setTimeout(() => saveTimelineAnchor(left, zoom), 160);
+    }} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
       <div className="relative" style={{ width: timelineContentWidth(tlW, HEAD, mediaEnd, zoom) }}>
-        <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`absolute left-0 top-0 z-20 flex h-5 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
-        <div ref={rulerRef} className="relative h-5 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
-          <span className="timeline-zero text-[9px] font-semibold" onPointerDown={(e) => { e.stopPropagation(); setPlaying(false); setT(0); if (tlRef.current) tlRef.current.scrollLeft = 0; }}>0s</span>
-          {Array.from({ length: Math.ceil(total) }, (_, k) => k + 1).map((s) => (zoom >= 20 || s % 5 === 0) && <span key={s} className="absolute top-0 h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
+        <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-7 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
+        <div ref={rulerRef} className="relative h-7 cursor-pointer border-b border-border [touch-action:none]" style={{ marginLeft: HEAD }} onPointerDown={scrub}>
+          {rulerTicks.map((s) => <span key={s} className="absolute top-[9px] h-2.5 border-l border-foreground/80 pl-0.5 text-[9px] font-semibold leading-none text-foreground tabular-nums" style={{ left: s * zoom }}>{s}s</span>)}
         </div>
         {laneEls}
         <div ref={playheadLine} className="pointer-events-none absolute bottom-0 top-0 z-20 w-px bg-record" style={{ left: pinnedPlayhead(t, zoom, scrollX, HEAD) }} />
@@ -596,8 +1048,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     <input ref={fileRef} type="file" accept="video/*,audio/*" className="sr-only" onChange={(e) => { void importFile(e.target.files?.[0]); e.target.value = ""; }} />
     <AnimatePresence>{addOpen && <motion.div initial={{ opacity: 0, y: -6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className="glass-panel grid gap-1 rounded-xl p-1.5" role="menu">
       <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { attachRef.current = null; if (fileRef.current) { fileRef.current.accept = "video/*,audio/*"; fileRef.current.click(); } }}><FilePlus2 className="size-4" />Добавить</button>
-      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { addTrack("video"); setAddOpen(false); }}><ListVideo className="size-4" />Добавить видео дорожку</button>
-      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { addTrack("audio"); setAddOpen(false); }}><ListMusic className="size-4" />Добавить аудио дорожку</button>
+      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { setVTracks((n) => n + 1); setAddOpen(false); }}><ListVideo className="size-4" />Добавить видео дорожку</button>
+      <button role="menuitem" className="flex items-center gap-2 rounded-md px-2 py-2 text-start hover:bg-secondary" onClick={() => { setATracks((n) => n + 1); setAddOpen(false); }}><ListMusic className="size-4" />Добавить аудио дорожку</button>
     </motion.div>}</AnimatePresence>
     {importErr && <p role="alert" className="text-[10px] text-warning">{importErr}</p>}
     <AnimatePresence>{selItem && <motion.div initial={{ opacity: 0, y: 12, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} exit={{ opacity: 0, y: 12 }} transition={{ type: "spring", stiffness: 420, damping: 34 }} className="glass-panel space-y-3 rounded-xl p-3">
@@ -625,7 +1077,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     </motion.div>}</AnimatePresence>
     <div className="-mx-1 rounded-lg bg-card p-1.5">
       <div className="grid grid-cols-3 gap-1" role="tablist">{([["transitions", "Переходы"], ["color", "Цвет"], ["audio", "Звук"]] as const).map(([id, label]) => <button key={id} role="tab" aria-selected={panel === id} onClick={() => setPanel((p) => p === id ? null : id)} className={`editor-tab ${panel === id ? "active" : ""}`}>{label}</button>)}</div>
-      <AnimatePresence initial={false}>{panel && <motion.div role="tabpanel" initial={{ height: 0, opacity: 0 }} animate={{ height: "auto", opacity: 1 }} exit={{ height: 0, opacity: 0 }} transition={{ duration: .22, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden"><motion.div key={panel} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: .15 }} className="min-h-56 px-1.5 pb-2 pt-3">
+      {/* Avoid overlapping decoder-heavy Audio and Transition panels inside Android
+       WebView: retain the exact controls, but do not animate/remount the whole
+       panel on every switch. Desktop web keeps the original transitions. */}
+      <AnimatePresence initial={false}>{panel && <motion.div role="tabpanel" initial={nativeWebView ? false : { opacity: 0, y: -6 }} animate={nativeWebView ? { opacity: 1 } : { opacity: 1, y: 0 }} exit={nativeWebView ? { opacity: 1 } : { opacity: 0, y: -6 }} transition={{ duration: nativeWebView ? 0 : .18, ease: [0.32, 0.72, 0, 1] }} className="overflow-hidden"><motion.div key={nativeWebView ? "native-editor-panel" : panel} initial={nativeWebView ? false : { opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: nativeWebView ? 0 : .15 }} className="min-h-56 px-1.5 pb-2 pt-3">
         {(panel !== "color" || selItem?.kind === "video") && <div className="mb-1 flex justify-end"><HelpDot id={panel} /></div>}
         {panel === "transitions" && <><div className="flex min-h-40 gap-2">
           <div className="flex w-24 shrink-0 flex-col gap-1">{TRANSITION_CATS.map((c) => <button key={c.id} onClick={() => setTrCat(c.id)} className={`rounded-md px-2 py-2 text-start text-[11px] ${trCat === c.id ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{c.label}</button>)}</div>

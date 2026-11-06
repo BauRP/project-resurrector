@@ -1,60 +1,198 @@
 import { bounded } from "./async";
 
+/** A diagnostic check must never evict the user's active camera. */
+export class CameraBusyError extends Error {
+  constructor() { super("Камера занята активным предпросмотром или видеозаписью"); this.name = "CameraBusyError"; }
+}
+export class CameraUnavailableError extends Error {
+  constructor(){super("Нет активного видеопотока камеры");this.name="CameraUnavailableError";}
+}
+export class CameraSupersededError extends Error {
+  constructor() { super("Запрос камеры отменён более новым запросом"); this.name = "CameraSupersededError"; }
+}
+type ConstraintQueue = {
+  command: Record<string, unknown> | null;
+  waiters: ((value: boolean) => void)[];
+  inFlightWaiters: ((value: boolean) => void)[];
+  draining: boolean;
+  cancelled: boolean;
+};
+
+/** Only reported current device settings can confirm a command.
+ * applyConstraints resolving means merely that the API accepted a request;
+ * WebView drivers may ignore a setting or omit it from getSettings().
+ */
+export type AppliedSettingStatus = "confirmed" | "rejected" | "unknown";
+export function checkAppliedCameraSetting(
+  track: MediaStreamTrack | undefined, key: string, requested: string | number,
+  tolerance = 0.03,
+): AppliedSettingStatus {
+  if (!track || track.readyState !== "live" || typeof track.getSettings !== "function") return "unknown";
+  let reported: unknown;
+  try {
+    reported = (track.getSettings() as unknown as Record<string, unknown>)[key];
+  } catch { return "unknown"; }
+  if (typeof requested === "number" && typeof reported === "number" &&
+      Number.isFinite(requested) && Number.isFinite(reported))
+    return Math.abs(reported - requested) <= Math.max(tolerance, Math.abs(requested) * 0.002) ? "confirmed" : "rejected";
+  if (typeof requested === "string" && typeof reported === "string")
+    return reported === requested ? "confirmed" : "rejected";
+  return "unknown";
+}
+
 export type FocusSupport = "supported" | "unsupported" | "unknown";
 export function focusSupport(caps: Record<string, unknown>): FocusSupport {
   const range = caps['focusDistance'] as { min?: number; max?: number } | undefined;
   const modes = caps['focusMode'] as string[] | undefined;
   if (range && typeof range.max === "number" && range.max > (range.min ?? 0)) return "supported";
+  // Reports manual-focus ability. Touch-to-focus is checked independently by CameraTab.
+  // A fixed-focus sensor may still support exposure metering points.
   if (modes && !modes.includes("manual")) return "unsupported";
   if (range && typeof range.max === "number" && range.max <= (range.min ?? 0)) return "unsupported";
   return "unknown";
 }
 export function focusPoint(rect: { left: number; top: number; width: number; height: number }, width: number, height: number, clientX: number, clientY: number) {
+  if (![rect.left, rect.top, rect.width, rect.height, width, height, clientX, clientY].every(Number.isFinite) ||
+      rect.width <= 0 || rect.height <= 0 || width <= 0 || height <= 0) return { x: 0.5, y: 0.5 };
   const scale = Math.max(rect.width / width, rect.height / height);
   const x = (clientX - rect.left + (width * scale - rect.width) / 2) / (width * scale);
   const y = (clientY - rect.top + (height * scale - rect.height) / 2) / (height * scale);
   return { x: Math.max(0, Math.min(1, x)), y: Math.max(0, Math.min(1, y)) };
 }
+/** Map touches through CSS-scaled object-fit:cover preview without changing
+ * camera sensor orientation or claiming mirror when WebView does not show it.
+ */
+export function focusPointInVideoPreview(
+  video:Pick<HTMLVideoElement,"getBoundingClientRect"|"clientWidth"|"clientHeight"|"videoWidth"|"videoHeight">,
+  clientX:number,clientY:number,
+):{x:number;y:number}{
+  const rect=video.getBoundingClientRect();
+  const {clientWidth:w,clientHeight:h,videoWidth:vw,videoHeight:vh}=video;
+  if(![rect.left,rect.top,rect.width,rect.height,w,h,vw,vh,clientX,clientY]
+    .every(Number.isFinite)||rect.width<=0||rect.height<=0||
+    w<=0||h<=0||vw<=0||vh<=0) return {x:.5,y:.5};
+  const logicalX=(clientX-rect.left)*w/rect.width;
+  const logicalY=(clientY-rect.top)*h/rect.height;
+  return focusPoint({left:0,top:0,width:w,height:h},vw,vh,logicalX,logicalY);
+}
 class CameraController {
   private stream: MediaStream | null = null;
   private owner: symbol | null = null;
   private generation = 0;
-  private queues = new Map<MediaStreamTrack, { command: Record<string, unknown> | null; waiters: ((value: boolean) => void)[]; draining: boolean }>();
-  async acquire(owner: symbol, constraints: MediaStreamConstraints): Promise<MediaStream> {
+  private queues = new Map<MediaStreamTrack, ConstraintQueue>();
+  // Tracks once owned by this controller are never eligible for commands
+  // after release/supersession. Independent dual-camera tracks are separate.
+  private controlledTracks = new WeakSet<MediaStreamTrack>();
+  // A timed-out applyConstraints can still complete inside an OEM driver.
+  // Never submit a competing newer setting to that same uncertain track.
+  private timedOutTracks = new WeakSet<MediaStreamTrack>();
+  // getUserMedia cannot be cancelled by a JS timeout. Keep the underlying
+  // request tracked until the browser actually settles it. Starting another
+  // request while the old one is still inside the camera driver can deadlock
+  // some Android WebView implementations.
+  private pendingOpen: Promise<MediaStream> | null = null;
+  async acquire(owner: symbol, constraints: MediaStreamConstraints, options: { preempt?: boolean } = {}): Promise<MediaStream> {
+    // A previous browser request may still be opening even after its six
+    // second timeout. Do not race it with another hardware open.
+    if (this.pendingOpen) throw new CameraBusyError();
+    // User acquisition may supersede a diagnostic, but never the reverse.
+    if (options.preempt === false && this.owner !== null && this.owner !== owner) throw new CameraBusyError();
     this.release(); this.owner = owner; const generation = this.generation;
-    if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
-    const stream = await bounded(navigator.mediaDevices.getUserMedia(constraints), 6000, "Camera", (late) => late.getTracks().forEach((t) => t.stop()));
-    if (generation !== this.generation || owner !== this.owner) { stream.getTracks().forEach((t) => t.stop()); throw new Error("Camera request superseded"); }
-    this.stream = stream; return stream;
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) throw new Error("Camera unavailable");
+      const pending = Promise.resolve().then(() => navigator.mediaDevices.getUserMedia(constraints));
+      this.pendingOpen = pending;
+      // Clear the guard only when the *actual* driver operation settles,
+      // whether it resolves, rejects, or outlives the timeout.
+      void pending.then(() => { if (this.pendingOpen === pending) this.pendingOpen = null; },
+        () => { if (this.pendingOpen === pending) this.pendingOpen = null; });
+      const stream = await bounded(pending, 6000, "Camera",
+        (late) => late.getTracks().forEach(t => t.stop()));
+      if (generation !== this.generation || owner !== this.owner) {
+        stream.getTracks().forEach(t => t.stop());
+        throw new CameraSupersededError();
+      }
+      // A resolved getUserMedia may have zero or already ended video tracks.
+      let videoTracks:MediaStreamTrack[];
+      try { videoTracks=stream.getVideoTracks(); }
+      catch(error) { stream.getTracks().forEach(t=>t.stop()); throw error; }
+      if (!videoTracks.some(track=>track.readyState==="live")) {
+        stream.getTracks().forEach(t=>t.stop());
+        throw new CameraUnavailableError();
+      }
+      this.stream = stream;
+      videoTracks.forEach(track => this.controlledTracks.add(track));
+      return stream;
+    } catch (error) {
+      // Failed opens must not retain a stale lease or evict newer requests.
+      if (generation === this.generation && owner === this.owner) this.release(owner);
+      throw error;
+    }
   }
   release(owner?: symbol) {
     if (owner && owner !== this.owner) return;
     this.generation++; this.stream?.getTracks().forEach((t) => t.stop()); this.stream = null; this.owner = null;
-    this.queues.forEach((queue) => { queue.command = null; queue.waiters.splice(0).forEach((resolve) => resolve(false)); });
+    this.queues.forEach(queue => {
+      queue.cancelled = true;
+      queue.command = null;
+      queue.waiters.splice(0).forEach(resolve => resolve(false));
+      queue.inFlightWaiters.splice(0).forEach(resolve => resolve(false));
+    });
     this.queues.clear();
   }
   /** Merge rapid slider commands, serialize device calls, never build a backlog. */
   apply(stream: MediaStream | null, constraints: Record<string, unknown>): Promise<boolean> {
     const track = stream?.getVideoTracks()[0];
-    if (!track?.applyConstraints || track.readyState === "ended") return Promise.resolve(false);
-    const queue = this.queues.get(track) ?? { command: null, waiters: [], draining: false };
+    if (!track?.applyConstraints || track.readyState !== "live" ||
+        this.timedOutTracks.has(track)) return Promise.resolve(false);
+    // Old controller-owned tracks cannot be reconfigured once another
+    // capture supersedes them, even if an OEM still reports "live".
+    if (this.controlledTracks.has(track) && stream !== this.stream)
+      return Promise.resolve(false);
+    const queue = this.queues.get(track) ?? {
+      command: null, waiters: [], inFlightWaiters: [], draining: false, cancelled: false,
+    };
     this.queues.set(track, queue);
     queue.command = { ...queue.command, ...constraints };
     const result = new Promise<boolean>((resolve) => queue.waiters.push(resolve));
     if (!queue.draining) void this.drain(track, queue);
     return result;
   }
-  private async drain(track: MediaStreamTrack, queue: { command: Record<string, unknown> | null; waiters: ((value: boolean) => void)[]; draining: boolean }) {
+  private async drain(track: MediaStreamTrack, queue: ConstraintQueue) {
     queue.draining = true;
-    while (queue.command) {
-      await new Promise((resolve) => setTimeout(resolve, 32));
-      const command = queue.command; queue.command = null; const waiters = queue.waiters.splice(0);
-      let ok = false;
-      try { if (command && track.readyState !== "ended") { await bounded(track.applyConstraints({ advanced: [command] } as MediaTrackConstraints), 2500, "Camera setting"); ok = true; } } catch { /* Report rejected device commands to callers. */ }
-      waiters.forEach((resolve) => resolve(ok));
+    try {
+      while (queue.command && !queue.cancelled) {
+        await new Promise(resolve => setTimeout(resolve, 32));
+        if (queue.cancelled) break;
+        const command = queue.command;
+        queue.command = null;
+        const waiters = queue.waiters.splice(0);
+        queue.inFlightWaiters = waiters;
+        let ok = false;
+        try {
+          if (command && track.readyState === "live") {
+            await bounded(track.applyConstraints({ advanced: [command] } as MediaTrackConstraints), 2500, "Camera setting");
+            ok = !queue.cancelled && track.readyState === "live";
+          }
+        } catch (error) {
+          // A timed-out driver promise may resolve *after* we return to the
+          // app. Quarantine the track until it is replaced rather than issue
+          // more hardware requests concurrently or falsely confirm settings.
+          if (error instanceof Error && error.message === "Camera setting: timeout") {
+            this.timedOutTracks.add(track);
+            queue.command = null;
+            queue.cancelled = true;
+          }
+        }
+        queue.inFlightWaiters = [];
+        waiters.forEach(resolve => resolve(ok));
+      }
+    } finally {
+      queue.waiters.splice(0).forEach(resolve => resolve(false));
+      queue.inFlightWaiters.splice(0).forEach(resolve => resolve(false));
+      queue.draining = false;
+      if (this.queues.get(track) === queue) this.queues.delete(track);
     }
-    queue.draining = false;
-    if (this.queues.get(track) === queue) this.queues.delete(track);
   }
 }
 export const cameraController = new CameraController();

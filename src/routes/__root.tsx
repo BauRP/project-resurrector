@@ -11,6 +11,7 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
+import fontCss from "../generated/subtitle-fonts.css?url";
 import { reportLovableError } from "../lib/lovable-error-reporting";
 import { loadOptionalFonts } from "../lib/fonts";
 
@@ -91,6 +92,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: appCss,
       },
+      { rel: "stylesheet", href: fontCss },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
     ],
   }),

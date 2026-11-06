@@ -1,15 +1,20 @@
 import { HelpDot } from "./Help";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
-import { mesh } from "@/lib/mesh";
-import { useMeshPeers } from "./useMesh";
-import { cacheBytes, clearPreviewCache } from "@/lib/media-cache";
-import { bounded, retry } from "@/lib/async";
+import { activateAccessibleDialog } from "@/lib/accessible-dialog";
+import { traceUiAction } from "@/lib/freeze-action-trace";
+import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
+import { Capacitor } from "@capacitor/core";
+
+// Load native recording and camera diagnosis only if explicitly opened.
+const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
+const CameraDiagnostics = lazy(() => import("./CameraDiagnostics").then(m => ({ default: m.CameraDiagnostics })));
+const SettingsNetworkContent = lazy(() => import("./SettingsNetworkContent").then(m => ({ default: m.SettingsNetworkContent })));
 
 const languages = [
   ["en","English"],["ru","Русский"],["kk","Қазақ тілі"],["pt","Português"],["es","Español"],["fr","Français"],["ar","العربية"],["zh","中文"],["ko","한국어"],["ja","日本語"],["de","Deutsch"],["it","Italiano"],["tr","Türkçe"],["pl","Polski"],["hi","हिन्दी"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],
@@ -31,32 +36,158 @@ const copy: Record<string, { title:string; language:string; network:string; stor
  de:{title:"Einstellungen",language:"Sprache",network:"Netzwerkdiagnose",storage:"Speicher und Cache",engine:"Render-Engine",privacy:"Datenschutzrichtlinie",clear:"Cache leeren"},it:{title:"Impostazioni",language:"Lingua",network:"Diagnostica rete",storage:"Archivio e cache",engine:"Motore di rendering",privacy:"Informativa sulla privacy",clear:"Svuota cache"},tr:{title:"Ayarlar",language:"Dil",network:"Ağ tanılama",storage:"Depolama ve önbellek",engine:"İşleme motoru",privacy:"Gizlilik Politikası",clear:"Önbelleği temizle"},pl:{title:"Ustawienia",language:"Język",network:"Diagnostyka sieci",storage:"Pamięć i cache",engine:"Silnik renderowania",privacy:"Polityka prywatności",clear:"Wyczyść cache"},
  hi:{title:"सेटिंग्स",language:"भाषा",network:"मेश निदान",storage:"स्टोरेज और कैश",engine:"रेंडर इंजन",privacy:"गोपनीयता नीति",clear:"कैश साफ़ करें"},vi:{title:"Cài đặt",language:"Ngôn ngữ",network:"Chẩn đoán mạng",storage:"Bộ nhớ và bộ đệm",engine:"Bộ máy kết xuất",privacy:"Chính sách quyền riêng tư",clear:"Xóa bộ đệm"},id:{title:"Pengaturan",language:"Bahasa",network:"Diagnostik jaringan",storage:"Penyimpanan dan cache",engine:"Mesin render",privacy:"Kebijakan Privasi",clear:"Hapus cache"},
 };
+// If a freeze report ends before this checkpoint, the lazy chunk itself
+// stalled; if it ends before the layout commit, the initial Settings React
+// render or its synchronous child work did not finish.
+traceUiAction("settings: lazy module evaluated");
+
 export function SettingsTab() {
- const s=useSettingsStore(); const {t:tr}=useT(); const peers=useMeshPeers(); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
- const alive = useRef(true); const busy = useRef(false); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
- useEffect(() => { alive.current = true; void cacheBytes().then((bytes) => { if (alive.current) s.set({ cacheMB: bytes / 1048576 }); }).catch(() => { if (alive.current) setOperationError("Не удалось измерить кэш"); }); return () => { alive.current = false; }; }, [s.set]);
- const diagnose = async () => {
-   if (busy.current) return; busy.current = true; setChecking(true); setOperationError("");
-   try { const result = await retry(() => bounded(mesh.diagnose(), 5000, "Network diagnostics")); if (alive.current) s.set({ diagnostics: result }); }
-   catch { if (alive.current) setOperationError("Нет ответа от устройств. Проверьте соединение и повторите тест."); }
-   finally { busy.current = false; if (alive.current) setChecking(false); }
+ const s=useSettingsStore(); const {t:tr}=useT();
+ const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
+ useEffect(() => {
+   if (readyBody) return;
+   // The theme/language controls paint first; defer optional network and
+   // Camera2 launchers until after TWO frames, never in the first GPU draw.
+   return scheduleAfterPaintTask(() => {
+     traceUiAction("settings: body mounting after first paint");
+     setReadyBody(true);
+   }, 1000);
+ }, [readyBody]);
+ useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
+ const privacyDialog=useRef<HTMLDivElement>(null);
+ const confirmationDialog=useRef<HTMLDivElement>(null);
+ const [confirmAction,setConfirmAction]=useState<"cache"|"reset"|null>(null);
+ const cacheBusy=useRef(false);
+ const measurementBusy=useRef(false);
+ useEffect(()=>{
+   if(!confirmAction||!confirmationDialog.current)return;
+   return activateAccessibleDialog(confirmationDialog.current,()=>setConfirmAction(null));
+ },[confirmAction]);
+ useEffect(()=>{
+   if(!privacy||!privacyDialog.current)return;
+   return activateAccessibleDialog(privacyDialog.current,()=>setPrivacy(false));
+ },[privacy]);
+ const alive = useRef(true); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
+ const [measuringCache, setMeasuringCache] = useState(false);
+ const [cacheMeasured, setCacheMeasured] = useState(false);
+ // IndexedDB can hold large video proxy blobs. Never enumerate them on entry
+ // to settings or during rapid theme changes. Measure only when requested.
+ useEffect(() => {
+   alive.current = true;
+   traceUiAction("settings: mounted");
+   // Identify whether this WebView can paint and process timers after mounting.
+   let frameA = 0;
+   let frameB = 0;
+   const timer = window.setTimeout(() => {
+     if (alive.current) traceUiAction("settings: event loop alive 1s");
+   }, 1000);
+   frameA = window.requestAnimationFrame(() => {
+     if (!alive.current) return;
+     traceUiAction("settings: first paint frame");
+     frameB = window.requestAnimationFrame(() => {
+       if (alive.current) traceUiAction("settings: second paint frame");
+     });
+   });
+   return () => {
+     alive.current = false;
+     window.cancelAnimationFrame(frameA);
+     window.cancelAnimationFrame(frameB);
+     window.clearTimeout(timer);
+     traceUiAction("settings: unmounted");
+   };
+ }, []);
+ const measureCache = async () => {
+   traceUiAction("settings: cache measurement");
+   // State updates can be batched. A ref prevents repeated taps from starting
+   // parallel IndexedDB cursor scans before React has rendered "disabled".
+   if (measurementBusy.current || cacheBusy.current) return;
+   measurementBusy.current = true;
+   setMeasuringCache(true); setOperationError("");
+   try {
+     const { cacheBytes } = await import("@/lib/media-cache");
+     const bytes = await cacheBytes();
+     if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); }
+   } catch { if (alive.current) setOperationError("Не удалось измерить кэш. Попробуйте повторить."); }
+   finally { measurementBusy.current = false; if (alive.current) setMeasuringCache(false); }
  };
  const clearCache = async () => {
-   if (clearing || !window.confirm("Удалить только временные превью? Исходные клипы и проект останутся.")) return;
+   traceUiAction("settings: clear cache");
+   if (cacheBusy.current || measurementBusy.current) return;
+   cacheBusy.current=true;
    setClearing(true); setOperationError("");
-   try { const bytes = await clearPreviewCache(); if (alive.current) s.set({ cacheMB: bytes / 1048576 }); }
+   try { const { clearPreviewCache } = await import("@/lib/media-cache");
+     const bytes = await clearPreviewCache(); if (alive.current) { s.set({ cacheMB: bytes / 1048576 }); setCacheMeasured(true); } }
    catch { if (alive.current) setOperationError("Не удалось очистить кэш. Исходные клипы не изменены."); }
-   finally { if (alive.current) setClearing(false); }
+   finally { cacheBusy.current=false; if (alive.current) setClearing(false); }
+ };
+ const acceptConfirmation=()=>{
+   const action=confirmAction;
+   setConfirmAction(null);
+   if(action==="cache") { void clearCache(); }
+   else if(action==="reset") { traceUiAction("settings: reset project"); s.resetProject(); }
  };
  const tc=themeCopy[s.language] ?? { theme:"Theme", light:"Light", dark:"Dark" };
-  return <div className="pb-[calc(6.5rem+env(safe-area-inset-bottom))] text-foreground"><header className="px-5 pb-6 pt-5"><p className="text-[11px] uppercase tracking-[.18em] text-muted-foreground">MULTI-CAM POV</p><h1 className="text-3xl font-semibold">{t.title}</h1></header><main className="mx-auto max-w-2xl space-y-4 px-4">
-  <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>s.set({theme:"light"})}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>s.set({theme:"dark"})}><Moon/>{tc.dark}</Button></div></div></Group>
+  return <div className="settings-fold-workspace pb-[calc(4rem+env(safe-area-inset-bottom))] text-foreground"><header className="px-4 pb-2 pt-3"><h1 className="text-lg font-semibold">{t.title}</h1></header><main className="mx-auto max-w-2xl space-y-2.5 px-3">
+  <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ traceUiAction("settings: theme light"); setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ traceUiAction("settings: theme dark"); setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
- <Group help="network" title={t.network}><div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border"><Stat label={tr("latency").toUpperCase()} value={peers.length && s.diagnostics.latency ? `${s.diagnostics.latency} ms` : "—"} /><Stat label={tr("status")} value={s.diagnostics.online?"LOCAL":"OFFLINE"}/><Stat label={tr("bandwidth")} value="—"/></div><div className="settings-item"><span className="flex items-center gap-3"><Activity className="text-status"/> {tr("meshNodes")} · {peers.length+1} · {mesh.localId??s.sessionCode}</span><Button size="sm" variant="secondary" disabled={checking} onClick={()=>void diagnose()}>{checking?tr("testing"):tr("runTest")}</Button></div></Group>
- <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{s.cacheMB.toFixed(2)} MB · превью</small></span></span><Button size="sm" variant="secondary" disabled={clearing} onClick={()=>void clearCache()}><Trash2/>{t.clear}</Button></div></Group>
- <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>s.resetProject()}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
+ {readyBody && <>
+  <Group help="network" title={t.network}>
+   <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка сетевых инструментов…</p>}>
+     <SettingsNetworkContent />
+   </Suspense>
+  </Group>
+ <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
+ <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>setConfirmAction("reset")}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
- {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}</main><AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="min-h-[65dvh] rounded-lg border border-dashed border-border bg-card p-6" /></div></motion.div>}</AnimatePresence></div>;
+ {/* Camera2 polling and camera discovery are expensive. Keep both fully
+      unmounted until opened; CSS-hidden panels would still run native work. */}
+ <section className="settings-advanced-tools" aria-label="Дополнительные инструменты">
+  <div className="settings-advanced-actions">
+   <button type="button" className={"settings-tool-trigger" + (advancedPanel === "native" ? " active" : "")}
+     aria-expanded={advancedPanel === "native"} onClick={() => { traceUiAction("settings: native tools"); setAdvancedPanel(p => p === "native" ? null : "native"); }}>
+     <Database aria-hidden="true"/><span>Нативная запись Camera2</span><ChevronRight aria-hidden="true"/>
+   </button>
+   <button type="button" className={"settings-tool-trigger" + (advancedPanel === "diagnostics" ? " active" : "")}
+     aria-expanded={advancedPanel === "diagnostics"} onClick={() => { traceUiAction("settings: camera diagnostics"); setAdvancedPanel(p => p === "diagnostics" ? null : "diagnostics"); }}>
+     <Activity aria-hidden="true"/><span>Проверка камер</span><ChevronRight aria-hidden="true"/>
+   </button>
+  </div>
+  <SettingsToolsBoundary key={advancedPanel ?? "closed"} onClose={() => setAdvancedPanel(null)}>
+   <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка инструментов…</p>}>
+    {advancedPanel === "native" && <NativeRecordingPanel previewIntervalMs={850} />}
+    {advancedPanel === "diagnostics" && <CameraDiagnostics />}
+   </Suspense>
+  </SettingsToolsBoundary>
+ </section>
+ {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}
+  </>}</main>
+ {confirmAction && <div className="settings-confirm-overlay fixed inset-x-0 top-0 bottom-[var(--nav-h)] z-50 flex items-center justify-center overflow-y-auto px-4 py-6" ref={confirmationDialog} role="alertdialog" aria-modal="true" aria-labelledby="settings-confirm-title" tabIndex={-1}>
+   <div className="settings-confirm-card w-full max-w-sm rounded-2xl border border-border p-5 text-foreground">
+     <h2 id="settings-confirm-title" className="text-base font-semibold">{confirmAction==="cache" ? "Очистить кэш?" : "Сбросить проект?"}</h2>
+     <p className="mt-2 text-sm text-muted-foreground">{confirmAction==="cache" ? "Будут удалены только временные превью. Оригинальные видео и проект останутся." : "Будут сброшены параметры текущего проекта. Сохранённые видеоклипы не удаляются."}</p>
+     <div className="mt-5 flex justify-end gap-2">
+       <Button type="button" variant="outline" onClick={()=>setConfirmAction(null)}>Отмена</Button>
+       <Button type="button" disabled={clearing || measuringCache} onClick={acceptConfirmation}>{confirmAction==="cache" ? "Очистить кэш" : "Сбросить"}</Button>
+     </div>
+   </div>
+ </div>}
+ <AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} ref={privacyDialog} role="dialog" aria-modal="true" aria-label={t.privacy} tabIndex={-1} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="settings-privacy-empty min-h-[65dvh] rounded-xl border border-border p-6 text-center">
+    <ShieldCheck aria-hidden="true" className="mx-auto mb-4 size-8 text-primary" />
+    <p className="text-sm font-semibold text-foreground">{s.language==="ru" ? "Текст политики конфиденциальности пока не добавлен в эту сборку." : s.language==="kk" ? "Құпиялылық саясатының мәтіні бұл нұсқаға әлі қосылмаған." : "The Privacy Policy text has not been included in this build yet."}</p>
+    <p className="mt-3 text-xs text-muted-foreground">{s.language==="ru" ? "Это не ошибка загрузки и не зависание приложения. Закройте окно кнопкой вверху, чтобы вернуться в настройки." : s.language==="kk" ? "Бұл жүктеу қатесі емес. Параметрлерге оралу үшін жоғарғы батырмамен терезені жабыңыз." : "This is not a loading error. Use the close button above to return to Settings."}</p>
+   </div></div></motion.div>}</AnimatePresence></div>;
 }
-function Group({title,help,children}:{title?:string;help?:string;children:ReactNode}){return <section><h2 className="mb-2 flex items-center gap-1 px-3 text-xs font-semibold uppercase text-muted-foreground">{title}{help&&<HelpDot id={help}/>}</h2><div className="overflow-hidden rounded-lg bg-card">{children}</div></section>}
-function Stat({label,value}:{label:string;value:string}){return <div className="bg-card p-3 text-center"><p className="text-[9px] text-muted-foreground">{label}</p><p className="mt-1 text-sm font-semibold">{value}</p></div>}
+/** A broken Camera2/diagnostics module must not crash Settings or navigation. */
+class SettingsToolsBoundary extends Component<{ children: ReactNode; onClose: () => void }, { failed: boolean }> {
+ override state = { failed: false };
+ static getDerivedStateFromError() { return { failed: true }; }
+ override render() {
+   if (this.state.failed) return <div role="alert" className="glass-panel m-2 space-y-2 rounded-xl p-3 text-sm">
+     <p>Не удалось открыть инструмент. Остальные настройки продолжают работать.</p>
+     <button type="button" className="connect-pill" onClick={this.props.onClose}>Закрыть инструмент</button>
+   </div>;
+   return this.props.children;
+ }
+}
+
+function Group({title,help,children}:{title?:string;help?:string;children:ReactNode}){return <section><h2 className="mb-1 flex items-center gap-1 px-2 text-[11px] font-semibold uppercase text-muted-foreground">{title}{help&&<HelpDot id={help}/>}</h2><div className="overflow-hidden rounded-lg bg-card">{children}</div></section>}

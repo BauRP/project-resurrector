@@ -4,7 +4,7 @@ import { Switch } from "@/components/ui/switch";
 import { useMulticamStore, type ShootSettings } from "@/lib/multicam-store";
 import { isNative } from "@/lib/native";
 import { HelpDot } from "./Help";
-import { cameraController } from "@/lib/camera-controller";
+import { cameraController, checkAppliedCameraSetting } from "@/lib/camera-controller";
 import { clipCurve } from "@/lib/audio-limiter";
 
 /* ---------- Track helpers (all features are capability-checked at runtime) ---------- */
@@ -33,32 +33,110 @@ export const kelvinFilter = (k: number | null) => k === null ? "" : k < 5600 ? `
 
 /* ---------- Photo storage ---------- */
 export function savePhoto(blob: Blob, meta: Record<string, unknown>): Promise<void> {
+  // A stalled emulator/Android storage callback must not keep photoBusy true
+  // forever. A timed-out write may have committed: NEVER retry it silently.
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open("multicam-pov-photos", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("photos", { keyPath: "id" });
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => { const tx = req.result.transaction("photos", "readwrite"); tx.objectStore("photos").put({ id: `photo-${Date.now()}-${Math.floor(Math.random() * 1e4)}`, createdAt: Date.now(), blob, ...meta }); tx.oncomplete = () => { window.dispatchEvent(new Event("multicam-photos-changed")); resolve(); }; tx.onerror = () => reject(tx.error); };
+    let finished = false;
+    let db: IDBDatabase | null = null;
+    let tx: IDBTransaction | null = null;
+    const settle = (error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      try { db?.close(); } catch { /* Already closed. */ }
+      if (error) reject(error); else resolve();
+    };
+    const timer = window.setTimeout(() => {
+      try { tx?.abort(); } catch { /* Transaction might already have committed. */ }
+      settle(new Error("Сохранение фото не подтвердилось. Проверьте медиатеку перед повторной съёмкой."));
+    }, 10000);
+    try {
+      const req = indexedDB.open("multicam-pov-photos", 1);
+      req.onupgradeneeded = () => {
+        if (!req.result.objectStoreNames.contains("photos"))
+          req.result.createObjectStore("photos", { keyPath: "id" });
+      };
+      req.onerror = () => settle(req.error ?? new Error("Не удалось открыть фотохранилище"));
+      req.onblocked = () => settle(new Error("Фотохранилище занято другой операцией"));
+      req.onsuccess = () => {
+        if (finished) { req.result.close(); return; }
+        db = req.result;
+        db.onversionchange = () => db?.close();
+        try {
+          tx = db.transaction("photos", "readwrite");
+          tx.oncomplete = () => {
+            if (finished) return;
+            settle();
+            window.dispatchEvent(new Event("multicam-photos-changed"));
+          };
+          tx.onabort = () => settle(tx?.error ?? new Error("Сохранение фото прервано"));
+          tx.onerror = () => { /* Abort is the authoritative terminal event. */ };
+          const id = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? `photo-${crypto.randomUUID()}`
+            : `photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+          tx.objectStore("photos").add({ ...meta, createdAt: Date.now(), blob, id });
+        } catch (error) { settle(error); }
+      };
+    } catch (error) { settle(error); }
   });
 }
 
 /** Draws the current video frame (or an average of several frames) into a canvas with the preview filter. */
-export async function grabFrames(video: HTMLVideoElement, filter: string, frames: number, spanMs: number): Promise<Blob | null> {
+export async function grabFrames(video: HTMLVideoElement, filter: string, frames: number, spanMs: number, signal?: AbortSignal): Promise<Blob | null> {
+  if (signal?.aborted) return null;
   const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return null;
   const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return null;
   ctx.filter = filter || "none";
   if (frames <= 1) { ctx.drawImage(video, 0, 0, w, h); }
   else {
-    const acc = new Float32Array(w * h * 4);
+    // Camera captures average at most 40 frames here. Integer accumulation
+    // gives identical pixel averages while halving 4K temporary memory:
+    // 4K RGBA Float32 ~133 MiB -> Uint16 ~66 MiB. If a future mode needs
+    // >257 frames, automatically use Uint32 to avoid accumulator overflow.
+    const acc = frames <= 257 ? new Uint16Array(w * h * 4) : new Uint32Array(w * h * 4);
     for (let k = 0; k < frames; k++) {
+      if (signal?.aborted) return null;
       ctx.drawImage(video, 0, 0, w, h); const d = ctx.getImageData(0, 0, w, h).data;
-      for (let i = 0; i < d.length; i++) acc[i]! += d[i]!;
+      // At 4K a single RGBA pass has over 33 million entries. Split the
+      // accumulation into bounded UI tasks so Settings/navigation and Android
+      // WebView can handle input between batches. All pixels and all frames
+      // are still used, preserving the requested photo resolution/quality.
+      for (let base = 0; base < d.length; base += 4_194_304) {
+        const end = Math.min(base + 4_194_304, d.length);
+        for (let i = base; i < end; i++) acc[i]! += d[i]!;
+        if (signal?.aborted) return null;
+        if (end < d.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      }
       if (k < frames - 1) await new Promise((r) => window.setTimeout(r, spanMs / frames));
     }
     const out = ctx.createImageData(w, h);
-    for (let i = 0; i < acc.length; i++) out.data[i] = acc[i]! / frames;
+    for (let base = 0; base < acc.length; base += 4_194_304) {
+      const end = Math.min(base + 4_194_304, acc.length);
+      for (let i = base; i < end; i++) out.data[i] = acc[i]! / frames;
+      if (signal?.aborted) return null;
+      if (end < acc.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+    }
     ctx.filter = "none"; ctx.putImageData(out, 0, 0);
   }
-  return new Promise((r) => c.toBlob((b) => r(b), "image/jpeg", 0.93));
+  // Keep original resolution, all exposure modes and JPEG quality (0.93).
+  // A lost WebView encoder callback becomes a recoverable photo error.
+  return new Promise<Blob | null>((resolve, reject) => {
+    let finished = false;
+    const finish = (blob: Blob | null, error?: unknown) => {
+      if (finished) return;
+      finished = true;
+      window.clearTimeout(timer);
+      signal?.removeEventListener("abort", onAbort);
+      if (error) reject(error); else resolve(blob);
+    };
+    const onAbort = () => finish(null);
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const timer = window.setTimeout(
+      () => finish(null, new Error("Кодирование фотографии не ответило вовремя")), 5000);
+    if (signal?.aborted) { finish(null); return; }
+    try { c.toBlob(blob => finish(blob), "image/jpeg", 0.93); }
+    catch (error) { finish(null, error); }
+  });
 }
 
 /* ---------- Face tracking + hybrid focus (browser FaceDetector when available) ---------- */
@@ -68,31 +146,61 @@ export const faceDetectorAvailable = () => typeof window !== "undefined" && "Fac
 export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, stream: MediaStream | null, enabled: boolean, hybrid: boolean) {
   const [box, setBox] = useState<Box | null>(null);
   useEffect(() => {
-    if (!enabled || !faceDetectorAvailable()) { setBox(null); return; }
+    // Do not spin a tracking timer while the camera is still closed.
+    // All tracking resumes automatically when a real MediaStream arrives.
+    if (!enabled || !stream?.getVideoTracks().some(track => track.readyState === "live") ||
+        !faceDetectorAvailable()) { setBox(null); return; }
     const Ctor = (window as unknown as { FaceDetector: FaceDetectorCtor }).FaceDetector;
     const det = new Ctor({ fastMode: true, maxDetectedFaces: 4 }); let alive = true; let last: "face" | "center" | null = null;
+    let nextFrame: number | null = null;
+    let lastFocusPoint: {x:number;y:number}|null = null;
+    let lastFocusSubmitted = 0;
+    let focusBusy = false;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
     const loop = async () => {
       const v = videoRef.current;
       if (v && v.videoWidth) {
         try {
           const faces = await det.detect(v);
+          // OEM face detection may resolve after the camera has unmounted.
+          // Do not update old UI or try to focus an obsolete camera owner.
+          if (!alive) return;
           const big = faces.map((f) => f.boundingBox).sort((a, b) => b.width * b.height - a.width * a.height)[0];
           if (big) {
             const b = { x: big.x / v.videoWidth, y: big.y / v.videoHeight, w: big.width / v.videoWidth, h: big.height / v.videoHeight }; setBox(b);
-            if (poi) void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: b.x + b.w / 2, y: b.y + b.h / 2 }] });
+            // Track faces at the original detection cadence, but do not
+            // resend identical hardware-focus constraints 8 times/second.
+            const center = {x: b.x + b.w / 2, y: b.y + b.h / 2};
+            const changed = !lastFocusPoint || Math.hypot(center.x-lastFocusPoint.x,
+              center.y-lastFocusPoint.y) > 0.025;
+            if (poi && !focusBusy && (changed || performance.now()-lastFocusSubmitted > 1500)) {
+              focusBusy = true;
+              lastFocusPoint = center;
+              lastFocusSubmitted = performance.now();
+              void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [center] })
+                .finally(() => { focusBusy = false; });
+            }
             last = "face";
           } else {
             setBox(null);
             // Hybrid nearest priority: face hidden (e.g. a product held up) → focus the frame centre, return to the face when it reappears.
-            if (hybrid && poi && last !== "center") { void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] }); last = "center"; }
+            if (hybrid && poi && last !== "center") {
+              // Returning to the centre is still a real focus transition.
+              lastFocusPoint = null;
+              if (!focusBusy) {
+                focusBusy = true;
+                void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] })
+                  .finally(() => { focusBusy = false; });
+              }
+              last = "center";
+            }
           }
         } catch { /* frame not ready */ }
       }
-      if (alive) window.setTimeout(() => void loop(), 120);
+      if (alive) nextFrame = window.setTimeout(() => void loop(), 120);
     };
     void loop();
-    return () => { alive = false; };
+    return () => { alive = false; if (nextFrame !== null) window.clearTimeout(nextFrame); };
   }, [enabled, hybrid, stream, videoRef]);
   return box;
 }
@@ -107,7 +215,11 @@ export function FalseColorOverlay({ videoRef }: { videoRef: RefObject<HTMLVideoE
     const tick = (t: number) => {
       raf = requestAnimationFrame(tick); if (t - last < 66) return; last = t;
       const v = videoRef.current; const c = canvas.current; if (!v || !c || !v.videoWidth) return;
-      const w = 240; const h = Math.round((w * v.videoHeight) / v.videoWidth); c.width = w; c.height = h;
+      const w = 240; const h = Math.round((w * v.videoHeight) / v.videoWidth);
+      // Assigning canvas dimensions reallocates its GPU buffer. A 15 fps
+      // false-color overlay must reuse the buffer when camera size is stable.
+      if (c.width !== w) c.width = w;
+      if (c.height !== h) c.height = h;
       const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
       ctx.drawImage(v, 0, 0, w, h); const img = ctx.getImageData(0, 0, w, h); const d = img.data;
       for (let i = 0; i < d.length; i += 4) { const y = Math.round(0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!); d[i] = lut[y * 3]!; d[i + 1] = lut[y * 3 + 1]!; d[i + 2] = lut[y * 3 + 2]!; }
@@ -156,8 +268,14 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
     const k0 = knobRef.current; g.gain.value = knobToGain(k0); comp.threshold.value = knobToCeiling(k0); clip.curve = clipCurve(knobToCeiling(k0));
     const buf = new Float32Array(an.fftSize); let raf = 0; let last = 0;
     const tick = (t: number) => {
-      an.getFloatTimeDomainData(buf); let sum = 0; for (const v of buf) sum += v * v;
-      if (t - last > 40) { last = t; setRms(Math.max(-90, 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-5))); }
+      // Audio sampling and React state updates share the same 25 Hz clock.
+      // No unnecessary FFT/canvas work on high-refresh-rate 90/120 Hz panels.
+      if (t - last >= 40) {
+        last = t;
+        an.getFloatTimeDomainData(buf);
+        let sum = 0; for (const v of buf) sum += v * v;
+        setRms(Math.max(-90, 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-5)));
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -191,14 +309,36 @@ export function AudioRail({ stream }: { stream: MediaStream | null }) {
 /* ---------- Manual focus rail ---------- */
 export function FocusRail({ stream }: { stream: MediaStream | null }) {
   const capture = useMulticamStore((s) => s.capture); const set = useMulticamStore((s) => s.set); const caps = trackCaps(stream); const range = capRange(caps, "focusDistance");
+  const commandGeneration = useRef(0);
+  const [requestStatus, setRequestStatus] = useState("");
+  useEffect(() => {
+    commandGeneration.current++;
+    setRequestStatus("");
+  }, [stream]);
   if (!range) return null;
   const [min, max, step] = range; const v = capture.focus;
-  return <div className="glass-panel flex items-center gap-2 rounded-full px-3 py-1.5 text-[10px]">
-    <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`} onClick={() => { void applyAdvanced(stream, { focusMode: "continuous" }).then((ok) => { if (ok) set({ capture: { ...capture, focus: null } }); }); }}>AF</button>
+  const request = (fields: Record<string, unknown>, key: string, expected: string | number, done: () => void) => {
+    const current = ++commandGeneration.current;
+    setRequestStatus("Применяется…");
+    void applyAdvanced(stream, fields).then(ok => {
+      if (current !== commandGeneration.current) return;
+      const status = ok ? checkAppliedCameraSetting(stream?.getVideoTracks()[0], key, expected,
+        typeof expected === "number" ? Math.max(0.02, step / 2) : 0) : "rejected";
+      if (status === "confirmed") { done(); setRequestStatus(""); }
+      else setRequestStatus(status === "unknown" ? "Фокус: применение не подтверждено" : "Фокус: настройка отклонена");
+    });
+  };
+  return <div className="glass-panel flex flex-wrap items-center gap-2 rounded-full px-3 py-1.5 text-[10px]">
+    <button className={`shrink-0 font-semibold ${v === null ? "text-primary" : "text-muted-foreground"}`}
+      onClick={() => request({ focusMode: "continuous" }, "focusMode", "continuous",
+        () => set({ capture: { ...capture, focus: null } }))}>AF</button>
     <span className="shrink-0 text-muted-foreground">Близко</span>
-    <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step} onValueChange={([x = min]) => { void applyAdvanced(stream, { focusMode: "manual", focusDistance: x }).then((ok) => { if (ok) set({ capture: { ...capture, focus: x } }); }); }} />
+    <Slider aria-label="Ручной фокус" className="flex-1" value={[v ?? min]} min={min} max={max} step={step}
+      onValueChange={([x = min]) => request({ focusMode: "manual", focusDistance: x }, "focusDistance", x,
+        () => set({ capture: { ...capture, focus: x } }))} />
     <span className="shrink-0 text-muted-foreground">Далеко</span>
     <span className="w-10 shrink-0 text-end font-mono">{v === null ? "Авто" : v.toFixed(2)}</span>
+    {requestStatus && <span role="status" className="basis-full text-warning">{requestStatus}</span>}
   </div>;
 }
 
@@ -213,12 +353,34 @@ export function LensZoomBlock({ stream }: { stream: MediaStream | null }) {
   if (zr && zr[0] <= 0.5) lenses.push({ label: "0.5x", zoom: 0.5 }); else if (ultra) lenses.push({ label: "0.5x", deviceId: ultra.deviceId });
   if (zr || devices.length) lenses.push({ label: "1x", zoom: 1 });
   for (const z of [2, 3, 5]) if (zr && zr[1] >= z) lenses.push({ label: `${z}x`, zoom: z }); else if (z === 2 && tele) lenses.push({ label: "2x", deviceId: tele.deviceId });
-  const setZoom = (z: number) => { s.set({ zoom: z, lensDeviceId: "" }); void applyAdvanced(stream, { zoom: z }); };
+  const [requestedZoom, setRequestedZoom] = useState<number | null>(null);
+  const [zoomStatus, setZoomStatus] = useState("");
+  const zoomRequestGeneration = useRef(0);
+  useEffect(() => {
+    zoomRequestGeneration.current++;
+    setRequestedZoom(null); setZoomStatus("");
+  }, [stream]);
+  const setZoom = (z: number) => {
+    const id = ++zoomRequestGeneration.current;
+    setRequestedZoom(z);
+    setZoomStatus("Применяется…");
+    void applyAdvanced(stream, { zoom: z }).then(ok => {
+      if (id !== zoomRequestGeneration.current) return;
+      const confirmed = ok ? checkAppliedCameraSetting(stream?.getVideoTracks()[0], "zoom", z) : "rejected";
+      setRequestedZoom(null);
+      if (confirmed === "confirmed") {
+        s.set({ zoom: z, lensDeviceId: "" });
+        setZoomStatus("");
+      } else setZoomStatus(confirmed === "unknown"
+        ? "Зум: драйвер не подтвердил значение" : "Зум: выбранное значение не применено");
+    });
+  };
   if (!lenses.length) return <p className="text-[10px] text-muted-foreground">Камера не сообщает объективы и зум</p>;
   return <div className="space-y-2">
     <div className="flex justify-center gap-1.5">{lenses.map((l) => { const active = l.deviceId ? s.lensDeviceId === l.deviceId : !s.lensDeviceId && Math.abs((s.zoom ?? 1) - (l.zoom ?? 1)) < 0.05; return <button key={l.label} onClick={() => l.deviceId ? s.set({ lensDeviceId: l.deviceId }) : setZoom(Math.min(zr?.[1] ?? 1, Math.max(zr?.[0] ?? 1, l.zoom ?? 1)))} className={`size-10 rounded-full text-[11px] font-semibold ${active ? "bg-primary text-primary-foreground" : "bg-secondary"}`}>{l.label}</button>; })}</div>
-    {zr ? <div><div className="mb-1 flex justify-between text-[10px] text-muted-foreground"><span>Плавный зум</span><span className="font-mono">{(s.zoom ?? 1).toFixed(2)}x</span></div><Slider aria-label="Зум" value={[s.zoom ?? 1]} min={zr[0]} max={zr[1]} step={Math.max(0.01, zr[2])} onValueChange={([z = 1]) => setZoom(z)} /></div>
+    {zr ? <div><div className="mb-1 flex justify-between text-[10px] text-muted-foreground"><span>Плавный зум</span><span className="font-mono">{(s.zoom ?? 1).toFixed(2)}x</span></div><Slider aria-label="Зум" value={[requestedZoom ?? s.zoom ?? 1]} min={zr[0]} max={zr[1]} step={Math.max(0.01, zr[2])} onValueChange={([z = 1]) => setZoom(z)} /></div>
       : <p className="text-[10px] text-muted-foreground">Плавный зум недоступен у этой камеры — переключение объективами</p>}
+    {zoomStatus && <p role="status" className="text-[10px] text-warning">{zoomStatus}</p>}
   </div>;
 }
 
@@ -245,8 +407,9 @@ export function shootAvailability(stream: MediaStream | null, rawNative: boolean
   return {
     timer: true, burst: true, interval: true, night: true, longExp: true,
     bracket: !!capRange(caps, "exposureCompensation"),
-    // DNG capture needs a native Camera2 RAW pipeline that is not wired yet; availability stays false until it exists.
-    raw: false && rawNative,
+    // RAW capture is native Camera2-only; the actual physical/logical camera
+    // must be explicitly selected, never guessed from a WebView device ID.
+    raw: isNative() && rawNative,
   } as Record<keyof ShootSettings, boolean>;
 }
 const MODE_LIST: { key: keyof ShootSettings; label: string; hint: string }[] = [
@@ -258,9 +421,9 @@ const MODE_LIST: { key: keyof ShootSettings; label: string; hint: string }[] = [
   { key: "night", label: "Ночь", hint: "Стек 8 кадров" },
   { key: "longExp", label: "Выдержка", hint: "Накопление 2 с" },
 ];
-export function ShootingModes({ stream, rawNative }: { stream: MediaStream | null; rawNative: boolean }) {
+export function ShootingModes({ stream, rawNative, rawCameras }: { stream: MediaStream | null; rawNative: boolean; rawCameras: { cameraId: string; facing: string }[] }) {
   const s = useMulticamStore(); const sh = s.shoot; const avail = shootAvailability(stream, rawNative);
-  const reason = (k: keyof ShootSettings) => k === "bracket" ? "камера не даёт экспокоррекцию" : k === "raw" ? (!isNative() ? "только в Android‑приложении" : rawNative ? "сенсор умеет RAW, запись DNG не подключена" : "сенсор не отдаёт RAW") : "";
+  const reason = (k: keyof ShootSettings) => k === "bracket" ? "камера не даёт экспокоррекцию" : k === "raw" ? (!isNative() ? "только в Android‑приложении" : rawNative ? "выберите Camera2 ID" : "сенсор не отдаёт RAW") : "";
   const toggle = (k: keyof ShootSettings) => {
     if (!avail[k]) return;
     if (k === "timer") s.set({ shoot: { ...sh, timer: sh.timer === 0 ? 3 : sh.timer === 3 ? 10 : 0 } });
@@ -270,6 +433,11 @@ export function ShootingModes({ stream, rawNative }: { stream: MediaStream | nul
       const exclusive: (keyof ShootSettings)[] = ["burst", "bracket", "night", "longExp"];
       const next = { ...sh, [k]: !sh[k] } as ShootSettings;
       if (exclusive.includes(k) && next[k]) for (const e of exclusive) if (e !== k) (next as unknown as Record<string, unknown>)[e] = false;
+      if (k === "raw" && next.raw) {
+        for (const e of exclusive) (next as unknown as Record<string, unknown>)[e] = false;
+        next.interval = 0;
+      }
+      if (exclusive.includes(k) && next[k]) next.raw = false;
       s.set({ shoot: next });
     }
   };
@@ -281,6 +449,14 @@ export function ShootingModes({ stream, rawNative }: { stream: MediaStream | nul
       return <button key={key} aria-pressed={on} aria-disabled={!avail[key]} title={avail[key] ? hint : reason(key)} onClick={() => toggle(key)} className={`flex min-h-14 flex-col items-center justify-center gap-0.5 rounded-lg border px-1 text-center text-[10px] font-semibold ${on ? "border-primary bg-primary text-primary-foreground" : "border-border bg-secondary"} ${avail[key] ? "" : "opacity-35"}`}>
         <span>{label}{value && ` · ${value}`}</span><span className="text-[8px] font-normal opacity-75">{avail[key] ? hint : reason(key)}</span></button>;
     })}</div>
+    {sh.raw && <div className="rounded-lg border border-border p-2 text-[11px]">
+      <label className="mb-1 block font-semibold" htmlFor="raw-camera-choice">Камера Android Camera2 для DNG</label>
+      <select id="raw-camera-choice" className="w-full rounded-md border border-border bg-secondary p-2 text-foreground" value={s.rawCameraId} onChange={e => s.set({ rawCameraId: e.target.value })}>
+        <option value="">Выберите аппаратную камеру</option>
+        {rawCameras.map(c => <option key={c.cameraId} value={c.cameraId}>CAM {c.cameraId} · {c.facing}</option>)}
+      </select>
+      <p className="mt-1 text-muted-foreground">RAW — настоящий DNG с выбранной Camera2-камеры. WebView временно освободит камеру, предпросмотр восстановится после кадра. Camera2 ID не приравнивается к названию WebView-объектива.</p>
+    </div>}
     <label className="flex items-center justify-between text-[11px]"><span>ML‑ночной режим (стек кадров + шумодав)</span><Switch checked={sh.night && s.aiEnabled} disabled={!sh.night} onCheckedChange={(v) => s.set({ aiEnabled: v })} /></label>
   </div>;
 }

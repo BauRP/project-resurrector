@@ -1,0 +1,71 @@
+name: Android Emulator Freeze Smoke
+
+on:
+  push:
+    branches: [chatgpt/independent-preview-20261023, integration/lovable-site-and-freeze-20261106]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# A new development commit supersedes the previous emulator run. Do not
+# overload GitHub runner capacity with multiple stale emulator instances.
+concurrency:
+  group: multicam-emulator-freeze-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  emulator-smoke:
+    name: "Android WebView navigation (${{ matrix.gpu }})"
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        # Official emulator renderers. Both run the SAME production APK/JS.
+        # If only one locks in HardwareRenderer, isolate a host GPU backend
+        # instead of misattributing all failures to camera/editor code.
+        gpu: [swiftshader, swangle]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+      - name: Prepare real Android WebView content
+        run: |
+          bun run build:android
+          bunx cap sync android
+      - name: Enable KVM acceleration
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Run navigation tests in real emulator WebView
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -accel on
+          # android-emulator-runner executes each script line separately.
+          # Run cd/chmod/Gradle in the SAME shell command so cwd survives.
+          script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
+      - name: Upload instrumentation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-freeze-smoke-results-${{ matrix.gpu }}
+          if-no-files-found: ignore
+          path: |
+            android/app/build/reports/androidTests/connected/
+            android/app/build/outputs/androidTest-results/connected/
+            android-freeze-emulator-logcat.txt

@@ -1,4 +1,13 @@
-import { useEffect, useRef, useState } from "react";
+import { nativeCapture } from "@/lib/native-capture";
+import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
+import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
+import { RecordingChunkSpool } from "@/lib/recording-chunk-spool";
+import { recordingInputLostReason } from "@/lib/recording-finalization";
+import { markUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
+import { probeStoredClipCheckpoints } from "@/lib/clip-checkpoints";
+import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
+import { CaptureDurationClock } from "@/lib/recording-duration";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Camera, ChevronDown, CircleDot, Eye, EyeOff, Focus, Lock, Maximize, Pause, Play, ScanFace, SlidersHorizontal, Video, X, Zap, Sparkles, Grid3x3, Circle, Crosshair, Palette, AudioLines, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,8 +23,34 @@ import { CaptureProPanel, codecMime, toneFilter } from "./CaptureProPanel";
 import { AudioRail, ColorTuning, FalseColorOverlay, FocusRail, LensZoomBlock, ShootingModes, applyAdvanced, capRange, faceDetectorAvailable, grabFrames, kelvinFilter, savePhoto, trackCaps, tuneActive, tuneFilter, useFaceTracking } from "./CameraPro";
 import { MultiCamNative, hybridAI, isNative, nativeMetering } from "@/lib/native";
 import { createLimiter } from "@/lib/audio-limiter";
-import { cameraController, focusPoint, focusSupport } from "@/lib/camera-controller";
+import { cameraController, focusPointInVideoPreview, focusSupport } from "@/lib/camera-controller";
+import { saveRecordedClip } from "@/lib/clip-persistence";
+import { canPublishCaptureStatus, createRecorderStartGuard, createRecordingStopGuard, planRecordingFinalization } from "@/lib/recording-finalization";
+import { verifyStoredClipPlayback, sampleStoredClipDisplayedFps, assessSavedVideoDuration } from "@/lib/clip-playback";
+import { isCameraSwitchBlocked } from "@/lib/camera-device-switch";
+import { ForegroundReturnEpoch } from "@/lib/camera-foreground-recovery";
+import { CameraHotplugGeneration, confirmSelectedCameraRemoved, verifyCameraPresence,
+  confirmSelectedMicrophoneRemoved, verifyMicrophonePresence } from "@/lib/camera-hotplug-recovery";
+import { captureRealDng } from "@/lib/raw-dng";
+import type { NativeCameraProfile } from "@/lib/native";
+import { DualCameraPreview } from "./DualCameraPreview";
+import { REMOTE_DIRECTOR_LOST_REASON } from "@/lib/remote-record-guard";
+import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
+import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "@/lib/fold-recording-evidence";
+import { startDualRecording, independentStreamsReady, isDualEncoderStillFinishing, type DualRecordingSession } from "@/lib/dual-live-recording";
 const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
+
+/** Schedule every intended output frame even on 60/90/120 Hz displays.
+ * A phase accumulator avoids the 25->20 fps slowdown caused by resetting
+ * the deadline to each rAF timestamp. */
+export function advanceCaptureFrameDeadline(now: number, lastDeadline: number, fps: number): number | null {
+  const interval = 1000 / Math.max(1, fps);
+  if (!Number.isFinite(now)) return null;
+  if (!Number.isFinite(lastDeadline)) return now;
+  if (now + 0.75 < lastDeadline + interval) return null;
+  return now - lastDeadline >= interval * 2 ? now : lastDeadline + interval;
+}
+
 
 const tools = [
   ["focusPeaking", "peak", Focus], ["zebras", "zebra", Zap], ["wbLock", "wb", Lock], ["isoLock", "iso", Lock],
@@ -33,17 +68,58 @@ function applyManual(stream: MediaStream | null, c: Record<string, unknown>) {
   void cameraController.apply(stream, adv);
 }
 
-export function CameraTab() {
+/** Keep the 0.1 s recording clock precise without rendering the full
+ * GPU-heavy camera preview tree ten times every second. */
+export function CameraRecordingTimecode({ recording, startedAt }: { recording: boolean; startedAt: number | null }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    if (!recording || !startedAt) { setElapsed(0); return; }
+    const update = () => setElapsed((Date.now() - startedAt) / 1000);
+    update();
+    const timer = window.setInterval(update, 100);
+    return () => window.clearInterval(timer);
+  }, [recording, startedAt]);
+  return <span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span>;
+}
+
+export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void) | undefined } = {}) {
   const s = useCameraStore();
+  // The unmount effect is registered once, but its phase must be the LAST
+  // rendered phase, not an obsolete closure from the first render.
+  const lastRecordingState = useRef({recording:s.recording,phase:s.recordingPhase});
+  lastRecordingState.current={recording:s.recording,phase:s.recordingPhase};
   const { t } = useT();
   const peers = useMeshPeers();
   const videoRef = useRef<HTMLVideoElement>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
+  const stopReasonRef = useRef<string>("");
   const chunksRef = useRef<Blob[]>([]);
+  const activePhoto = useRef<AbortController | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
-  const [cameraState, setCameraState] = useState<"loading" | "live" | "simulated">("loading");
-  const [elapsed, setElapsed] = useState(0);
+  const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
+  const [previewRequested, setPreviewRequested] = useState(false);
+  const [nativeOwnsCamera,setNativeOwnsCamera] = useState(false);
+
   const facingMode = s.facing === "front" ? "user" : "environment";
+  // UI selection and actual camera ownership are intentionally separate.
+  // Never re-acquire getUserMedia while MediaRecorder owns a live capture.
+  const cameraSwitchBlocked = isCameraSwitchBlocked(s.recording, s.recordingPhase);
+  const dualPreviewEnabled = s.dualCamera && cameraState === "live";
+  const [secondaryStream, setSecondaryStream] = useState<MediaStream | null>(null);
+  const dualSession = useRef<DualRecordingSession | null>(null);
+  const dualSessionStarting = useRef(false);
+  const [appliedDevice, setAppliedDevice] = useState(() => ({
+    facing: facingMode, lens: s.lensDeviceId, mic: s.capture.micId,
+  }));
+  const deviceSwitchQueued = cameraSwitchBlocked &&
+    (appliedDevice.facing !== facingMode || appliedDevice.lens !== s.lensDeviceId || appliedDevice.mic !== s.capture.micId);
+  useEffect(() => {
+    if (cameraSwitchBlocked) return;
+    setAppliedDevice(current =>
+      current.facing === facingMode && current.lens === s.lensDeviceId && current.mic === s.capture.micId
+        ? current
+        : { facing: facingMode, lens: s.lensDeviceId, mic: s.capture.micId });
+  }, [cameraSwitchBlocked, facingMode, s.lensDeviceId, s.capture.micId]);
   const camCaps = s.capMatrix ? s.capMatrix[s.facing] : null;
   const NS = "Не поддерживается";
   const [tipKey, setTipKey] = useState<TipKey | null>(null);
@@ -52,38 +128,250 @@ export function CameraTab() {
   const [self, setSelf] = useState<{ battery: number | null; storageMB: number | null }>({ battery: null, storageMB: null });
   const clean = s.cleanFrame;
 
-  useEffect(() => { void mesh.sendTelemetry().then(setSelf); const id = window.setInterval(() => void mesh.sendTelemetry().then(setSelf), 5000); return () => window.clearInterval(id); }, []);
+  useEffect(() => {
+    // Battery and storage are ALWAYS collected, including solo mode.
+    // One bounded asynchronous poll at a time: never flood WebView or
+    // interrupt the user's navigation during slow Android system calls.
+    let active = true;
+    let running = false;
+    const poll = () => {
+      if (!active || running) return;
+      running = true;
+      void mesh.sendTelemetry().then(value => {
+        if (active) setSelf(previous =>
+          previous.battery === value.battery && previous.storageMB === value.storageMB
+            ? previous : value);
+      }).catch(() => undefined).finally(() => { running = false; });
+    };
+    poll();
+    const id = window.setInterval(poll, 5000);
+    const onReturn = () => { if (!document.hidden) poll(); };
+    document.addEventListener("visibilitychange", onReturn);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onReturn);
+    };
+  }, []);
   useEffect(() => () => s.set({ cleanFrame: false }), []);
 
   const [focusWarning, setFocusWarning] = useState(false); const [focusError, setFocusError] = useState("");
   const owner = useRef(Symbol("camera"));
+  const missingSelectedLens = useRef(false);
+  const missingSelectedMicrophone = useRef(false);
+  const [hotplugRecoveryPending, setHotplugRecoveryPending] = useState(false);
+  const [hotplugRevision, setHotplugRevision] = useState(0);
+  const foregroundReturn = useRef(new ForegroundReturnEpoch());
+  const [foregroundRecoveryRevision, setForegroundRecoveryRevision] = useState(0);
   useEffect(() => {
-    let alive = true; const token = owner.current;
+    const returned = () => {
+      if (document.hidden) return;
+      foregroundReturn.current.markReturned();
+      // This does not start recording. The follow-up effect waits for any
+      // active/saving recorder before permitting getUserMedia to run again.
+      setForegroundRecoveryRevision(revision => revision + 1);
+    };
+    document.addEventListener("visibilitychange", returned);
+    window.addEventListener("pageshow", returned);
+    return () => {
+      document.removeEventListener("visibilitychange", returned);
+      window.removeEventListener("pageshow", returned);
+    };
+  }, []);
+  useEffect(() => {
+    const status = {
+      visible: !document.hidden,
+      recording: s.recording,
+      phase: s.recordingPhase,
+      preview: cameraState,
+      stream,
+      selectedDeviceMissing: missingSelectedLens.current || missingSelectedMicrophone.current,
+    };
+    if (foregroundReturn.current.consumeWhenReady(status))
+      setHotplugRevision(revision => revision + 1);
+  }, [foregroundRecoveryRevision, s.recording, s.recordingPhase, cameraState, stream]);
+  useEffect(() => {
+    // Reacquire ONLY the preview, never the recorder, after the old file is
+    // safely finalized. The selected physical lens must be available again.
+    if (!hotplugRecoveryPending || cameraSwitchBlocked) return;
+    setHotplugRecoveryPending(false);
+    setHotplugRevision(revision => revision + 1);
+  }, [hotplugRecoveryPending, cameraSwitchBlocked]);
+  // When a diagnostic releases its camera after a fold/remount, retry the
+  // preview. On acquisition the same revision invalidates a racing preview.
+  const diagnosticRevision = useSyncExternalStore(
+    diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
+  useEffect(() => {
+    if (!previewRequested) return;
+    // Each lens/fold/diagnostic refresh gets its OWN owner identity. An older
+    // pending getUserMedia completion cannot release a newer camera stream.
+    let alive = true; const token = Symbol("camera-preview-generation");
+    owner.current = token;
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
-    void cameraController.acquire(token, { video: s.lensDeviceId ? { deviceId: { exact: s.lensDeviceId } } : { facingMode }, audio: s.capture.micId ? { deviceId: { exact: s.capture.micId } } : true }).then((next) => {
-      if (alive) { setStream(next); setCameraState("live"); }
-    }).catch(() => { if (alive) setCameraState("simulated"); });
+    const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
+    const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
+    // All native ownership failures must fail closed: microphone fallback
+    // is allowed only *after* the Camera2 check succeeded.
+    void acquireWebViewPreviewWithNativeGuard(
+      token,{video,audio},isNative()?()=>nativeCapture.status():null,
+      {isCurrent:()=>alive},
+    ).then(next=>{
+      if(alive){
+        setNativeOwnsCamera(false);setStream(next);setCameraState("live");
+      }else cameraController.release(token);
+    }).catch(error=>{
+      if(!alive)return;
+      setNativeOwnsCamera(error instanceof NativeCameraBusyError);
+      setCameraState("unavailable");
+    });
     return () => { alive = false; cameraController.release(token); };
-  }, [facingMode, s.capture.micId, s.lensDeviceId]);
+  }, [previewRequested, appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision, hotplugRevision]);
+  // WebView may keep a USB-camera track "live" briefly after unplug.
+  // Confirm actual removal from two successive device enumerations before
+  // interrupting an active recording; never interpret a fold or hidden IDs
+  // as a camera disconnect.
+  useEffect(() => {
+    const deviceId = appliedDevice.lens;
+    if (!deviceId || !stream || !navigator.mediaDevices?.enumerateDevices) return;
+    const generation = new CameraHotplugGeneration();
+    missingSelectedLens.current = false;
+    const onDeviceChange = () => {
+      const token = generation.next();
+      void (async () => {
+        try {
+          const first = await navigator.mediaDevices.enumerateDevices();
+          if (!generation.isCurrent(token)) return;
+          if (verifyCameraPresence(deviceId, first) === "present") {
+            if (missingSelectedLens.current) {
+              missingSelectedLens.current = false;
+              setHotplugRecoveryPending(true);
+            }
+            return;
+          }
+          if (!await confirmSelectedCameraRemoved(
+            deviceId,
+            () => navigator.mediaDevices.enumerateDevices(),
+            () => generation.isCurrent(token),
+            () => new Promise<void>(resolve => window.setTimeout(resolve, 250)),
+          )) return;
+          missingSelectedLens.current = true;
+          setCameraState("unavailable");
+          const reason = "Выбранная внешняя камера отключена. Запись прервана; проверьте сохранённый файл.";
+          if (dualSession.current) {
+            dualSession.current.stop(reason);
+            s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+          } else {
+            const active = recorderRef.current;
+            if (active && active.state !== "inactive") {
+              stopReasonRef.current ||= reason;
+              s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+              recordingStartCancel.current?.();
+              recordingStopWatch.current?.();
+              try { active.stop(); } catch (error) {
+                s.set({ recording: false, recordingPhase: "error",
+                  captureSaveError: reason + " Остановка кодировщика: " + String(error) });
+              }
+            }
+          }
+        } catch { /* Failed enumeration cannot prove a disconnection. */ }
+      })();
+    };
+    navigator.mediaDevices.addEventListener?.("devicechange", onDeviceChange);
+    return () => {
+      generation.invalidate();
+      navigator.mediaDevices.removeEventListener?.("devicechange", onDeviceChange);
+    };
+  }, [stream, appliedDevice.lens, s.set]);
+  // Some USB audio drivers do not send MediaStreamTrack.ended on unplug.
+  // Confirm the exact chosen microphone twice before treating audio loss as
+  // an interrupted recording. A fold alone never proves microphone removal.
+  useEffect(() => {
+    const micId = appliedDevice.mic;
+    if (!micId || !stream || !navigator.mediaDevices?.enumerateDevices) return;
+    const generation = new CameraHotplugGeneration();
+    missingSelectedMicrophone.current = false;
+    const onMicrophoneChange = () => {
+      const token = generation.next();
+      void (async () => {
+        try {
+          const devices = await navigator.mediaDevices.enumerateDevices();
+          if (!generation.isCurrent(token)) return;
+          if (verifyMicrophonePresence(micId, devices) === "present") {
+            if (missingSelectedMicrophone.current) {
+              missingSelectedMicrophone.current = false;
+              setHotplugRecoveryPending(true);
+            }
+            return;
+          }
+          if (!await confirmSelectedMicrophoneRemoved(
+            micId,
+            () => navigator.mediaDevices.enumerateDevices(),
+            () => generation.isCurrent(token),
+            () => new Promise<void>(resolve => window.setTimeout(resolve, 250)),
+          )) return;
+          missingSelectedMicrophone.current = true;
+          const reason = "Выбранный внешний микрофон отключён. Запись остановлена; проверьте звук в сохранённом файле.";
+          if (dualSession.current) {
+            dualSession.current.stop(reason);
+            s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+          } else {
+            const active = recorderRef.current;
+            if (active && active.state !== "inactive") {
+              stopReasonRef.current ||= reason;
+              s.set({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+              recordingStartCancel.current?.();
+              recordingStopWatch.current?.();
+              try { active.stop(); } catch (error) {
+                s.set({ recording: false, recordingPhase: "error",
+                  captureSaveError: reason + " Остановка кодировщика: " + String(error) });
+              }
+            }
+          }
+        } catch { /* Unknown microphone inventory is not proof of removal. */ }
+      })();
+    };
+    navigator.mediaDevices.addEventListener?.("devicechange", onMicrophoneChange);
+    return () => {
+      generation.invalidate();
+      navigator.mediaDevices.removeEventListener?.("devicechange", onMicrophoneChange);
+    };
+  }, [stream, appliedDevice.mic, s.set]);
   const tapFocus = async (event: React.PointerEvent<HTMLVideoElement>) => {
     if (s.touchLocked) return;
     const caps = trackCaps(stream); const support = focusSupport(caps);
-    setFocusWarning(support === "unsupported"); setFocusError("");
-    if (support === "unsupported") return;
-    if (!("pointsOfInterest" in caps)) { setFocusError("Камера не сообщает поддержку фокуса по точке"); return; }
+    const pointCapable = "pointsOfInterest" in caps;
+    setFocusWarning(support === "unsupported" && !pointCapable); setFocusError("");
+    if (!pointCapable) {
+      if (support !== "unsupported") setFocusError("Камера не сообщает поддержку фокуса по точке");
+      return;
+    }
     const video = event.currentTarget;
     if (!video.videoWidth || !video.videoHeight) return;
-    const point = focusPoint(video.getBoundingClientRect(), video.videoWidth, video.videoHeight, event.clientX, event.clientY);
+    const point = focusPointInVideoPreview(video,event.clientX,event.clientY);
     const ok = await cameraController.apply(stream, { focusMode: "continuous", pointsOfInterest: [point] });
     if (!ok) setFocusError("Камера не применила фокус по точке");
   };
   // Pro tools: AI engine, metering, face tracking, RAW capability, photo capture.
   const [aiEngine, setAiEngine] = useState<"native" | "web" | null>(null);
-  useEffect(() => { if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [s.aiEnabled, s.focusModeAI]);
+  useEffect(() => { if (!previewRequested) return; if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [previewRequested, s.aiEnabled, s.focusModeAI]);
   const [rawNative, setRawNative] = useState(false);
-  useEffect(() => { if (isNative()) void MultiCamNative.getCapabilities().then((n) => setRawNative(n.cameras.some((c) => c.raw))).catch(() => setRawNative(false)); }, []);
+  const [rawCameras, setRawCameras] = useState<NativeCameraProfile[]>([]);
+  const cameraMounted = useRef(true);
+  const photoBusy = useRef(false);
+  const [photoProcessing, setPhotoProcessing] = useState(false);
+  useEffect(() => {
+    cameraMounted.current = true;
+    if (isNative() && previewRequested) void MultiCamNative.getCapabilities().then(n => {
+      if (!cameraMounted.current) return;
+      const candidates = n.cameras.filter(c => c.raw);
+      setRawCameras(candidates);
+      setRawNative(candidates.length > 0);
+    }).catch(() => { if (cameraMounted.current) setRawNative(false); });
+    return () => { cameraMounted.current = false; };
+  }, [previewRequested]);
   const [meterOk, setMeterOk] = useState(true);
   useEffect(() => {
+    if (!previewRequested || !stream) return;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
     void nativeMetering(s.meterMode).then((native) => {
       if (native) { setMeterOk(true); return; }
@@ -91,35 +379,143 @@ export function CameraTab() {
       setMeterOk(true);
       void applyAdvanced(stream, s.meterMode === "matrix" ? { exposureMode: "continuous", pointsOfInterest: [] } : { exposureMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] });
     });
-  }, [s.meterMode, stream]);
+  }, [previewRequested, s.meterMode, stream]);
   useEffect(() => { if (s.eyeAF && !s.aiEnabled) void applyAdvanced(stream, { focusMode: "continuous" }); }, [s.eyeAF, s.aiEnabled, stream]);
   const faceBox = useFaceTracking(videoRef, stream, s.eyeAF || s.aiEnabled, s.aiEnabled && s.focusModeAI === "hybrid_nearest_priority");
-  const mountedRef = useRef(true); const photoBusy = useRef(false); const [capturing, setCapturing] = useState(false);
-  useEffect(() => { mountedRef.current = true; return () => { mountedRef.current = false; }; }, []);
   const [countdown, setCountdown] = useState(0); const [flash, setFlash] = useState(0); const [photoMsg, setPhotoMsg] = useState("");
   const [lastPhoto, setLastPhoto] = useState<string | null>(null); const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
   useEffect(() => () => { if (intervalRef.current) window.clearInterval(intervalRef.current); }, []);
   useEffect(() => { const video = videoRef.current; if (!video) return; video.srcObject = stream; return () => { if (video.srcObject === stream) video.srcObject = null; }; }, [stream, cameraState]);
-
+  // The WebView has no guaranteed background camera entitlement. Only react
+  // to loss of actual video input; do not interpret CSS resize/folding as a camera error.
   useEffect(() => {
-    if (!s.recording || !s.recordingStartedAt) { setElapsed(0); return; }
-    const started = s.recordingStartedAt; const update = () => setElapsed((Date.now() - started) / 1000);
-    update(); const timer = window.setInterval(update, 100); return () => window.clearInterval(timer);
-  }, [s.recording, s.recordingStartedAt]);
+    const videoTrack = stream?.getVideoTracks()[0];
+    if (!videoTrack) return;
+    const onEnded = () => {
+      setCameraState("unavailable");
+      const active = recorderRef.current;
+      if (dualSession.current) { dualSession.current.stop("Приложение скрыто"); s.set({ recording: false, recordingPhase: "stopping" }); }
+      if (active && active.state !== "inactive") {
+        stopReasonRef.current = "Поток камеры прервался; запись завершается. Проверьте сохранённый файл.";
+        s.set({ recording: false, recordingPhase: "stopping" });
+        recordingStartCancel.current?.();
+        recordingStopWatch.current?.();
+        try { active.stop(); } catch (error) {
+          s.set({ recording: false, recordingPhase: "error", captureSaveError: "Поток потерян, остановить кодировщик не удалось: " + String(error) });
+        }
+      }
+    };
+    videoTrack.addEventListener("ended", onEnded);
+    return () => videoTrack.removeEventListener("ended", onEnded);
+  }, [stream, s.set]);
+  useEffect(() => {
+    const onPageHidden = () => {
+      if (!document.hidden) return;
+      const active = recorderRef.current;
+      if (dualSession.current) {
+        dualSession.current.stop("Приложение ушло в фон; обе записи завершаются");
+        s.set({ recording: false, recordingPhase: "stopping" });
+      }
+      if (active && active.state !== "inactive") {
+        stopReasonRef.current = "Приложение ушло в фон; непрерывность WebView-записи не гарантирована. Завершаю текущий сегмент.";
+        s.set({ recording: false, recordingPhase: "stopping" });
+        recordingStartCancel.current?.();
+        recordingStopWatch.current?.();
+        try { active.stop(); } catch (error) {
+          s.set({ recording: false, recordingPhase: "error", captureSaveError: "Ошибка остановки при сворачивании: " + String(error) });
+        }
+      }
+    };
+    // pagehide also fires for Activity/WebView teardown where visibilitychange
+    // is omitted. Never promise that a pagehide permits async save to finish.
+    const onPageExit = () => {
+      if (document.hidden) onPageHidden();
+      else {
+        const active = recorderRef.current;
+        if (dualSession.current) dualSession.current.stop("Страница WebView закрывается; сохранение записей не гарантировано");
+        if (active && active.state !== "inactive") {
+          stopReasonRef.current ||= "Страница WebView закрывается; запись могла прерваться";
+          recordingStartCancel.current?.();
+          recordingStopWatch.current?.();
+          try { active.stop(); } catch { /* interruption marker survives */ }
+        }
+      }
+    };
+    document.addEventListener("visibilitychange", onPageHidden);
+    window.addEventListener("pagehide", onPageExit);
+    return () => {
+      document.removeEventListener("visibilitychange", onPageHidden);
+      window.removeEventListener("pagehide", onPageExit);
+    };
+  }, [s.set]);
+
+
 
   // Manual parameters from the HUD are pushed to the hardware track.
   useEffect(() => { const [n, d] = s.shutter.split("/").map(Number); if (n && d) applyManual(stream, { exposureMode: "manual", exposureTime: Math.round((n / d) * 10000) }); }, [s.shutter, stream]);
   useEffect(() => { if (s.capture.iso !== null) applyManual(stream, { exposureMode: "manual", iso: s.capture.iso }); }, [s.capture.iso, stream]);
   useEffect(() => { applyManual(stream, s.wbKelvin === null ? { whiteBalanceMode: "continuous" } : { whiteBalanceMode: "manual", colorTemperature: s.wbKelvin }); }, [s.wbKelvin, stream]);
 
-  // Recorder follows global recording state — works for local presses and the director's remote trigger.
+  // Recorder is driven by the session command but only shows confirmed recording
+  // after MediaRecorder has actually started. All completion paths report errors.
   const pipeRef = useRef<{ stop: () => void } | null>(null);
   const recordingAudio = useRef<ReturnType<typeof createLimiter> | null>(null);
+  const recordingStopWatch = useRef<(() => void) | null>(null);
+  const recordingStartCancel = useRef<(() => void) | null>(null);
+  const recordingSessionGeneration = useRef(0);
+  // Event handlers fire later than the render that created their recorder.
+  // Read the latest user/remote STOP intent, never the captured old snapshot.
+  const recordingRequested = useRef(s.recording);
+  recordingRequested.current = s.recording;
   useEffect(() => { recordingAudio.current?.update(s.audioGain, s.audioCeiling); }, [s.audioGain, s.audioCeiling]);
   useEffect(() => {
-    mesh.selfRecording = s.recording;
-    if (s.recording && stream && typeof MediaRecorder !== "undefined" && recorderRef.current?.state !== "recording" && recorderRef.current?.state !== "paused") {
+    // Telemetry is real recorder state, not an unconfirmed command intent.
+    mesh.selfRecording = s.recordingPhase === "recording";
+    return () => { mesh.selfRecording = false; };
+  }, [s.recordingPhase]);
+  useEffect(() => {
+    const active = recorderRef.current;
+    // A separate two-encoder recording session owns both live camera streams.
+    if (s.dualCamera && s.captureKind === "video") return;
+    if (!s.recording) {
+      if (!active && !dualSession.current && isStaleCapture(false,s.recordingPhase)) {
+        s.set({recording:false,recordingPhase:"error",recordingStartedAt:null,paused:false,
+          captureSaveError:STALE_CAPTURE_MESSAGE});
+        return;
+      }
+      // A remote STOP can arrive before the first recorder exists. In that
+      // case there is no onstop callback to clear the transient "stopping"
+      // phase; settle it without inventing a saved video.
+      if (!active && s.recordingPhase === "stopping" && !dualSession.current) {
+        s.set({ recordingPhase: "idle", recordingStartedAt: null });
+      }
+      if (active && active.state !== "inactive") {
+        if (s.captureSaveError === REMOTE_DIRECTOR_LOST_REASON)
+          stopReasonRef.current ||= REMOTE_DIRECTOR_LOST_REASON;
+        s.set({ recordingPhase: "stopping" });
+        recordingStartCancel.current?.();
+        recordingStopWatch.current?.();
+        try { active.stop(); } catch (error) {
+          stopReasonRef.current = "Ошибка остановки видеокодировщика: " + String(error);
+          s.set({ recordingPhase: "error", captureSaveError: stopReasonRef.current });
+        }
+      }
+      return;
+    }
+    if (!stream?.getVideoTracks().some((t) => t.readyState === "live") || typeof MediaRecorder === "undefined") {
+      s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: "Камера или видеозапись недоступна" });
+      return;
+    }
+    if (active && active.state !== "inactive") return;
+    let gainCtx: AudioContext | null = null;
+    let createdRecorder: MediaRecorder | null = null;
+    let startGuard: ReturnType<typeof createRecorderStartGuard> | null = null;
+    let stopWatch: (() => void) | null = null;
+    let detachLostInputHandlers: (() => void) | null = null;
+    try {
       chunksRef.current = [];
+      stopReasonRef.current = "";
+      s.set({ recordingPhase: "starting", captureSaveError: "" });
       const { mode, profile, codec, fps } = s.capture;
       const lapse = mode === "timelapse" ? 1000 : mode === "hyperlapse" ? 200 : 0;
       let source = stream;
@@ -127,42 +523,313 @@ export function CameraTab() {
       if ((profile !== "standard" || lapse || graded) && videoRef.current) {
         const video = videoRef.current; const canvas = document.createElement("canvas");
         canvas.width = video.videoWidth || 1280; canvas.height = video.videoHeight || 720;
-        const ctx = canvas.getContext("2d"); if (!ctx) { s.set({ recording: false, recordingStartedAt: null }); return; } ctx.filter = [profile === "standard" ? "" : toneFilter(profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ") || "none";
+        const ctx = canvas.getContext("2d");
+        if (!ctx) throw new Error("Видеообработка недоступна");
+        ctx.filter = [profile === "standard" ? "" : toneFilter(profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ") || "none";
         const draw = () => ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         const cs = canvas.captureStream(lapse ? 0 : fps);
         const vt = cs.getVideoTracks()[0] as MediaStreamTrack & { requestFrame?: () => void };
         let raf = 0; let timer = 0;
         if (lapse) timer = window.setInterval(() => { draw(); vt.requestFrame?.(); }, lapse);
-        else { const loop = () => { draw(); raf = requestAnimationFrame(loop); }; loop(); }
+        else {
+          let lastDeadline = Number.NEGATIVE_INFINITY;
+          const loop = (now: number) => {
+            if (video.readyState >= 2) {
+              const due = advanceCaptureFrameDeadline(now, lastDeadline, fps);
+              if (due !== null) { lastDeadline = due; draw(); }
+            }
+            raf = requestAnimationFrame(loop);
+          };
+          raf = requestAnimationFrame(loop);
+        }
         source = new MediaStream([...cs.getVideoTracks(), ...(lapse ? [] : stream.getAudioTracks())]);
         pipeRef.current = { stop: () => { cancelAnimationFrame(raf); window.clearInterval(timer); cs.getTracks().forEach((t) => t.stop()); } };
       }
-      let gainCtx: AudioContext | null = null;
       if ((s.audioGain !== 1 || s.audioCeiling < 0) && source.getAudioTracks().length) {
-        gainCtx = new AudioContext(); const src = gainCtx.createMediaStreamSource(new MediaStream(source.getAudioTracks())); const limiter = createLimiter(gainCtx, src, s.audioGain, s.audioCeiling); recordingAudio.current = limiter; const out = limiter.output; const dest = gainCtx.createMediaStreamDestination(); out.connect(dest);
+        gainCtx = new AudioContext();
+        const src = gainCtx.createMediaStreamSource(new MediaStream(source.getAudioTracks()));
+        const limiter = createLimiter(gainCtx, src, s.audioGain, s.audioCeiling);
+        recordingAudio.current = limiter;
+        const dest = gainCtx.createMediaStreamDestination();
+        limiter.output.connect(dest);
         source = new MediaStream([...source.getVideoTracks(), ...dest.stream.getAudioTracks()]);
       }
       const preferred = codecMime(codec);
-      const mime = MediaRecorder.isTypeSupported(preferred) ? preferred : MediaRecorder.isTypeSupported("video/webm;codecs=vp9,opus") ? "video/webm;codecs=vp9,opus" : "video/webm";
+      const candidates = [preferred, "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8,opus", "video/webm"];
+      const mime = candidates.find((candidate) => MediaRecorder.isTypeSupported(candidate));
+      if (!mime) throw new Error("Поддерживаемый видеокодировщик не найден");
       const recorder = new MediaRecorder(source, { mimeType: mime });
+      createdRecorder = recorder;
+      recorderRef.current = recorder;
       const camera = s.activeCamera; const startedAt = Date.now();
-      const chunks: Blob[] = [];
-      recorder.ondataavailable = (event) => { if (event.data.size) chunks.push(event.data); };
-      recorder.onstop = () => {
-        pipeRef.current?.stop(); pipeRef.current = null; recordingAudio.current = null; void gainCtx?.close();
-        const blob = new Blob(chunks, { type: mime });
-        const request = indexedDB.open("multicam-pov-media", 1);
-        request.onupgradeneeded = () => request.result.createObjectStore("clips", { keyPath: "id" });
-        request.onsuccess = () => { const tx = request.result.transaction("clips", "readwrite"); tx.objectStore("clips").put({ id: `clip-${Date.now()}`, createdAt: startedAt, camera, mode, profile, playbackRate: lapse ? lapse / (1000 / 30) : 1, blob }); tx.oncomplete = () => { request.result.close(); window.dispatchEvent(new Event("multicam-clips-changed")); }; tx.onerror = () => request.result.close(); };
+      const durationClock = new CaptureDurationClock();
+      const sessionGeneration = ++recordingSessionGeneration.current;
+      const updateCurrentSession = (value: Parameters<typeof s.set>[0]) => {
+        if (canPublishCaptureStatus(recordingSessionGeneration.current, sessionGeneration, cameraMounted.current)) s.set(value);
       };
-      recorder.start(1000); recorderRef.current = recorder;
-    } else if (!s.recording && recorderRef.current && recorderRef.current.state !== "inactive") recorderRef.current.stop();
-  }, [s.recording, stream]);
+      const spool = new RecordingChunkSpool("single-" + startedAt + "-" + Math.random().toString(36).slice(2));
+      let foldTransitions: FoldTransitionEvidence[] = [];
+      let foldLoggingStarted = false;
+      const onFold = (event: Event) => {
+        if (!foldLoggingStarted) return;
+        const evidence = normalizeFoldTransition((event as CustomEvent).detail, Date.now());
+        if (evidence) foldTransitions = appendFoldTransition(foldTransitions, evidence);
+      };
+      let recorderError = "";
+      spool.onMemoryPressure(() => {
+        if (recorder.state === "inactive") return;
+        const message = "Хранилище видео недоступно: заполнен аварийный буфер памяти";
+        recorderError ||= message;
+        stopReasonRef.current ||= message;
+        updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: message });
+        recordingStartCancel.current?.();
+        recordingStopWatch.current?.();
+        try { recorder.stop(); } catch { /* Stop watchdog salvages confirmed fragments. */ }
+      });
+      const sourceInputTracks = stream.getTracks();
+      const lostInputHandlers: Array<{track: MediaStreamTrack; handler: EventListener}> = [];
+      detachLostInputHandlers = () => lostInputHandlers.forEach(({track,handler}) => track.removeEventListener("ended",handler));
+      const sessionPipe = pipeRef.current;
+      const sessionAudio = recordingAudio.current;
+      const cleanUp = () => {
+        startGuard?.cancel();
+        if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
+        window.removeEventListener(FOLD_EVENT, onFold);
+        detachLostInputHandlers?.();
+        // Old encoder completion must never stop a newer recording's
+        // canvas track or audio limiter after a quick tab/session handoff.
+        sessionPipe?.stop();
+        if (pipeRef.current === sessionPipe) pipeRef.current = null;
+        if (recordingAudio.current === sessionAudio) recordingAudio.current = null;
+        void gainCtx?.close();
+        recorder.onpause = null;
+        recorder.onresume = null;
+        if (recorderRef.current === recorder) recorderRef.current = null;
+        if (recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
+      };
+      recorder.onstart = () => {
+        const confirmed = startGuard?.started() ?? false;
+        if (!confirmed || !recordingRequested.current || !cameraMounted.current ||
+            recordingSessionGeneration.current !== sessionGeneration) {
+          // A late OEM onstart after STOP/watchdog/remount must never
+          // resurrect recording=true or leave a live orphaned encoder.
+          stopReasonRef.current ||= "Запуск кодировщика подтверждён после отмены записи";
+          requestStop();
+          if (recorder.state !== "inactive") {
+            try { recorder.stop(); } catch { /* bounded onstop salvage remains armed */ }
+          } else guard.finish();
+          return;
+        }
+        markUnfinishedCapture("single", startedAt);
+        durationClock.startedAt(performance.now());
+        const initialFold = getActiveFoldBaseline();
+        if (initialFold) foldTransitions = [initialFold];
+        foldLoggingStarted = true;
+        updateCurrentSession({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording", captureSaveError: "" });
+      };
+      recorder.onpause = () => durationClock.pausedAtTime(performance.now());
+      recorder.onresume = () => durationClock.resumedAt(performance.now());
+      recorder.ondataavailable = (event) => { if (event.data.size) spool.append(event.data); };
+      recorder.onerror = (event) => {
+        startGuard?.cancel();
+        recorderError = (event as Event & { error?: Error }).error?.message || "Ошибка кодировщика";
+        updateCurrentSession({ recordingPhase: "error", captureSaveError: recorderError });
+        recordingStartCancel.current?.();
+        recordingStopWatch.current?.();
+        if (recorder.state !== "inactive") try { recorder.stop(); } catch { /* already stopped */ }
+      };
+      const finalizeRecording = () => { void (async () => {
+        // Stop callback time includes any delayed finalization; it is only an
+        // approximate lower-confidence duration signal, never codec FPS proof.
+        const elapsedMs = lapse ? null : durationClock.durationMs();
+        cleanUp();
+        updateCurrentSession({ recording: false, recordingStartedAt: null, paused: false });
+        const stopReason = stopReasonRef.current;
+        updateCurrentSession({ recordingPhase: "saving" });
+        const blob = await spool.finish(mime);
+        const plan = planRecordingFinalization(blob.size, recorderError, stopReason);
+        if (!plan.attemptSave) {
+          updateCurrentSession({ recordingPhase: "error", captureSaveError: plan.message });
+          return;
+        }
+        updateCurrentSession({ recordingPhase: "saving", captureSaveError: plan.incomplete ? plan.message : "Проверяю сохранение записи…" });
+        const clipId = `clip-${startedAt}-${Math.random().toString(36).slice(2, 8)}`;
+        void saveRecordedClip({
+          id: clipId, createdAt: startedAt, camera, mode, profile,
+          playbackRate: lapse ? lapse / (1000 / 30) : 1, blob,
+          foldTransitions, foldContinuityVerified: false,
+        }).then(() => {
+          void spool.clearAfterSave();
+          clearUnfinishedCapture("single", startedAt);
+          // Save is durable and independently read back. Decoding is checked
+          // separately: failure must not destroy or hide an already saved clip.
+          updateCurrentSession({ recordingPhase: plan.incomplete ? "error" : "saved",
+            captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+              "Видео сохранено. Проверяю воспроизведение…" });
+          window.dispatchEvent(new Event("multicam-clips-changed"));
+          void verifyStoredClipPlayback(clipId).then(evidence => {
+            const durationEvidence = assessSavedVideoDuration(elapsedMs, evidence.durationSeconds);
+            // Do not leave a materially shortened recording marked as
+            // successfully verified merely because its first frame decoded.
+            if (durationEvidence.status === "short")
+              updateCurrentSession({ recordingPhase: "error" });
+            updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+              "Видео сохранено; первый кадр декодирован: " + evidence.width + "×" + evidence.height +
+              ". " + durationEvidence.message + " Измеряю отображаемые кадры…" });
+            void sampleStoredClipDisplayedFps(clipId).then(sample => {
+              updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                "Клип сохранён; первый кадр декодирован. " + durationEvidence.message + " " +
+                (sample.approximateFps !== null ? "Оценка показанных кадров: " + sample.approximateFps + " FPS. " : "Оценка FPS недоступна. ") +
+                "Проверяю последующие участки файла…" });
+              void probeStoredClipCheckpoints(clipId, evidence.durationSeconds).then(checks => {
+                updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                  durationEvidence.message + " " + checks.message +
+                  " FPS кодека, HDR, EIS/OIS и полная непрерывность не подтверждены." });
+              }).catch(() => {
+                updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                  durationEvidence.message + " Дополнительные кадры проверить не удалось." });
+              });
+            }).catch(() => {
+              updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+                "Клип сохранён и первый кадр декодирован. " +
+                durationEvidence.message + " Оценка FPS недоступна." });
+            });
+          }).catch(error => {
+            updateCurrentSession({ captureSaveError: (plan.incomplete ? plan.message + " " : "") +
+              "Видео сохранено, но декодирование не подтверждено: " +
+              (error instanceof Error ? error.message : String(error)) });
+          });
+        }).catch((error: unknown) => {
+          updateCurrentSession({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+        });
+      })().catch((error: unknown) => {
+        updateCurrentSession({ recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+      }); };
+      const guard = createRecordingStopGuard(finalizeRecording, () => {
+        recorderError ||= "Видеокодировщик не подтвердил остановку за 12 секунд";
+      });
+      const requestStop = () => {
+        foldLoggingStarted = false;
+        durationClock.stopRequestedAt(performance.now());
+        guard.waitForStop();
+      };
+      stopWatch = requestStop;
+      recordingStopWatch.current = requestStop;
+      recorder.onstop = guard.finish;
+      startGuard = createRecorderStartGuard(() => {
+        recorderError ||= "Видеокодировщик не подтвердил запуск за 8 секунд";
+        stopReasonRef.current = recorderError;
+        updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: recorderError });
+        requestStop();
+        if (recorder.state !== "inactive") {
+          try { recorder.stop(); } catch { /* onstop guard salvages existing chunks */ }
+        } else guard.finish();
+      });
+      recordingStartCancel.current = startGuard.cancel;
+      for (const track of sourceInputTracks) {
+        const handler: EventListener = () => {
+          if (recorder.state === "inactive") return;
+          const reason = recordingInputLostReason(track.kind === "audio" ? "audio" : "video");
+          recorderError ||= reason;
+          if (!stopReasonRef.current) stopReasonRef.current = reason;
+          updateCurrentSession({ recording: false, recordingPhase: "stopping", captureSaveError: reason });
+          recordingStartCancel.current?.();
+          recordingStopWatch.current?.();
+          try { recorder.stop(); } catch { /* stop guard salvages emitted data */ }
+        };
+        track.addEventListener("ended",handler,{once:true});
+        lostInputHandlers.push({track,handler});
+      }
+      recorder.start(1000);
+      window.addEventListener(FOLD_EVENT, onFold);
+    } catch (error) {
+      // MediaRecorder.start() can throw synchronously. Cancel its 8-second
+      // watchdog now, otherwise a stale timeout may later stop a NEW capture.
+      startGuard?.cancel();
+      detachLostInputHandlers?.();
+      if (recordingStartCancel.current === startGuard?.cancel) recordingStartCancel.current = null;
+      if (stopWatch && recordingStopWatch.current === stopWatch) recordingStopWatch.current = null;
+      if (createdRecorder) {
+        if (createdRecorder.state !== "inactive") {
+          try { createdRecorder.stop(); } catch { /* existing onstop salvages data */ }
+        } else {
+          createdRecorder.onstart = null; createdRecorder.onerror = null;
+          createdRecorder.ondataavailable = null; createdRecorder.onstop = null;
+          createdRecorder.onpause = null; createdRecorder.onresume = null;
+        }
+      }
+      if (recorderRef.current === createdRecorder) recorderRef.current = null;
+      pipeRef.current?.stop(); pipeRef.current = null;
+      recordingAudio.current = null;
+      void gainCtx?.close();
+      s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: error instanceof Error ? error.message : String(error) });
+    }
+  }, [s.recording, stream, s.dualCamera, s.captureKind]);
+  useEffect(() => {
+    if (!s.dualCamera || s.captureKind !== "video") return;
+    if (!s.recording) {
+      if (dualSession.current) dualSession.current.stop(
+        s.captureSaveError === REMOTE_DIRECTOR_LOST_REASON ? REMOTE_DIRECTOR_LOST_REASON : "");
+      else if (!dualSessionStarting.current && s.recordingPhase === "stopping")
+        s.set({ recordingPhase: "idle", recordingStartedAt: null });
+      return;
+    }
+    if (dualSession.current || dualSessionStarting.current) return;
+    if (!independentStreamsReady(stream, secondaryStream)) {
+      s.set({ recording: false, recordingPhase: "error", captureSaveError: "Dual Camera: две разные живые камеры не подтверждены. Выберите вторую камеру." });
+      return;
+    }
+    dualSessionStarting.current = true;
+    try {
+      const dualGeneration = ++recordingSessionGeneration.current;
+      const updateCurrentDual = (value: Parameters<typeof s.set>[0]) => {
+        if (canPublishCaptureStatus(recordingSessionGeneration.current, dualGeneration, cameraMounted.current)) s.set(value);
+      };
+      s.set({ recordingPhase: "starting", captureSaveError: "" });
+      const dualStartedAt = Date.now();
+      const session = startDualRecording(stream!, secondaryStream!, skew => {
+        markUnfinishedCapture("dual", dualStartedAt);
+        updateCurrentDual({ recording: true, recordingStartedAt: Date.now(), recordingPhase: "recording",
+          captureSaveError: "Два кодировщика запущены. Разница старта " + skew + " мс; синхронизация кадров не проверена." });
+      });
+      dualSession.current = session;
+      void session.done.then(result => {
+        if (result.savedIds.length) clearUnfinishedCapture("dual", dualStartedAt);
+        updateCurrentDual({ recording: false, recordingStartedAt: null,
+          recordingPhase: result.paired ? "saved" : "error", captureSaveError: result.message });
+        // The library must refresh even if a newer camera screen is active.
+        if (result.savedIds.length) window.dispatchEvent(new Event("multicam-clips-changed"));
+      }).catch(error => {
+        updateCurrentDual({ recording: false, recordingStartedAt: null, recordingPhase: "error",
+          captureSaveError: "Dual Camera: " + String(error) });
+      }).finally(() => { if (dualSession.current === session) dualSession.current = null; });
+    } catch (error) {
+      s.set({ recording: false, recordingStartedAt: null, recordingPhase: "error", captureSaveError: String(error) });
+    } finally { dualSessionStarting.current = false; }
+  }, [s.recording, s.dualCamera, s.captureKind, stream, secondaryStream]);
   useEffect(() => () => {
+    // Old asynchronous recorder callbacks cannot change the new screen state.
+    recordingSessionGeneration.current++;
     const recorder = recorderRef.current;
-    if (recorder && recorder.state !== "inactive") recorder.stop();
-    pipeRef.current?.stop(); mesh.selfRecording = false;
-    s.set({ recording: false, recordingStartedAt: null, paused: false });
+    dualSession.current?.stop("Экран камеры закрыт");
+    if (recorder && recorder.state !== "inactive") {
+      recordingStartCancel.current?.();
+      recordingStopWatch.current?.();
+      try { recorder.stop(); } catch { /* fallback finalizes available chunks */ }
+    }
+    // Recorder onstop owns encoder buffers until its save transaction completes.
+    if (!recorder || recorder.state === "inactive") pipeRef.current?.stop();
+    mesh.selfRecording = false;
+    // MediaRecorder callbacks from the destroyed component are intentionally
+    // invalidated. Publish an uncertainty state instead of waiting forever
+    // for a "saved" callback that can no longer update shared navigation.
+    const latest=lastRecordingState.current;
+    if(interruptedOnCameraExit(latest.phase,Boolean(recorder||dualSession.current))){
+      s.set({recording:false,recordingPhase:"error",recordingStartedAt:null,paused:false,
+        captureSaveError:STALE_CAPTURE_MESSAGE});
+    } else {
+      s.set({recording:false,recordingStartedAt:null,paused:false});
+    }
   }, [s.set]);
   useEffect(() => {
     const r = recorderRef.current; if (!r) return;
@@ -172,44 +839,99 @@ export function CameraTab() {
   const wbTint = s.wbKelvin === null ? "" : s.wbKelvin < 5600 ? ` sepia(${((5600 - s.wbKelvin) / 3100) * 0.35})` : ` hue-rotate(${((s.wbKelvin - 5600) / 2400) * -12}deg) saturate(.92)`;
   const previewFilter = [s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ");
   const notify = (m: string) => { setPhotoMsg(m); window.setTimeout(() => setPhotoMsg(""), 2500); };
+  // Closing/switching the camera cancels expensive photo pixel loops rather
+  // than letting a stale 40-frame exposure pin the old WebView memory.
+  useEffect(() => () => { activePhoto.current?.abort(); }, [stream]);
   const shootOnce = async () => {
-    if (!mountedRef.current) return;
+    if (photoBusy.current) return;
+    const photoAbort = new AbortController();
+    activePhoto.current = photoAbort;
+    photoBusy.current = true; setPhotoProcessing(true);
+    try {
+    if (s.shoot.raw) {
+      const target = rawCameras.find(c => c.cameraId === s.rawCameraId);
+      if (!target) { notify("RAW: выберите камеру Android Camera2 в параметрах съёмки"); return; }
+      if (s.recording || cameraSwitchBlocked) { notify("RAW во время видеозаписи недоступен"); return; }
+      // WebView currently owns the camera. Camera2 cannot open the same sensor
+      // until the active MediaStream is actually released.
+      cameraController.release(owner.current);
+      setStream(null); setCameraState("loading");
+      try {
+        const output = await captureRealDng(target.cameraId);
+        if (cameraMounted.current) notify("Настоящий DNG сохранён: " + output.bytes + " байт. CAM " + output.cameraId);
+      } catch (error) {
+        if (cameraMounted.current) notify("RAW не сохранён: " + (error instanceof Error ? error.message : String(error)));
+      } finally {
+        if (cameraMounted.current) {
+          // Restore the previous user-selected WebView lens; never silently
+          // claim that Camera2 ID equals the WebView device ID.
+          const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
+          const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
+          try {
+            const restored = await acquireWebViewPreviewWithNativeGuard(
+              owner.current,{video,audio},isNative()?()=>nativeCapture.status():null,
+              {isCurrent:()=>cameraMounted.current},
+            );
+            if (cameraMounted.current) { setStream(restored); setCameraState("live"); }
+            else restored.getTracks().forEach(track => track.stop());
+          } catch (error) {
+            if (cameraMounted.current) {
+              setCameraState("unavailable");
+              notify("RAW завершён, но не удалось восстановить предпросмотр: " + String(error));
+            }
+          }
+        }
+      }
+      return;
+    }
     const v = videoRef.current; if (!v || cameraState !== "live" || !v.videoWidth) { notify("Камера недоступна — снимок невозможен"); return; }
     const sh = s.shoot; const shots: Blob[] = []; let mode = "single";
     if (sh.bracket) {
       mode = "bracket"; const r = capRange(trackCaps(stream), "exposureCompensation");
-      for (const ev of [-2, 0, 2]) { if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) }); await wait(400); const b = await grabFrames(v, previewFilter, 1, 0); if (b) shots.push(b); }
+      for (const ev of [-2, 0, 2]) { if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) }); await wait(400); const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); }
       if (r) await applyAdvanced(stream, { exposureCompensation: 0 });
-    } else if (sh.burst) { mode = "burst"; for (let k = 0; k < 5; k++) { const b = await grabFrames(v, previewFilter, 1, 0); if (b) shots.push(b); await wait(120); } }
-    else if (sh.night) { mode = s.aiEnabled ? "night-ml" : "night"; const b = await grabFrames(v, previewFilter, s.aiEnabled ? 12 : 8, s.aiEnabled ? 900 : 600); if (b) shots.push(b); }
-    else if (sh.longExp) { mode = "long-exposure"; const b = await grabFrames(v, previewFilter, 40, 2000); if (b) shots.push(b); }
-    else { const b = await grabFrames(v, previewFilter, 1, 0); if (b) shots.push(b); }
+    } else if (sh.burst) { mode = "burst"; for (let k = 0; k < 5; k++) { const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); await wait(120); } }
+    else if (sh.night) { mode = s.aiEnabled ? "night-ml" : "night"; const b = await grabFrames(v, previewFilter, s.aiEnabled ? 12 : 8, s.aiEnabled ? 900 : 600, photoAbort.signal); if (b) shots.push(b); }
+    else if (sh.longExp) { mode = "long-exposure"; const b = await grabFrames(v, previewFilter, 40, 2000, photoAbort.signal); if (b) shots.push(b); }
+    else { const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); }
+    if (photoAbort.signal.aborted) return;
     if (!shots.length) { notify("Не удалось получить кадр"); return; }
-    for (const b of shots) await savePhoto(b, { mode, camera: s.activeCamera, facing: s.facing });
+    for (const b of shots) {
+      if (photoAbort.signal.aborted) return;
+      await savePhoto(b, { mode, camera: s.activeCamera, facing: s.facing });
+    }
     setFlash((f) => f + 1); setLastPhoto((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(shots[shots.length - 1]!); });
-    notify(shots.length > 1 ? `Сохранено ${shots.length} фото` : "Фото сохранено");
+    notify(shots.length > 1 ? `Сохранено ${shots.length} кадров из видеопотока` : "Кадр видеопотока сохранён");
+    } catch (error) {
+      notify("Кадр не сохранён: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      if (activePhoto.current === photoAbort) activePhoto.current = null;
+      photoBusy.current = false;
+      if (cameraMounted.current) setPhotoProcessing(false);
+    }
   };
   const capturePhoto = async () => {
-    if (photoBusy.current) return; photoBusy.current = true; setCapturing(true);
-    try {
     if (intervalRef.current) { window.clearInterval(intervalRef.current); intervalRef.current = null; setIntervalOn(false); notify("Интервальная съёмка остановлена"); return; }
     if (countdown) return;
-    if (s.shoot.timer) { for (let k = s.shoot.timer; k > 0; k--) { if (!mountedRef.current) return; setCountdown(k); await wait(1000); } setCountdown(0); }
+    if (s.shoot.timer) { for (let k = s.shoot.timer; k > 0; k--) { setCountdown(k); await wait(1000); } setCountdown(0); }
     await shootOnce();
-    if (s.shoot.interval && mountedRef.current) { intervalRef.current = window.setInterval(() => { if (photoBusy.current) return; photoBusy.current = true; void shootOnce().catch(() => { if (mountedRef.current) notify("Не удалось сохранить фото"); }).finally(() => { photoBusy.current = false; }); }, s.shoot.interval * 1000); setIntervalOn(true); }
-    } catch { if (mountedRef.current) notify("Не удалось сохранить фото"); }
-    finally { photoBusy.current = false; if (mountedRef.current) setCapturing(false); }
+    if (s.shoot.interval) { intervalRef.current = window.setInterval(() => void shootOnce(), s.shoot.interval * 1000); setIntervalOn(true); }
   };
   const meterIcon = s.meterMode === "matrix" ? <Grid3x3 className="size-3.5" /> : s.meterMode === "center" ? <Circle className="size-3.5" /> : <Crosshair className="size-3.5" />;
   const meterLabel = s.meterMode === "matrix" ? "Матричный" : s.meterMode === "center" ? "Центральный" : "Точечный";
   const toggleHud = (h: Hud) => setHud((cur) => cur === h ? null : h);
   const gridName = GRIDS.find((g) => g.id === s.grid)?.label ?? "Выкл";
 
-  return <div className={`camera-screen text-foreground ${clean ? "clean" : ""}`}>
-    <section className={`absolute inset-0 overflow-hidden bg-viewfinder ${s.recording && !clean ? "tally-frame" : ""}`}>
-      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="simulated-feed absolute inset-0"><div className="horizon" /></div>}
+  return <div className={`camera-screen text-foreground ${clean ? "clean" : ""} ${cameraState !== "live" ? "camera-offline" : ""}`}>
+    <section className={`camera-live-view absolute inset-0 overflow-hidden ${cameraState === "live" ? "bg-viewfinder" : "camera-preview-placeholder"} ${s.recording && !clean ? "tally-frame" : ""}`}>
+      {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-foreground" role="status"><div className="camera-preview-status relative z-10 w-full max-w-md rounded-2xl px-4 py-5">
+        <Camera aria-hidden="true" className="camera-preview-symbol mx-auto size-8 text-primary" />
+        <p>{!previewRequested ? "Проверка завершена. Камера не открывалась." : cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</p>
+        {cameraState !== "loading" && !nativeOwnsCamera && <button type="button" className="camera-preview-retry" onClick={() => { setPreviewRequested(true); setHotplugRevision(revision => revision + 1); }}><Camera aria-hidden="true" className="size-4" />Включить камеру</button>}
+       </div></div>}
+      {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording || isDualEncoderStillFinishing(s.recordingPhase)} hidden={clean} />}
       {!clean && <>
-        {s.dualCamera && <div className="absolute end-3 top-28 aspect-[3/4] w-[22%] min-w-20 overflow-hidden rounded-md border border-glass bg-viewfinder shadow-2xl"><div className="simulated-feed h-full" /></div>}
+        {s.dualCamera && s.recording && <div className="absolute end-3 top-10 rounded-md bg-card p-2 text-[10px] text-muted-foreground">Dual Camera · две отдельные дорожки (без покадровой синхронизации)</div>}
         {s.focusPeaking && <div className="focus-peaking pointer-events-none absolute inset-0" />}
         {s.zebras && <div className="zebra-overlay pointer-events-none absolute inset-0 opacity-30" />}
         {s.grid !== "off" && <div className={`pointer-events-none absolute inset-0 grid-overlay grid-${s.grid}`} />}
@@ -221,10 +943,12 @@ export function CameraTab() {
       {countdown > 0 && <div className="pointer-events-none absolute inset-0 grid place-items-center text-7xl font-bold text-foreground drop-shadow-lg">{countdown}</div>}
     </section>
 
+    {!clean && deviceSwitchQueued && <div role="status" className="absolute inset-x-3 bottom-40 z-30 rounded-md border border-border bg-card px-3 py-2 text-xs text-foreground">Смена объектива/микрофона отложена до завершения сохранения текущего видео.</div>}
+    {!clean && s.captureSaveError && <div role="alert" className="absolute inset-x-3 bottom-28 z-30 rounded-md border border-warning bg-card px-3 py-2 text-xs text-foreground">{s.captureSaveError}</div>}
     {/* HUD status bar */}
-    <div className="absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
-      {!clean && <div className="scrollbar-none flex min-w-0 flex-1 gap-1 overflow-x-auto">
-        <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : t("sim")}</span>
+    <div className="camera-hud absolute inset-x-2 top-2 z-20 flex items-start gap-1.5">
+      {!clean && <div className="camera-hud-controls scrollbar-none flex min-w-0 flex-1 gap-1">
+        <span className="hud-chip"><span className={`h-1.5 w-1.5 rounded-full ${cameraState === "live" ? "bg-status" : "bg-warning"}`} />{cameraState === "live" ? t("live") : !previewRequested ? "СИМ" : cameraState === "loading" ? "…" : "НЕТ КАМЕРЫ"}</span>
         <button className={`hud-chip ${hud === "shutter" ? "active" : ""}`} onClick={() => toggleHud("shutter")}>{s.shutter}s</button>
         <button className={`hud-chip ${hud === "iso" ? "active" : ""} ${camCaps && !camCaps.iso ? "opacity-40" : ""}`} onClick={() => toggleHud("iso")}>ISO {s.capture.iso ?? "A"}</button>
         <button className={`hud-chip ${hud === "wb" ? "active" : ""}`} onClick={() => toggleHud("wb")}>WB {s.wbKelvin ? `${s.wbKelvin}K` : "A"}</button>
@@ -253,10 +977,10 @@ export function CameraTab() {
       {peers.map((n, i) => <button key={n.id} onClick={() => s.set({ activeCamera: i + 2 })} className={`glass-panel min-w-[7rem] rounded-md px-2 py-1.5 text-start text-[10px] ${s.activeCamera === i + 2 ? "ring-1 ring-primary" : ""}`}><div className="flex items-center justify-between gap-1"><span className="truncate font-semibold">CAM {i + 2} · {n.name}</span><span className={n.recording ? "text-record" : "text-status"}>●</span></div><div className="mt-0.5 flex justify-between gap-1 text-muted-foreground"><span>{n.battery ?? "–"}%</span><span>{n.storageMB ?? "–"} MB</span><span>{n.latency ?? "–"}ms</span></div></button>)}
     </div>}
 
-    {!clean && <div className="absolute inset-x-3 bottom-[12.25rem] z-10"><FocusRail stream={stream} />{focusWarning && <p role="alert" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">Ручной фокус: камера не сообщает диапазон фокусировки</p>}{focusError && <p role="status" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">{focusError}</p>}</div>}
+    {!clean && <div className="absolute inset-x-3 bottom-[12.25rem] z-10">{cameraState !== "live" && <div className="camera-focus-status glass-panel flex items-center justify-center rounded-full px-3 py-2 text-center text-xs"><Focus aria-hidden="true" className="mr-2 size-4 shrink-0" /><span>Ручной фокус: камера не сообщает диапазон фокусировки</span></div>}<FocusRail stream={stream} />{focusWarning && <p role="alert" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">Ручной фокус: камера не сообщает диапазон фокусировки</p>}{focusError && <p role="status" className="glass-panel rounded-lg px-3 py-2 text-center text-xs">{focusError}</p>}</div>}
 
     {/* Settings sheet with accordions */}
-    <AnimatePresence>{sheet && !clean && <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 380, damping: 34 }} className="glass-panel absolute inset-x-2 bottom-2 top-2 z-30 overflow-y-auto overscroll-contain rounded-2xl p-2 text-xs">
+    <AnimatePresence>{sheet && !clean && <motion.div initial={{ y: 40, opacity: 0 }} animate={{ y: 0, opacity: 1 }} exit={{ y: 40, opacity: 0 }} transition={{ type: "spring", stiffness: 380, damping: 34 }} className="camera-settings-sheet glass-panel absolute inset-x-2 bottom-2 top-2 z-30 overflow-y-auto overscroll-contain rounded-2xl p-2 text-xs">
       <div className="sticky -top-2 z-10 -mx-2 -mt-2 mb-1 flex items-center justify-between bg-card px-3 py-2"><b className="text-xs">Параметры</b><button aria-label="Закрыть параметры" onClick={() => setSheet(false)} className="rounded-full p-1 text-muted-foreground hover:text-foreground"><X className="size-4" /></button></div>
       <Accordion title="Инструменты кадра" defaultOpen>
         <div className="flex flex-wrap gap-1.5">
@@ -264,7 +988,7 @@ export function CameraTab() {
           <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.eyeAF ? "default" : "outline"} title={faceDetectorAvailable() ? "Следящий автофокус по лицу/глазам" : "Следящий AF (детектор лиц в этом браузере недоступен — только AF-C)"} onClick={() => s.set({ eyeAF: !s.eyeAF })}><ScanFace />Трекинг / Глаза</Button><HelpDot id="track" /></span>
           <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.falseColor ? "default" : "outline"} onClick={() => s.set({ falseColor: !s.falseColor })}><Palette />Ложные цвета</Button><HelpDot id="falseColor" /></span>
           <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.audioUi ? "default" : "outline"} onClick={() => s.set({ audioUi: !s.audioUi })}><AudioLines />Звук‑метр</Button><HelpDot id="audioMeter" /></span>
-          <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.dualCamera ? "default" : "outline"} onClick={() => s.set({ dualCamera: !s.dualCamera })}><Video />{t("dual")}</Button><HelpDot id="dual" /></span>
+          <span className="inline-flex items-center gap-0.5"><Button size="sm" variant={s.dualCamera ? "default" : "outline"} disabled={cameraSwitchBlocked} onClick={() => s.set({ dualCamera: !s.dualCamera })}><Video />{t("dual")}</Button><HelpDot id="dual" /></span>
         </div>
       </Accordion>
       <Accordion title="Объектив">
@@ -281,7 +1005,7 @@ export function CameraTab() {
         <ColorTuning />
       </Accordion>
       <Accordion title="Режимы съёмки">
-        <ShootingModes stream={stream} rawNative={rawNative} />
+        <ShootingModes stream={stream} rawNative={rawNative} rawCameras={rawCameras} />
       </Accordion>
       {s.aiEnabled && <Accordion title="ИИ‑фокус">
         <div className="flex flex-wrap gap-1.5">{([["continuous", "AF‑C"], ["face", "Лицо"], ["hybrid_nearest_priority", "Ближайший объект"]] as const).map(([m, l]) => <Button key={m} size="sm" variant={s.focusModeAI === m ? "default" : "outline"} onClick={() => s.set({ focusModeAI: m })}>{l}</Button>)}</div>
@@ -291,26 +1015,27 @@ export function CameraTab() {
         <TeleprompterControls />
       </Accordion>
       <Accordion title="Профессиональная съёмка">
-        <CaptureProPanel stream={stream} videoRef={videoRef} />
+        {onOpenNativeMode && <Button type="button" size="sm" variant="outline" className="mb-3 w-full" onClick={onOpenNativeMode}>Перейти в Camera2</Button>}
+         <CaptureProPanel stream={stream} videoRef={videoRef} />
       </Accordion>
     </motion.div>}</AnimatePresence>
 
     {/* Bottom control dock */}
-    <div className="absolute inset-x-0 bottom-6 z-20 px-4">
+    <div className="camera-record-dock absolute inset-x-0 bottom-6 z-20 px-4">
       <div className="grid grid-cols-[1fr_auto_1fr] items-end gap-3">
         <div className="mb-4 flex items-center justify-start gap-1.5">{!clean && <>
-          <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={cameraState === "loading" || s.recording || (s.capMatrix ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false)} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>
+          <Button size="icon" variant="secondary" aria-label={t("switchCamera")} disabled={cameraState === "loading" || s.recording || (s.capMatrix && s.capMatrix.permissions.camera !== "not-requested" ? !s.capMatrix[s.facing === "rear" ? "front" : "rear"].available : false)} onClick={() => s.set({ facing: s.facing === "rear" ? "front" : "rear", capture: { ...s.capture, iso: null, focus: null, exposure: null }, wbKelvin: null })}><Camera /></Button>
           <Button size="icon" variant={sheet ? "default" : "secondary"} aria-label="Параметры" aria-expanded={sheet} onClick={() => { setHud(null); setSheet(!sheet); }}><SlidersHorizontal /></Button>
         </>}</div>
         <div className="flex flex-col items-center gap-2">{!clean && <>
-          <div className="flex flex-col items-center pt-1"><span className={`glass-panel inline-block rounded-full px-3 py-1 font-mono text-sm font-semibold tabular-nums ${s.recording ? "text-record" : ""}`}>{formatTime(elapsed)}</span></div>
+          <div className="flex flex-col items-center pt-1"><CameraRecordingTimecode recording={s.recording} startedAt={s.recordingStartedAt} /></div>
           <div className="segmented-mini" role="radiogroup" aria-label="Фото или видео">{(["photo", "video"] as const).map((k) => <button key={k} role="radio" aria-checked={s.captureKind === k} disabled={s.recording || intervalOn} onClick={() => s.set({ captureKind: k })} className={s.captureKind === k ? "active" : ""}>{k === "photo" ? "ФОТО" : "ВИДЕО"}</button>)}</div>
         </>}
-          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || capturing} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
+          <motion.button whileTap={{ scale: .9 }} aria-label={s.recording ? t("stopRec") : t("startRec")} disabled={s.role === "slave" || cameraState !== "live" || countdown > 0 || photoProcessing || ["starting", "stopping", "saving"].includes(s.recordingPhase)} onClick={() => s.captureKind === "photo" ? void capturePhoto() : s.toggleRecording()} className={`record-shutter ${s.captureKind === "photo" ? "photo" : ""} ${s.recording || intervalOn ? "recording" : ""} ${s.role === "slave" ? "locked" : ""}`}>{s.role === "slave" ? <Lock className="size-6" /> : <span />}</motion.button>
         </div>
         <div className="mb-4 flex justify-end gap-1.5">{!clean && <>
           {s.captureKind === "photo" ? (lastPhoto ? <a href={lastPhoto} download={`multicam-photo-${Date.now()}.jpg`} aria-label="Скачать последнее фото" className="size-9 overflow-hidden rounded-md border border-border"><img src={lastPhoto} alt="Последнее фото" className="h-full w-full object-cover" /></a> : <Button size="icon" variant="secondary" disabled aria-label="Нет фото"><Download /></Button>) :
-          <Button size="icon" variant="secondary" disabled={!s.recording} aria-label={s.paused ? "Продолжить" : "Пауза"} onClick={() => s.set({ paused: !s.paused })}>{s.paused ? <Play /> : <Pause />}</Button>}
+          <Button size="icon" variant="secondary" disabled={!s.recording || s.dualCamera} title={s.dualCamera ? "Пауза двух видеодорожек пока не поддерживается" : undefined} aria-label={s.paused ? "Продолжить" : "Пауза"} onClick={() => s.set({ paused: !s.paused })}>{s.paused ? <Play /> : <Pause />}</Button>}
           <Button size="icon" variant="secondary" aria-label={t("addMarker")} onClick={s.addMarker}><CircleDot /></Button>
         </>}</div>
       </div>

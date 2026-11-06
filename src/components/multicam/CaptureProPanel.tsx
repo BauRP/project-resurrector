@@ -4,12 +4,14 @@ import { Slider } from "@/components/ui/slider";
 import { useMulticamStore, type CaptureMode, type ToneProfile } from "@/lib/multicam-store";
 import { HelpDot } from "./Help";
 import { MultiCamNative, isNative, thermalLabel, type NativeCapabilities } from "@/lib/native";
+import { recordModeEvidence } from "@/lib/camera-passport";
+import { assessTrackMode } from "@/lib/capture-mode-transaction";
 
 const RES: Record<string, [number, number]> = { "720p": [1280, 720], "1080p": [1920, 1080], "2K": [2560, 1440], "4K": [3840, 2160] };
 const FPS = [24, 30, 60];
 const CODECS: Record<string, string> = { VP8: "video/webm;codecs=vp8,opus", VP9: "video/webm;codecs=vp9,opus", AV1: "video/webm;codecs=av01,opus", "H.264": "video/mp4;codecs=avc1,mp4a.40.2" };
 const MODES: { id: CaptureMode; label: string }[] = [{ id: "normal", label: "Обычный" }, { id: "slowmo120", label: "Slow‑mo 120" }, { id: "slowmo240", label: "Slow‑mo 240" }, { id: "timelapse", label: "Time‑lapse" }, { id: "hyperlapse", label: "Hyperlapse" }];
-const PROFILES: { id: ToneProfile; label: string }[] = [{ id: "standard", label: "Стандарт" }, { id: "log", label: "LOG" }, { id: "flat", label: "FLAT" }, { id: "directlog", label: "Direct Log" }];
+const PROFILES: { id: ToneProfile; label: string }[] = [{ id: "standard", label: "Стандарт" }, { id: "log", label: "LOG-стиль" }, { id: "flat", label: "FLAT-стиль" }, { id: "directlog", label: "Direct Log-стиль" }];
 
 export const codecMime = (codec: string) => CODECS[codec] ?? "video/webm";
 export const toneFilter = (p: ToneProfile) => p === "log" ? "contrast(0.72) saturate(0.7) brightness(1.12)" : p === "flat" ? "contrast(0.85) saturate(0.85) brightness(1.05)" : p === "directlog" ? "contrast(0.62) saturate(0.6) brightness(1.18)" : "none";
@@ -20,11 +22,15 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
   const s = useMulticamStore(); const c = s.capture;
   const [caps, setCaps] = useState<Caps | null>(null);
   const [notice, setNotice] = useState("");
+  const [stabilization, setStabilization] = useState<{ state: string; reason: string }>({ state: "unknown", reason: "Системная стабилизация: состояние неизвестно" });
   const [mics, setMics] = useState<MediaDeviceInfo[]>([]);
   const [level, setLevel] = useState({ rms: -90, peak: -90 });
   const [dropped, setDropped] = useState(0);
   const [thermal, setThermal] = useState<string>("Недоступно в браузере");
   const peakRef = useRef(-90);
+  const configRevision = useRef(0);
+  const applyingMode = useRef(false);
+  useEffect(() => () => { configRevision.current++; }, [stream]);
   const m = s.capMatrix?.[s.facing] ?? null; const NS = "Не поддерживается";
   const update = (patch: Partial<typeof c>) => s.set({ capture: { ...c, ...patch } });
   const warn = (msg: string) => { setNotice(msg); window.setTimeout(() => setNotice(""), 3500); };
@@ -36,8 +42,9 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     const base: Caps = { maxW: tc['width']?.max ?? 0, maxH: tc['height']?.max ?? 0, maxFps: tc['frameRate']?.max ?? 0, iso: range("iso"), focus: range("focusDistance"), exposure: range("exposureTime"), highSpeed: [] };
     if (isNative()) {
       MultiCamNative.getCapabilities().then((n: NativeCapabilities) => {
-        const hs = n.cameras.flatMap((cam) => cam.highSpeed.flatMap((h) => h.fps));
-        setCaps({ ...base, highSpeed: [...new Set(hs)], maxFps: Math.max(base.maxFps, ...hs.filter((f) => f <= 60), 0) });
+        // Native Camera2 ID cannot safely be equated with WebView deviceId.
+        // Never mix high-speed modes of multiple physical cameras.
+        setCaps(base);
       }).catch(() => setCaps(base));
     } else setCaps(base);
   }, [stream]);
@@ -49,11 +56,15 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     const ctx = new AudioContext(); const src = ctx.createMediaStreamSource(stream); const an = ctx.createAnalyser(); an.fftSize = 1024; src.connect(an);
     const buf = new Float32Array(an.fftSize); let raf = 0; let last = 0;
     const tick = (t: number) => {
+      // Only sample the audio analyser at 25Hz, not once per 60/120Hz screen
+      // refresh. Keep the meter, peak hold and original recorder graph.
+      if (t - last < 40) { raf = requestAnimationFrame(tick); return; }
       an.getFloatTimeDomainData(buf); let sum = 0; let pk = 0;
       for (const v of buf) { sum += v * v; pk = Math.max(pk, Math.abs(v)); }
       const rms = 20 * Math.log10(Math.sqrt(sum / buf.length) || 1e-5); const peak = 20 * Math.log10(pk || 1e-5);
       peakRef.current = Math.max(peak, peakRef.current - 0.6);
-      if (t - last > 60) { last = t; setLevel({ rms: Math.max(-90, rms), peak: Math.max(-90, peakRef.current) }); }
+      last=t;
+      setLevel({ rms: Math.max(-90, rms), peak: Math.max(-90, peakRef.current) });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -68,21 +79,88 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     return () => window.clearInterval(id);
   }, [videoRef]);
 
-  const resOk = (r: string) => (!m || m.resolutions.includes(r)) && (!caps || !caps.maxW || (RES[r]![0] <= Math.max(caps.maxW, caps.maxH) && RES[r]![1] <= Math.min(caps.maxW, caps.maxH) + 1));
-  const fpsOk = (f: number) => (!m || m.fps.includes(f)) && (!caps || !caps.maxFps || f <= caps.maxFps);
+  useEffect(() => {
+    const track = stream?.getVideoTracks()[0];
+    if (!track || track.readyState !== "live") {
+      setStabilization({ state: "unknown", reason: "Системная стабилизация: нет активной камеры" });
+      return;
+    }
+    // WebView usually does not expose Camera2 CaptureResult. Never infer that
+    // EIS or OIS is enabled based on a Camera2 declaration for a different ID.
+    const reported = track.getSettings() as MediaTrackSettings & { videoStabilizationMode?: string };
+    const value = reported.videoStabilizationMode;
+    setStabilization(value
+      ? { state: "reported", reason: "Стабилизация потока: " + value + " (сообщает WebView, видео ещё не проверено)" }
+      : { state: "unknown", reason: "Системная стабилизация: состояние неизвестно" });
+  }, [stream, c.resolution, c.fps, c.profile]);
+
+  const resOk = (r: string) => (!m || m.resolutions.includes(r) || (m.candidateResolutions ?? []).includes(r)) && (!caps || !caps.maxW || (RES[r]![0] <= Math.max(caps.maxW, caps.maxH) && RES[r]![1] <= Math.min(caps.maxW, caps.maxH) + 1));
+  const fpsOk = (f: number) => !m || m.fps.includes(f) || (m.candidateFps ?? []).includes(f) || (caps?.highSpeed ?? []).includes(f);
+  // Available FPS is a candidate only: verify the selected camera/size/FPS together at runtime.
   const codecOk = (k: string) => (!s.capMatrix || s.capMatrix.codecs.includes(k)) && typeof MediaRecorder !== "undefined" && MediaRecorder.isTypeSupported(CODECS[k]!);
-  const modeOk = (md: CaptureMode) => { const hs = [...(caps?.highSpeed ?? []), ...(m?.highSpeed ?? [])]; const mx = Math.max(caps?.maxFps ?? 0, m?.maxFps ?? 0); return md === "slowmo120" ? hs.includes(120) || mx >= 120 : md === "slowmo240" ? hs.includes(240) || mx >= 240 : true; };
+  // High-speed Camera2 recorder is not mapped to the active WebView lens.
+  const modeOk = (md: CaptureMode) => !["slowmo120", "slowmo240"].includes(md);
   const blocked = (what: string) => warn(`${what}: не поддерживается ${s.facing === "front" ? "фронтальной" : "основной"} камерой — выбор заблокирован для защиты от перегрева и сбоев.`);
 
   const applyTrack = (patch: Partial<typeof c>) => {
-    const next = { ...c, ...patch }; update(patch);
-    const track = stream?.getVideoTracks()[0]; if (!track) return;
+    // Do not submit parallel hardware configurations. The driver might
+    // apply an old request after a newer UI choice or camera replacement.
+    if (applyingMode.current || s.recording) {
+      warn("Настройки камеры заняты или идёт запись. Дождитесь завершения.");
+      return;
+    }
+    const next = { ...c, ...patch };
+    const revision = ++configRevision.current;
+    const track = stream?.getVideoTracks()[0];
+    if (!track || track.readyState !== "live") { blocked("Камера"); return; }
+    let previous: MediaTrackConstraints;
+    try { previous = track.getConstraints(); }
+    catch { warn("Не удалось прочитать предыдущий режим камеры."); return; }
+    applyingMode.current = true;
+    const current = () => revision === configRevision.current && track.readyState === "live";
+    const rollback = async () => {
+      if (!current()) return;
+      try { await track.applyConstraints(previous); }
+      catch { if (current()) warn("Откат камеры не подтверждён. Переоткройте видоискатель."); }
+    };
     const [w, h] = RES[next.resolution]!;
     const advanced: Record<string, unknown>[] = [];
     if (next.iso !== null) advanced.push({ exposureMode: "manual", iso: next.iso });
     if (next.exposure !== null) advanced.push({ exposureMode: "manual", exposureTime: next.exposure });
     if (next.focus !== null) advanced.push({ focusMode: "manual", focusDistance: next.focus });
-    track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).catch(() => blocked("Этот режим"));
+    void track.applyConstraints({ width: { ideal: w }, height: { ideal: h }, frameRate: { ideal: next.fps }, advanced: advanced as MediaTrackConstraintSet[] }).then(async () => {
+      if (!current()) return;
+      let applied: MediaTrackSettings;
+      try { applied = track.getSettings(); }
+      catch { warn("Камера не сообщает фактические настройки; подтверждение невозможно."); return; }
+      const captureKey = applied.deviceId || track.id || "webview-unknown";
+      const requestedGeometry = "resolution" in patch || "fps" in patch;
+      const actualW = Math.max(applied.width ?? 0, applied.height ?? 0);
+      const actualH = Math.min(applied.width ?? 0, applied.height ?? 0);
+      const actualFps = applied.frameRate;
+      const modeState = assessTrackMode({width:w,height:h,fps:next.fps},applied);
+      const mismatch = requestedGeometry && modeState === "rejected";
+      if (requestedGeometry) recordModeEvidence({ cameraId: captureKey, api: "webview", requested: { width: w, height: h, fps: next.fps }, applied: { ...(applied.width !== undefined ? {width:applied.width} : {}),
+          ...(applied.height !== undefined ? {height:applied.height} : {}),
+          ...(actualFps !== undefined ? {fps:actualFps} : {}) }, state: requestedGeometry ? (modeState === "rejected" ? "rejected" : modeState === "confirmed" ? "applied" : "unknown") : "unknown", checkedAt: Date.now(), message: mismatch ? "Requested and applied capture geometry differ" : modeState === "unknown" ? "WebView did not report enough applied mode settings" : "WebView track settings confirmed; encoded output not verified" });
+      if (mismatch) {
+        warn(`Запрошено ${next.resolution} / ${next.fps} FPS, фактически ${applied.width ?? "?"}×${applied.height ?? "?"} / ${actualFps ?? "?"} FPS. Режим не подтверждён.`);
+        await rollback();
+        return;
+      }
+      if (requestedGeometry && modeState === "unknown") {
+        warn("Система не раскрыла применённый режим. Старые настройки сохранены в интерфейсе.");
+        await rollback();
+        return;
+      }
+      if (current()) update(patch);
+    }).catch(async () => {
+      if (!current()) return;
+      blocked("Этот режим");
+      await rollback();
+    }).finally(() => {
+      applyingMode.current = false;
+    });
   };
 
   const Chip = ({ ok, active, onPick, label, name }: { ok: boolean; active: boolean; onPick: () => void; label: string; name: string }) =>
@@ -95,6 +173,7 @@ export function CaptureProPanel({ stream, videoRef }: { stream: MediaStream | nu
     <Row title="Кадры/с" help="fps">{FPS.map((f) => <Chip key={f} name={`${f} fps`} label={`${f}`} ok={fpsOk(f)} active={c.fps === f} onPick={() => applyTrack({ fps: f })} />)}</Row>
     <Row title="Кодек" help="codec">{Object.keys(CODECS).map((k) => <Chip key={k} name={`Кодек ${k}`} label={k} ok={codecOk(k)} active={c.codec === k} onPick={() => update({ codec: k })} />)}</Row>
     <Row title="Режим" help="mode">{MODES.map((m) => <Chip key={m.id} name={m.label} label={m.label} ok={modeOk(m.id) && (!s.recording)} active={c.mode === m.id} onPick={() => update({ mode: m.id })} />)}</Row>
+    <div className="rounded-md border border-border bg-secondary p-2 text-[11px]" role="status"><b>Стабилизация</b><p className="mt-1 text-muted-foreground">{stabilization.reason}</p><p className="mt-1 text-muted-foreground">Программная стабилизация не включается поверх неподтверждённой системной. Наличие OIS/EIS в Camera2 не означает её работу в текущем WebView-режиме.</p></div>
     <Row title="Профиль" help="profile">{PROFILES.map((p) => <Chip key={p.id} name={p.label} label={p.label} ok active={c.profile === p.id} onPick={() => update({ profile: p.id })} />)}</Row>
     <Manual label="ISO" help="manualIso" range={m ? m.iso : caps?.iso ?? null} value={c.iso} onChange={(iso) => applyTrack({ iso })} />
     <Manual label="Выдержка (экспозиция)" help="exposure" range={m ? m.exposure : caps?.exposure ?? null} value={c.exposure} onChange={(exposure) => applyTrack({ exposure })} />
