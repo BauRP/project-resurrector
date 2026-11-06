@@ -47,7 +47,10 @@ describe("actual navigation across the three app workspaces",()=>{
     fireEvent.click(screen.getByRole("button",{name:"Настройки"}));
     expect(setItem.mock.calls.some(([key])=>key==="multicam-view-state-v1")).toBe(false);
     await waitFor(()=>expect(screen.getByTestId("settings-workspace")).toBeInTheDocument());
-    await waitFor(()=>expect(setItem.mock.calls.some(([key])=>key==="multicam-view-state-v1")).toBe(true),{timeout:1500});
+    // The restored view is deliberately persisted AFTER two paint frames.
+    // Even if WebView cannot provide frames, pagehide must preserve it.
+    window.dispatchEvent(new Event("pagehide"));
+    expect(setItem.mock.calls.some(([key])=>key==="multicam-view-state-v1")).toBe(true);
     setItem.mockRestore();
   },12000);
 

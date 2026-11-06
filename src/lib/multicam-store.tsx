@@ -244,6 +244,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       const state = store.getSnapshot(); const values = persistedKeys.map((k) => state[k]);
       const view = [state.tab, state.playhead, state.editMode, state.aspect, state.captureKind];
       if (!view.every((value, index) => Object.is(value, previousView[index]))) {
+        const tabChanged = view[0] !== previousView[0];
         // Latest user intent always beats an old startup repair. Otherwise a
         // delayed Camera recovery write could overwrite an Editor navigation.
         cancelStartupViewRepair?.();
