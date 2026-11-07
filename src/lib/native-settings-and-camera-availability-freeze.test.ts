@@ -38,14 +38,15 @@ describe("Settings staged native-first paint", () => {
     for(const tool of ['title={t.network}', 'title={t.storage}', 'title={t.engine}', '<CameraDiagnostics />', '<NativeRecordingPanel previewIntervalMs={850} />'])
       expect(settings).toContain(tool);
   });
-  it("keeps a bounded fallback if Android suppresses requestAnimationFrame", () => {
-    expect(settings).toContain("scheduleAfterPaintTask(() => {");
+  it("never mounts heavyweight Settings during a foreground renderer stall, retaining a bounded hidden-WebView fallback", () => {
+    expect(settings).toContain("scheduleAfterResponsivePaint(() => {");
     expect(settings).toContain("setReadyBody(true)");
-    expect(settings).toContain("}, 1800)");
+    expect(settings).toContain("stableFrames: 3");
+    expect(settings).toContain("backgroundFallbackMs: 1800");
     expect(settings).toContain("}, 350)");
     const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
-    expect(scheduler).toContain("requestAnimationFrame");
-    expect(scheduler).toContain("setTimeout(fire, fallbackMs)");
-    expect(scheduler).toContain("clearTimeout(fallback)");
+    expect(scheduler).toContain('if (document.hidden) armBackground();');
+    expect(scheduler).toContain("fallback = setTimeout(finish, backgroundFallbackMs)");
+    expect(scheduler).toContain("document.removeEventListener(\"visibilitychange\", onVisibility)");
   });
 });
