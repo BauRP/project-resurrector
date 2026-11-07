@@ -586,11 +586,13 @@ export function startDisplayAdaptation(): () => void {
       // An older revision is discarded by the earlier guard above.
       lastNative=null;
       lastRevision=state.revision;
+      syncContentObservation();
       resetUntrustedLayout();
       return;
     }
     lastRevision = state.revision;
     lastNative = state;
+    syncContentObservation();
     measure();
   };
   const content = document.querySelector(".app-scroll");
@@ -605,7 +607,6 @@ export function startDisplayAdaptation(): () => void {
   };
   // WindowManager, CSS resize and viewport changes can occur in bursts when
   // the hinge animates. One RAF update avoids repeated synchronous DOM writes.
-  window.addEventListener("multicam-tab-rendered", scheduleMeasure);
   window.addEventListener("resize", scheduleMeasure);
   window.addEventListener("orientationchange", scheduleMeasure);
   window.visualViewport?.addEventListener("resize", scheduleMeasure);
@@ -639,7 +640,32 @@ export function startDisplayAdaptation(): () => void {
     const foldHasSeparatingHinge = lastNative?.foldingFeatures.some(feature => feature.separating) === true;
     if (cameraChanged || tabChanged || foldHasSeparatingHinge) scheduleMeasure();
   }) : null;
-  if (content) mutations?.observe(content, { childList: true, subtree: true });
+  // Retain content observation for real separating hinges and for any
+  // dynamic transition INTO a fold. Ordinary screens have no fold panes,
+  // and observing every Settings mutation needlessly schedules browser work.
+  let contentObserved = false;
+  const syncContentObservation = () => {
+    if (!mutations || !content) return;
+    const needed = lastNative?.foldingFeatures.some(feature => feature.separating) === true;
+    if (needed === contentObserved) return;
+    contentObserved = needed;
+    if (needed) mutations.observe(content, { childList: true, subtree: true });
+    else mutations.disconnect();
+  };
+  // Tab transitions already emit an explicit event, even on ordinary phones.
+  // Retarget the ResizeObserver there without requiring a subtree observer.
+  const onTabRendered = () => {
+    const nextCamera = document.querySelector(".camera-screen");
+    if (nextCamera !== observedCamera) {
+      if (observedCamera) geometryObserver?.unobserve(observedCamera);
+      if (nextCamera) geometryObserver?.observe(nextCamera);
+      observedCamera = nextCamera;
+    }
+    observedTab = root.dataset["activeMulticamTab"] ?? "";
+    scheduleMeasure();
+  };
+  window.addEventListener("multicam-tab-rendered", onTabRendered);
+  syncContentObservation();
   measure();
   if (Capacitor.isNativePlatform()) {
     void NativeDisplay.addListener("topologyChanged", apply).then(handle => {
@@ -663,7 +689,7 @@ export function startDisplayAdaptation(): () => void {
   return () => {
     disposed = true;
     forgetActiveFoldSnapshot(token);
-    window.removeEventListener("multicam-tab-rendered", scheduleMeasure);
+    window.removeEventListener("multicam-tab-rendered", onTabRendered);
     window.removeEventListener("resize", scheduleMeasure);
     window.removeEventListener("orientationchange", scheduleMeasure);
     window.visualViewport?.removeEventListener("resize", scheduleMeasure);

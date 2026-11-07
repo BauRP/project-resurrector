@@ -12,6 +12,8 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(app).toContain("<SettingsEntryGate><Suspense");
     expect(gate).toContain("scheduleAfterResponsivePaint(");
     expect(gate).toContain("stableFrames: 3");
+    expect(gate).toContain("uiFreeze.awaitVisualState()");
+    expect(gate).toContain("stableFrames: 2");
     expect(gate).not.toContain("}, 1100)");
     const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
     expect(scheduler).toContain("requestAnimationFrame");
@@ -30,8 +32,10 @@ describe("Settings first-paint transition on slow native WebViews", () => {
   it("coalesces DOM churn on single screens but still tracks fold features and tab changes",()=>{
     expect(folds).toContain('lastNative?.foldingFeatures.some(feature => feature.separating) === true');
     expect(folds).toContain("cameraChanged || tabChanged || foldHasSeparatingHinge");
-    expect(folds).toContain('window.addEventListener("multicam-tab-rendered", scheduleMeasure)');
-    expect(folds).toContain('window.removeEventListener("multicam-tab-rendered", scheduleMeasure)');
+    expect(folds).toContain('window.addEventListener("multicam-tab-rendered", onTabRendered)');
+    expect(folds).toContain('window.removeEventListener("multicam-tab-rendered", onTabRendered)');
+    expect(folds).toContain("syncContentObservation()");
+    expect(folds).toContain("if (needed) mutations.observe(content");
     expect(app).toContain('window.dispatchEvent(new Event("multicam-tab-rendered"))');
     expect(folds).toContain("NativeDisplay.startObserving({ ownerId })");
   });

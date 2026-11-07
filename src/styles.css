@@ -1589,3 +1589,12 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 :root[data-multicam-native-webview="true"] .app-shell::after {
   content: none !important;
 }
+
+
+/* On Android the oversized decorative pseudo-elements are already removed.
+ * Their old isolation stacking context therefore has no visual purpose.
+ * Let HWUI composite the real Camera/Settings surfaces directly instead
+ * of allocating an additional full-screen isolated backdrop layer. */
+:root[data-multicam-native-webview="true"] .app-shell {
+  isolation: auto;
+}

@@ -1,8 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { SettingsEntryGate } from "@/components/multicam/SettingsEntryGate";
+import { Capacitor } from "@capacitor/core";
+import { uiFreeze } from "@/lib/ui-freeze-bridge";
 
 vi.mock("@/lib/freeze-action-trace", () => ({ traceUiAction: vi.fn() }));
+
+vi.mock("@/lib/ui-freeze-bridge", () => ({
+  uiFreeze: { awaitVisualState: vi.fn() },
+}));
 
 afterEach(() => {
   cleanup();
@@ -34,6 +40,27 @@ describe("native Settings paint boundary", () => {
     expect(screen.getAllByTestId("settings-controls")).toHaveLength(1);
   });
 
+  it("waits for native Chromium visual state, not just JavaScript rAF", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
+    let confirm!: (result: { ready: boolean; elapsedMs: number }) => void;
+    vi.mocked(uiFreeze.awaitVisualState).mockReturnValue(
+      new Promise(resolve => { confirm = resolve; }));
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
+      frames.push(fn);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    render(<SettingsEntryGate><button>Render-safe Camera2 settings</button></SettingsEntryGate>);
+    act(() => { frames.shift()?.(16); frames.shift()?.(32); frames.shift()?.(48); vi.advanceTimersByTime(0); });
+    expect(uiFreeze.awaitVisualState).toHaveBeenCalledOnce();
+    expect(screen.queryByText("Render-safe Camera2 settings")).toBeNull();
+    await act(async () => { confirm({ ready: true, elapsedMs: 22 }); await Promise.resolve(); });
+    expect(screen.queryByText("Render-safe Camera2 settings")).toBeNull();
+    act(() => { frames.shift()?.(64); frames.shift()?.(80); vi.advanceTimersByTime(0); });
+    expect(screen.getByText("Render-safe Camera2 settings")).toBeTruthy();
+  });
   it("does not force-mount Settings while a visible renderer is still blocked", () => {
     vi.useFakeTimers();
     vi.stubGlobal("requestAnimationFrame", vi.fn(() => 77));
