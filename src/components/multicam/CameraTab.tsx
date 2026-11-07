@@ -1,4 +1,5 @@
 import { nativeCapture } from "@/lib/native-capture";
+import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
 import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
 import { RecordingChunkSpool } from "@/lib/recording-chunk-spool";
@@ -125,7 +126,6 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const [tipKey, setTipKey] = useState<TipKey | null>(null);
   const [hud, setHud] = useState<Hud>(null);
   const [sheet, setSheet] = useState(false);
-  const [self, setSelf] = useState<{ battery: number | null; storageMB: number | null }>({ battery: null, storageMB: null });
   const clean = s.cleanFrame;
 
   useEffect(() => {
@@ -137,18 +137,20 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     const poll = () => {
       if (!active || running) return;
       running = true;
-      void mesh.sendTelemetry().then(value => {
-        if (active) setSelf(previous =>
-          previous.battery === value.battery && previous.storageMB === value.storageMB
-            ? previous : value);
-      }).catch(() => undefined).finally(() => { running = false; });
+      // Telemetry is still sent to peers, but its unused local React state
+      // must not repaint the entire camera screen on each battery update.
+      void mesh.sendTelemetry().catch(() => undefined)
+        .finally(() => { running = false; });
     };
-    poll();
+    // Initial Android metrics compete with the first Chromium/GPU frame.
+    // Keep every periodic poll; only schedule the first after UI paint.
+    const cancelFirstPoll = scheduleAfterPaintTask(poll, 2400);
     const id = window.setInterval(poll, 5000);
     const onReturn = () => { if (!document.hidden) poll(); };
     document.addEventListener("visibilitychange", onReturn);
     return () => {
       active = false;
+      cancelFirstPoll();
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onReturn);
     };

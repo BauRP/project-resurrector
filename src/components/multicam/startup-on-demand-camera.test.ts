@@ -27,4 +27,16 @@ describe("safe Android startup and preview", () => {
 
    expect(c).toContain("Перейти в Camera2");
  });
+ it("preserves background telemetry without repainting the entire idle Camera screen", () => {
+   const c=readFileSync("src/components/multicam/CameraTab.tsx","utf8");
+   const entry=readFileSync("src/capacitor-main.tsx","utf8");
+   expect(c).toContain("void mesh.sendTelemetry().catch(");
+   expect(c).toContain("scheduleAfterPaintTask(poll, 2400)");
+   expect(c).toContain("const id = window.setInterval(poll, 5000)");
+   expect(c).toContain("cancelFirstPoll()");
+   expect(c).not.toContain("setSelf(");
+   expect(entry).toContain('if (Capacitor.isNativePlatform()) {');
+   expect(entry).toContain('document.documentElement.dataset["multicamNativeWebview"] = "true"');
+   expect(entry.indexOf('dataset["multicamNativeWebview"]')).toBeLessThan(entry.indexOf('createRoot(rootElement)'));
+ });
 });
