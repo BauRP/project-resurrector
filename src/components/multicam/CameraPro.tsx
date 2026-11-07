@@ -6,6 +6,7 @@ import { isNative } from "@/lib/native";
 import { HelpDot } from "./Help";
 import { cameraController, checkAppliedCameraSetting } from "@/lib/camera-controller";
 import { clipCurve } from "@/lib/audio-limiter";
+import { createPhotoFrameStack } from "@/lib/photo-stacking";
 
 /* ---------- Track helpers (all features are capability-checked at runtime) ---------- */
 type Caps = Record<string, unknown>;
@@ -84,42 +85,39 @@ export function savePhoto(blob: Blob, meta: Record<string, unknown>): Promise<vo
 /** Draws the current video frame (or an average of several frames) into a canvas with the preview filter. */
 export async function grabFrames(video: HTMLVideoElement, filter: string, frames: number, spanMs: number, signal?: AbortSignal): Promise<Blob | null> {
   if (signal?.aborted) return null;
-  const w = video.videoWidth, h = video.videoHeight; if (!w || !h) return null;
-  const c = document.createElement("canvas"); c.width = w; c.height = h; const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return null;
+  const w = video.videoWidth, h = video.videoHeight;
+  if (!w || !h) return null;
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  const ctx = c.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
   ctx.filter = filter || "none";
-  if (frames <= 1) { ctx.drawImage(video, 0, 0, w, h); }
-  else {
-    // Camera captures average at most 40 frames here. Integer accumulation
-    // gives identical pixel averages while halving 4K temporary memory:
-    // 4K RGBA Float32 ~133 MiB -> Uint16 ~66 MiB. If a future mode needs
-    // >257 frames, automatically use Uint32 to avoid accumulator overflow.
-    const acc = frames <= 257 ? new Uint16Array(w * h * 4) : new Uint32Array(w * h * 4);
-    for (let k = 0; k < frames; k++) {
-      if (signal?.aborted) return null;
-      ctx.drawImage(video, 0, 0, w, h); const d = ctx.getImageData(0, 0, w, h).data;
-      // At 4K a single RGBA pass has over 33 million entries. Split the
-      // accumulation into bounded UI tasks so Settings/navigation and Android
-      // WebView can handle input between batches. All pixels and all frames
-      // are still used, preserving the requested photo resolution/quality.
-      for (let base = 0; base < d.length; base += 4_194_304) {
-        const end = Math.min(base + 4_194_304, d.length);
-        for (let i = base; i < end; i++) acc[i]! += d[i]!;
+  if (frames <= 1) {
+    ctx.drawImage(video, 0, 0, w, h);
+  } else {
+    // Keep every exposure and exact resolution while moving accumulation off
+    // the WebView's JavaScript thread. On old Android WebViews yield in chunks.
+    const stack = createPhotoFrameStack(w * h * 4, frames, signal);
+    try {
+      for (let k = 0; k < frames; k++) {
         if (signal?.aborted) return null;
-        if (end < d.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+        ctx.drawImage(video, 0, 0, w, h);
+        const frame = ctx.getImageData(0, 0, w, h);
+        await stack.add(frame.data);
+        if (k < frames - 1)
+          await new Promise<void>(resolve => setTimeout(resolve, spanMs / frames));
       }
-      if (k < frames - 1) await new Promise((r) => window.setTimeout(r, spanMs / frames));
-    }
-    const out = ctx.createImageData(w, h);
-    for (let base = 0; base < acc.length; base += 4_194_304) {
-      const end = Math.min(base + 4_194_304, acc.length);
-      for (let i = base; i < end; i++) out.data[i] = acc[i]! / frames;
       if (signal?.aborted) return null;
-      if (end < acc.length) await new Promise<void>(resolve => window.setTimeout(resolve, 0));
+      const averaged = await stack.finish();
+      if (signal?.aborted) return null;
+      const result = ctx.createImageData(w, h);
+      result.data.set(averaged);
+      ctx.filter = "none";
+      ctx.putImageData(result, 0, 0);
+    } finally {
+      stack.dispose();
     }
-    ctx.filter = "none"; ctx.putImageData(out, 0, 0);
   }
-  // Keep original resolution, all exposure modes and JPEG quality (0.93).
-  // A lost WebView encoder callback becomes a recoverable photo error.
   return new Promise<Blob | null>((resolve, reject) => {
     let finished = false;
     const finish = (blob: Blob | null, error?: unknown) => {

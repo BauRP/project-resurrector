@@ -22,3 +22,8 @@
 - Real-device freeze-free acceptance; not a coding-only deliverable. No unchecked performance claim.
 
 Run full Bun tests, TypeScript, Android APK/AAB CI and both official emulator GPU smoke jobs. Record exact outcomes after Actions completes.
+## Second safe media patch
+- `src/lib/photo-stacking.ts` and `photo-stack-worker.ts`: full-resolution pixel accumulation with native Web Workers and a yielding fallback for older WebViews. The worker aborts, errors and times out safely rather than hanging navigation; user originals/frames/modes are preserved.
+- `src/components/multicam/CameraPro.tsx`: night/long-exposure uses worker-based accumulation. Ordinary one-frame photos retain the exact existing draw+JPEG path.
+- `src/lib/photo-frame-memory.test.ts`: independent exact arithmetic, worker/source contract and malformed-input regressions.
+- This patch does **not** establish that the Settings GPU stall or other editor render stalls are fixed.
