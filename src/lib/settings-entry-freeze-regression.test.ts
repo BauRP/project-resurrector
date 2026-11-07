@@ -19,6 +19,9 @@ describe("Settings freeze diagnosis without dropping features", () => {
     expect(code.indexOf("NativeCaptureService.observeFoldDuringRecording(lease"))
       .toBeLessThan(code.indexOf("if (!nextGeometry.equals(lastNotifiedGeometry))"));
     expect(code).toContain("updateSurfaceHinges(lease,info)");
-    expect(code).toContain('notifyListeners("topologyChanged", snapshot())');
+    // The native listener still sends every changed topology, but the bridge
+    // call must occur after the synchronized WindowManager callback section.
+    expect(code).toContain("pendingTopologyNotification = snapshot();");
+    expect(code).toContain('notifyListeners("topologyChanged", pendingTopologyNotification)');
   });
 });
