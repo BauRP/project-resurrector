@@ -98,7 +98,10 @@ export class FoldScrollRestorer {
     this.tab = tab;
     this.desired = readFoldScrollTop(tab);
     this.lastStableTop = this.desired;
-    this.lastContentHeight = port.scrollHeight;
+    // The new Settings DOM has just replaced a media-heavy camera screen.
+    // Measuring scrollHeight here would force a full synchronous layout in
+    // the same transition; the first enter/reflow reads it after painting.
+    this.lastContentHeight = null;
     this.entered = false;
     this.programmaticTop = 0;
     if (Math.abs(port.scrollTop) >= 1) port.scrollTop = 0;

@@ -78,7 +78,8 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     const css = read("src/styles.css");
     expect(app).toContain('const contentObserver = tab !== "editor"');
     expect(app).toContain('if (tab === "editor" && port.firstElementChild instanceof HTMLElement)');
-    expect(app).toContain('tab === "settings" ? 0 : 260');
+    expect(app).toContain('const cancelSettingsRestore = tab === "settings"');
+    expect(app).toContain('scheduleAfterResponsivePaint(() => restorer.enter(tab, port)');
     expect(app).toContain('if (tab === "editor") {');
 
     expect(css).not.toContain(".settings-fold-workspace { contain:layout style; }");

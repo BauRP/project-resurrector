@@ -8,7 +8,7 @@ import { useSettingsStore } from "@/lib/multicam-store";
 import { useT } from "@/lib/i18n";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 import { traceUiAction } from "@/lib/freeze-action-trace";
-import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
+import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { Capacitor } from "@capacitor/core";
 
 // Load native recording and camera diagnosis only if explicitly opened.
@@ -52,10 +52,10 @@ export function SettingsTab() {
    // mounted. These tools remain fully available after this boundary.
    let cancelPaint: (() => void) | null = null;
    const bodyDelay = window.setTimeout(() => {
-     cancelPaint = scheduleAfterPaintTask(() => {
-       traceUiAction("settings: body mounting after first paint");
+     cancelPaint = scheduleAfterResponsivePaint(() => {
+       traceUiAction("settings: body mounting after responsive paint");
        setReadyBody(true);
-     }, 1800);
+     }, { stableFrames: 3, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
    }, 350);
    return () => {
      window.clearTimeout(bodyDelay);

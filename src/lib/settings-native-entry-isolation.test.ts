@@ -10,8 +10,9 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(app).toContain('const SettingsTab = lazy(() => loadSettingsModule().then');
     expect(app).toContain("return scheduleSettingsPreload()");
     expect(app).toContain("<SettingsEntryGate><Suspense");
-    expect(gate).toContain("scheduleAfterPaintTask(");
-    expect(gate).toContain("}, 1100)");
+    expect(gate).toContain("scheduleAfterResponsivePaint(");
+    expect(gate).toContain("stableFrames: 3");
+    expect(gate).not.toContain("}, 1100)");
     const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
     expect(scheduler).toContain("requestAnimationFrame");
     expect(scheduler).toContain("cancelAnimationFrame");

@@ -12,13 +12,13 @@ afterEach(()=>{
 describe("real Settings mount / remount and slow WebView repaint",()=>{
   it("does not mount Settings during the camera teardown render",()=>{
     vi.useFakeTimers();
-    const raf=vi.fn((_fn:FrameRequestCallback)=>1);
-    vi.stubGlobal("requestAnimationFrame",raf);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame",(fn:FrameRequestCallback)=>{frames.push(fn);return frames.length;});
     vi.stubGlobal("cancelAnimationFrame",vi.fn());
     const ui=render(<SettingsEntryGate><button>Camera2 settings button</button></SettingsEntryGate>);
     expect(screen.queryByText("Camera2 settings button")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("Открываю настройки");
-    act(()=>{vi.advanceTimersByTime(1100);});
+    act(()=>{frames.shift()?.(16);frames.shift()?.(32);frames.shift()?.(48);vi.advanceTimersByTime(0);});
     expect(screen.getByText("Camera2 settings button")).toBeTruthy();
     ui.unmount();
   });
@@ -36,11 +36,13 @@ describe("real Settings mount / remount and slow WebView repaint",()=>{
     vi.useFakeTimers();
     vi.stubGlobal("requestAnimationFrame",vi.fn(()=>2));
     vi.stubGlobal("cancelAnimationFrame",vi.fn());
+    const hidden=vi.spyOn(document,"hidden","get").mockReturnValue(true);
     for(let i=0;i<12;i++){
       const ui=render(<SettingsEntryGate><button>Theme switch</button></SettingsEntryGate>);
       act(()=>vi.runAllTimers());
       expect(screen.getByText("Theme switch")).toBeTruthy();
       ui.unmount();
     }
+    hidden.mockRestore();
   });
 });

@@ -33,6 +33,19 @@ describe("fold/editor vertical scroll restoration", () => {
     expect(writes).toHaveBeenCalledWith("multicam-fold-scroll-v1:editor", "520");
     writes.mockRestore();
   });
+  it("does not force a synchronous scroll-height layout during Settings activation", () => {
+    let reads = 0;
+    const el = port(0, 1000, 250);
+    Object.defineProperty(el, "scrollHeight", {
+      configurable: true, get: () => { reads++; return 1000; },
+    });
+    const restorer = new FoldScrollRestorer();
+    restorer.activate("settings", el);
+    expect(reads).toBe(0);
+    restorer.enter("settings", el);
+    // enter() is called after the first healthy paint; old navigation
+    // activation must not force layout while retiring Camera surfaces.
+  });
   it("preserves distinct editor and settings positions across tab transitions", () => {
     const port1=port(0,1000,250), restorer=new FoldScrollRestorer();
     restorer.activate("editor",port1);

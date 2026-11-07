@@ -21,6 +21,7 @@ import { RemoteRecordGuard } from "@/lib/remote-record-guard";
 import { nextRemoteReceiptStatus } from "@/lib/remote-record-receipts";
 import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
+import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { traceUiAction } from "@/lib/freeze-action-trace";
 import { FoldScrollRestorer, flushFoldScrollWrites } from "@/lib/fold-scroll-position";
 
@@ -110,7 +111,15 @@ function MulticamAppContent() {
     // Settings mount directly and have no delayed media library. Restore on
     // the next frame with one bounded retry. Only Editor requires the long
     // retry window for gradually loaded media clips.
-    timers.push(window.setTimeout(() => restorer.enter(tab, port), tab === "settings" ? 0 : 260));
+    // Synchronous scrollHeight reads during the first Settings commit can
+    // compete with an already stalled Android HardwareRenderer. Wait for
+    // healthy frames on Settings; preserve normal Editor retry semantics.
+    const cancelSettingsRestore = tab === "settings"
+      ? scheduleAfterResponsivePaint(() => restorer.enter(tab, port),
+          { stableFrames: 5, maxFrameGapMs: 125, backgroundFallbackMs: 1800 })
+      : null;
+    if (tab !== "settings")
+      timers.push(window.setTimeout(() => restorer.enter(tab, port), 260));
     if (tab === "editor") {
       for (const delay of [450, 1100, 2400]) {
         timers.push(window.setTimeout(() => restorer.retry(tab, port), delay));
@@ -144,6 +153,7 @@ function MulticamAppContent() {
     window.addEventListener("pagehide", onPageHide);
     return () => {
       timers.forEach(t => window.clearTimeout(t));
+      cancelSettingsRestore?.();
       observer?.disconnect();
       contentObserver?.disconnect();
       if (editorReflowFrame) window.cancelAnimationFrame(editorReflowFrame);
