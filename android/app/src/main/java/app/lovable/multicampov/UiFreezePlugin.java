@@ -103,14 +103,18 @@ public class UiFreezePlugin extends Plugin {
             };
             handler.postDelayed(timeout, 4500L);
             try {
-                webView.postVisualStateCallback(started, requestId -> {
-                    if (!completed.compareAndSet(false, true)) return;
-                    handler.removeCallbacks(timeout);
-                    JSObject result = new JSObject();
-                    result.put("ready", true);
-                    result.put("elapsedMs", android.os.SystemClock.uptimeMillis() - started);
-                    call.resolve(result);
-                });
+                webView.postVisualStateCallback(started,
+                    new android.webkit.WebView.VisualStateCallback() {
+                        @Override public void onComplete(long requestId) {
+                            if (!completed.compareAndSet(false, true)) return;
+                            handler.removeCallbacks(timeout);
+                            JSObject result = new JSObject();
+                            result.put("ready", true);
+                            result.put("elapsedMs",
+                                android.os.SystemClock.uptimeMillis() - started);
+                            call.resolve(result);
+                        }
+                    });
             } catch (RuntimeException error) {
                 handler.removeCallbacks(timeout);
                 if (completed.compareAndSet(false, true))
