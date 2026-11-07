@@ -303,6 +303,7 @@ public class DisplayTopologyPlugin extends Plugin {
             final String lease = java.util.UUID.randomUUID().toString();
             observerLease = lease;
             listener = info -> {
+                JSObject pendingTopologyNotification = null;
                 synchronized (DisplayTopologyPlugin.this) {
                     // A queued callback may arrive after observer teardown or
                     // after a newer Activity has registered its own listener.
@@ -345,9 +346,13 @@ public class DisplayTopologyPlugin extends Plugin {
                     if (!nextGeometry.equals(lastNotifiedGeometry)) {
                         lastNotifiedGeometry = nextGeometry;
                         revision++;
-                        notifyListeners("topologyChanged", snapshot());
+                        pendingTopologyNotification = snapshot();
                     }
                 }
+                // Bridge notification can be slow: never hold the observer
+                // monitor while calling the Capacitor/WebView listener.
+                if (pendingTopologyNotification != null)
+                    notifyListeners("topologyChanged", pendingTopologyNotification);
             };
             activeOwners.add(ownerId);
             // A mainExecutor may dispatch the initial layout synchronously.

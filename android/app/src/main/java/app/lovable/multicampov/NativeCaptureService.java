@@ -337,8 +337,10 @@ public class NativeCaptureService extends Service {
             if(!lease.equals(recordingFoldObserverLease)){
                 if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state))){
                     recordingFoldObserverGap=true;
-                    runningInstance.getSharedPreferences(STORE,MODE_PRIVATE).edit()
-                        .putBoolean("foldObserverGap",true).apply();
+                    final NativeCaptureService gapOwner = runningInstance;
+                    STATE_WRITER.execute(() ->
+                        gapOwner.getSharedPreferences(STORE,MODE_PRIVATE).edit()
+                            .putBoolean("foldObserverGap",true).apply());
                 }
                 recordingFoldObserverLease=lease;
                 recordingFoldBaselineObserved=false;
@@ -360,8 +362,10 @@ public class NativeCaptureService extends Service {
             recordingLastFoldElapsedMs=-1L;
             if(runningInstance!=null && ("recording".equals(state)||"paused".equals(state))){
                 recordingFoldObserverGap=true;
-                runningInstance.getSharedPreferences(STORE,MODE_PRIVATE).edit()
-                    .putBoolean("foldObserverGap",true).apply();
+                final NativeCaptureService gapOwner = runningInstance;
+                STATE_WRITER.execute(() ->
+                    gapOwner.getSharedPreferences(STORE,MODE_PRIVATE).edit()
+                        .putBoolean("foldObserverGap",true).apply());
             }
         }
     }
@@ -467,17 +471,31 @@ public class NativeCaptureService extends Service {
             recordingFoldBaselineObserved=true;
             recordingLastFoldPostureSignature=postureSignature;
             recordingLastFoldGeometrySignature=geometrySignature;
-            service.getSharedPreferences(STORE,MODE_PRIVATE).edit()
-                .putInt("foldObservations",recordingFoldObservations)
-                .putInt("foldPostureChanges",recordingPostureChanges)
-                .putInt("foldGeometryOnlyChanges",recordingFoldGeometryOnlyChanges)
-                .putInt("foldCheckpointsOmitted",recordingFoldCheckpointsOmitted)
-                .putInt("foldChangesWhilePaused",recordingFoldChangesWhilePaused)
-                .putBoolean("foldObserverGap",recordingFoldObserverGap)
-                .putLong("lastFoldAt",recordingLastFoldAt)
-                .putInt("foldNearbyCallbackGaps",foldNearbyCameraCallbackGaps)
-                .putLong("maxFoldNearbyCallbackGapMs",maxFoldNearbyCallbackGapMs)
-                .putString("foldPointsMs",recordingFoldPointsMs).apply();
+            // WindowManager calls here on Android MAIN. Snapshot under the
+            // camera lock; persist asynchronously on the dedicated state
+            // writer. No SharedPreferences operation may block UI drawing.
+            final int foldObserved = recordingFoldObservations;
+            final int foldPostures = recordingPostureChanges;
+            final int foldGeometry = recordingFoldGeometryOnlyChanges;
+            final int foldOmitted = recordingFoldCheckpointsOmitted;
+            final int foldPaused = recordingFoldChangesWhilePaused;
+            final boolean foldGap = recordingFoldObserverGap;
+            final long foldAt = recordingLastFoldAt;
+            final int callbackGaps = foldNearbyCameraCallbackGaps;
+            final long maxCallbackGap = maxFoldNearbyCallbackGapMs;
+            final String foldPoints = recordingFoldPointsMs;
+            STATE_WRITER.execute(() ->
+                service.getSharedPreferences(STORE,MODE_PRIVATE).edit()
+                    .putInt("foldObservations",foldObserved)
+                    .putInt("foldPostureChanges",foldPostures)
+                    .putInt("foldGeometryOnlyChanges",foldGeometry)
+                    .putInt("foldCheckpointsOmitted",foldOmitted)
+                    .putInt("foldChangesWhilePaused",foldPaused)
+                    .putBoolean("foldObserverGap",foldGap)
+                    .putLong("lastFoldAt",foldAt)
+                    .putInt("foldNearbyCallbackGaps",callbackGaps)
+                    .putLong("maxFoldNearbyCallbackGapMs",maxCallbackGap)
+                    .putString("foldPointsMs",foldPoints).apply());
         }
     }
 
