@@ -47,7 +47,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
       - name: Run navigation tests in real emulator WebView
+        id: initial
+        continue-on-error: true
         uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MULTICAM_SMOKE_ATTEMPT: "1"
         with:
           api-level: 35
           target: google_apis
@@ -56,9 +60,34 @@ jobs:
           ram-size: 3072M
           disable-animations: true
           emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -accel on
-          # android-emulator-runner executes each script line separately.
-          # Run cd/chmod/Gradle in the SAME shell command so cwd survives.
           script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
+      # Retry only if the VIRTUAL DEVICE disappeared, not for a WebView assertion.
+      - name: Retry infrastructure-disconnected emulator once
+        id: retry
+        if: steps.initial.outcome == 'failure' && hashFiles('android-emulator-infra-lost.txt') != ''
+        continue-on-error: true
+        uses: reactivecircus/android-emulator-runner@v2
+        env:
+          MULTICAM_SMOKE_ATTEMPT: "2"
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          ram-size: 3072M
+          disable-animations: true
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -accel on
+          script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
+      - name: Fail when application navigation or infrastructure still fails
+        if: always()
+        env:
+          INITIAL: ${{ steps.initial.outcome }}
+          RETRY: ${{ steps.retry.outcome }}
+        run: |
+          echo "Initial=$INITIAL; infrastructure retry=$RETRY"
+          if [[ "$INITIAL" == "success" || "$RETRY" == "success" ]]; then exit 0; fi
+          echo "::error::Android WebView test did not pass. Preserve test/host/logcat artifacts."
+          exit 1
       - name: Upload instrumentation evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -68,4 +97,8 @@ jobs:
           path: |
             android/app/build/reports/androidTests/connected/
             android/app/build/outputs/androidTest-results/connected/
-            android-freeze-emulator-logcat.txt
+            android-freeze-emulator-logcat-*.txt
+            android-freeze-host-*.txt
+            android-freeze-gfxinfo-*.txt
+            android-freeze-processes-*.txt
+            android-emulator-infra-lost.txt
