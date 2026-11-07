@@ -25,5 +25,10 @@ describe("native WebView compositor and pane geometry stability",()=>{
     expect(css).toContain(".app-shell {");
     expect(css).toContain("--reference-backdrop");
     expect(css).toContain("--reference-surface");
+    expect(css).toContain(':root[data-multicam-native-webview="true"] .app-shell::before,');
+    expect(css).toContain("content: none !important;");
+    // This is visual compositing only; gradients already live in the shell
+    // background and no camera or editor features are conditionally removed.
+    expect(css).toContain(".app-stage, .app-shell { background:var(--reference-backdrop); }");
   });
 });

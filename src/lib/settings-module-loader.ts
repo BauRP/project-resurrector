@@ -1,10 +1,13 @@
+import { Capacitor } from "@capacitor/core";
+
 /**
  * Android WebView may spend hundreds of milliseconds compiling a lazy Settings
  * chunk and its dependencies on the same renderer that is closing Camera2's
  * video DOM. Cache the import while the app is idle, before navigation.
  *
- * This only fetches/evaluates JavaScript: it does not mount Settings, start
- * Camera2 diagnostics, enumerate IndexedDB or touch project data.
+ * In browsers, this only fetches/evaluates JavaScript and never mounts Settings
+ * or invokes Camera2. In native WebView, no speculative compile happens during
+ * startup: the full module loads on the user's first Settings navigation.
  */
 let settingsModulePromise: Promise<typeof import("@/components/multicam/SettingsTab")> | null = null;
 
@@ -20,6 +23,13 @@ export function loadSettingsModule(): Promise<typeof import("@/components/multic
 
 export function scheduleSettingsPreload(): () => void {
   if (typeof window === "undefined") return () => undefined;
+  // Evidence from emulator #157: SettingsTab chunk fetch at 14:20:52.8
+  // overlapped Camera startup while Android MAIN was blocked in
+  // HardwareRenderer.nSyncAndDrawFrame for 7.5 seconds. The speculative
+  // native compile finished at the first Settings tap, competing with
+  // teardown and painting. Keep ALL Settings functions, but never preload
+  // the module in a native WebView. Load it after the two-paint entry gate.
+  if (Capacitor.isNativePlatform()) return () => undefined;
   let cancelled = false;
   let timer: number | null = null;
   let idle: number | null = null;

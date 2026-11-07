@@ -41,7 +41,8 @@ describe("Settings staged native-first paint", () => {
   it("keeps a bounded fallback if Android suppresses requestAnimationFrame", () => {
     expect(settings).toContain("scheduleAfterPaintTask(() => {");
     expect(settings).toContain("setReadyBody(true)");
-    expect(settings).toContain("}, 1000)");
+    expect(settings).toContain("}, 1800)");
+    expect(settings).toContain("}, 350)");
     const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
     expect(scheduler).toContain("requestAnimationFrame");
     expect(scheduler).toContain("setTimeout(fire, fallbackMs)");

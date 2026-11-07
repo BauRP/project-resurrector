@@ -46,12 +46,21 @@ export function SettingsTab() {
  const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
  useEffect(() => {
    if (readyBody) return;
-   // The theme/language controls paint first; defer optional network and
-   // Camera2 launchers until after TWO frames, never in the first GPU draw.
-   return scheduleAfterPaintTask(() => {
-     traceUiAction("settings: body mounting after first paint");
-     setReadyBody(true);
-   }, 1000);
+   // Emulator #157 confirms the Settings entry and its full optional body
+   // could be queued in the SAME recovered renderer turn after a 7s GPU
+   // stall. The native first paint must finish before extra panels are
+   // mounted. These tools remain fully available after this boundary.
+   let cancelPaint: (() => void) | null = null;
+   const bodyDelay = window.setTimeout(() => {
+     cancelPaint = scheduleAfterPaintTask(() => {
+       traceUiAction("settings: body mounting after first paint");
+       setReadyBody(true);
+     }, 1800);
+   }, 350);
+   return () => {
+     window.clearTimeout(bodyDelay);
+     cancelPaint?.();
+   };
  }, [readyBody]);
  useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);

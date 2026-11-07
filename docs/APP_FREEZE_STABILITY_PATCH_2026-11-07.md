@@ -27,3 +27,19 @@ Run full Bun tests, TypeScript, Android APK/AAB CI and both official emulator GP
 - `src/components/multicam/CameraPro.tsx`: night/long-exposure uses worker-based accumulation. Ordinary one-frame photos retain the exact existing draw+JPEG path.
 - `src/lib/photo-frame-memory.test.ts`: independent exact arithmetic, worker/source contract and malformed-input regressions.
 - This patch does **not** establish that the Settings GPU stall or other editor render stalls are fixed.
+
+
+## 2026-11-07: root-cause narrowing from failed emulator smoke #157
+
+Emulator run [#157](https://github.com/BauRP/project-resurrector/actions/runs/42380819869), SHA 99017c0b:
+- swangle: Android MAIN blocked **7516ms** in `HardwareRenderer.nSyncAndDrawFrame` while camera was on screen, before the first Settings tap; 274 skipped UI frames; RAM available ~1.5GiB and Java heap ~4-5MiB. The Settings module was fetched during the same interval, and the native renderer stopped replying after `settings: body mounting after first paint`.
+- swiftshader: instrumented run failed and the emulator disconnected; no proven single code cause for that outcome.
+- This is **not** a Java OOM, and a successful release build is not a runtime pass. Two separate conditions remain possible: Android GPU draw stall and Chromium renderer starvation.
+
+Stabilization without disabling features:
+1. Native WebView no longer speculatively fetches or compiles Settings while camera/fold startup is busy. Desktop/browser warmup is unchanged; every Settings control still loads on demand.
+2. The initial Settings shell paints theme/language first. The optional network/cache/Camera2 panels are scheduled in a **separate** turn after a 350ms wait and a two-paint (or 1.8s fallback) boundary; cancellation on unmount prevents stale work.
+3. The 111/222 native app-shell paints the same multi-gradient `--reference-backdrop` **without two extra oversized composited pseudo-elements**. No camera/video/editor functionality, original media, fold data or settings buttons are removed.
+4. Added/updated regressions for native preload suppression, staged paint and exact native gradient safety. Keep Android emulator smoke enabled; do not increase watchdog thresholds to conceal failures.
+
+This is risk reduction, not proof of full freeze elimination; confirm in fresh independent emulator runtime tests. 

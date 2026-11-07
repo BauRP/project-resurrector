@@ -1576,3 +1576,16 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   right: -34%;
   bottom: -9%;
 }
+
+/* Native WebView compositor stabilization (emulator #157):
+ * The 111/222 translucent backdrop ALREADY contains two radial colored
+ * gradients and a third linear gradient in --reference-backdrop. Two further
+ * 142%-wide ellipses were creating extra full-screen blended surfaces while
+ * Camera/Settings changed DOM. Paint those colors once as the existing shell
+ * background on Android; keep glass buttons, borders, live camera and layout.
+ * Browser / desktop styling remains unchanged.
+ */
+:root[data-multicam-native-webview="true"] .app-shell::before,
+:root[data-multicam-native-webview="true"] .app-shell::after {
+  content: none !important;
+}

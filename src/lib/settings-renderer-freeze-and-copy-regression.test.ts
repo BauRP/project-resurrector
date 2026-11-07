@@ -2,10 +2,11 @@ import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 
 describe("Settings gate diagnosis for a healthy Android MAIN but blocked WebView renderer", () => {
-  it("preloads the lazy Settings module before the first tab click and never instantiates Camera2 tools", () => {
+  it("avoids speculative native Settings compilation while preserving browser preload and Camera2 tools", () => {
     const loader=readFileSync("src/lib/settings-module-loader.ts","utf8");
     const app=readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
     expect(loader).toContain('import("@/components/multicam/SettingsTab")');
+    expect(loader).toContain("if (Capacitor.isNativePlatform()) return () => undefined;");
     expect(loader).toContain("requestIdleCallback(start, { timeout: 4000 })");
     expect(loader).toContain('window.addEventListener("multicam-settings-navigation-start"');
     expect(loader).toContain("}, 3500)");

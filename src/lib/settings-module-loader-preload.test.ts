@@ -1,12 +1,25 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { scheduleSettingsPreload } from "./settings-module-loader";
+import { Capacitor } from "@capacitor/core";
 
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 describe("Settings preload and native navigation never compete", () => {
+  it("does not compile Settings speculatively on native Android startup", () => {
+    vi.useFakeTimers();
+    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
+    const idle = vi.fn(() => 23);
+    vi.stubGlobal("requestIdleCallback", idle);
+    const cancel = scheduleSettingsPreload();
+    vi.advanceTimersByTime(30000);
+    expect(idle).not.toHaveBeenCalled();
+    cancel();
+    // Explicit Settings navigation still uses loadSettingsModule() in the app.
+  });
   it("cancels its scheduled import if Settings is opened during startup", () => {
     vi.useFakeTimers();
     const idle = vi.fn(() => 23);
