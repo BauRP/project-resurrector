@@ -200,7 +200,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   // When a diagnostic releases its camera after a fold/remount, retry the
   // preview. On acquisition the same revision invalidates a racing preview.
   const diagnosticRevision = useSyncExternalStore(
-    diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
+    diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot, diagnosticCaptureGate.getSnapshot);
   useEffect(() => {
     if (!previewRequested) return;
     // Each lens/fold/diagnostic refresh gets its OWN owner identity. An older

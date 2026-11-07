@@ -1,5 +1,11 @@
 # MULTI-CAM POV (MultiCam Studio) — Complete Architecture & Control Reference
 
+## GitHub preview recovery — November 2026
+- The workspace initially matched the authoritative consolidated `BauRP/project-resurrector/main` commit `b545c974096004bfd6412789c9b541353df97df8`, including all 399 GitHub blobs; no import or component replacement was needed.
+- The resumed workspace matched its next GitHub commit `56cc5f0e92ac8c87efb8d4f620d6be9e09165c68` and tree `854bb6b4dcc5349a1a5f6777a9d6f9e1060cb62f`.
+- `CameraWorkspace` and `CameraTab` both subscribe to the shared diagnostic capture gate with a server-snapshot callback. The getter returns the existing cached revision; subscriptions, native handoff checks, and stale-owner protection are unchanged. Missing callbacks previously caused the preview to abandon server rendering.
+- `src/lib/camera-server-render.test.tsx` renders both real camera subscribers through the real store provider to catch this startup regression. Full recovery evidence and browser/native limitations are in `docs/GITHUB_PREVIEW_RECOVERY.md`.
+
 This document describes the codebase as it currently exists. Every statement is derived from the source files listed in Section 6. When a feature is visual-only, simulated, or stored-but-not-applied, this is stated explicitly so the document never overstates what the code does.
 
 ---

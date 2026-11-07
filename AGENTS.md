@@ -15,6 +15,7 @@
 - Editor shows one timeline with real persistent empty Video/Audio attachment lanes, functional track plus controls and a contextual selection Inspector. Track numbering must preserve saved clip placements; do not insert fake media.
 - ARCHITECTURE.md is the living inventory of controls and state; update it with UI changes.
 - Global state uses stable external-store actions and selector subscriptions; no-op mutations must not notify subscribers, preventing effect loops.
+- Diagnostic-gate subscriptions supply a server snapshot as well as the live snapshot; this preserves camera ownership interlocks without abandoning the preview's server-rendered boundary.
 - Camera acquisition and queued device commands use a shared controller with per-track queues; stale requests cannot take ownership of a new stream.
 - Derived media uses a separate preview-cache database; cache clearing must never delete original clips or saved project layouts.
 - Browser proxies are silent canvas-encoded previews; audio playback and export always retain original-media references.

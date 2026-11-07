@@ -21,7 +21,7 @@ export function CameraWorkspace() {
   const [mode, setMode] = useState<Mode>("web"); // No permission or camera stream is opened here.
   const [notice, setNotice] = useState("");
   const [switching, setSwitching] = useState(false);
-  useSyncExternalStore(diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot);
+  useSyncExternalStore(diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot, diagnosticCaptureGate.getSnapshot);
   const blocked = recording || diagnosticCaptureGate.activeOperation() !== null ||
     ["starting","recording","stopping","saving"].includes(phase);
   const latestRecording = useRef(recording);
