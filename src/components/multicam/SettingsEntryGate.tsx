@@ -10,8 +10,9 @@ import { uiFreeze } from "@/lib/ui-freeze-bridge";
  *
  * Emulator #1587 proved that JavaScript rAF continues while Android HWUI
  * can spend 6s in SwapBuffers. Add a native WebView visual-state confirmation
- * BEFORE mounting Settings, then require more responsive JS frames. The
- * native recovery dialog stays available if Chromium never becomes healthy.
+ * BEFORE mounting Settings, then require more responsive JS frames. An
+ * Android visual-state timeout retries rather than force-mounting Settings;
+ * native recovery remains available if the renderer stays unhealthy.
  */
 export function SettingsEntryGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -19,10 +20,35 @@ export function SettingsEntryGate({ children }: { children: ReactNode }) {
     traceUiAction("settings: prior tab released; two-paint boundary pending");
     let alive = true;
     let cancelAfterVisual: (() => void) | null = null;
+    let retryVisual: ReturnType<typeof setTimeout> | null = null;
     const open = () => {
       if (!alive) return;
       traceUiAction("settings: renderer visual state reached");
       setReady(true);
+    };
+    const checkNativePaint = () => {
+      if (!alive) return;
+      if (document.hidden) { open(); return; }
+      // A native timeout means the compositor is still busy: do not mount
+      // the heavy Settings DOM merely because another rAF callback ran.
+      void uiFreeze.awaitVisualState().then(result => {
+        if (!alive) return;
+        if (!result.ready) {
+          traceUiAction("settings: native visual state timed out, retrying");
+          retryVisual = setTimeout(checkNativePaint, 900);
+          return;
+        }
+        traceUiAction("settings: native visual state ready");
+        cancelAfterVisual = scheduleAfterResponsivePaint(open,
+          { stableFrames: 2, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+      }).catch(() => {
+        if (!alive) return;
+        // Preserve Settings on compatible devices with an unsupported
+        // optional diagnostics callback; use conservative JS frame fallback.
+        traceUiAction("settings: visual state callback unavailable");
+        cancelAfterVisual = scheduleAfterResponsivePaint(open,
+          { stableFrames: 5, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+      });
     };
     const cancelFrames = scheduleAfterResponsivePaint(() => {
       if (!alive) return;
@@ -30,28 +56,13 @@ export function SettingsEntryGate({ children }: { children: ReactNode }) {
         open();
         return;
       }
-      // rAF only confirms JavaScript scheduling. An emulator can continue
-      // issuing rAF while Android HWUI is blocked in SwapBuffers for seconds.
-      // Confirm Chromium's actual visual pipeline before the Settings import.
-      void uiFreeze.awaitVisualState().then(result => {
-        if (!alive) return;
-        traceUiAction(result.ready
-          ? "settings: native visual state ready"
-          : "settings: native visual state timeout");
-        cancelAfterVisual = scheduleAfterResponsivePaint(open,
-          { stableFrames: 2, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
-      }).catch(() => {
-        if (!alive) return;
-        // An OEM that does not implement the callback still gets Settings;
-        // preserve a second responsive-frame boundary as fallback.
-        cancelAfterVisual = scheduleAfterResponsivePaint(open,
-          { stableFrames: 5, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
-      });
+      checkNativePaint();
     }, { stableFrames: 3, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
     return () => {
       alive = false;
       cancelFrames();
       cancelAfterVisual?.();
+      if (retryVisual !== null) clearTimeout(retryVisual);
     };
   }, []);
   return ready ? <>{children}</> :

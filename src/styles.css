@@ -1598,3 +1598,11 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 :root[data-multicam-native-webview="true"] .app-shell {
   isolation: auto;
 }
+
+/* The advanced Camera2 / diagnostic controls are below the initial Settings
+ * viewport. Android Chromium 124 may skip their offscreen paint until the
+ * user scrolls/focuses them. Every control remains mounted and accessible. */
+:root[data-multicam-native-webview="true"] .settings-fold-workspace .settings-advanced-tools {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 148px;
+}
