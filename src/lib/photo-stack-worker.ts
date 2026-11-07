@@ -1,3 +1,4 @@
+export {}; // Worker is a module; avoid colliding with the DOM global `length`.
 /** Off-main-thread exact photo accumulation: 4K/long exposure worker. */
 type StackRequest = { id: number; type: "start" | "frame" | "finish";
   pixelCount: number; frameCount: number; buffer?: ArrayBuffer };
