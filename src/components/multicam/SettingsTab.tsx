@@ -45,6 +45,8 @@ export function SettingsTab() {
  const s=useSettingsStore(); const {t:tr}=useT();
  const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
  const [readyNetwork, setReadyNetwork] = useState(() => !Capacitor.isNativePlatform());
+ const [readyUtilities, setReadyUtilities] = useState(() => !Capacitor.isNativePlatform());
+ const [readyAdvanced, setReadyAdvanced] = useState(() => !Capacitor.isNativePlatform());
  useEffect(() => {
    if (readyBody) return;
    // Emulator #157 confirms the Settings entry and its full optional body
@@ -64,7 +66,29 @@ export function SettingsTab() {
    };
  }, [readyBody]);
  useEffect(() => {
-   if (!readyBody || readyNetwork) return;
+   if (!readyBody || readyUtilities) return;
+   let cancel: (() => void) | null = null;
+   const timer = window.setTimeout(() => {
+     cancel = scheduleAfterResponsivePaint(() => {
+       traceUiAction("settings: storage, engine and privacy ready");
+       setReadyUtilities(true);
+     }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+   }, 450);
+   return () => { window.clearTimeout(timer); cancel?.(); };
+ }, [readyBody, readyUtilities]);
+ useEffect(() => {
+   if (!readyUtilities || readyAdvanced) return;
+   let cancel: (() => void) | null = null;
+   const timer = window.setTimeout(() => {
+     cancel = scheduleAfterResponsivePaint(() => {
+       traceUiAction("settings: Camera2 and diagnostic actions ready");
+       setReadyAdvanced(true);
+     }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+   }, 450);
+   return () => { window.clearTimeout(timer); cancel?.(); };
+ }, [readyUtilities, readyAdvanced]);
+ useEffect(() => {
+   if (!readyAdvanced || readyNetwork) return;
    // Do not import all network modules during Camera compositor teardown.
    // A short responsive-paint boundary keeps every Settings control available
    // without competing for the initial Settings frame on Android WebView.
@@ -76,7 +100,7 @@ export function SettingsTab() {
      }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
    }, 1250);
    return () => { window.clearTimeout(timer); cancelPaint?.(); };
- }, [readyBody, readyNetwork]);
+ }, [readyAdvanced, readyNetwork]);
  useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);
  const confirmationDialog=useRef<HTMLDivElement>(null);
@@ -160,12 +184,14 @@ export function SettingsTab() {
      <SettingsNetworkContent />
    </Suspense> : <p role="status" className="p-3 text-xs text-muted-foreground">Подготовка сетевых инструментов…</p>}
   </Group>
+ {readyUtilities && <>
  <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>setConfirmAction("reset")}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
  <Group><button className="settings-item w-full" onClick={()=>setPrivacy(true)}><span className="flex items-center gap-3"><ShieldCheck className="text-primary"/>{t.privacy}</span><ChevronRight className="text-muted-foreground"/></button></Group>
+ </>}
  {/* Camera2 polling and camera discovery are expensive. Keep both fully
       unmounted until opened; CSS-hidden panels would still run native work. */}
- <section className="settings-advanced-tools" aria-label="Дополнительные инструменты">
+ {readyAdvanced && <section className="settings-advanced-tools" aria-label="Дополнительные инструменты">
   <div className="settings-advanced-actions">
    <button type="button" className={"settings-tool-trigger" + (advancedPanel === "native" ? " active" : "")}
      aria-expanded={advancedPanel === "native"} onClick={() => { traceUiAction("settings: native tools"); setAdvancedPanel(p => p === "native" ? null : "native"); }}>
@@ -182,7 +208,7 @@ export function SettingsTab() {
     {advancedPanel === "diagnostics" && <CameraDiagnostics />}
    </Suspense>
   </SettingsToolsBoundary>
- </section>
+ </section>}
  {operationError && <p role="alert" className="text-sm text-destructive">{operationError}</p>}
   </>}</main>
  {confirmAction && <div className="settings-confirm-overlay fixed inset-x-0 top-0 bottom-[var(--nav-h)] z-50 flex items-center justify-center overflow-y-auto px-4 py-6" ref={confirmationDialog} role="alertdialog" aria-modal="true" aria-labelledby="settings-confirm-title" tabIndex={-1}>

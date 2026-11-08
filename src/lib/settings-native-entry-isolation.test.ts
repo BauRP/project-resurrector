@@ -26,6 +26,11 @@ describe("Settings first-paint transition on slow native WebViews", () => {
       "<SettingsNetworkContent />","clearPreviewCache()","cacheBytes()"])expect(settings).toContain(required);
     expect(settings).toContain('lazy(() => import("./SettingsNetworkContent")');
     expect(settings).toContain('const [readyNetwork, setReadyNetwork]');
+    expect(settings).toContain('const [readyUtilities, setReadyUtilities]');
+    expect(settings).toContain('const [readyAdvanced, setReadyAdvanced]');
+    expect(settings).toContain('settings: storage, engine and privacy ready');
+    expect(settings).toContain('settings: Camera2 and diagnostic actions ready');
+    expect(settings).toContain('{readyAdvanced && <section className="settings-advanced-tools"');
     expect(settings).toContain('settings: network controls mounted after responsive paint');
     expect(settings).toContain('readyNetwork ? <Suspense');
     expect(settings).not.toContain('import { mesh } from "@/lib/mesh"');
