@@ -97,6 +97,35 @@ public class MulticamFreezeNavigationInstrumentedTest {
         assertEquals("true", eval(activity, view, script));
     }
 
+    /** An idle camera UI must keep Chromium responsive before any Settings
+     * interaction. This isolates startup renderer failure from navigation. */
+    @Test
+    public void idleLaunchRendererRespondsWithoutUserMedia() throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            assertNotNull("Capacitor WebView is missing", web.get());
+            eventually(running, web.get(), "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            for (int i = 0; i < 3; i++) {
+                Thread.sleep(1500);
+                assertEquals("true", eval(running, web.get(),
+                    "(function(){return document.visibilityState==='visible'&&!!document.querySelector('.camera-screen')})()"));
+            }
+        } finally {
+            if (activity != null) activity.finish();
+        }
+    }
+
     @Test
     public void navigationAndEditorAudioTransitionsAreResponsive() throws Exception {
         Activity activity = null;

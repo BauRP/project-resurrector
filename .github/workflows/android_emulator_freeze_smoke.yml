@@ -16,17 +16,23 @@ concurrency:
 
 jobs:
   emulator-smoke:
-    name: "Android WebView navigation (${{ matrix.gpu }})"
+    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }})"
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
-        # Software is Android's recommended fallback when a selected GPU
-        # backend repeatedly loses the emulator/ADB connection. Keep Swangle
-        # separately: its real WebView ANR must remain a failing test.
-        # Both backends run the SAME production APK/JS.
-        gpu: [software, swangle]
+        # Android 15 ships old WebView 124 on these system images. Run the
+        # same unchanged production app on Android 16 to identify whether the
+        # failure is tied to its old Chromium compositor. Keep API35 as a
+        # strict regression check; never conceal a failure with new API.
+        include:
+          - api: 35
+            gpu: software
+          - api: 35
+            gpu: swangle
+          - api: 36
+            gpu: swangle
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -54,7 +60,7 @@ jobs:
         env:
           MULTICAM_SMOKE_ATTEMPT: "1"
         with:
-          api-level: 35
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -72,7 +78,7 @@ jobs:
         env:
           MULTICAM_SMOKE_ATTEMPT: "2"
         with:
-          api-level: 35
+          api-level: ${{ matrix.api }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -95,7 +101,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-freeze-smoke-results-${{ matrix.gpu }}
+          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}
           if-no-files-found: ignore
           path: |
             android/app/build/reports/androidTests/connected/
