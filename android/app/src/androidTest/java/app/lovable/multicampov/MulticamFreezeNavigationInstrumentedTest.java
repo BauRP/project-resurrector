@@ -168,6 +168,46 @@ public class MulticamFreezeNavigationInstrumentedTest {
         }
     }
 
+    /**
+     * TEST ONLY: rerun the real Camera -> Settings -> Camera path with a
+     * software-composited WebView surface. Do not touch the shipping layer,
+     * Camera2, media access or app capabilities. This separates Android HWUI
+     * / emulator GPU contention from V8/React navigation defects.
+     */
+    @Test
+    public void aSoftwareLayerDiagnosticKeepsRealScreensResponsive() throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            WebView view = web.get();
+            assertNotNull("Capacitor WebView is missing", view);
+            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                view.setLayerType(View.LAYER_TYPE_SOFTWARE, null));
+            assertEquals("Software layer diagnostic must actually activate",
+                View.LAYER_TYPE_SOFTWARE, view.getLayerType());
+            Log.i("MultiCamFreezeTest", "DIAGNOSTIC ONLY: WebView software layer for Settings navigation");
+            for (int i = 0; i < 2; i++) {
+                click(running, view, ".bottom-nav button:nth-child(3)");
+                eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
+                click(running, view, ".bottom-nav button:nth-child(1)");
+                eventually(running, view, "!!document.querySelector('.camera-screen')");
+            }
+        } finally {
+            finishAndWait(activity);
+        }
+    }
+
     /** An idle camera UI must keep Chromium responsive before any Settings
      * interaction. This isolates startup renderer failure from navigation. */
     @Test
