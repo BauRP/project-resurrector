@@ -28,7 +28,7 @@ jobs:
         # strict regression check; never conceal a failure with new API.
         include:
           - api: 35
-            gpu: software
+            gpu: swiftshader
           - api: 35
             gpu: swangle
           - api: 36
@@ -67,8 +67,11 @@ jobs:
           ram-size: 4096M
           cores: 4
           disable-animations: true
-          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -accel on
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -feature -Vulkan -accel on
           script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
+      # Prefer explicit SwiftShader over auto-selected software backends on
+      # hosted runners; disabling Vulkan removes one unstable host rendering
+      # dependency without affecting app features or device GPU capability.
       # Retry only if the VIRTUAL DEVICE disappeared, not for a WebView assertion.
       - name: Retry infrastructure-disconnected emulator once
         id: retry
@@ -85,7 +88,7 @@ jobs:
           ram-size: 4096M
           cores: 4
           disable-animations: true
-          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -accel on
+          emulator-options: -no-window -no-snapshot -noaudio -no-boot-anim -gpu ${{ matrix.gpu }} -feature -Vulkan -accel on
           script: bash "$GITHUB_WORKSPACE/scripts/run-android-freeze-test.sh"
       - name: Fail when application navigation or infrastructure still fails
         if: always()

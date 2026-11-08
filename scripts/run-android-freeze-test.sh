@@ -40,6 +40,10 @@ echo "===== Instrumentation evidence (exit: $result, attempt $ATTEMPT) ====="
   free -m
   ps -eo pid,comm,rss --sort=-rss | head -n 25
   adb devices -l
+  echo "===== Emulator/ADB host process snapshot ====="
+  ps -ef | grep -E '[q]emu-system|[e]mulator|[a]db' || true
+  echo "===== Recent kernel messages for host OOM/GPU exits ====="
+  (sudo dmesg --ctime 2>/dev/null | tail -n 90 || true)
 } >> "$HOST_FILE" 2>&1 || true
 # Only classify as infrastructure when ADB cannot reach the device AND
 # there is no explicit WebView assertion. Never mask a real application hang.
@@ -51,6 +55,10 @@ fi
 if [ "$result" -ne 0 ] && [ "$APP_FAILURE" -eq 0 ] && \
     ! timeout 12 adb -s emulator-5554 shell 'echo alive' >/dev/null 2>&1; then
   echo "Emulator disappeared from ADB; app failure not proven; attempt $ATTEMPT" > "$INFRA_MARKER"
+  { echo "===== Emulator disappearance evidence ====="
+    ps -ef | grep -E '[q]emu-system|[e]mulator|[a]db' || true
+    sudo dmesg --ctime 2>/dev/null | tail -n 160 || true
+  } >> "$HOST_FILE" 2>&1
   echo "INFRASTRUCTURE_LOST: virtual device disappeared; save logcat and retry on clean boot."
 elif [ "$result" -ne 0 ]; then
   timeout 12 adb shell dumpsys gfxinfo app.lovable.multicampov framestats \

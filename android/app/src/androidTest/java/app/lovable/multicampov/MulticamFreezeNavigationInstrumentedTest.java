@@ -79,6 +79,22 @@ public class MulticamFreezeNavigationInstrumentedTest {
         return result.get();
     }
 
+    /** Wait for actual Activity destruction so the next test never inherits
+     * a Chromium renderer or GPU surface from the prior finished Activity.
+     * Keep both real startup and navigation regression scenarios.
+     */
+    private static void finishAndWait(Activity activity) throws Exception {
+        if (activity == null) return;
+        InstrumentationRegistry.getInstrumentation().runOnMainSync(activity::finish);
+        long deadline = android.os.SystemClock.uptimeMillis() + 12000L;
+        while (!activity.isDestroyed() &&
+               android.os.SystemClock.uptimeMillis() < deadline) {
+            Thread.sleep(100);
+        }
+        assertTrue("Activity failed to destroy its prior WebView", activity.isDestroyed());
+        Thread.sleep(300);
+    }
+
     private static void eventually(Activity activity, WebView view, String expression) throws Exception {
         Log.i("MultiCamFreezeTest", "Await: " + expression);
         long deadline = System.currentTimeMillis() + 12000;
@@ -122,7 +138,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
                     "(function(){return document.visibilityState==='visible'&&!!document.querySelector('.camera-screen')})()"));
             }
         } finally {
-            if (activity != null) activity.finish();
+            finishAndWait(activity);
         }
     }
 
@@ -162,7 +178,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
             click(running, view, ".bottom-nav button:nth-child(3)");
             eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
         } finally {
-            if (activity != null) activity.finish();
+            finishAndWait(activity);
         }
     }
 }
