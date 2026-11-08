@@ -44,6 +44,7 @@ traceUiAction("settings: lazy module evaluated");
 export function SettingsTab() {
  const s=useSettingsStore(); const {t:tr}=useT();
  const [readyBody, setReadyBody] = useState(() => !Capacitor.isNativePlatform());
+ const [readyNetwork, setReadyNetwork] = useState(() => !Capacitor.isNativePlatform());
  useEffect(() => {
    if (readyBody) return;
    // Emulator #157 confirms the Settings entry and its full optional body
@@ -62,6 +63,20 @@ export function SettingsTab() {
      cancelPaint?.();
    };
  }, [readyBody]);
+ useEffect(() => {
+   if (!readyBody || readyNetwork) return;
+   // Do not import all network modules during Camera compositor teardown.
+   // A short responsive-paint boundary keeps every Settings control available
+   // without competing for the initial Settings frame on Android WebView.
+   let cancelPaint: (() => void) | null = null;
+   const timer = window.setTimeout(() => {
+     cancelPaint = scheduleAfterResponsivePaint(() => {
+       traceUiAction("settings: network controls mounted after responsive paint");
+       setReadyNetwork(true);
+     }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+   }, 1250);
+   return () => { window.clearTimeout(timer); cancelPaint?.(); };
+ }, [readyBody, readyNetwork]);
  useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
  const privacyDialog=useRef<HTMLDivElement>(null);
  const confirmationDialog=useRef<HTMLDivElement>(null);
@@ -141,9 +156,9 @@ export function SettingsTab() {
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
  {readyBody && <>
   <Group help="network" title={t.network}>
-   <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка сетевых инструментов…</p>}>
+   {readyNetwork ? <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка сетевых инструментов…</p>}>
      <SettingsNetworkContent />
-   </Suspense>
+   </Suspense> : <p role="status" className="p-3 text-xs text-muted-foreground">Подготовка сетевых инструментов…</p>}
   </Group>
  <Group help="cache" title={t.storage}><div className="settings-item"><span className="flex items-center gap-3"><HardDrive className="text-primary"/><span>{tr("offlineCache")}<small className="block text-xs text-muted-foreground">{cacheMeasured ? `${s.cacheMB.toFixed(2)} MB · превью` : "Размер кэша не измерен"}</small><button type="button" className="mt-1 text-xs font-semibold text-primary underline-offset-2 hover:underline" disabled={measuringCache || clearing} onClick={() => void measureCache()}>{measuringCache ? "Измерение…" : "Измерить размер"}</button></span></span><Button size="sm" variant="secondary" disabled={clearing || measuringCache} onClick={()=>setConfirmAction("cache")}><Trash2/>{t.clear}</Button></div></Group>
  <Group help="hwaccel" title={t.engine}><label className="settings-item"><span className="flex items-center gap-3"><Gauge className="text-primary"/><span>{tr("hwAccel")}<small className="block text-xs text-muted-foreground">{tr("hwAccelSub")}</small></span></span><Switch checked={s.hardwareAcceleration} onCheckedChange={(hardwareAcceleration)=>s.set({hardwareAcceleration})}/></label><button className="settings-item w-full" onClick={()=>setConfirmAction("reset")}><span className="flex items-center gap-3"><RotateCcw className="text-warning"/>{tr("resetProject")}</span><ChevronRight className="text-muted-foreground"/></button></Group>
