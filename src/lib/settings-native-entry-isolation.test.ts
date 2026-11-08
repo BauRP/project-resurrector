@@ -28,6 +28,7 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(settings).toContain('const [readyNetwork, setReadyNetwork]');
     expect(settings).toContain('const [readyUtilities, setReadyUtilities]');
     expect(settings).toContain('const [readyAdvanced, setReadyAdvanced]');
+    expect(settings).toContain('scheduleSettingsVisualStage(() => {');
     expect(settings).toContain('settings: storage, engine and privacy ready');
     expect(settings).toContain('settings: Camera2 and diagnostic actions ready');
     expect(settings).toContain('{readyAdvanced && <section className="settings-advanced-tools"');

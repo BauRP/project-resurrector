@@ -9,6 +9,7 @@ import { useT } from "@/lib/i18n";
 import { activateAccessibleDialog } from "@/lib/accessible-dialog";
 import { traceUiAction } from "@/lib/freeze-action-trace";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
+import { scheduleSettingsVisualStage } from "@/lib/settings-visual-stage";
 import { Capacitor } from "@capacitor/core";
 
 // Load native recording and camera diagnosis only if explicitly opened.
@@ -55,7 +56,7 @@ export function SettingsTab() {
    // mounted. These tools remain fully available after this boundary.
    let cancelPaint: (() => void) | null = null;
    const bodyDelay = window.setTimeout(() => {
-     cancelPaint = scheduleAfterResponsivePaint(() => {
+     cancelPaint = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: body mounting after responsive paint");
        setReadyBody(true);
      }, { stableFrames: 3, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
@@ -69,7 +70,7 @@ export function SettingsTab() {
    if (!readyBody || readyUtilities) return;
    let cancel: (() => void) | null = null;
    const timer = window.setTimeout(() => {
-     cancel = scheduleAfterResponsivePaint(() => {
+     cancel = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: storage, engine and privacy ready");
        setReadyUtilities(true);
      }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
@@ -80,7 +81,7 @@ export function SettingsTab() {
    if (!readyUtilities || readyAdvanced) return;
    let cancel: (() => void) | null = null;
    const timer = window.setTimeout(() => {
-     cancel = scheduleAfterResponsivePaint(() => {
+     cancel = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: Camera2 and diagnostic actions ready");
        setReadyAdvanced(true);
      }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
@@ -94,7 +95,7 @@ export function SettingsTab() {
    // without competing for the initial Settings frame on Android WebView.
    let cancelPaint: (() => void) | null = null;
    const timer = window.setTimeout(() => {
-     cancelPaint = scheduleAfterResponsivePaint(() => {
+     cancelPaint = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: network controls mounted after responsive paint");
        setReadyNetwork(true);
      }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });

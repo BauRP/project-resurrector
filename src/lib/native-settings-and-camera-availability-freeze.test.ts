@@ -39,7 +39,7 @@ describe("Settings staged native-first paint", () => {
       expect(settings).toContain(tool);
   });
   it("never mounts heavyweight Settings during a foreground renderer stall, retaining a bounded hidden-WebView fallback", () => {
-    expect(settings).toContain("scheduleAfterResponsivePaint(() => {");
+    expect(settings).toContain("scheduleSettingsVisualStage(() => {");
     expect(settings).toContain("setReadyBody(true)");
     expect(settings).toContain("stableFrames: 3");
     expect(settings).toContain("backgroundFallbackMs: 1800");
