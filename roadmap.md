@@ -1,4 +1,10 @@
 # MULTI-CAM POV roadmap
+## Android hard-freeze forensic audit — 7 November 2026
+- [ ] Inspect native, WebView, navigation, camera, editor, storage and display lifecycles
+- [ ] Review historical freeze evidence and run available diagnostic verification
+- [ ] Deliver evidence-classified technical report and prioritized correction/verification plan
+- [ ] Reproduce on Android and collect thread/renderer evidence (requires Android SDK/device or accessible CI artifacts)
+
 ## GitHub preview recovery — 6 November 2026
 - [x] Verify authoritative main commit and compare every tracked file without replacing local work
 - [x] Resolve the reproduced preview rendering error without reverting GitHub features
