@@ -18,7 +18,33 @@ HOST_FILE="$GITHUB_WORKSPACE/android-freeze-host-${ATTEMPT}.txt"
 # output still survives on the GitHub runner for investigation.
 adb logcat -v threadtime > "$LOG_FILE" 2>&1 &
 LOGCAT_PID=$!
-trap 'kill "$LOGCAT_PID" 2>/dev/null || true' EXIT
+# Collect Chromium and UI thread evidence WHILE the test still owns its
+# WebView. Gradle tears down the Activity after failure, so a post-test
+# debuggerd command is usually too late. Capture is bounded and best-effort.
+STACK_FILE="$GITHUB_WORKSPACE/android-freeze-renderer-stacks-${ATTEMPT}.txt"
+(
+  tail -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
+    if [[ "$line" == *"MultiCamFreezeTest: WebView did not reply"* ]]; then
+      {
+        echo "===== Live Android threads when WebView callback stalled ====="
+        date -u
+        timeout 4 adb shell ps -A -o PID,NAME || true
+        timeout 4 adb shell dumpsys meminfo app.lovable.multicampov || true
+        timeout 6 adb shell dumpsys gfxinfo app.lovable.multicampov framestats || true
+        # On userdebug Google APIs images, debuggerd can capture blocked
+        # native renderer stacks. Production-image restrictions are expected.
+        RENDERER_PID="$(timeout 3 adb shell ps -A -o PID,NAME 2>/dev/null |
+          awk '/webview:sandboxed_process/{print $1; exit}' | tr -d '\r' || true)"
+        if [[ "$RENDERER_PID" =~ ^[0-9]+$ ]]; then
+          timeout 8 adb shell debuggerd -b "$RENDERER_PID" || true
+        fi
+      } > "$STACK_FILE" 2>&1
+      break
+    fi
+  done
+) &
+STACK_WATCHER_PID=$!
+trap 'kill "$LOGCAT_PID" "$STACK_WATCHER_PID" 2>/dev/null || true' EXIT
 cd "$GITHUB_WORKSPACE/android"
 chmod +x ./gradlew
 set +e

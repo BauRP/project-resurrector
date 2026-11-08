@@ -113,4 +113,5 @@ jobs:
             android-freeze-host-*.txt
             android-freeze-gfxinfo-*.txt
             android-freeze-processes-*.txt
+            android-freeze-renderer-stacks-*.txt
             android-emulator-infra-lost.txt

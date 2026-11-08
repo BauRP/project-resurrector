@@ -94,31 +94,50 @@ public class UiFreezePlugin extends Plugin {
             final android.os.Handler handler =
                 new android.os.Handler(android.os.Looper.getMainLooper());
             final long started = android.os.SystemClock.uptimeMillis();
-            final Runnable timeout = () -> {
+            final java.util.function.Consumer<String> finish = phase -> {
                 if (!completed.compareAndSet(false, true)) return;
+                handler.removeCallbacksAndMessages(null);
                 JSObject result = new JSObject();
-                result.put("ready", false);
+                result.put("ready", !"timeout".equals(phase));
+                result.put("phase", phase);
                 result.put("elapsedMs", android.os.SystemClock.uptimeMillis() - started);
                 call.resolve(result);
             };
-            handler.postDelayed(timeout, 4500L);
+            // A callback from postVisualStateCallback is only READY TO DRAW.
+            // It is not evidence that the Android HardwareRenderer finished
+            // syncAndDrawFrame or submitted the next composited frame.
+            handler.postDelayed(() -> finish.accept("timeout"), 4500L);
             try {
                 webView.postVisualStateCallback(started,
                     new android.webkit.WebView.VisualStateCallback() {
                         @Override public void onComplete(long requestId) {
-                            if (!completed.compareAndSet(false, true)) return;
-                            handler.removeCallbacks(timeout);
-                            JSObject result = new JSObject();
-                            result.put("ready", true);
-                            result.put("elapsedMs",
-                                android.os.SystemClock.uptimeMillis() - started);
-                            call.resolve(result);
+                            if (completed.get()) return;
+                            if (android.os.Build.VERSION.SDK_INT >= 29 &&
+                                webView.isHardwareAccelerated()) {
+                                final android.view.ViewTreeObserver observer =
+                                    webView.getViewTreeObserver();
+                                if (!observer.isAlive()) {
+                                    finish.accept("timeout");
+                                    return;
+                                }
+                                observer.registerFrameCommitCallback(() ->
+                                    handler.post(() -> finish.accept("frame_committed")));
+                                // Ensure the native view participates in a
+                                // NEW frame after Chromium completed DOM work.
+                                webView.postInvalidateOnAnimation();
+                            } else {
+                                // Android 7-9 and genuinely software-rendered
+                                // WebViews cannot provide frame commit evidence.
+                                // Preserve feature availability on those OSes.
+                                finish.accept("visual_state_only");
+                            }
                         }
                     });
             } catch (RuntimeException error) {
-                handler.removeCallbacks(timeout);
-                if (completed.compareAndSet(false, true))
-                    call.reject("WebView visual-state check failed: " + error.getMessage());
+                if (completed.compareAndSet(false, true)) {
+                    handler.removeCallbacksAndMessages(null);
+                    call.reject("WebView frame-commit check failed: " + error.getMessage());
+                }
             }
         });
     }

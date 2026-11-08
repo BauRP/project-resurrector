@@ -5,7 +5,7 @@ export interface UiFreezeBridge {
   read(): Promise<{ report: string; recordedAt: number }>;
   clear(): Promise<void>;
   pulse(): Promise<void>;
-  awaitVisualState(): Promise<{ ready: boolean; elapsedMs: number }>;
+  awaitVisualState(): Promise<{ ready: boolean; elapsedMs: number; phase?: "frame_committed" | "visual_state_only" | "timeout" }>;
   copyReport(options: { report: string }): Promise<void>;
 }
 

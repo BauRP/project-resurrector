@@ -74,6 +74,9 @@ public class MulticamFreezeNavigationInstrumentedTest {
             if (!monitorReport.isEmpty()) evidence.append("\nNative freeze watchdog:\n")
                 .append(monitorReport);
             Log.e("MultiCamFreezeTest", evidence.toString());
+            // Give the host capture watcher a short opportunity to collect
+            // live Chromium renderer stacks before finally destroys WebView.
+            Thread.sleep(1800);
             fail(evidence.toString());
         }
         return result.get();
