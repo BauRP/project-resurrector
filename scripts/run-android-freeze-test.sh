@@ -33,6 +33,8 @@ STACK_FILE="$GITHUB_WORKSPACE/android-freeze-renderer-stacks-${ATTEMPT}.txt"
   tail -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
     if [[ "$line" == *"MultiCamFreezeTest: WebView did not reply"* ]]; then
       {
+        echo "===== V8 JavaScript call stack from debug-only WebView ====="
+        timeout 11 node "$GITHUB_WORKSPACE/scripts/capture-webview-cdp.mjs" || true
         echo "===== Live Android threads when WebView callback stalled ====="
         date -u
         timeout 4 adb shell ps -A -o PID,NAME || true

@@ -77,7 +77,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
             Log.e("MultiCamFreezeTest", evidence.toString());
             // Give the host capture watcher a short opportunity to collect
             // live Chromium renderer stacks before finally destroys WebView.
-            Thread.sleep(1800);
+            Thread.sleep(9000);
             fail(evidence.toString());
         }
         return result.get();
