@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   emulator-smoke:
-    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }})"
+    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }}, ${{ matrix.resolution }})"
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -29,10 +29,19 @@ jobs:
         include:
           - api: 35
             gpu: swiftshader
+            resolution: full
           - api: 35
             gpu: swangle
+            resolution: full
           - api: 36
             gpu: swangle
+            resolution: full
+          # An additional 540x1200 profile distinguishes an application
+          # renderer deadlock from the GitHub runner's extraordinarily slow
+          # 1080x2400 software GPU. Keep every full-resolution regression.
+          - api: 36
+            gpu: swangle
+            resolution: compact
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -59,6 +68,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           MULTICAM_SMOKE_ATTEMPT: "1"
+          MULTICAM_EMULATOR_RESOLUTION: ${{ matrix.resolution }}
         with:
           api-level: ${{ matrix.api }}
           target: google_apis
@@ -80,6 +90,7 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         env:
           MULTICAM_SMOKE_ATTEMPT: "2"
+          MULTICAM_EMULATOR_RESOLUTION: ${{ matrix.resolution }}
         with:
           api-level: ${{ matrix.api }}
           target: google_apis
@@ -104,7 +115,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}
+          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}-${{ matrix.resolution }}
           if-no-files-found: ignore
           path: |
             android/app/build/reports/androidTests/connected/

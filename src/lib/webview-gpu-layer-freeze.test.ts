@@ -12,6 +12,14 @@ describe("HardwareRenderer freeze after camera -> settings", () => {
     expect(css).toContain("var(--reference-backdrop)");
     expect(css).toContain("var(--gradient-primary)");
   });
+  it("composites only visible ordinary-phone Settings rows while preserving full fold panes", () => {
+    const css = readFileSync("src/styles.css", "utf8");
+    expect(css).toContain('data-fold-workspace="normal"');
+    expect(css).toContain(".settings-fold-workspace main > section:not(.settings-advanced-tools)");
+    expect(css).toContain("content-visibility: auto;");
+    expect(css).toContain("contain-intrinsic-size: auto 108px;");
+    expect(css).toContain("var(--reference-surface)");
+  });
   it("detects Android WebView before mounting secondary tabs", () => {
     const app = readFileSync("src/components/multicam/MulticamApp.tsx", "utf8");
     expect(app).toContain('dataset["multicamNativeWebview"] = String(Capacitor.isNativePlatform())');

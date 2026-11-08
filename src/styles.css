@@ -1606,3 +1606,14 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   content-visibility: auto;
   contain-intrinsic-size: auto 148px;
 }
+
+
+/* Android: offscreen Settings sections are retained but their glass surfaces
+ * are composited only when they approach the viewport. content-visibility
+ * preserves all DOM, controls, focus/scroll behavior and 111/222 styling.
+ * Do not apply to fold-pane layouts or dialog overlays. */
+:root[data-multicam-native-webview="true"][data-fold-workspace="normal"]
+ .settings-fold-workspace main > section:not(.settings-advanced-tools) {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 108px;
+}

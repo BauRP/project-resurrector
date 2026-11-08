@@ -5,6 +5,13 @@ ATTEMPT="${MULTICAM_SMOKE_ATTEMPT:-1}"
 INFRA_MARKER="$GITHUB_WORKSPACE/android-emulator-infra-lost.txt"
 rm -f "$INFRA_MARKER"
 LOG_FILE="$GITHUB_WORKSPACE/android-freeze-emulator-logcat-${ATTEMPT}.txt"
+# Only the separately labelled compact comparison changes emulator pixels.
+# It does not alter application rendering, WebView flags or Android features.
+# All existing full-resolution tests remain mandatory.
+if [[ "${MULTICAM_EMULATOR_RESOLUTION:-full}" == "compact" ]]; then
+  timeout 12 adb shell wm size 540x1200
+  timeout 12 adb shell wm density 240
+fi
 HOST_FILE="$GITHUB_WORKSPACE/android-freeze-host-${ATTEMPT}.txt"
 {
   echo "===== Host and emulator before test, attempt $ATTEMPT ====="
