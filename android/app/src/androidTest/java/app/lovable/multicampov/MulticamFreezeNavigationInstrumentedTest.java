@@ -28,6 +28,7 @@ import static org.junit.Assert.*;
  * No camera recording or user media are created by the test.
  */
 @RunWith(AndroidJUnit4.class)
+@org.junit.FixMethodOrder(org.junit.runners.MethodSorters.NAME_ASCENDING)
 public class MulticamFreezeNavigationInstrumentedTest {
     private static WebView findWebView(View node) {
         if (node instanceof WebView) return (WebView) node;
@@ -114,6 +115,57 @@ public class MulticamFreezeNavigationInstrumentedTest {
             org.json.JSONObject.quote(selector) +
             ");if(!b)return false;b.click();return true})()";
         assertEquals("true", eval(activity, view, script));
+    }
+
+    /**
+     * TEST ONLY diagnostic: the installed application is entirely unchanged.
+     * Temporarily remove graphical paint effects from this test WebView
+     * without disabling Camera, Editor, Settings, fold logic, or any handlers.
+     * If this navigation passes but the unchanged design fails, isolate CSS
+     * compositing costs instead of randomly changing camera ownership.
+     */
+    @Test
+    public void aMinimalPaintDiagnosticStillNavigatesAllRealScreens() throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            WebView view = web.get();
+            assertNotNull("Capacitor WebView is missing", view);
+            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            Log.i("MultiCamFreezeTest", "DIAGNOSTIC ONLY: comparing minimal compositor paint; no production CSS changed");
+            String style = "*,*::before,*::after{" +
+                "background-image:none!important;" +
+                "-webkit-backdrop-filter:none!important;" +
+                "backdrop-filter:none!important;" +
+                "box-shadow:none!important;" +
+                "text-shadow:none!important;" +
+                "filter:none!important;" +
+                "animation:none!important;" +
+                "transition:none!important;}";
+            String inject = "(function(){var s=document.createElement('style');" +
+                "s.id='multicam-ci-minimal-paint-only';s.textContent=" +
+                org.json.JSONObject.quote(style) +
+                ";document.head.appendChild(s);return true})()";
+            assertEquals("true", eval(running, view, inject));
+            for (int i = 0; i < 2; i++) {
+                click(running, view, ".bottom-nav button:nth-child(3)");
+                eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
+                click(running, view, ".bottom-nav button:nth-child(1)");
+                eventually(running, view, "!!document.querySelector('.camera-screen')");
+            }
+        } finally {
+            finishAndWait(activity);
+        }
     }
 
     /** An idle camera UI must keep Chromium responsive before any Settings
