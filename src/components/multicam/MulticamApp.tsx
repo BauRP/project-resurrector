@@ -264,13 +264,17 @@ function MulticamAppContent() {
       </motion.button></div>
     </header>}
     {/* Settings mount directly: never keep a hidden live camera and the new settings DOM painting together. The recording-save guard above remains authoritative. */}
-    {tab === "settings" ? <SettingsCrashBoundary onExit={() => requestTab("camera")}><SettingsEntryGate><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка настроек…</div>}><SettingsTab /></Suspense></SettingsEntryGate></SettingsCrashBoundary> :
+    {tab === "settings" ? (document.documentElement.dataset["multicamFreezeIsolation"] === "settings-shell"
+      ? <section className="settings-fold-workspace" data-freeze-isolation="settings-shell"><h2>Test-only Settings shell</h2></section>
+      : <SettingsCrashBoundary onExit={() => requestTab("camera")}><SettingsEntryGate><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка настроек…</div>}><SettingsTab /></Suspense></SettingsEntryGate></SettingsCrashBoundary>) :
       // Android WebView has one hardware compositor shared by live camera
       // TextureView and editor video layers. AnimatePresence "wait" retains
       // old GPU-backed DOM until its exit lifecycle finishes. On Android,
       // unmount the old screen immediately instead of composing two screens.
       nativeWebView
-        ? <div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraEntryGate><CameraWorkspace /></CameraEntryGate> : <EditorTab />}</Suspense></div>
+        ? <div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? (document.documentElement.dataset["multicamFreezeIsolation"] === "camera-shell"
+          ? <section className="camera-screen" data-freeze-isolation="camera-shell"><h2>Test-only Camera shell</h2></section>
+          : <CameraEntryGate><CameraWorkspace /></CameraEntryGate>) : <EditorTab />}</Suspense></div>
         : <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraWorkspace /> : <EditorTab />}</Suspense></motion.div></AnimatePresence>}
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && (nativeWebView ? <i /> : <motion.i layoutId="nav-active" />)}</button>)}</nav>}
     {navigationNotice && <div role="status" className="app-navigation-notice absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}

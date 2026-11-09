@@ -162,6 +162,63 @@ public class MulticamFreezeNavigationInstrumentedTest {
     }
 
     /**
+     * The real app's single WebView is tested with just one screen replaced
+     * by a tiny inert React shell during instrumentation. No production
+     * feature is removed or disabled. This binary split isolates the freeze
+     * to Settings mounting vs Camera teardown / global navigation.
+     */
+    private static void isolateThenNavigate(String isolation) throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            WebView view = web.get();
+            assertNotNull("Capacitor WebView is missing", view);
+            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            assertEquals("true", eval(running, view,
+                "(function(){document.documentElement.dataset.multicamFreezeIsolation=" +
+                org.json.JSONObject.quote(isolation) + ";return true})()"));
+            Log.i("MultiCamFreezeTest", "TEST-ONLY ISOLATION: " + isolation);
+            if ("camera-shell".equals(isolation)) {
+                // Mount the inert Camera shell before entering Settings.
+                click(running, view, ".bottom-nav button:nth-child(2)");
+                eventually(running, view, "!!document.querySelector('.editor-fold-workspace')");
+                click(running, view, ".bottom-nav button:nth-child(1)");
+                eventually(running, view, "!!document.querySelector('[data-freeze-isolation=camera-shell]')");
+            }
+            click(running, view, ".bottom-nav button:nth-child(3)");
+            eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
+            for (int i = 0; i < 3; i++) {
+                Thread.sleep(350);
+                assertEquals("true", eval(running, view,
+                    "(function(){return document.documentElement.dataset.multicamFreezeIsolation===" +
+                    org.json.JSONObject.quote(isolation) + "})()"));
+            }
+            click(running, view, ".bottom-nav button:nth-child(1)");
+            eventually(running, view, "!!document.querySelector('.camera-screen')");
+        } finally { finishAndWait(activity); }
+    }
+
+    @Test
+    public void aDiagnosticIsolateSettingsMountFromCameraTeardown() throws Exception {
+        isolateThenNavigate("settings-shell");
+    }
+
+    @Test
+    public void aDiagnosticIsolateOutgoingCameraFromRealSettings() throws Exception {
+        isolateThenNavigate("camera-shell");
+    }
+
+    /**
      * TEST ONLY diagnostic: the installed application is entirely unchanged.
      * Temporarily remove graphical paint effects from this test WebView
      * without disabling Camera, Editor, Settings, fold logic, or any handlers.
