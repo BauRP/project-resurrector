@@ -11,8 +11,10 @@ describe("Android WebView real frame-commit barrier", () => {
     expect(native).toContain("webView.postInvalidateOnAnimation()");
     expect(native).toContain('finish.accept("visual_state_only")');
     expect(native).toContain('finish.accept("timeout")');
-    expect(native.indexOf("registerFrameCommitCallback")).toBeGreaterThan(
-      native.indexOf("postVisualStateCallback"));
+    // Verify the real registration call appears after the real visual-state
+    // request; comments and the new stale-callback cleanup must not count.
+    expect(native.indexOf("observer.registerFrameCommitCallback(callback)")).toBeGreaterThan(
+      native.indexOf("webView.postVisualStateCallback(started,"));
   });
   it("keeps frame deadlines and independently captures hangs before test teardown", () => {
     const shell = readFileSync("scripts/run-android-freeze-test.sh", "utf8");
