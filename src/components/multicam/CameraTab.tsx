@@ -246,7 +246,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
         const delay = previewRetryDelay(++previewFailures.current);
         if (delay !== null) {
           setPreviewRetryPending(true);
-          retryTimer = window.setTimeout(() => {
+          retryTimer = setTimeout(() => {
             if (alive && !lastRecordingState.current.recording &&
                 !isCameraSwitchBlocked(lastRecordingState.current.recording, lastRecordingState.current.phase)) {
               setHotplugRevision(revision => revision + 1);
