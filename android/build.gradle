@@ -22,6 +22,23 @@ allprojects {
         google()
         mavenCentral()
     }
+
+    // Android instrumentation dependencies still bring Kotlin's legacy
+    // stdlib-jdk7/jdk8 1.6.21 while the main graph resolves stdlib 1.8.22.
+    // Kotlin >=1.8 merged those classes into the main stdlib. Keep the
+    // compatibility variants aligned in ALL projects (also Cordova), not
+    // just :app, so connectedDebugAndroidTest has one definition per class.
+    configurations.configureEach {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.jetbrains.kotlin' &&
+                (details.requested.name == 'kotlin-stdlib-jdk7' ||
+                 details.requested.name == 'kotlin-stdlib-jdk8') &&
+                details.requested.version != '1.8.22') {
+                details.useVersion '1.8.22'
+                details.because 'Align Kotlin stdlib variants with resolved kotlin-stdlib 1.8.22'
+            }
+        }
+    }
 }
 
 task clean(type: Delete) {
