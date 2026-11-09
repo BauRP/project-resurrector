@@ -209,6 +209,16 @@ public class MulticamFreezeNavigationInstrumentedTest {
     }
 
     @Test
+    public void aDiagnosticSettingsLogicWithoutFullMarkup() throws Exception {
+        isolateThenNavigate("settings-module");
+    }
+
+    @Test
+    public void aDiagnosticSettingsTwoGroupsWithoutPortalsOrRadix() throws Exception {
+        isolateThenNavigate("settings-groups");
+    }
+
+    @Test
     public void aDiagnosticIsolateSettingsMountFromCameraTeardown() throws Exception {
         isolateThenNavigate("settings-shell");
     }

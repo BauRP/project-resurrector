@@ -176,6 +176,21 @@ export function SettingsTab() {
    else if(action==="reset") { traceUiAction("settings: reset project"); s.resetProject(); }
  };
  const tc=themeCopy[s.language] ?? { theme:"Theme", light:"Light", dark:"Dark" };
+ // Instrumentation-only binary isolation. This flag is never set by the
+ // application; production mounts the exact same full Settings tree below.
+ // Keeps the real Settings hooks, timers and imports while independently
+ // testing the DOM subtree and its shared surface CSS.
+ const freezeIsolation = document.documentElement.dataset["multicamFreezeIsolation"];
+ if (freezeIsolation === "settings-module")
+   return <section className="settings-fold-workspace" data-freeze-isolation="settings-module">Settings logic loaded, compositor minimal</section>;
+ if (freezeIsolation === "settings-groups")
+   return <div className="settings-fold-workspace" data-freeze-isolation="settings-groups">
+     <header className="px-4 pb-2 pt-3"><h1 className="text-lg font-semibold">{t.title}</h1></header>
+     <main className="mx-auto max-w-2xl space-y-2.5 px-3">
+       <Group title={tc.theme}><div className="p-3">Светлая / Тёмная</div></Group>
+       <Group title={t.language}><div className="settings-item">Язык</div></Group>
+     </main>
+   </div>;
   return <div className="settings-fold-workspace pb-[calc(4rem+env(safe-area-inset-bottom))] text-foreground"><header className="px-4 pb-2 pt-3"><h1 className="text-lg font-semibold">{t.title}</h1></header><main className="mx-auto max-w-2xl space-y-2.5 px-3">
   <Group title={tc.theme}><div className="p-3"><div className="theme-seg" role="radiogroup" aria-label={tc.theme}><Button variant="ghost" role="radio" aria-checked={s.theme==="light"} className={s.theme==="light"?"active":""} onClick={()=>{ traceUiAction("settings: theme light"); setAdvancedPanel(null); s.set({theme:"light"}); }}><Sun/>{tc.light}</Button><Button variant="ghost" role="radio" aria-checked={s.theme==="dark"} className={s.theme==="dark"?"active":""} onClick={()=>{ traceUiAction("settings: theme dark"); setAdvancedPanel(null); s.set({theme:"dark"}); }}><Moon/>{tc.dark}</Button></div></div></Group>
   <Group help="language" title={t.language}><label className="settings-item"><span className="flex items-center gap-3"><Globe2 className="text-primary"/> {t.language}</span><select value={s.language} onChange={(e)=>s.set({language:e.target.value})} className="max-w-44 bg-transparent text-end text-sm text-muted-foreground outline-none">{languages.map(([code,name])=><option key={code} value={code}>{name}</option>)}</select></label></Group>
