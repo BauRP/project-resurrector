@@ -94,9 +94,23 @@ public class UiFreezePlugin extends Plugin {
             final android.os.Handler handler =
                 new android.os.Handler(android.os.Looper.getMainLooper());
             final long started = android.os.SystemClock.uptimeMillis();
+            // registerFrameCommitCallback survives a deadline unless it is
+            // explicitly unregistered. An older WebView with no committed
+            // frames would otherwise accumulate stale callbacks and PluginCall
+            // references on every navigation attempt.
+            final java.util.concurrent.atomic.AtomicReference<Runnable> pendingFrame =
+                new java.util.concurrent.atomic.AtomicReference<>(null);
+            final java.util.concurrent.atomic.AtomicReference<android.view.ViewTreeObserver> frameObserver =
+                new java.util.concurrent.atomic.AtomicReference<>(null);
             final java.util.function.Consumer<String> finish = phase -> {
                 if (!completed.compareAndSet(false, true)) return;
                 handler.removeCallbacksAndMessages(null);
+                Runnable registered = pendingFrame.getAndSet(null);
+                android.view.ViewTreeObserver observer = frameObserver.getAndSet(null);
+                if (registered != null && observer != null && observer.isAlive() &&
+                    android.os.Build.VERSION.SDK_INT >= 29) {
+                    observer.unregisterFrameCommitCallback(registered);
+                }
                 JSObject result = new JSObject();
                 result.put("ready", !"timeout".equals(phase));
                 result.put("phase", phase);
@@ -120,8 +134,11 @@ public class UiFreezePlugin extends Plugin {
                                     finish.accept("timeout");
                                     return;
                                 }
-                                observer.registerFrameCommitCallback(() ->
-                                    handler.post(() -> finish.accept("frame_committed")));
+                                final Runnable callback = () ->
+                                    handler.post(() -> finish.accept("frame_committed"));
+                                frameObserver.set(observer);
+                                pendingFrame.set(callback);
+                                observer.registerFrameCommitCallback(callback);
                                 // Ensure the native view participates in a
                                 // NEW frame after Chromium completed DOM work.
                                 webView.postInvalidateOnAnimation();
@@ -136,6 +153,12 @@ public class UiFreezePlugin extends Plugin {
             } catch (RuntimeException error) {
                 if (completed.compareAndSet(false, true)) {
                     handler.removeCallbacksAndMessages(null);
+                    Runnable registered = pendingFrame.getAndSet(null);
+                    android.view.ViewTreeObserver observer = frameObserver.getAndSet(null);
+                    if (registered != null && observer != null && observer.isAlive() &&
+                        android.os.Build.VERSION.SDK_INT >= 29) {
+                        observer.unregisterFrameCommitCallback(registered);
+                    }
                     call.reject("WebView frame-commit check failed: " + error.getMessage());
                 }
             }

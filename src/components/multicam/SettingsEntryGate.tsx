@@ -21,6 +21,7 @@ export function SettingsEntryGate({ children }: { children: ReactNode }) {
     let alive = true;
     let cancelAfterVisual: (() => void) | null = null;
     let retryVisual: ReturnType<typeof setTimeout> | null = null;
+    let nativeTimeoutCount = 0;
     const open = () => {
       if (!alive) return;
       traceUiAction("settings: renderer visual state reached");
@@ -34,8 +35,19 @@ export function SettingsEntryGate({ children }: { children: ReactNode }) {
       void uiFreeze.awaitVisualState().then(result => {
         if (!alive) return;
         if (!result.ready) {
-          traceUiAction("settings: native visual state timed out, retrying");
-          retryVisual = setTimeout(checkNativePaint, 900);
+          nativeTimeoutCount++;
+          // No native frame commit is not proof the JS thread has frozen:
+          // some OEM/virtual WebViews never call the frame-commit observer.
+          // Retry once, then use six genuinely responsive JS frames rather
+          // than leaving Settings on an endless 'Opening...' screen.
+          if (nativeTimeoutCount >= 2) {
+            traceUiAction("settings: native frame unavailable; responsive fallback");
+            cancelAfterVisual = scheduleAfterResponsivePaint(open,
+              { stableFrames: 6, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+          } else {
+            traceUiAction("settings: native visual state timed out, retrying");
+            retryVisual = setTimeout(checkNativePaint, 900);
+          }
           return;
         }
         traceUiAction("settings: native visual state ready");

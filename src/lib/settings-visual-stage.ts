@@ -1,62 +1,23 @@
-import { Capacitor } from "@capacitor/core";
 import { scheduleAfterResponsivePaint } from "./after-paint-task";
-import { uiFreeze } from "./ui-freeze-bridge";
 
-/** Each heavy Settings stage starts only after the Android WebView renderer
- * confirms the preceding scene reached its compositor. A JavaScript rAF alone
- * cannot prove that HardwareRenderer.syncAndDrawFrame has completed.
- * Feature panels are postponed, never removed or disabled.
+/**
+ * The Settings entry gate already requests one native frame-commit check
+ * after retiring the Camera / Editor. Calling postVisualStateCallback and
+ * invalidating the Android WebView again for EACH subsequent Settings group
+ * adds repeated GPU frames exactly while older emulators stall.
+ *
+ * Later groups retain their separate delays and must observe a sustained,
+ * responsive JS frame cadence. If the visible renderer is blocked they
+ * cannot mount, while hidden WebViews retain the scheduler's fallback.
+ * Camera2, network, privacy, and cache features are unchanged.
  */
 export function scheduleSettingsVisualStage(
   task: () => void,
   options: { stableFrames?: number; maxFrameGapMs?: number; backgroundFallbackMs?: number } = {},
 ): () => void {
-  let alive = true;
-  let completed = false;
-  let cancelFrames: (() => void) | null = null;
-  let retry: ReturnType<typeof setTimeout> | null = null;
-  const config = {
+  return scheduleAfterResponsivePaint(task, {
     stableFrames: options.stableFrames ?? 4,
     maxFrameGapMs: options.maxFrameGapMs ?? 125,
     backgroundFallbackMs: options.backgroundFallbackMs ?? 1800,
-  };
-  const finish = () => {
-    if (!alive || completed) return;
-    completed = true;
-    task();
-  };
-  const check = () => {
-    if (!alive || completed) return;
-    cancelFrames = scheduleAfterResponsivePaint(() => {
-      if (!alive || completed) return;
-      if (!Capacitor.isNativePlatform() || document.hidden ||
-          !Capacitor.isPluginAvailable("UiFreeze")) {
-        finish();
-        return;
-      }
-      void uiFreeze.awaitVisualState().then(result => {
-        if (!alive || completed) return;
-        if (!result.ready) {
-          retry = setTimeout(check, 900);
-          return;
-        }
-        cancelFrames = scheduleAfterResponsivePaint(finish, {
-          stableFrames: 2, maxFrameGapMs: config.maxFrameGapMs,
-          backgroundFallbackMs: config.backgroundFallbackMs,
-        });
-      }).catch(() => {
-        if (!alive || completed) return;
-        cancelFrames = scheduleAfterResponsivePaint(finish, {
-          stableFrames: 5, maxFrameGapMs: config.maxFrameGapMs,
-          backgroundFallbackMs: config.backgroundFallbackMs,
-        });
-      });
-    }, config);
-  };
-  check();
-  return () => {
-    alive = false;
-    cancelFrames?.();
-    if (retry !== null) clearTimeout(retry);
-  };
+  });
 }

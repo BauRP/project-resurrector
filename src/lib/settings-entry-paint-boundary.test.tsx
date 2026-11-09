@@ -84,6 +84,33 @@ describe("native Settings paint boundary", () => {
     expect(vi.mocked(uiFreeze.awaitVisualState).mock.calls.length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText("Camera2 features intact")).toBeNull();
   });
+  it("opens Settings after two unavailable native commits only when JavaScript remains responsive", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
+    vi.mocked(uiFreeze.awaitVisualState).mockResolvedValue({ ready: false, elapsedMs: 4500 });
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
+      frames.push(fn);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    render(<SettingsEntryGate><button>All camera diagnostics</button></SettingsEntryGate>);
+    act(() => {
+      frames.shift()?.(16); frames.shift()?.(32); frames.shift()?.(48);
+      vi.advanceTimersByTime(0);
+    });
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.queryByText("All camera diagnostics")).toBeNull();
+    act(() => vi.advanceTimersByTime(900));
+    await act(async () => { await Promise.resolve(); });
+    expect(uiFreeze.awaitVisualState).toHaveBeenCalledTimes(2);
+    act(() => {
+      for (let i = 0; i < 6; i++) frames.shift()?.(64 + i * 16);
+      vi.advanceTimersByTime(0);
+    });
+    expect(screen.getByText("All camera diagnostics")).toBeTruthy();
+  });
+
   it("does not force-mount Settings while a visible renderer is still blocked", () => {
     vi.useFakeTimers();
     vi.stubGlobal("requestAnimationFrame", vi.fn(() => 77));
