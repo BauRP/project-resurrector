@@ -7,6 +7,7 @@ import { Capacitor } from "@capacitor/core";
 // Load the heavy editor only when opened; keep camera and settings light.
 const EditorTab = lazy(() => import("./EditorTab").then(mod => ({ default: mod.EditorTab })));
 import { SettingsEntryGate } from "./SettingsEntryGate";
+import { CameraEntryGate } from "./CameraEntryGate";
 import { loadSettingsModule, scheduleSettingsPreload } from "@/lib/settings-module-loader";
 import { isStaleCapture, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 const SettingsTab = lazy(() => loadSettingsModule().then(mod => ({ default: mod.SettingsTab })));
@@ -269,7 +270,7 @@ function MulticamAppContent() {
       // old GPU-backed DOM until its exit lifecycle finishes. On Android,
       // unmount the old screen immediately instead of composing two screens.
       nativeWebView
-        ? <div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraWorkspace /> : <EditorTab />}</Suspense></div>
+        ? <div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraEntryGate><CameraWorkspace /></CameraEntryGate> : <EditorTab />}</Suspense></div>
         : <AnimatePresence mode="wait"><motion.div key={tab} className={tab === "camera" ? "relative min-h-0 flex-1" : ""} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} transition={{ duration: .18 }}><Suspense fallback={<div role="status" className="studio-tab-loading p-5 text-center text-sm text-muted-foreground">Загрузка редактора…</div>}>{tab === "camera" ? <CameraWorkspace /> : <EditorTab />}</Suspense></motion.div></AnimatePresence>}
     </div>{!clean && <nav className="bottom-nav" aria-label="Primary navigation">{nav.map(({ id, icon: Icon }, index) => <button key={id} aria-label={current[index]} onClick={() => requestTab(id)} className={tab === id ? "active" : ""}><Icon /><span>{current[index]}</span>{tab === id && (nativeWebView ? <i /> : <motion.i layoutId="nav-active" />)}</button>)}</nav>}
     {navigationNotice && <div role="status" className="app-navigation-notice absolute inset-x-3 bottom-[calc(var(--nav-h)+0.5rem)] z-50 rounded-lg border border-border bg-card p-3 text-xs text-foreground shadow-lg">{navigationNotice}

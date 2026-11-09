@@ -27,7 +27,8 @@ describe("HardwareRenderer freeze after camera -> settings", () => {
     expect(app).toContain("<SettingsEntryGate>");
     expect(app).toContain("nativeWebView");
     expect(app).toContain('nativeWebView\n        ? <div key={tab}');
-    expect(app).toContain('tab === "camera" ? <CameraWorkspace /> : <EditorTab />');
+    expect(app).toContain('tab === "camera" ? <CameraEntryGate><CameraWorkspace /></CameraEntryGate> : <EditorTab />');
+    expect(app).toContain('import { CameraEntryGate } from "./CameraEntryGate";');
     expect(app).toContain('<AnimatePresence mode="wait"><motion.div key={tab}');
     expect(app).toContain("transition={{ duration: .18 }}");
   });
