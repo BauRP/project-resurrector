@@ -52,7 +52,9 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(app).toContain('document.documentElement.classList.toggle("dark", theme === "dark")');
     expect(app).toContain('className="bottom-nav"');
     expect(app).toContain('lazy(() => import("./EditorTab")');
-    expect(app).toContain('tab === "settings" ? <SettingsCrashBoundary');
+    expect(app).toContain('tab === "settings" ? (document.documentElement.dataset["multicamFreezeIsolation"] === "settings-shell"');
+    expect(app).toContain(': <SettingsCrashBoundary onExit={() => requestTab("camera")}');
+    expect(app).toContain('data-freeze-isolation="settings-shell"');
     expect(app).toContain('useLayoutEffect(() => { document.documentElement.classList.toggle("dark", theme === "dark"); }, [theme]);');
     expect(app).not.toContain('mode={tab === "settings" ? "sync" : "wait"}');
     expect(app).toContain('<Suspense fallback=');
