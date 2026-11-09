@@ -26,11 +26,14 @@ describe("HardwareRenderer freeze after camera -> settings", () => {
   it("detects Android WebView before mounting secondary tabs", () => {
     const app = readFileSync("src/components/multicam/MulticamApp.tsx", "utf8");
     expect(app).toContain('dataset["multicamNativeWebview"] = String(Capacitor.isNativePlatform())');
-    expect(app).toContain('tab === "settings" ? <SettingsCrashBoundary');
+    expect(app).toContain('tab === "settings" ? (document.documentElement.dataset["multicamFreezeIsolation"] === "settings-shell"');
+    expect(app).toContain(': <SettingsCrashBoundary onExit={() => requestTab("camera")}');
+    expect(app).toContain('data-freeze-isolation="settings-shell"');
     expect(app).toContain("<SettingsEntryGate>");
     expect(app).toContain("nativeWebView");
     expect(app).toContain('nativeWebView\n        ? <div key={tab}');
-    expect(app).toContain('tab === "camera" ? <CameraEntryGate><CameraWorkspace /></CameraEntryGate> : <EditorTab />');
+    expect(app).toContain('tab === "camera" ? (document.documentElement.dataset["multicamFreezeIsolation"] === "camera-shell"');
+    expect(app).toContain(': <CameraEntryGate><CameraWorkspace /></CameraEntryGate>) : <EditorTab />');
     expect(app).toContain('import { CameraEntryGate } from "./CameraEntryGate";');
     expect(app).toContain('<AnimatePresence mode="wait"><motion.div key={tab}');
     expect(app).toContain("transition={{ duration: .18 }}");
