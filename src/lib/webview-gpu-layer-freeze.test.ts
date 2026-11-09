@@ -16,8 +16,11 @@ describe("HardwareRenderer freeze after camera -> settings", () => {
     const css = readFileSync("src/styles.css", "utf8");
     expect(css).toContain('data-fold-workspace="normal"');
     expect(css).toContain(".settings-fold-workspace main > section:not(.settings-advanced-tools)");
-    expect(css).toContain("content-visibility: auto;");
-    expect(css).toContain("contain-intrinsic-size: auto 108px;");
+    // Minimal CSS and software-rendered WebView still froze; do not
+    // virtualize Android Settings subtrees in Chromium.
+    expect(css).toContain("content-visibility: visible;");
+    expect(css).not.toContain("content-visibility: auto;");
+    expect(css).not.toContain("contain-intrinsic-size: auto 108px;");
     expect(css).toContain("var(--reference-surface)");
   });
   it("detects Android WebView before mounting secondary tabs", () => {

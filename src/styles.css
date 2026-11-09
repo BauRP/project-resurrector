@@ -1599,21 +1599,20 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   isolation: auto;
 }
 
-/* The advanced Camera2 / diagnostic controls are below the initial Settings
- * viewport. Android Chromium 124 may skip their offscreen paint until the
- * user scrolls/focuses them. Every control remains mounted and accessible. */
+/* Android WebView compositor regression #176: the Settings screen stalled
+ * immediately after its second paint, with Android MAIN responsive even when
+ * gradients were stripped and the test WebView used a software layer.
+ * The previous content-visibility skipping remained active in both tests.
+ * Render these small, progressively mounted Settings groups normally instead
+ * of relying on older Chromium's subtree virtualization. Camera2, diagnostics,
+ * fold panes and the 111/222 appearance remain unchanged. */
 :root[data-multicam-native-webview="true"] .settings-fold-workspace .settings-advanced-tools {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 148px;
+  content-visibility: visible;
 }
 
-
-/* Android: offscreen Settings sections are retained but their glass surfaces
- * are composited only when they approach the viewport. content-visibility
- * preserves all DOM, controls, focus/scroll behavior and 111/222 styling.
- * Do not apply to fold-pane layouts or dialog overlays. */
+/* Ordinary Android Settings have only a few rows initially. Later groups are
+ * staged after native visual-state readiness; do not skip their CSS layout. */
 :root[data-multicam-native-webview="true"][data-fold-workspace="normal"]
  .settings-fold-workspace main > section:not(.settings-advanced-tools) {
-  content-visibility: auto;
-  contain-intrinsic-size: auto 108px;
+  content-visibility: visible;
 }
