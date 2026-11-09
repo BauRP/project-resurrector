@@ -436,16 +436,30 @@ public class NativeCapturePlugin extends Plugin {
      call.reject("Camera2 Activity закрыта");
    }
  }
+ private final java.util.concurrent.atomic.AtomicBoolean statusCallInFlight =
+     new java.util.concurrent.atomic.AtomicBoolean(false);
  @PluginMethod public void status(PluginCall call){
+   // A stuck emulator Camera2 worker must not accumulate unbounded status()
+   // requests in the executor queue. Reject duplicates immediately; the
+   // WebView's read-only retry loop waits before querying again.
+   if(!statusCallInFlight.compareAndSet(false,true)){
+     call.reject("Camera2: предыдущая проверка состояния ещё выполняется");
+     return;
+   }
    final android.content.Context context=getContext().getApplicationContext();
    try {
      statusWorker.execute(()->{
        try {
          NativeCaptureService.recoverAbandonedRecording(context);
          call.resolve(NativeCaptureService.status(context));
-       } catch (Exception error) { call.reject("Статус Camera2 недоступен: "+error.getMessage()); }
+       } catch (Exception error) {
+         call.reject("Статус Camera2 недоступен: "+error.getMessage());
+       } finally {
+         statusCallInFlight.set(false);
+       }
      });
    } catch (java.util.concurrent.RejectedExecutionException error) {
+     statusCallInFlight.set(false);
      call.reject("Camera2 Activity закрыта");
    }
  }

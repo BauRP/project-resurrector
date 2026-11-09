@@ -5,6 +5,7 @@ import { nativeCapture, nativeRecorderOwnsCamera } from "@/lib/native-capture";
 import { mayFinishCameraOwnerSwitch } from "@/lib/camera-owner-handoff";
 import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { bounded } from "@/lib/async";
+import { startNativeStatusRecovery } from "@/lib/camera-availability-retry";
 import { Button } from "@/components/ui/button";
 import { CameraTab } from "./CameraTab";
 // Native Camera2 viewer is excluded from the ordinary WebView startup bundle.
@@ -20,6 +21,7 @@ export function CameraWorkspace() {
   const phase = useMulticamStore(s => s.recordingPhase);
   const [mode, setMode] = useState<Mode>("web"); // No permission or camera stream is opened here.
   const [notice, setNotice] = useState("");
+  const [statusNotice, setStatusNotice] = useState("");
   const [switching, setSwitching] = useState(false);
   useSyncExternalStore(diagnosticCaptureGate.subscribe, diagnosticCaptureGate.getSnapshot, diagnosticCaptureGate.getSnapshot);
   const blocked = recording || diagnosticCaptureGate.activeOperation() !== null ||
@@ -37,24 +39,24 @@ export function CameraWorkspace() {
   const manualModeSelection = useRef(false);
   useEffect(() => {
     if (!isNative()) return;
-    let live = true;
-    // Preserve automatic Camera2 ownership restoration. The native status
-    // method now runs on a Java worker, so it cannot block Android's UI.
-    // Keep the UI interactive while the answer is pending; the WebView
-    // camera itself always checks native ownership before opening.
-    void bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")
-      .then(status => {
-        if (!live || manualModeSelection.current) return;
+    // Emulators can have no usable camera at all. A failed status read is
+    // neither permission to open WebView's camera nor a reason to block tabs.
+    // Keep retrying only the READ-ONLY ownership check, with backoff and one
+    // bounded attempt at a time; never trigger getUserMedia or start Camera2.
+    return startNativeStatusRecovery(
+      () => bounded(nativeCapture.status(), 2200, "Camera2 startup ownership"),
+      status => {
+        setStatusNotice("");
+        if (manualModeSelection.current) return;
         let preference: Mode = "web";
         try { if (localStorage.getItem(PREF) === "native") preference = "native"; }
         catch { /* storage may be unavailable */ }
-        if (nativeRecorderOwnsCamera(status.state)) setMode("native");
-        else if (preference === "native") setMode("native");
-      }).catch(() => {
-        if (live && !manualModeSelection.current)
-          setNotice("Camera2 не ответила. Прежде чем открывать камеру, проверьте её занятость.");
-      });
-    return () => { live = false; };
+        if (nativeRecorderOwnsCamera(status.state) || preference === "native")
+          setMode("native");
+      },
+      () => setStatusNotice("Camera2 пока не отвечает. Приложение работает; проверю её снова автоматически."),
+      () => !document.hidden,
+    );
   }, []);
 
   const switchTo = useCallback(async (next:Mode) => {
@@ -94,6 +96,7 @@ export function CameraWorkspace() {
         Camera2
       </Button>
     </div>}
+    {statusNotice && <p role="status" className="shrink-0 bg-card p-2 text-xs text-muted-foreground">{statusNotice}</p>}
     {notice && <p role="alert" className="shrink-0 bg-card p-2 text-xs text-destructive">{notice}</p>}
     {mode === "web" ? <div className="relative min-h-0 flex-1"><CameraTab onOpenNativeMode={isNative() ? () => { void switchTo("native"); } : undefined} /></div> :
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">

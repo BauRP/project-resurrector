@@ -72,7 +72,12 @@ export async function acquireWebViewPreviewWithNativeGuard(
     // stream without video are not evidence of an audio-only failure.
     // An explicitly selected microphone must never silently become a
     // soundless video. Audio-only fallback is for an optional default mic.
-    if(!current()||constraints.audio!==true||
+    // Camera permission denial is NOT a microphone-only failure. Retrying
+    // getUserMedia without audio can repeatedly prompt Android for the same
+    // denied camera and must not happen on an emulator without permission.
+    const denied = error instanceof Error &&
+      ["NotAllowedError", "SecurityError", "PermissionDeniedError"].includes(error.name);
+    if(!current()||constraints.audio!==true||denied||
        error instanceof CameraBusyError ||
        error instanceof CameraSupersededError ||
        error instanceof CameraUnavailableError)throw error;

@@ -1,6 +1,7 @@
 import { nativeCapture } from "@/lib/native-capture";
 import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
 import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
+import { isRetryableCameraPreviewError, previewRetryDelay } from "@/lib/camera-availability-retry";
 import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
 import { RecordingChunkSpool } from "@/lib/recording-chunk-spool";
 import { recordingInputLostReason } from "@/lib/recording-finalization";
@@ -99,6 +100,9 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
   const [previewRequested, setPreviewRequested] = useState(false);
+  const previewFailures = useRef(0);
+  const retryDeviceKey = useRef("");
+  const [previewRetryPending, setPreviewRetryPending] = useState(false);
   const [nativeOwnsCamera,setNativeOwnsCamera] = useState(false);
 
   const facingMode = s.facing === "front" ? "user" : "environment";
@@ -208,7 +212,14 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     // Each lens/fold/diagnostic refresh gets its OWN owner identity. An older
     // pending getUserMedia completion cannot release a newer camera stream.
     let alive = true; const token = Symbol("camera-preview-generation");
+    let retryTimer: ReturnType<typeof setTimeout> | null = null;
+    const deviceKey = [appliedDevice.facing, appliedDevice.lens, appliedDevice.mic].join("|");
+    if (deviceKey !== retryDeviceKey.current) {
+      previewFailures.current = 0;
+      retryDeviceKey.current = deviceKey;
+    }
     owner.current = token;
+    setPreviewRetryPending(false);
     setStream(null); setCameraState("loading"); setFocusWarning(false); setFocusError("");
     const video = appliedDevice.lens ? { deviceId: { exact: appliedDevice.lens } } : { facingMode: appliedDevice.facing };
     const audio = appliedDevice.mic ? { deviceId: { exact: appliedDevice.mic } } : true;
@@ -219,14 +230,36 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
       {isCurrent:()=>alive},
     ).then(next=>{
       if(alive){
+        previewFailures.current = 0;
+        setPreviewRetryPending(false);
         setNativeOwnsCamera(false);setStream(next);setCameraState("live");
       }else cameraController.release(token);
     }).catch(error=>{
       if(!alive)return;
       setNativeOwnsCamera(error instanceof NativeCameraBusyError);
       setCameraState("unavailable");
+      // The user has already requested preview. Temporary emulator failures
+      // may be rechecked, but never start concurrent getUserMedia calls:
+      // CameraController quarantines an unsettled underlying request.
+      // Explicit permission denial and mismatched external devices are final.
+      if (!document.hidden && !cameraSwitchBlocked && isRetryableCameraPreviewError(error)) {
+        const delay = previewRetryDelay(++previewFailures.current);
+        if (delay !== null) {
+          setPreviewRetryPending(true);
+          retryTimer = window.setTimeout(() => {
+            if (alive && !lastRecordingState.current.recording &&
+                !isCameraSwitchBlocked(lastRecordingState.current.recording, lastRecordingState.current.phase)) {
+              setHotplugRevision(revision => revision + 1);
+            }
+          }, delay);
+        }
+      }
     });
-    return () => { alive = false; cameraController.release(token); };
+    return () => {
+      alive = false;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+      cameraController.release(token);
+    };
   }, [previewRequested, appliedDevice.facing, appliedDevice.mic, appliedDevice.lens, diagnosticRevision, hotplugRevision]);
   // WebView may keep a USB-camera track "live" briefly after unplug.
   // Confirm actual removal from two successive device enumerations before
@@ -928,8 +961,8 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     <section className={`camera-live-view absolute inset-0 overflow-hidden ${cameraState === "live" ? "bg-viewfinder" : "camera-preview-placeholder"} ${s.recording && !clean ? "tally-frame" : ""}`}>
       {cameraState === "live" ? <video ref={videoRef} onPointerUp={(e) => void tapFocus(e)} autoPlay muted playsInline className={`h-full w-full object-cover ${s.anamorphic === "1.33x" ? "scale-x-[1.33]" : s.anamorphic === "1.55x" ? "scale-x-[1.55]" : ""}`} style={{ filter: `${s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile)} contrast(${1 + s.distortion / 300}) saturate(${s.selectedLut === "Neutral" ? 1 : 1.18})${wbTint} ${tuneFilter(s)}` }} /> : <div className="absolute inset-0 flex items-center justify-center px-5 text-center text-sm text-foreground" role="status"><div className="camera-preview-status relative z-10 w-full max-w-md rounded-2xl px-4 py-5">
         <Camera aria-hidden="true" className="camera-preview-symbol mx-auto size-8 text-primary" />
-        <p>{!previewRequested ? "Проверка завершена. Камера не открывалась." : cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</p>
-        {cameraState !== "loading" && !nativeOwnsCamera && <button type="button" className="camera-preview-retry" onClick={() => { setPreviewRequested(true); setHotplugRevision(revision => revision + 1); }}><Camera aria-hidden="true" className="size-4" />Включить камеру</button>}
+        <p>{!previewRequested ? "Проверка завершена. Камера не открывалась." : cameraState === "loading" ? "Подключение камеры…" : nativeOwnsCamera ? "Камера занята отдельной нативной записью Android. Управление записью находится в Настройках. Текущий MP4 продолжается без предпросмотра WebView." : previewRetryPending ? "Камера пока не ответила. Интерфейс работает, повторная попытка будет выполнена автоматически." : "Камера недоступна. Проверьте разрешения или занятость камеры другим приложением."}</p>
+        {cameraState !== "loading" && !nativeOwnsCamera && <button type="button" className="camera-preview-retry" onClick={() => { previewFailures.current = 0; setPreviewRetryPending(false); setPreviewRequested(true); setHotplugRevision(revision => revision + 1); }}><Camera aria-hidden="true" className="size-4" />Включить камеру</button>}
        </div></div>}
       {dualPreviewEnabled && <DualCameraPreview primaryStream={stream} onSecondaryStream={setSecondaryStream} recording={s.recording || isDualEncoderStillFinishing(s.recordingPhase)} hidden={clean} />}
       {!clean && <>
