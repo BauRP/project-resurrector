@@ -118,6 +118,50 @@ public class MulticamFreezeNavigationInstrumentedTest {
     }
 
     /**
+     * TEST ONLY Chromium baseline. First load the normal Capacitor Activity,
+     * then navigate its existing WebView to a tiny same-origin HTML document.
+     * This intentionally replaces the React app ONLY inside this isolated
+     * instrumentation case. Neither production code nor camera features
+     * are modified. If this also loses JS callbacks, suspect the emulator's
+     * WebView/GPU backend before changing React, Camera2 or fold layout.
+     */
+    @Test
+    public void aBaselineChromiumWithoutReactStillExecutesJavascript() throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            WebView view = web.get();
+            assertNotNull("Capacitor WebView is missing", view);
+            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            String html = "<!DOCTYPE html><html><head><meta name='viewport' " +
+                "content='width=device-width,initial-scale=1'></head>" +
+                "<body><button id='baseline'>Control</button><div id='status'>ready</div></body></html>";
+            InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                view.loadDataWithBaseURL("https://localhost/", html, "text/html", "UTF-8", null));
+            eventually(running, view, "!!document.querySelector('#baseline')");
+            for (int i = 0; i < 5; i++) {
+                Thread.sleep(300);
+                assertEquals("true", eval(running, view,
+                    "(function(){var v=document.querySelector('#status');" +
+                    "if(!v)return false;v.textContent=String(Date.now());" +
+                    "return !!document.querySelector('#baseline')})()"));
+            }
+        } finally {
+            finishAndWait(activity);
+        }
+    }
+
+    /**
      * TEST ONLY diagnostic: the installed application is entirely unchanged.
      * Temporarily remove graphical paint effects from this test WebView
      * without disabling Camera, Editor, Settings, fold logic, or any handlers.
