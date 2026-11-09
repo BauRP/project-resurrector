@@ -1,0 +1,44 @@
+name: Refresh Capacitor lockfile on freeze branch
+
+on:
+  push:
+    branches: [chatgpt/freeze-stability-20261107]
+    paths: [package.json]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: multicam-capacitor-lock-refresh
+  cancel-in-progress: false
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: chatgpt/freeze-stability-20261107
+          persist-credentials: true
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.4"
+      - name: Resolve compatible Capacitor dependencies and regenerate Bun lock
+        run: |
+          set -euo pipefail
+          bun install --lockfile-only
+          bun install --frozen-lockfile
+          bun pm ls | grep '@capacitor/'
+      - name: Persist only regenerated lockfile
+        run: |
+          set -euo pipefail
+          git add bun.lock
+          if git diff --cached --quiet; then
+            echo "Lockfile already current."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git commit -m "chore(deps): lock Capacitor 8.6.0 for reproducible Android builds"
+          git push origin HEAD:chatgpt/freeze-stability-20261107
