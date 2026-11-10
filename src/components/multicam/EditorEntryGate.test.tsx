@@ -22,7 +22,7 @@ describe("Android Editor waits for camera compositor teardown", () => {
     expect(screen.queryByTestId("full-editor")).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("Открываю редактор");
     expect(scheduleAfterResponsivePaint).toHaveBeenCalledWith(expect.any(Function), {
-      stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800,
+      stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800,
     });
     act(() => paint?.());
     expect(screen.getByTestId("full-editor").textContent).toBe("Real editor");
@@ -57,5 +57,14 @@ describe("Android Editor waits for camera compositor teardown", () => {
     expect(cancel).toHaveBeenCalled();
     act(() => paint?.());
     expect(screen.queryByTestId("full-editor")).toBeNull();
+  });
+
+  it("keeps Editor mounted when the slow WebView only renders five frames each second", () => {
+    const cancel = vi.fn();
+    vi.mocked(scheduleAfterResponsivePaint).mockImplementation(() => cancel);
+    render(<EditorEntryGate><span>Редактор</span></EditorEntryGate>);
+    expect(scheduleAfterResponsivePaint).toHaveBeenCalledWith(expect.any(Function), {
+      stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800,
+    });
   });
 });

@@ -4,7 +4,7 @@ import { traceUiAction } from "@/lib/freeze-action-trace";
 
 /** On Android, the old Camera2/WebView video surface may still be retiring
  * while the user navigates to Editor. Start Editor media metadata, timeline
- * and video decoder only after four steady paint frames. Navigation or
+ * and video decoder only after four steady paint frames. Slow software\n * WebViews may render only 5fps, so the gap must not be a 60fps assumption. Navigation or
  * backgrounding cancels a pending start. No editor feature is disabled. */
 export function EditorEntryGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -20,7 +20,7 @@ export function EditorEntryGate({ children }: { children: ReactNode }) {
         if (!active || document.hidden) return;
         traceUiAction("editor: mounting after responsive frames");
         setReady(true);
-      }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+      }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
     };
     const onVisibility = () => {
       if (document.hidden) {

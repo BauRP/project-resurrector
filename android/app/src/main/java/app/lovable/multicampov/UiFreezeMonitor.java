@@ -42,6 +42,12 @@ public final class UiFreezeMonitor {
     private static final AtomicBoolean rendererProbePending = new AtomicBoolean();
     private static final AtomicLong rendererProbeSentAt = new AtomicLong();
     private static final AtomicLong rendererRepliedAt = new AtomicLong();
+    // A hung evaluateJavascript callback previously kept this pending forever.
+    // Bound one probe to six seconds and invalidate any late callback before
+    // retrying, so the monitor can recover its independent evidence.
+    private static final long RENDERER_PROBE_TIMEOUT_MS = 6000L;
+    private static final long RENDERER_PROBE_RETRY_MS = 9000L;
+    private static final AtomicLong rendererProbeGeneration = new AtomicLong();
     private static final AtomicLong monitorEpoch = new AtomicLong();
     private static final AtomicBoolean rendererUnresponsiveRecorded = new AtomicBoolean();
     private static volatile String rendererLastEvidence = "";
@@ -62,6 +68,7 @@ public final class UiFreezeMonitor {
         stop();
         context = applicationContext.getApplicationContext();
         observedWebView = new WeakReference<>(webView);
+        rendererProbeGeneration.incrementAndGet();
         rendererProbePending.set(false);
         rendererProbeSentAt.set(0L);
         rendererRepliedAt.set(0L);
@@ -138,6 +145,7 @@ public final class UiFreezeMonitor {
         earlyWebViewCaptured.set(false);
         pendingPulse.set(false);
         captured.set(false);
+        rendererProbeGeneration.incrementAndGet();
         rendererProbePending.set(false);
         rendererProbeSentAt.set(0L);
         rendererRepliedAt.set(0L);
@@ -217,19 +225,35 @@ public final class UiFreezeMonitor {
     }
 
     private static void checkRendererIndependently(long now) {
-        if (observedWebView.get() == null || rendererProbePending.get() ||
-            now - rendererProbeSentAt.get() < 2500L) return;
+        if (observedWebView.get() == null) return;
+        final long sent = rendererProbeSentAt.get();
+        if (rendererProbePending.get()) {
+            // An unresponsive Chromium renderer may never invoke the Java
+            // callback. Do not let that one lost callback disable diagnostics
+            // for every later Settings/Camera navigation in this Activity.
+            if (sent > 0L && now - sent >= RENDERER_PROBE_TIMEOUT_MS &&
+                rendererProbePending.compareAndSet(true, false)) {
+                rendererProbeGeneration.incrementAndGet();
+                rendererLastEvidence = "Independent WebView JavaScript probe timed out after " +
+                    (now - sent) + " ms; renderer callback not delivered.";
+                rendererProbeSentAt.set(now); // back off: never flood UI thread
+            }
+            return;
+        }
+        if (sent > 0L && now - sent < RENDERER_PROBE_RETRY_MS) return;
         if (!rendererProbePending.compareAndSet(false, true)) return;
         rendererProbeSentAt.set(now);
         final long epoch = monitorEpoch.get();
+        final long generation = rendererProbeGeneration.incrementAndGet();
         MAIN.post(() -> {
-            if (!foreground || epoch != monitorEpoch.get()) {
-                rendererProbePending.set(false);
+            if (!foreground || epoch != monitorEpoch.get() ||
+                generation != rendererProbeGeneration.get()) {
+                if (generation == rendererProbeGeneration.get()) rendererProbePending.set(false);
                 return;
             }
             WebView webView = observedWebView.get();
             if (webView == null) {
-                rendererProbePending.set(false);
+                if (generation == rendererProbeGeneration.get()) rendererProbePending.set(false);
                 return;
             }
             try {
@@ -239,7 +263,7 @@ public final class UiFreezeMonitor {
                 webView.evaluateJavascript(
                     "(function(){return 'tab='+String(document.documentElement.dataset.activeMulticamTab||'unknown')+'; action='+String(window.__multicamFreezeLastAction||'unknown').slice(0,96)})()",
                     value -> {
-                        if (epoch == monitorEpoch.get()) {
+                        if (epoch == monitorEpoch.get() && generation == rendererProbeGeneration.get()) {
                             rendererLastEvidence = value == null ? "" :
                                 value.substring(0, Math.min(240, value.length()));
                             rendererRepliedAt.set(SystemClock.uptimeMillis());
@@ -247,7 +271,7 @@ public final class UiFreezeMonitor {
                         }
                     });
             } catch (RuntimeException error) {
-                rendererProbePending.set(false);
+                if (generation == rendererProbeGeneration.get()) rendererProbePending.set(false);
                 Log.w("MultiCamUiFreeze", "Independent renderer probe unavailable", error);
             }
         });
@@ -332,6 +356,7 @@ public final class UiFreezeMonitor {
     public static synchronized void stop() {
         foreground = false;
         monitorEpoch.incrementAndGet();
+        rendererProbeGeneration.incrementAndGet();
         rendererProbePending.set(false);
         observedWebView.clear();
         if (worker != null) {

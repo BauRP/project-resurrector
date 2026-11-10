@@ -10,7 +10,7 @@ import { traceUiAction } from "@/lib/freeze-action-trace";
  *
  * Camera2 recording safety is still controlled by MulticamApp navigation
  * guards; this only delays mounting the live Camera UI by responsive frames.
- * No camera, microphone, fold, or editor feature is disabled.
+ * Allow 5fps software WebViews to pass the same responsive-frame gate.\n * No camera, microphone, fold, or editor feature is disabled.
  */
 export function CameraEntryGate({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
@@ -21,7 +21,7 @@ export function CameraEntryGate({ children }: { children: ReactNode }) {
       if (!active) return;
       traceUiAction("camera: mounting after responsive paint");
       setReady(true);
-    }, { stableFrames: 3, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
     return () => {
       active = false;
       cancel();
