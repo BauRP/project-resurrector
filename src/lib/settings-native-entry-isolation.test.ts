@@ -19,7 +19,8 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     const nativePlugin = readFileSync("android/app/src/main/java/app/lovable/multicampov/UiFreezePlugin.java","utf8");
     expect(nativeMonitor).toContain("checkRendererIndependently(now)");
     expect(nativePlugin).toContain("@PluginMethod public void awaitVisualState(PluginCall call)");
-    expect(gate).toContain("stableFrames: 2");
+    expect(gate).toContain("maxFrameGapMs: 350");
+    expect(gate).toContain("settings: opening without waiting for GPU frame commit");
     expect(gate).not.toContain("}, 1100)");
     const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
     expect(scheduler).toContain("requestAnimationFrame");
