@@ -101,4 +101,27 @@ elif [ "$result" -ne 0 ]; then
   timeout 12 adb shell dumpsys activity processes \
     > "$GITHUB_WORKSPACE/android-freeze-processes-${ATTEMPT}.txt" 2>&1 || true
 fi
+# GitHub's Android emulator runner has stalled in QEMU teardown for over
+# 30 minutes AFTER all 9 WebView tests pass ("stop: Not implemented").
+# Give its normal shutdown 20 seconds, then clean up only this run's QEMU PID.
+# This is isolated to CI. Do not change app GPU, media, or Camera2 behavior.
+# Do not replace the original instrumentation result with a teardown result.
+mapfile -t tested_emulator_pids < <(pgrep -f '[q]emu-system-x86_64' || true)
+if (( ${#tested_emulator_pids[@]} > 0 )); then
+  (
+    sleep 20
+    for pid in "${tested_emulator_pids[@]}"; do
+      if [[ -r "/proc/$pid/cmdline" ]] && \
+         tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q 'qemu-system-x86_64'; then
+        echo "Emulator shutdown watchdog: terminating stale QEMU PID $pid"
+        kill -TERM "$pid" 2>/dev/null || true
+        sleep 3
+        if [[ -r "/proc/$pid/cmdline" ]] && \
+           tr '\0' ' ' < "/proc/$pid/cmdline" | grep -q 'qemu-system-x86_64'; then
+          kill -KILL "$pid" 2>/dev/null || true
+        fi
+      fi
+    done
+  ) </dev/null >"$GITHUB_WORKSPACE/android-freeze-emulator-shutdown-${ATTEMPT}.txt" 2>&1 &
+fi
 exit "$result"

@@ -14,4 +14,24 @@ describe("asynchronous waveform extraction keeps original peak density",()=>{
   const cancelled=vi.fn(()=>true);
   await expect(extractWaveformPeaks(new Float32Array(100),1,cancelled)).rejects.toThrow("прерван");
  });
+
+ it("yields inside a huge waveform column before the next column",async()=>{
+  // 20 columns only: the old 512-column yield was never reached.
+  const samples=new Float32Array(400_000);
+  samples[399_999]=-0.95;
+  const timer=vi.spyOn(globalThis,"setTimeout");
+  try {
+   const peaks=await extractWaveformPeaks(samples,1);
+   expect(timer).toHaveBeenCalled();
+   expect(peaks).toHaveLength(20);
+   expect(peaks[19]).toBeCloseTo(0.95);
+  } finally { timer.mockRestore(); }
+ });
+ it("cancels while scanning one long waveform column",async()=>{
+  const samples=new Float32Array(400_000);
+  const timer=vi.spyOn(globalThis,"setTimeout");
+  try {
+   await expect(extractWaveformPeaks(samples,1,()=>timer.mock.calls.length>0)).rejects.toThrow("прерван");
+  } finally { timer.mockRestore(); }
+ });
 });
