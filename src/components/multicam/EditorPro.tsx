@@ -6,6 +6,7 @@ import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-
 import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/lib/editor-project-recovery";
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
+import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -384,6 +385,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         if (m.peaks.length > 0) { waveformAttempted.current.add(m.id); continue; }
         waveformAttempted.current.add(m.id);
         try {
+          // Opening the Editor and its video decoders is more important than
+          // decoding optional waveform PCM on that same WebView turn.
+          // Preserve waveform functionality, but allow the renderer to finish
+          // four stable frames before EACH CPU-heavy decode attempt.
+          const responsive = await waitForEditorResponsiveIdle(abort.signal);
+          if (!responsive || !live) { waveformAttempted.current.delete(m.id); break; }
           db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
           const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
           if (!original || !live) { waveformAttempted.current.delete(m.id); continue; }
