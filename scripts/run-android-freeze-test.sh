@@ -29,8 +29,11 @@ LOGCAT_PID=$!
 # WebView. Gradle tears down the Activity after failure, so a post-test
 # debuggerd command is usually too late. Capture is bounded and best-effort.
 STACK_FILE="$GITHUB_WORKSPACE/android-freeze-renderer-stacks-${ATTEMPT}.txt"
+# Save the actual parent shell PID before creating a subshell. The watcher
+# exits when this test script ends, even if Gradle and QEMU have exited.
+WATCH_PARENT_PID="$BASHPID"
 (
-  tail --pid=$ -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
+  tail --pid="$WATCH_PARENT_PID" -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
     if [[ "$line" == *"MultiCamFreezeTest: WebView did not reply"* ]]; then
       {
         echo "===== V8 JavaScript call stack from debug-only WebView ====="
