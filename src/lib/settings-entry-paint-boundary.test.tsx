@@ -5,7 +5,6 @@ import { Capacitor } from "@capacitor/core";
 import { uiFreeze } from "@/lib/ui-freeze-bridge";
 
 vi.mock("@/lib/freeze-action-trace", () => ({ traceUiAction: vi.fn() }));
-
 vi.mock("@/lib/ui-freeze-bridge", () => ({
   uiFreeze: { awaitVisualState: vi.fn() },
 }));
@@ -18,126 +17,79 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("native Settings paint boundary", () => {
-  it("keeps the existing navigation shell alive across both render frames", () => {
-    vi.useFakeTimers();
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
-      frames.push(fn);
-      return frames.length;
-    });
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    render(<SettingsEntryGate><div data-testid="settings-controls">All settings remain available</div></SettingsEntryGate>);
-    expect(screen.queryByTestId("settings-controls")).toBeNull();
-    act(() => { frames.shift()?.(16); });
-    expect(screen.queryByTestId("settings-controls")).toBeNull();
-    act(() => { frames.shift()?.(32); });
-    expect(screen.queryByTestId("settings-controls")).toBeNull();
-    act(() => { frames.shift()?.(48); });
-    expect(screen.queryByTestId("settings-controls")).toBeNull();
-    act(() => { vi.advanceTimersByTime(0); });
-    expect(screen.getByTestId("settings-controls").textContent).toContain("All settings");
-    act(() => { vi.advanceTimersByTime(2000); });
-    expect(screen.getAllByTestId("settings-controls")).toHaveLength(1);
+function mockFrames() {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
+    frames.push(fn);
+    return frames.length;
   });
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  return frames;
+}
 
-  it("waits for native Chromium visual state, not just JavaScript rAF", async () => {
+describe("Settings navigation on old Android WebView", () => {
+  it("keeps the previous screen released for three paints, then shows Settings", () => {
+    vi.useFakeTimers();
+    const frames = mockFrames();
+    render(<SettingsEntryGate><div data-testid="settings-controls">Все настройки</div></SettingsEntryGate>);
+    expect(screen.getByRole("status").textContent).toContain("Открываю настройки");
+    for (const t of [16, 32]) {
+      act(() => { frames.shift()?.(t); vi.advanceTimersByTime(0); });
+      expect(screen.queryByTestId("settings-controls")).toBeNull();
+    }
+    act(() => { frames.shift()?.(48); vi.advanceTimersByTime(0); });
+    expect(screen.getByTestId("settings-controls").textContent).toContain("Все настройки");
+  });
+  it("does not block Settings on a never-resolving native visual-state promise", () => {
     vi.useFakeTimers();
     vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
-    let confirm!: (result: { ready: boolean; elapsedMs: number }) => void;
-    vi.mocked(uiFreeze.awaitVisualState).mockReturnValue(
-      new Promise(resolve => { confirm = resolve; }));
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
-      frames.push(fn);
-      return frames.length;
-    });
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    render(<SettingsEntryGate><button>Render-safe Camera2 settings</button></SettingsEntryGate>);
-    act(() => { frames.shift()?.(16); frames.shift()?.(32); frames.shift()?.(48); vi.advanceTimersByTime(0); });
-    expect(uiFreeze.awaitVisualState).toHaveBeenCalledOnce();
-    expect(screen.queryByText("Render-safe Camera2 settings")).toBeNull();
-    await act(async () => { confirm({ ready: true, elapsedMs: 22 }); await Promise.resolve(); });
-    expect(screen.queryByText("Render-safe Camera2 settings")).toBeNull();
-    act(() => { frames.shift()?.(64); frames.shift()?.(80); vi.advanceTimersByTime(0); });
-    expect(screen.getByText("Render-safe Camera2 settings")).toBeTruthy();
+    vi.mocked(uiFreeze.awaitVisualState).mockReturnValue(new Promise(() => undefined));
+    const frames = mockFrames();
+    render(<SettingsEntryGate><button>Настройки камеры</button></SettingsEntryGate>);
+    for (const t of [100, 200, 300]) {
+      act(() => { frames.shift()?.(t); vi.advanceTimersByTime(0); });
+    }
+    expect(screen.getByRole("button", { name: "Настройки камеры" })).toBeTruthy();
+    // The expensive optional renderer frame-commit probe is preserved as a
+    // native diagnostic API, not invoked in the navigation critical path.
+    expect(uiFreeze.awaitVisualState).not.toHaveBeenCalled();
   });
-  it("does not open Settings after a timed-out native visual-state check", async () => {
+  it("opens on a slow but responding software renderer at 5 frames per second", () => {
     vi.useFakeTimers();
-    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
-    vi.mocked(uiFreeze.awaitVisualState).mockResolvedValue({ ready: false, elapsedMs: 4500 });
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
-      frames.push(fn);
-      return frames.length;
-    });
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    render(<SettingsEntryGate><button>Camera2 features intact</button></SettingsEntryGate>);
-    act(() => {
-      frames.shift()?.(16); frames.shift()?.(32); frames.shift()?.(48);
-      vi.advanceTimersByTime(0);
-    });
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByText("Camera2 features intact")).toBeNull();
-    act(() => { vi.advanceTimersByTime(900); });
-    await act(async () => { await Promise.resolve(); });
-    expect(vi.mocked(uiFreeze.awaitVisualState).mock.calls.length).toBeGreaterThanOrEqual(2);
-    expect(screen.queryByText("Camera2 features intact")).toBeNull();
+    const frames = mockFrames();
+    render(<SettingsEntryGate><div data-testid="settings-controls">Работает</div></SettingsEntryGate>);
+    for (const t of [200, 400]) {
+      act(() => { frames.shift()?.(t); vi.advanceTimersByTime(0); });
+      expect(screen.queryByTestId("settings-controls")).toBeNull();
+    }
+    act(() => { frames.shift()?.(600); vi.advanceTimersByTime(0); });
+    expect(screen.getByTestId("settings-controls").textContent).toBe("Работает");
   });
-  it("opens Settings after two unavailable native commits only when JavaScript remains responsive", async () => {
-    vi.useFakeTimers();
-    vi.spyOn(Capacitor, "isNativePlatform").mockReturnValue(true);
-    vi.mocked(uiFreeze.awaitVisualState).mockResolvedValue({ ready: false, elapsedMs: 4500 });
-    const frames: FrameRequestCallback[] = [];
-    vi.stubGlobal("requestAnimationFrame", (fn: FrameRequestCallback) => {
-      frames.push(fn);
-      return frames.length;
-    });
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    render(<SettingsEntryGate><button>All camera diagnostics</button></SettingsEntryGate>);
-    act(() => {
-      frames.shift()?.(16); frames.shift()?.(32); frames.shift()?.(48);
-      vi.advanceTimersByTime(0);
-    });
-    await act(async () => { await Promise.resolve(); });
-    expect(screen.queryByText("All camera diagnostics")).toBeNull();
-    act(() => vi.advanceTimersByTime(900));
-    await act(async () => { await Promise.resolve(); });
-    expect(uiFreeze.awaitVisualState).toHaveBeenCalledTimes(2);
-    act(() => {
-      for (let i = 0; i < 6; i++) frames.shift()?.(64 + i * 16);
-      vi.advanceTimersByTime(0);
-    });
-    expect(screen.getByText("All camera diagnostics")).toBeTruthy();
-  });
-
-  it("does not force-mount Settings while a visible renderer is still blocked", () => {
+  it("never forces a heavy Settings mount if the visible JavaScript renderer is frozen", () => {
     vi.useFakeTimers();
     vi.stubGlobal("requestAnimationFrame", vi.fn(() => 77));
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    render(<SettingsEntryGate><button>Privacy controls</button></SettingsEntryGate>);
+    render(<SettingsEntryGate><button>Настройки</button></SettingsEntryGate>);
     act(() => { vi.advanceTimersByTime(12000); });
-    expect(screen.queryByRole("button", { name: "Privacy controls" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Настройки" })).toBeNull();
   });
-  it("still opens Settings in background WebViews that suppress animation frames", () => {
+  it("permits Android background restoration when RAF is intentionally suspended", () => {
     vi.useFakeTimers();
-    const hidden = vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
     vi.stubGlobal("requestAnimationFrame", vi.fn(() => 77));
-    render(<SettingsEntryGate><button>Privacy controls</button></SettingsEntryGate>);
-    act(() => { vi.advanceTimersByTime(1799); });
-    expect(screen.queryByRole("button", { name: "Privacy controls" })).toBeNull();
-    act(() => { vi.advanceTimersByTime(1); });
-    expect(screen.getByRole("button", { name: "Privacy controls" })).toBeTruthy();
-    hidden.mockRestore();
+    render(<SettingsEntryGate><button>Настройки</button></SettingsEntryGate>);
+    act(() => { vi.advanceTimersByTime(1800); });
+    expect(screen.getByRole("button", { name: "Настройки" })).toBeTruthy();
   });
-
-  it("never mounts a stale Settings screen after fast Camera navigation", () => {
+  it("cancels a queued Settings mount after a rapid return to Camera", () => {
     vi.useFakeTimers();
-    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 17));
-    vi.stubGlobal("cancelAnimationFrame", vi.fn());
-    const view = render(<SettingsEntryGate><div data-testid="stale">Stale Settings</div></SettingsEntryGate>);
-    view.unmount();
-    act(() => { vi.runAllTimers(); });
+    const frames = mockFrames();
+    const ui=render(<SettingsEntryGate><div data-testid="stale">Старые настройки</div></SettingsEntryGate>);
+    ui.unmount();
+    act(() => {
+      for (const frame of frames) frame(300);
+      vi.runAllTimers();
+    });
     expect(screen.queryByTestId("stale")).toBeNull();
   });
 });

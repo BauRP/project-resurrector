@@ -12,7 +12,13 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(app).toContain("<SettingsEntryGate><Suspense");
     expect(gate).toContain("scheduleAfterResponsivePaint(");
     expect(gate).toContain("stableFrames: 3");
-    expect(gate).toContain("uiFreeze.awaitVisualState()");
+    // The old forced Android GPU frame-commit was a separate cause of
+    // the Settings opening spinner on WebView 124/software renderers.
+    expect(gate).not.toContain("uiFreeze.awaitVisualState()");
+    const nativeMonitor = readFileSync("android/app/src/main/java/app/lovable/multicampov/UiFreezeMonitor.java","utf8");
+    const nativePlugin = readFileSync("android/app/src/main/java/app/lovable/multicampov/UiFreezePlugin.java","utf8");
+    expect(nativeMonitor).toContain("checkRendererIndependently(now)");
+    expect(nativePlugin).toContain("@PluginMethod public void awaitVisualState(PluginCall call)");
     expect(gate).toContain("stableFrames: 2");
     expect(gate).not.toContain("}, 1100)");
     const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
