@@ -16,7 +16,7 @@ import { SettingsCrashBoundary } from "./SettingsCrashBoundary";
 import { AndroidFreezeNotice } from "./AndroidFreezeNotice";
 import { SplashScreen } from "./SplashScreen";
 import { ConnectModal } from "./ConnectModal";
-import { useMeshPeers } from "./useMesh";
+import { useMeshPeerCount } from "./useMesh";
 import { MulticamStoreProvider, useMulticamStore, useMulticamGetSnapshot, type AppTab } from "@/lib/multicam-store";
 import { mesh, type RemoteRecordStatus } from "@/lib/mesh";
 import { RemoteRecordGuard } from "@/lib/remote-record-guard";
@@ -92,7 +92,7 @@ function useMeshBridge() {
 
 function MulticamAppContent() {
   const tab = useMulticamStore((x) => x.tab); const setTab = useMulticamStore((x) => x.setTab); const language = useMulticamStore((x) => x.language); const role = useMulticamStore((x) => x.role); const clean = useMulticamStore((x) => x.cleanFrame && x.tab === "camera");
-  const { t } = useT(); const peers = useMeshPeers(); const [connectOpen, setConnectOpen] = useState(false);
+  const { t } = useT(); const peerCount = useMeshPeerCount(); const [connectOpen, setConnectOpen] = useState(false);
   const recording = useMulticamStore((x) => x.recording);
   const recordingPhase = useMulticamStore((x) => x.recordingPhase);
   const [pendingTab, setPendingTab] = useState<AppTab | null>(null);
@@ -260,8 +260,8 @@ function MulticamAppContent() {
       <div className="app-header-actions flex items-center gap-2">{tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label="Медиатека" aria-expanded={mediaOpen} onClick={() => setStore({ mediaOpen: !mediaOpen })} className={`connect-pill active header-icon-action ${mediaOpen ? "ring-1 ring-primary" : ""}`}><FolderOpen className="size-4" /></motion.button>}
       {tab === "editor" && <motion.button whileTap={{ scale: .94 }} aria-label={t("export")} title={t("export")} onClick={() => setStore({ exportOpen: true, mediaOpen: false })} className="connect-pill active header-icon-action"><Download className="size-4" /></motion.button>}
       <motion.button whileTap={{ scale: .94 }} onClick={() => setConnectOpen(true)} className={`connect-pill ${role !== "solo" ? "active" : ""}`}>
-        <Link2 className="size-4" /><span className="truncate">{role === "solo" ? t("connect") : `${t(role)} · ${peers.length}`}</span>
-        {role !== "solo" && <span className={`h-2 w-2 shrink-0 rounded-full ${peers.length ? "bg-status" : "bg-warning"}`} />}
+        <Link2 className="size-4" /><span className="truncate">{role === "solo" ? t("connect") : `${t(role)} · ${peerCount}`}</span>
+        {role !== "solo" && <span className={`h-2 w-2 shrink-0 rounded-full ${peerCount ? "bg-status" : "bg-warning"}`} />}
       </motion.button></div>
     </header>}
     {/* Settings mount directly: never keep a hidden live camera and the new settings DOM painting together. The recording-save guard above remains authoritative. */}

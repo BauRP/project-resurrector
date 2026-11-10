@@ -125,4 +125,5 @@ jobs:
             android-freeze-gfxinfo-*.txt
             android-freeze-processes-*.txt
             android-freeze-renderer-stacks-*.txt
+            android-freeze-stack-watcher-*.txt
             android-emulator-infra-lost.txt

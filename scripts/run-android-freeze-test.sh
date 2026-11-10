@@ -30,7 +30,7 @@ LOGCAT_PID=$!
 # debuggerd command is usually too late. Capture is bounded and best-effort.
 STACK_FILE="$GITHUB_WORKSPACE/android-freeze-renderer-stacks-${ATTEMPT}.txt"
 (
-  tail -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
+  tail --pid=$ -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
     if [[ "$line" == *"MultiCamFreezeTest: WebView did not reply"* ]]; then
       {
         echo "===== V8 JavaScript call stack from debug-only WebView ====="
@@ -51,7 +51,7 @@ STACK_FILE="$GITHUB_WORKSPACE/android-freeze-renderer-stacks-${ATTEMPT}.txt"
       break
     fi
   done
-) &
+) </dev/null >"$GITHUB_WORKSPACE/android-freeze-stack-watcher-${ATTEMPT}.txt" 2>&1 &
 STACK_WATCHER_PID=$!
 trap 'kill "$LOGCAT_PID" "$STACK_WATCHER_PID" 2>/dev/null || true' EXIT
 cd "$GITHUB_WORKSPACE/android"

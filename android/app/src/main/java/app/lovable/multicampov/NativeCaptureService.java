@@ -1113,6 +1113,11 @@ public class NativeCaptureService extends Service {
         }
     }
     public static com.getcapacitor.JSObject status(Context context) {
+        // getSharedPreferences can synchronously load the journal from disk.
+        // Do it BEFORE STATE_LOCK, which Android MAIN needs for fold/preview
+        // callbacks. Returning a cached preference is harmless when recording.
+        final android.content.SharedPreferences preferences =
+            context.getSharedPreferences(STORE, MODE_PRIVATE);
         com.getcapacitor.JSObject out = new com.getcapacitor.JSObject();
         synchronized (STATE_LOCK) {
             String value = state;
@@ -1126,8 +1131,6 @@ public class NativeCaptureService extends Service {
             String chosenCamera = selectedCameraId;
             int width = selectedWidth, height = selectedHeight, fps = selectedFps;
             if (runningInstance == null) {
-                android.content.SharedPreferences preferences =
-                    context.getSharedPreferences(STORE, MODE_PRIVATE);
                 value = preferences.getString("state", "idle");
                 message = preferences.getString("message", "Нет записи");
                 path = preferences.getString("path", "");
@@ -1360,6 +1363,11 @@ public class NativeCaptureService extends Service {
         return out;
     }
     private void publish(String newState, String message) {
+        // First access to SharedPreferences may read flash. Build the Editor
+        // outside the camera lock, but populate its exact state and enqueue
+        // the ordered write while holding STATE_LOCK as before.
+        final android.content.SharedPreferences.Editor stateEditor =
+            getSharedPreferences(STORE, MODE_PRIVATE).edit();
         synchronized (STATE_LOCK) {
             // Compare with the in-memory state, not a potentially blocking
             // SharedPreferences read in the critical section.
@@ -1368,9 +1376,7 @@ public class NativeCaptureService extends Service {
                 "interrupted".equals(newState) || "error".equals(newState);
             state = newState;
             lastMessage = message;
-            android.content.SharedPreferences.Editor stateEditor=
-                getSharedPreferences(STORE, MODE_PRIVATE).edit()
-                .putString("state", newState).putString("message", message)
+            stateEditor.putString("state", newState).putString("message", message)
                 .putString("path", savedPath).putString("uri", savedUri)
                 .putString("stabilization", chosenStabilization)
                 .putBoolean("stabilizationObserved", stabilizationResultSeen)

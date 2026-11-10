@@ -185,10 +185,14 @@ public final class UiFreezeMonitor {
             info.append(" Java heap used/max MB: ")
                 .append((runtime.totalMemory() - runtime.freeMemory()) / 1048576L)
                 .append('/').append(runtime.maxMemory() / 1048576L).append('.');
+            info.append(" Android API: ")
+                .append(android.os.Build.VERSION.SDK_INT).append('.');
             if (android.os.Build.VERSION.SDK_INT >= 26) {
                 android.content.pm.PackageInfo webView =
                     android.webkit.WebView.getCurrentWebViewPackage();
-                if (webView != null) info.append(" WebView: ")
+                if (webView != null) info.append(" WebView provider: ")
+                    .append(webView.packageName)
+                    .append("; WebView: ")
                     .append(webView.versionName == null ? "unknown" : webView.versionName).append('.');
             }
         } catch (RuntimeException error) {
