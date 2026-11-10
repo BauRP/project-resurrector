@@ -1366,7 +1366,7 @@ public class NativeCaptureService extends Service {
         // First access to SharedPreferences may read flash. Build the Editor
         // outside the camera lock, but populate its exact state and enqueue
         // the ordered write while holding STATE_LOCK as before.
-        final android.content.SharedPreferences.Editor stateEditor =
+        android.content.SharedPreferences.Editor stateEditor=
             getSharedPreferences(STORE, MODE_PRIVATE).edit();
         synchronized (STATE_LOCK) {
             // Compare with the in-memory state, not a potentially blocking
