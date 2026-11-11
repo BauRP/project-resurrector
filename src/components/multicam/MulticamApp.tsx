@@ -1,4 +1,4 @@
-import { CameraWorkspace } from "./CameraWorkspace";
+// Camera/recorder/AI code compiles only when Camera is actually shown.\n// Fast Settings taps no longer compete with initial camera module compilation.
 import { readUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -6,6 +6,7 @@ import { Camera, Download, FolderOpen, Link2, Settings, SlidersHorizontal } from
 import { Capacitor } from "@capacitor/core";
 // Load the heavy editor only when opened; keep camera and settings light.
 const EditorTab = lazy(() => import("./EditorTab").then(mod => ({ default: mod.EditorTab })));
+const CameraWorkspace = lazy(() => import("./CameraWorkspace").then(mod => ({ default: mod.CameraWorkspace })));
 import { SettingsEntryGate } from "./SettingsEntryGate";
 import { CameraEntryGate } from "./CameraEntryGate";
 import { EditorEntryGate } from "./EditorEntryGate";

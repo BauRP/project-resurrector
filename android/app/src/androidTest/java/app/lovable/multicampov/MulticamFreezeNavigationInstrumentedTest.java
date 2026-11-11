@@ -118,19 +118,17 @@ public class MulticamFreezeNavigationInstrumentedTest {
     }
 
     /**
-     * TEST ONLY Chromium baseline. First load the normal Capacitor Activity,
-     * then navigate its existing WebView to a tiny same-origin HTML document.
-     * This intentionally replaces the React app ONLY inside this isolated
-     * instrumentation case. Neither production code nor camera features
-     * are modified. If this also loses JS callbacks, suspect the emulator's
-     * WebView/GPU backend before changing React, Camera2 or fold layout.
+     * True bare WebView baseline. Old test launched the FULL Capacitor/React
+     * Activity BEFORE replacing its HTML, so a cold-start application freeze
+     * looked like a clean WebView failure. This new debug-only Activity uses
+     * no React, camera, background services or Capacitor plugins.
      */
     @Test
     public void aBaselineChromiumWithoutReactStillExecutesJavascript() throws Exception {
         Activity activity = null;
         try {
             Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
-                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                MinimalWebViewActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
             assertNotNull(activity);
             Activity running = activity;
@@ -141,13 +139,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
                 if (web.get() == null) Thread.sleep(100);
             }
             WebView view = web.get();
-            assertNotNull("Capacitor WebView is missing", view);
-            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
-            String html = "<!DOCTYPE html><html><head><meta name='viewport' " +
-                "content='width=device-width,initial-scale=1'></head>" +
-                "<body><button id='baseline'>Control</button><div id='status'>ready</div></body></html>";
-            InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
-                view.loadDataWithBaseURL("https://localhost/", html, "text/html", "UTF-8", null));
+            assertNotNull("Isolated plain Android WebView is missing", view);
             eventually(running, view, "!!document.querySelector('#baseline')");
             for (int i = 0; i < 5; i++) {
                 Thread.sleep(300);
@@ -369,7 +361,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
             WebView view = web.get();
             assertNotNull("Capacitor WebView is missing", view);
             eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
-            for (int i=0; i<4; i++) {
+            // Fifteen real-world tab switches without starting camera or importing clips.\n            for (int i=0; i<15; i++) {
                 click(running, view, ".bottom-nav button:nth-child(3)");
                 eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
                 click(running, view, ".bottom-nav button:nth-child(1)");
