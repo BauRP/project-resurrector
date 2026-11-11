@@ -314,7 +314,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
     /** An idle camera UI must keep Chromium responsive before any Settings
      * interaction. This isolates startup renderer failure from navigation. */
     @Test
-    public void idleLaunchRendererRespondsWithoutUserMedia() throws Exception {
+    public void a0IdleLaunchRendererRespondsWithoutUserMedia() throws Exception {
         Activity activity = null;
         try {
             Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),

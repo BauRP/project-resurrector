@@ -1616,3 +1616,25 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
  .settings-fold-workspace main > section:not(.settings-advanced-tools) {
   content-visibility: visible;
 }
+
+/* Native touch navigation: CSS transform on the pressed bottom-nav / Settings
+ * / header buttons creates a transient GPU layer precisely when Capacitor
+ * swaps heavyweight screens. Chromium/SwiftShader then has to retire the
+ * old layer while presenting the new screen. Keep the 111/222 gradients,
+ * pressed visual feedback and ALL controls, without extra compositor layers.
+ * Camera HUD, editor timeline and web/desktop motion are unchanged. */
+:root[data-multicam-native-webview="true"] :is(
+  .bottom-nav button,
+  .settings-fold-workspace button,
+  .app-header button
+):not(:disabled) {
+  transition-property: color, background-color, box-shadow, opacity !important;
+}
+:root[data-multicam-native-webview="true"] :is(
+  .bottom-nav button,
+  .settings-fold-workspace button,
+  .app-header button
+):not(:disabled):active {
+  transform: none !important;
+  opacity: .90;
+}

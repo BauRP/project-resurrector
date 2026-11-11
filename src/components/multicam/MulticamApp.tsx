@@ -27,6 +27,7 @@ import { useT } from "@/lib/i18n";
 import { startDisplayAdaptation } from "@/lib/display-topology";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { traceUiAction } from "@/lib/freeze-action-trace";
+import { monitorNavigationFrame } from "@/lib/navigation-frame-diagnostics";
 import { FoldScrollRestorer, flushFoldScrollWrites } from "@/lib/fold-scroll-position";
 
 const nav: { id: AppTab; icon: typeof Camera }[] = [{ id: "camera", icon: Camera }, { id: "editor", icon: SlidersHorizontal }, { id: "settings", icon: Settings }];
@@ -184,6 +185,13 @@ function MulticamAppContent() {
     return scheduleSettingsPreload();
   }, []);
   useEffect(() => { traceUiAction("tab: " + tab); }, [tab]);
+  // One diagnostic frame per navigation. No polling, media allocations or
+  // DOM layout reads: only log if an Android WebView misses its next frame.
+  // This distinguishes an unresponsive JS loop from a slow GPU present.
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return;
+    return monitorNavigationFrame(tab, evidence => traceUiAction(evidence));
+  }, [tab]);
   useLayoutEffect(() => {
     if (tab === "settings") traceUiAction("settings: React commit complete");
     // The fold adapter recomputes geometry on the next frame, not inside the
