@@ -361,7 +361,8 @@ public class MulticamFreezeNavigationInstrumentedTest {
             WebView view = web.get();
             assertNotNull("Capacitor WebView is missing", view);
             eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
-            // Fifteen real-world tab switches without starting camera or importing clips.\n            for (int i=0; i<15; i++) {
+            // Fifteen real-world tab switches without starting camera or importing clips.
+            for (int i=0; i<15; i++) {
                 click(running, view, ".bottom-nav button:nth-child(3)");
                 eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
                 click(running, view, ".bottom-nav button:nth-child(1)");

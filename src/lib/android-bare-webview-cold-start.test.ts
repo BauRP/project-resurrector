@@ -24,7 +24,18 @@ describe("Clean-install navigation and standalone WebView on Android", () => {
   });
   it("checks at least thirty taps on Settings and Camera without recording", () => {
     expect(test).toContain("for (int i=0; i<15; i++)");
+    // A previous accidental literal backslash+n after a // comment
+    // commented out the loop and broke all four Android builds.
+    expect(test).not.toMatch(/\/\/[^\r\n]*\\n\s+for\s*\(/);
     expect(test).toContain('click(running, view, ".bottom-nav button:nth-child(3)")');
     expect(test).toContain('click(running, view, ".bottom-nav button:nth-child(1)")');
+  });
+
+  it("does not make Settings loading depend on a 60fps WebView renderer", () => {
+    const settings = readFileSync("src/components/multicam/SettingsTab.tsx","utf8");
+    const app = readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
+    expect(settings).not.toContain("maxFrameGapMs: 125");
+    expect(settings).toContain("maxFrameGapMs: 350");
+    expect(app).toContain("{ stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800 }");
   });
 });

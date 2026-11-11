@@ -1,4 +1,5 @@
-// Camera/recorder/AI code compiles only when Camera is actually shown.\n// Fast Settings taps no longer compete with initial camera module compilation.
+// Camera/recorder/AI code compiles only when Camera is actually shown.
+// Fast Settings taps no longer compete with initial camera module compilation.
 import { readUnfinishedCapture, clearUnfinishedCapture } from "@/lib/capture-interruption";
 import { Suspense, lazy, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
@@ -119,7 +120,7 @@ function MulticamAppContent() {
     // healthy frames on Settings; preserve normal Editor retry semantics.
     const cancelSettingsRestore = tab === "settings"
       ? scheduleAfterResponsivePaint(() => restorer.enter(tab, port),
-          { stableFrames: 5, maxFrameGapMs: 125, backgroundFallbackMs: 1800 })
+          { stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800 })
       : null;
     if (tab !== "settings")
       timers.push(window.setTimeout(() => restorer.enter(tab, port), 260));

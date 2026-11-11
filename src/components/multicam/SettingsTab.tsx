@@ -59,7 +59,7 @@ export function SettingsTab() {
      cancelPaint = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: body mounting after responsive paint");
        setReadyBody(true);
-     }, { stableFrames: 3, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+     }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
    }, 350);
    return () => {
      window.clearTimeout(bodyDelay);
@@ -73,7 +73,7 @@ export function SettingsTab() {
      cancel = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: storage, engine and privacy ready");
        setReadyUtilities(true);
-     }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+     }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
    }, 450);
    return () => { window.clearTimeout(timer); cancel?.(); };
  }, [readyBody, readyUtilities]);
@@ -84,7 +84,7 @@ export function SettingsTab() {
      cancel = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: Camera2 and diagnostic actions ready");
        setReadyAdvanced(true);
-     }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+     }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
    }, 450);
    return () => { window.clearTimeout(timer); cancel?.(); };
  }, [readyUtilities, readyAdvanced]);
@@ -98,7 +98,7 @@ export function SettingsTab() {
      cancelPaint = scheduleSettingsVisualStage(() => {
        traceUiAction("settings: network controls mounted after responsive paint");
        setReadyNetwork(true);
-     }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+     }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
    }, 1250);
    return () => { window.clearTimeout(timer); cancelPaint?.(); };
  }, [readyAdvanced, readyNetwork]);
