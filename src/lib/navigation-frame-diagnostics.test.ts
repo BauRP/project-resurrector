@@ -28,8 +28,8 @@ describe("Android button-only navigation responsiveness without GPU transforms",
     monitorNavigationFrame("settings", report, { deadlineMs: 2000 });
     vi.advanceTimersByTime(2000);
     expect(report).toHaveBeenCalledOnce();
-    expect(report.mock.calls[0][0]).toContain("rAF absent");
-    expect(report.mock.calls[0][0]).toContain("JS timer alive");
+    expect(report.mock.calls[0]![0]).toContain("rAF absent");
+    expect(report.mock.calls[0]![0]).toContain("JS timer alive");
   });
   it("cancels a stale probe after leaving a tab", () => {
     vi.useFakeTimers();
