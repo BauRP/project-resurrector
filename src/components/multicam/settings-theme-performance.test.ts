@@ -10,8 +10,9 @@ describe("settings entry and screenshot 111/222 theme safety", () => {
     expect(settings).toContain("const measureCache = async");
     expect(settings).toContain("onClick={() => void measureCache()}");
     expect(settings).toContain("clearPreviewCache()");
-    expect(settings).toContain("settings-privacy-empty");
-    expect(settings).toContain("Текст политики конфиденциальности пока не добавлен");
+    const privacy = read("src/components/multicam/SettingsPrivacyDialog.tsx");
+    expect(privacy).toContain("settings-privacy-empty");
+    expect(privacy).toContain("Текст политики конфиденциальности пока не добавлен");
 
     expect(settings).toContain("measurementBusy.current || cacheBusy.current");
     expect(settings).toContain("cacheBusy.current || measurementBusy.current");

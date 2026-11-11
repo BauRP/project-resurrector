@@ -1,7 +1,6 @@
 import { HelpDot } from "./Help";
 import { Component, Suspense, lazy, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import { AnimatePresence, motion } from "framer-motion";
-import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2, X } from "lucide-react";
+import { Activity, ChevronRight, Database, Gauge, Globe2, HardDrive, Moon, RotateCcw, ShieldCheck, Sun, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { useSettingsStore } from "@/lib/multicam-store";
@@ -16,6 +15,7 @@ import { Capacitor } from "@capacitor/core";
 const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
 const CameraDiagnostics = lazy(() => import("./CameraDiagnostics").then(m => ({ default: m.CameraDiagnostics })));
 const SettingsNetworkContent = lazy(() => import("./SettingsNetworkContent").then(m => ({ default: m.SettingsNetworkContent })));
+const SettingsPrivacyDialog = lazy(() => import("./SettingsPrivacyDialog").then(m => ({ default: m.SettingsPrivacyDialog })));
 
 const languages = [
   ["en","English"],["ru","Русский"],["kk","Қазақ тілі"],["pt","Português"],["es","Español"],["fr","Français"],["ar","العربية"],["zh","中文"],["ko","한국어"],["ja","日本語"],["de","Deutsch"],["it","Italiano"],["tr","Türkçe"],["pl","Polski"],["hi","हिन्दी"],["vi","Tiếng Việt"],["id","Bahasa Indonesia"],
@@ -103,7 +103,7 @@ export function SettingsTab() {
    return () => { window.clearTimeout(timer); cancelPaint?.(); };
  }, [readyAdvanced, readyNetwork]);
  useLayoutEffect(() => { traceUiAction("settings: layout commit complete"); }, []); const [privacy,setPrivacy]=useState(false); const [privacyMounted,setPrivacyMounted]=useState(false); const [checking,setChecking]=useState(false); const [advancedPanel,setAdvancedPanel]=useState<"native" | "diagnostics" | null>(null); const t=copy[s.language] ?? copy["en"] ?? { title:"Settings",language:"Language",network:"Mesh diagnostics",storage:"Storage & cache",engine:"Render engine",privacy:"Privacy Policy",clear:"Clear cache" };
- const privacyDialog=useRef<HTMLDivElement>(null);
+
  const confirmationDialog=useRef<HTMLDivElement>(null);
  const [confirmAction,setConfirmAction]=useState<"cache"|"reset"|null>(null);
  const cacheBusy=useRef(false);
@@ -112,10 +112,6 @@ export function SettingsTab() {
    if(!confirmAction||!confirmationDialog.current)return;
    return activateAccessibleDialog(confirmationDialog.current,()=>setConfirmAction(null));
  },[confirmAction]);
- useEffect(()=>{
-   if(!privacy||!privacyDialog.current)return;
-   return activateAccessibleDialog(privacyDialog.current,()=>setPrivacy(false));
- },[privacy]);
  const alive = useRef(true); const [clearing, setClearing] = useState(false); const [operationError, setOperationError] = useState("");
  const [measuringCache, setMeasuringCache] = useState(false);
  const [cacheMeasured, setCacheMeasured] = useState(false);
@@ -237,11 +233,10 @@ export function SettingsTab() {
      </div>
    </div>
  </div>}
- {privacyMounted && <AnimatePresence>{privacy&&<motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} ref={privacyDialog} role="dialog" aria-modal="true" aria-label={t.privacy} tabIndex={-1} className="privacy-fold-overlay fixed inset-x-0 top-[calc(3.6rem+env(safe-area-inset-top))] bottom-[var(--nav-h)] z-30 flex flex-col overflow-hidden bg-background"><header className="flex shrink-0 items-center justify-between border-b border-border bg-card px-5 py-4"><div><p className="text-[10px] uppercase tracking-[.18em] text-muted-foreground">{tr("legal")}</p><h2 className="text-xl font-semibold">{t.privacy}</h2></div><Button size="icon" variant="ghost" aria-label={tr("close")} onClick={()=>setPrivacy(false)}><X/></Button></header><div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto overscroll-contain px-6 py-10"><div className="settings-privacy-empty min-h-[65dvh] rounded-xl border border-border p-6 text-center">
-    <ShieldCheck aria-hidden="true" className="mx-auto mb-4 size-8 text-primary" />
-    <p className="text-sm font-semibold text-foreground">{s.language==="ru" ? "Текст политики конфиденциальности пока не добавлен в эту сборку." : s.language==="kk" ? "Құпиялылық саясатының мәтіні бұл нұсқаға әлі қосылмаған." : "The Privacy Policy text has not been included in this build yet."}</p>
-    <p className="mt-3 text-xs text-muted-foreground">{s.language==="ru" ? "Это не ошибка загрузки и не зависание приложения. Закройте окно кнопкой вверху, чтобы вернуться в настройки." : s.language==="kk" ? "Бұл жүктеу қатесі емес. Параметрлерге оралу үшін жоғарғы батырмамен терезені жабыңыз." : "This is not a loading error. Use the close button above to return to Settings."}</p>
-   </div></div></motion.div>}</AnimatePresence>}</div>;
+ {privacyMounted && <Suspense fallback={null}><SettingsPrivacyDialog
+    open={privacy} title={t.privacy} legalTitle={tr("legal")}
+    closeLabel={tr("close")} language={s.language} onClose={() => setPrivacy(false)}
+  /></Suspense>}</div>;
 }
 /** A broken Camera2/diagnostics module must not crash Settings or navigation. */
 class SettingsToolsBoundary extends Component<{ children: ReactNode; onClose: () => void }, { failed: boolean }> {

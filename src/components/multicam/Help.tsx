@@ -1,7 +1,6 @@
-import { useState } from "react";
-import { createPortal } from "react-dom";
-import { AnimatePresence, motion } from "framer-motion";
-import { HelpCircle, X } from "lucide-react";
+import { Suspense, lazy, useState } from "react";
+import { HelpCircle } from "lucide-react";
+const HelpOverlay = lazy(() => import("./HelpOverlay").then(m => ({ default: m.HelpOverlay })));
 
 export const HELP: Record<string, [string, string]> = {
   frameTools: ["Инструменты кадра", "Вспомогательные наложения для точной экспозиции и фокуса. На запись не влияют."],
@@ -80,11 +79,8 @@ export function HelpDot({ id }: { id: string }) {
   if (!entry) return null;
   return <>
     <button type="button" aria-label={`Справка: ${entry[0]}`} onPointerDown={(e) => e.stopPropagation()} onClick={(e) => { e.stopPropagation(); setPortalReady(true); setOpen(true); }} className="inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"><HelpCircle className="size-3.5" /></button>
-    {typeof document !== "undefined" && portalReady && createPortal(<AnimatePresence>{open && <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setOpen(false)} className="fixed inset-0 z-[200] flex items-center justify-center bg-background p-6">
-      <motion.div role="dialog" aria-modal initial={{ scale: .92, y: 8 }} animate={{ scale: 1, y: 0 }} exit={{ scale: .95 }} transition={{ type: "spring", stiffness: 420, damping: 30 }} onClick={(e) => e.stopPropagation()} className="glass-panel w-full max-w-xs rounded-2xl p-4 text-start text-xs">
-        <div className="mb-2 flex items-center justify-between gap-2"><b className="text-sm">{entry[0]}</b><button aria-label="Закрыть" onClick={() => setOpen(false)}><X className="size-4" /></button></div>
-        <p className="leading-relaxed text-muted-foreground">{entry[1]}</p>
-      </motion.div>
-    </motion.div>}</AnimatePresence>, document.body)}
+    {typeof document !== "undefined" && portalReady && <Suspense fallback={null}>
+      <HelpOverlay open={open} entry={entry} onClose={() => setOpen(false)} />
+    </Suspense>}
   </>;
 }
