@@ -106,7 +106,12 @@ export function CameraWorkspace() {
 
   const switchTo = useCallback(async (next:Mode) => {
     if (mode === next || switching || blocked) return;
-    manualModeSelection.current = true;
+    // The user's choice becomes permanent only AFTER Android confirms
+    // the handoff. A failed/aborted Camera2 status request must not suppress
+    // subsequent automatic restoration of an already-running native capture.
+    const previousManualSelection = manualModeSelection.current;
+    manualModeSelection.current = true; // quarantine racing startup replies
+    let committed = false;
     setSwitching(true);
     try {
       if (next === "web") {
@@ -120,11 +125,13 @@ export function CameraWorkspace() {
           diagnosticCaptureGate.activeOperation() !== null) return;
       setNotice("");
       setMode(next);
+      committed = true;
       try { localStorage.setItem(PREF, next); } catch { /* usable without storage */ }
     } catch (error) {
       if (mounted.current)
         setNotice(error instanceof Error ? error.message : "Камера ещё занята");
     } finally {
+      if (!committed) manualModeSelection.current = previousManualSelection;
       if (mounted.current) setSwitching(false);
     }
   }, [mode,switching,blocked]);

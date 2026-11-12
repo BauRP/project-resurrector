@@ -40,6 +40,21 @@ describe("native bridge must not freeze the initial camera screen", () => {
     // No native recording, microphone, or preview is opened by this check.
   });
 
+  it("keeps native recording ownership after failed return to WebView and permits a safe retry", async () => {
+    mocks.status.mockResolvedValueOnce({ state: "recording" });
+    render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
+    await waitFor(() => expect(screen.getByText("Нативная панель")).toBeInTheDocument());
+    expect(mocks.status).toHaveBeenCalledTimes(1);
+    mocks.status.mockRejectedValueOnce(new Error("Native Camera2 HAL unavailable"));
+    fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Native Camera2 HAL unavailable");
+    expect(screen.getByText("Нативная панель")).toBeInTheDocument();
+    mocks.status.mockResolvedValueOnce({ state: "idle" });
+    fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
+    expect(await screen.findByText("Камера пока выключена")).toBeInTheDocument();
+    expect(mocks.status).toHaveBeenCalledTimes(3);
+  });
+
   it("preserves Camera2 ownership restoration and checks status before returning to WebView", async () => {
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
     expect(mocks.status).toHaveBeenCalledTimes(1);
