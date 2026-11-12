@@ -1,3 +1,5 @@
+import { bounded } from "./async";
+
 /** Durable, asynchronous Android project-state store.
  * Distinct from media/proxy databases. Never delete or migrate user clips.
  * A last-wins queue keeps at most one transaction and one pending snapshot,
@@ -13,7 +15,7 @@ const KEY = "latest";
 
 function openProjectDb(): Promise<IDBDatabase> {
   if (typeof indexedDB === "undefined") return Promise.reject(new Error("IndexedDB unavailable"));
-  return new Promise((resolve, reject) => {
+  return bounded(new Promise<IDBDatabase>((resolve, reject) => {
     const request = indexedDB.open(DB, 1);
     request.onupgradeneeded = () => {
       if (!request.result.objectStoreNames.contains(STORE))
@@ -26,7 +28,7 @@ function openProjectDb(): Promise<IDBDatabase> {
       db.onversionchange = () => db.close();
       resolve(db);
     };
-  });
+  }), 5000, "Open project state", db => db.close());
 }
 
 function validSnapshot(raw: unknown): SavedProjectSnapshot | null {
@@ -41,7 +43,7 @@ export async function readAsyncProjectSnapshot(): Promise<SavedProjectSnapshot |
   if (typeof indexedDB === "undefined") return null;
   const db = await openProjectDb();
   try {
-    return await new Promise<SavedProjectSnapshot | null>((resolve, reject) => {
+    return await bounded(new Promise<SavedProjectSnapshot | null>((resolve, reject) => {
       const tx = db.transaction(STORE, "readonly");
       const req = tx.objectStore(STORE).get(KEY);
       let value: unknown = null;
@@ -49,7 +51,7 @@ export async function readAsyncProjectSnapshot(): Promise<SavedProjectSnapshot |
       tx.oncomplete = () => resolve(validSnapshot(value));
       tx.onerror = () => reject(tx.error ?? new Error("Project load failed"));
       tx.onabort = () => reject(tx.error ?? new Error("Project load aborted"));
-    });
+    }), 5000, "Read project state");
   } finally { db.close(); }
 }
 
