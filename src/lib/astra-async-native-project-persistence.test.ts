@@ -25,7 +25,7 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
  });
  it("does not overwrite newer IndexedDB data before initial recovery finishes",()=>{
    expect(src).toContain("let asyncRestoreCompleted = !nativeAsyncProject");
-   expect(src).toContain("if (nativeAsyncProject && !asyncRestoreCompleted) return;");
+   expect(src).toContain("if (!legacyRestoreCompleted || (nativeAsyncProject && !asyncRestoreCompleted)) return;");
    expect(src).toContain("lastSnapshotStamp = Math.max(lastSnapshotStamp, snapshot.savedAt)");
    expect(src).toContain("if (projectDirty) scheduleProject()");
  });
