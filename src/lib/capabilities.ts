@@ -64,20 +64,64 @@ export function loadMatrix(): CapabilityMatrix | null {
     const perms = matrix.permissions;
     if (!perms || typeof perms.camera !== "string" ||
         typeof perms.microphone !== "string" || typeof perms.storage !== "string") return null;
+    const numericRange = (v: unknown): v is [number,number] =>
+      Array.isArray(v) && v.length === 2 &&
+      v.every(x => typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 1e12) &&
+      v[0] <= v[1];
+    const strings = (v: unknown, max = 1000): v is string[] =>
+      Array.isArray(v) && v.length <= max &&
+      v.every(x => typeof x === "string" && x.length <= 128);
+    const numbers = (v: unknown, max = 1000): v is number[] =>
+      Array.isArray(v) && v.length <= max &&
+      v.every(x => typeof x === "number" && Number.isFinite(x) && x >= 0 && x <= 1e6);
     const validCamera = (v: unknown): v is CameraCaps => {
       if (!v || typeof v !== "object" || Array.isArray(v)) return false;
       const cam = v as Partial<CameraCaps>;
       return typeof cam.available === "boolean" &&
-        (cam.deviceId === null || typeof cam.deviceId === "string") &&
-        Array.isArray(cam.resolutions) && Array.isArray(cam.fps) &&
-        Array.isArray(cam.highSpeed) &&
-        Number.isFinite(cam.maxWidth) && Number.isFinite(cam.maxHeight) &&
-        Number.isFinite(cam.maxFps);
+        (cam.deviceId === null || typeof cam.deviceId === "string" && cam.deviceId.length <= 128) &&
+        typeof cam.label === "string" && cam.label.length <= 256 &&
+        strings(cam.resolutions) && numbers(cam.fps) && numbers(cam.highSpeed) &&
+        (cam.candidateResolutions === undefined || strings(cam.candidateResolutions)) &&
+        (cam.candidateFps === undefined || numbers(cam.candidateFps)) &&
+        [cam.iso,cam.exposure,cam.focus,cam.colorTemperature,cam.zoom]
+          .every(range => range === null || numericRange(range)) &&
+        typeof cam.whiteBalance === "boolean" && typeof cam.torch === "boolean" &&
+        typeof cam.maxWidth === "number" && Number.isFinite(cam.maxWidth) &&
+        cam.maxWidth >= 0 && cam.maxWidth <= 100000 &&
+        typeof cam.maxHeight === "number" && Number.isFinite(cam.maxHeight) &&
+        cam.maxHeight >= 0 && cam.maxHeight <= 100000 &&
+        typeof cam.maxFps === "number" && Number.isFinite(cam.maxFps) &&
+        cam.maxFps >= 0 && cam.maxFps <= 10000;
+    };
+    const validNativeCamera = (v: unknown): boolean => {
+      if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+      const cam = v as Record<string, unknown>;
+      return typeof cam.cameraId === "string" && cam.cameraId.length <= 128 &&
+        (cam.facing === "back" || cam.facing === "front" || cam.facing === "external") &&
+        strings(cam.sizes) && strings(cam.fpsRanges) && strings(cam.profiles) &&
+        typeof cam.manualSensor === "boolean" && typeof cam.toneCurve === "boolean" &&
+        (cam.isoRange === null || numericRange(cam.isoRange)) &&
+        Array.isArray(cam.highSpeed) && cam.highSpeed.length <= 1000 &&
+        cam.highSpeed.every((v: unknown) => {
+          if (!v || typeof v !== "object" || Array.isArray(v)) return false;
+          const high = v as Record<string, unknown>;
+          return typeof high.size === "string" && high.size.length <= 128 && numbers(high.fps);
+        });
     };
     if (!validCamera(matrix.rear) || !validCamera(matrix.front) ||
-        !Array.isArray(matrix.codecs) ||
+        !strings(matrix.codecs, 128) ||
+        (matrix.hardwareCameras !== undefined &&
+          (!Array.isArray(matrix.hardwareCameras) ||
+            matrix.hardwareCameras.length > 1000 ||
+            !matrix.hardwareCameras.every(validNativeCamera))) ||
+        !matrix.permissions || !["camera","microphone","storage"].every(key =>
+          typeof (matrix.permissions as unknown as Record<string,unknown>)[key] === "string" &&
+          String((matrix.permissions as unknown as Record<string,unknown>)[key]).length <= 32) ||
         typeof matrix.native !== "boolean" ||
-        !Number.isFinite(matrix.probedAt)) return null;
+        typeof matrix.probedAt !== "number" || !Number.isFinite(matrix.probedAt) ||
+        matrix.probedAt < 0 ||
+        (matrix.microphones !== undefined && (!Number.isSafeInteger(matrix.microphones) ||
+          matrix.microphones < 0 || matrix.microphones > 10000))) return null;
     return matrix as CapabilityMatrix;
   } catch { return null; }
 }
