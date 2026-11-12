@@ -124,7 +124,7 @@ public class MulticamFreezeNavigationInstrumentedTest {
      * no React, camera, background services or Capacitor plugins.
      */
     @Test
-    public void aBaselineChromiumWithoutReactStillExecutesJavascript() throws Exception {
+    public void a000BaselineChromiumWithoutReactStillExecutesJavascript() throws Exception {
         Activity activity = null;
         try {
             Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),

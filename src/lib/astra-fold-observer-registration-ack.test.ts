@@ -4,6 +4,9 @@ describe("Astra OEM fold observer only acknowledges real registration",()=>{
  const code=readFileSync("android/app/src/main/java/app/lovable/multicampov/DisplayTopologyPlugin.java","utf8");
  it("retains pending callers until the background OEM subscription actually finishes",()=>{
    expect(code).toContain("registrationPending = true");
+   expect(code).toContain("MAX_PENDING_REGISTRATION_CALLS = 24");
+   expect(code).toContain('call.reject("Fold observer registration already pending for owner")');
+   expect(code).toContain('call.reject("Fold registration has too many pending requests")');
    expect(code).toContain("registrationCalls.add(new PendingRegistration(ownerId, call))");
    expect(code).toContain("if (registrationPending)");
    expect(code).toContain("finishRegistrationCalls(null)");

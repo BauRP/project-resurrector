@@ -11,7 +11,7 @@ describe("Clean-install navigation and standalone WebView on Android", () => {
     expect(app).toContain('<EditorEntryGate><EditorTab /></EditorEntryGate>');
   });
   it("tests a real empty WebView without first running the app and NEVER ships this Activity in release", () => {
-    const first = test.slice(test.indexOf("public void aBaselineChromiumWithoutReactStillExecutesJavascript()"),
+    const first = test.slice(test.indexOf("public void a000BaselineChromiumWithoutReactStillExecutesJavascript()"),
       test.indexOf("private static void isolateThenNavigate"));
     expect(first).toContain("MinimalWebViewActivity.class");
     expect(first).not.toContain("MainActivity.class");

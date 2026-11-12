@@ -176,6 +176,7 @@ public class DisplayTopologyPlugin extends Plugin {
             this.ownerId = ownerId; this.call = call;
         }
     }
+    private static final int MAX_PENDING_REGISTRATION_CALLS = 24;
     private boolean registrationPending = false;
     private final ArrayList<PendingRegistration> registrationCalls = new ArrayList<>();
     private void finishRegistrationCalls(String error) {
@@ -405,10 +406,26 @@ public class DisplayTopologyPlugin extends Plugin {
             call.reject("Fold Activity unavailable");return;
         }
         if (listener != null) {
-            activeOwners.add(ownerId);
-            if (registrationPending)
+            if (registrationPending) {
+                // A timed-out Capacitor promise does not remove its Java
+                // caller. Never retain an unbounded list while OEM Binder
+                // registration is stalled or the UI retries repeatedly.
+                if (registrationCalls.size() >= MAX_PENDING_REGISTRATION_CALLS) {
+                    call.reject("Fold registration has too many pending requests");
+                    return;
+                }
+                for (PendingRegistration waiting : registrationCalls) {
+                    if (ownerId.equals(waiting.ownerId)) {
+                        call.reject("Fold observer registration already pending for owner");
+                        return;
+                    }
+                }
+                activeOwners.add(ownerId);
                 registrationCalls.add(new PendingRegistration(ownerId, call));
-            else call.resolve(snapshot());
+            } else {
+                activeOwners.add(ownerId);
+                call.resolve(snapshot());
+            }
             return;
         }
         try {
