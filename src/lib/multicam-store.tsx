@@ -1,6 +1,7 @@
 import { restoreViewState, saveViewState } from "./fold-ui-recovery";
 import { scheduleAfterPaintTask } from "./after-paint-task";
 import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
+import { sanitizePersistedState } from "./sanitize-persisted-state";
 import type React from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
 import type { CapabilityMatrix, Facing } from "./capabilities";
@@ -20,7 +21,7 @@ export type MeterMode = "matrix" | "center" | "spot";
 export type ToneProfile = "standard" | "log" | "flat" | "directlog";
 export interface CaptureConfig { resolution: string; fps: number; codec: string; mode: CaptureMode; profile: ToneProfile; micId: string; iso: number | null; focus: number | null; exposure: number | null }
 export type AppTheme = "light" | "dark";
-interface StateData {
+export interface StateData {
   tab: AppTab; role: Role; sessionCode: string; recording: boolean; recordingStartedAt: number | null; recordingPhase: "idle" | "starting" | "recording" | "stopping" | "saving" | "saved" | "error"; captureSaveError: string; theme: AppTheme;
   markers: Marker[]; cuts: Cut[]; activeCamera: number; playhead: number; duration: number; playing: boolean;
   focusPeaking: boolean; zebras: boolean; wbLock: boolean; isoLock: boolean; grid: GridMode;
@@ -123,16 +124,19 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       const raw = window.localStorage.getItem("multicam-pov-state-native");
       // Do not parse an oversized legacy snapshot on the UI thread.
       // Skip damaged state without deleting the original saved bytes.
-      const saved = (raw && raw.length <= 262144 ? JSON.parse(raw) : {}) as Partial<StateData>;
-      patch = Object.fromEntries(persistedKeys.filter((k) => k in saved).map((k) => [k, saved[k]])) as Partial<StateData>;
-      if (patch.theme !== "light" && patch.theme !== "dark") delete patch.theme;
+      const saved: unknown = raw && raw.length <= 262144 ? JSON.parse(raw) : {};
+      patch = sanitizePersistedState(saved);
     } catch { /* Restricted/corrupt main preferences do not block view recovery. */ }
     // New lightweight prefs override the legacy copy if both exist.
     try {
-      const prefs = JSON.parse(window.localStorage.getItem(UI_PREFS_KEY) ?? "{}") as Partial<StateData>;
-      if (prefs.theme === "light" || prefs.theme === "dark") patch.theme = prefs.theme;
-      if (typeof prefs.language === "string" && prefs.language.length <= 12) patch.language = prefs.language;
-      if (typeof prefs.hardwareAcceleration === "boolean") patch.hardwareAcceleration = prefs.hardwareAcceleration;
+      const raw = window.localStorage.getItem(UI_PREFS_KEY);
+      // A legacy write can corrupt the small preferences key too. Use the
+      // same size/type checks as readImmediateAppearance() on every read.
+      const prefs: unknown = raw && raw.length <= 2048 ? JSON.parse(raw) : {};
+      const checked = sanitizePersistedState(prefs);
+      if (checked.theme !== undefined) patch.theme = checked.theme;
+      if (checked.language !== undefined) patch.language = checked.language;
+      if (checked.hardwareAcceleration !== undefined) patch.hardwareAcceleration = checked.hardwareAcceleration;
     } catch { /* A corrupt preference entry must never stop the UI. */ }
     const restoredView = restoreViewState();
     // On Activity recreation a previously frozen Settings screen must not
@@ -180,8 +184,11 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       projectDirty = false;
       const latest = store.getSnapshot();
       try {
-        window.localStorage.setItem("multicam-pov-state-native",
-          JSON.stringify(Object.fromEntries(persistedKeys.map(k => [k, latest[k]]))));
+        const json = JSON.stringify(Object.fromEntries(persistedKeys.map(k => [k, latest[k]])));
+        // An oversized snapshot cannot be restored after the next launch.
+        // Do not replace the last usable saved copy with an unreadable one.
+        // In-memory edits and the separate editor project remain available.
+        if (json.length <= 262144) window.localStorage.setItem("multicam-pov-state-native", json);
       } catch { /* In-memory project state remains available. */ }
     };
     const scheduleProject = () => {
