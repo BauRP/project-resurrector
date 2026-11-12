@@ -19,6 +19,23 @@ describe("Astra async project saves do not block Android navigation", () => {
     expect(writes).toEqual([1,3]);
     writer.close();
   });
+  it("drains the latest accepted project on unmount, rejecting any new edits", async () => {
+    let finish!: () => void;
+    const blocker = new Promise<void>(resolve => { finish = resolve; });
+    const writes: number[] = [];
+    const writer = createLatestProjectWriter(async (value: number) => {
+      writes.push(value);
+      if (value === 1) await blocker;
+    });
+    writer.enqueue(1);
+    writer.enqueue(2);
+    writer.enqueue(3);
+    writer.close();
+    writer.enqueue(4);
+    finish();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(writes).toEqual([1, 3]);
+  });
   it("never submits another IndexedDB write when the current operation hangs", async () => {
     const write = vi.fn((_value:number) => new Promise<void>(() => undefined));
     const writer=createLatestProjectWriter(write);

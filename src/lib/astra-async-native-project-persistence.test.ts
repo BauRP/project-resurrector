@@ -45,6 +45,12 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
    expect(db).toContain('objectStore.put(value, KEY)');
    expect(db).toContain('db.transaction(STORE, "readwrite")');
  });
+ it("does not discard the last editor snapshot when the old Activity unmounts",()=>{
+   const writer=readFileSync("src/lib/async-project-persistence.ts","utf8");
+   expect(writer).toContain("close() { closed = true; }");
+   expect(writer).toContain("while (queued !== null)");
+   expect(writer).toContain("if (closed) return");
+ });
  it("never overwrites user changes from an older asynchronous database response",()=>{
    expect(src).toContain("modifiedProjectKeys.add(key)");
    expect(src).toContain("!modifiedProjectKeys.has(key)");

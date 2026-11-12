@@ -137,7 +137,7 @@ export function createLatestProjectWriter<T>(write: (value:T)=>Promise<void>) {
     if (running || closed || queued === null) return;
     running = true;
     try {
-      while (!closed && queued !== null) {
+      while (queued !== null) {
         const snapshot = queued;
         queued = null;
         try { await write(snapshot); } catch { /* Caller handles fallback. */ }
@@ -150,6 +150,9 @@ export function createLatestProjectWriter<T>(write: (value:T)=>Promise<void>) {
       queued = value;
       void pump();
     },
-    close() { closed = true; queued = null; },
+    // Stop accepting new UI writes, but drain the last already-accepted
+    // snapshot. Activity cleanup must not silently discard user edits.
+    // Cross-Activity stale overwrites are prevented by savedAt checks.
+    close() { closed = true; },
   };
 }
