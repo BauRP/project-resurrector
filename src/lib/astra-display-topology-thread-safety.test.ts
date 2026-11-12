@@ -23,6 +23,8 @@ describe("Astra Android display topology thread safety", () => {
     expect(java).not.toContain("synchronized (DisplayTopologyPlugin.this)");
     expect(java).toContain("registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener)");
     expect(java).toContain("registrationWorker.execute(() -> {");
+    expect(java).toContain("registrationPending = true");
+    expect(java).toContain("finishRegistrationCalls(null)");
     expect(java).toContain("removingAdapter.removeWindowLayoutInfoListener(removingListener)");
   });
   it("keeps genuine folds, geometry ownership and direct preview safety",()=>{

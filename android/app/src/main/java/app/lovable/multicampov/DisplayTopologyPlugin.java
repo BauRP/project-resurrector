@@ -167,6 +167,27 @@ public class DisplayTopologyPlugin extends Plugin {
      * from an old screen must never close a listener held by its successor.
      */
     private final Set<String> activeOwners = new HashSet<>();
+    // Registration itself runs on a background worker. Until Android
+    // confirms it, additional callers must NOT get an early success.
+    private static final class PendingRegistration {
+        final String ownerId;
+        final PluginCall call;
+        PendingRegistration(String ownerId, PluginCall call) {
+            this.ownerId = ownerId; this.call = call;
+        }
+    }
+    private boolean registrationPending = false;
+    private final ArrayList<PendingRegistration> registrationCalls = new ArrayList<>();
+    private void finishRegistrationCalls(String error) {
+        ArrayList<PendingRegistration> waiting = new ArrayList<>(registrationCalls);
+        registrationCalls.clear();
+        registrationPending = false;
+        JSObject result = error == null ? snapshot() : null;
+        for (PendingRegistration entry : waiting) {
+            if (error != null) entry.call.reject(error);
+            else entry.call.resolve(result);
+        }
+    }
 
     // Called on Android MAIN only. Reads View dimensions/insets and must
     // never run on CapacitorPlugins' background taskHandler thread.
@@ -385,7 +406,9 @@ public class DisplayTopologyPlugin extends Plugin {
         }
         if (listener != null) {
             activeOwners.add(ownerId);
-            call.resolve(snapshot());
+            if (registrationPending)
+                registrationCalls.add(new PendingRegistration(ownerId, call));
+            else call.resolve(snapshot());
             return;
         }
         try {
@@ -453,6 +476,8 @@ public class DisplayTopologyPlugin extends Plugin {
                     notifyListeners("topologyChanged", pendingTopologyNotification);
             };
             activeOwners.add(ownerId);
+            registrationPending = true;
+            registrationCalls.add(new PendingRegistration(ownerId, call));
             // A mainExecutor may dispatch the initial layout synchronously.
             // Register the native lease BEFORE connecting the callback, or
             // its first (possibly only) posture can be discarded as stale.
@@ -471,28 +496,27 @@ public class DisplayTopologyPlugin extends Plugin {
                     registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener);
                     host.runOnUiThread(() -> {
                         if (ownerGeneration != observerGeneration ||
-                            listener != registeringListener || activeOwners.isEmpty()) {
-                            call.reject("Fold observer cancelled before registration");
-                            return;
-                        }
-                        call.resolve(snapshot());
+                            listener != registeringListener || activeOwners.isEmpty()) return;
+                        finishRegistrationCalls(null);
                     });
                 } catch (RuntimeException error) {
                     host.runOnUiThread(() -> {
                         if (ownerGeneration == observerGeneration &&
                             listener == registeringListener) {
-                            activeOwners.remove(ownerId);
+                            activeOwners.clear();
                             stopListener();
                         }
-                        call.reject("Window topology observer unavailable: " + error.getMessage());
                     });
                 }
             });
         } catch (RuntimeException error) {
             // Failed subscription must not leave a phantom observer owner.
             activeOwners.remove(ownerId);
-            stopListener();
-            call.reject("Window topology observer unavailable: " + error.getMessage());
+            if (registrationPending) stopListener();
+            else {
+                stopListener();
+                call.reject("Window topology observer unavailable: " + error.getMessage());
+            }
         }
     }
 
@@ -507,6 +531,17 @@ public class DisplayTopologyPlugin extends Plugin {
             return;
         }
         activeOwners.remove(ownerId);
+        if (registrationPending) {
+            // A stopped owner cannot receive a successful late registration.
+            // Other owners remain waiting for the same OEM subscription.
+            for (int i = registrationCalls.size() - 1; i >= 0; i--) {
+                PendingRegistration waiting = registrationCalls.get(i);
+                if (ownerId.equals(waiting.ownerId)) {
+                    registrationCalls.remove(i);
+                    waiting.call.reject("Fold observer owner stopped before registration");
+                }
+            }
+        }
         if (activeOwners.isEmpty()) stopListener();
         call.resolve();
     }
@@ -514,6 +549,8 @@ public class DisplayTopologyPlugin extends Plugin {
     // Only called on MAIN. Registration/removal can cross an OEM Binder;
     // never hold a synchronized monitor across either external call.
     private void stopListener() {
+        if (registrationPending)
+            finishRegistrationCalls("Fold observer stopped before registration");
         observerGeneration++;
         // An old Activity may stop after a new one registered. Only the
         // matching lease may report an observation gap to the recorder.
