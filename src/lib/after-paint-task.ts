@@ -41,8 +41,9 @@ export function scheduleAfterPaintTask(task: () => void, fallbackMs = 450): () =
  * screens. Unlike persistence scheduling, a visible stalled renderer must NOT
  * force-mount another screen just because a fallback timer expired. Native
  * recovery remains available if the renderer is truly stuck.
- * Hidden WebViews (which intentionally suppress RAF) retain a bounded fallback
- * unless the caller is a heavy screen that must wait for the next foreground.
+ * For heavy screens, real responsive RAF ticks take priority over Android's
+ * document.hidden flag: some emulators incorrectly report hidden while their
+ * visible WebView continues painting. In that case do not trap the UI forever.
  */
 export function scheduleAfterResponsivePaint(
   task: () => void,
@@ -51,8 +52,9 @@ export function scheduleAfterResponsivePaint(
   const targetFrames = Math.max(2, options.stableFrames ?? 3);
   const maxGap = options.maxFrameGapMs ?? 125;
   const backgroundFallbackMs = options.backgroundFallbackMs ?? 1800;
-  // Never mount GPU-heavy Camera2/media panels while Android has hidden this
-  // WebView. Persistence callers keep their existing background fallback.
+  // Heavy screens do not start on a background timer while RAF is suspended.
+  // A functioning RAF proves responsiveness even when Android incorrectly
+  // reports document.hidden=true for a visible Activity.
   const visibleOnly = options.visibleOnly ?? false;
   let finished = false;
   let frame = 0;
@@ -76,7 +78,8 @@ export function scheduleAfterResponsivePaint(
   };
   const finish = () => {
     if (finished) return;
-    if (visibleOnly && document.hidden) {
+    if (visibleOnly && document.hidden &&
+        typeof requestAnimationFrame === "function" && stable < targetFrames) {
       armBackground();
       return;
     }
@@ -86,11 +89,19 @@ export function scheduleAfterResponsivePaint(
   const armBackground = () => {
     clearScheduled();
     if (!visibleOnly) fallback = setTimeout(finish, backgroundFallbackMs);
+    else if (typeof requestAnimationFrame === "function") {
+      // A hidden WebView normally suspends this frame; it resumes on return.
+      // A falsely-hidden but painting WebView will still get its camera UI.
+      frame = requestAnimationFrame(tick);
+    } else {
+      // Older browsers without RAF must not stay stuck on "Preparing camera".
+      fallback = setTimeout(finish, backgroundFallbackMs);
+    }
   };
   const tick = (now: number) => {
     frame = 0;
     if (finished) return;
-    if (document.hidden) { armBackground(); return; }
+    if (document.hidden && !visibleOnly) { armBackground(); return; }
     if (lastFrame !== null && now > lastFrame && now - lastFrame <= maxGap) stable += 1;
     else stable = 1;
     lastFrame = now;
