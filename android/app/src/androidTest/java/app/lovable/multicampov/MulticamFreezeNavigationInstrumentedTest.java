@@ -311,6 +311,47 @@ public class MulticamFreezeNavigationInstrumentedTest {
         }
     }
 
+    /**
+     * Astra priority: emulate installing/opening the app and doing absolutely
+     * nothing for thirty seconds. No camera permission, capture, imported
+     * media, tab click or native panel should be necessary to stay responsive.
+     * Only the one baseline DOM query and independent JS response are sampled.
+     */
+    @Test
+    public void a00ColdStartIdleThirtySecondsWithoutTouches() throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            WebView view = web.get();
+            assertNotNull("Cold-launch Capacitor WebView is missing", view);
+            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            long start = android.os.SystemClock.uptimeMillis();
+            int checks = 0;
+            while (android.os.SystemClock.uptimeMillis() - start < 30000L) {
+                assertEquals("Idle renderer JS stopped after " + checks + " samples",
+                    "true", eval(running, view, "1+1===2"));
+                assertEquals("Cold-launch camera shell disappeared", "true",
+                    eval(running, view,
+                        "!!document.querySelector('.bottom-nav button:nth-child(3)')"));
+                checks++;
+                Thread.sleep(1500);
+            }
+            assertTrue("The test did not complete a full thirty-second idle session", checks >= 15);
+        } finally {
+            finishAndWait(activity);
+        }
+    }
+
     /** An idle camera UI must keep Chromium responsive before any Settings
      * interaction. This isolates startup renderer failure from navigation. */
     @Test
