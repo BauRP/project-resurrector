@@ -21,7 +21,7 @@ export function CameraEntryGate({ children }: { children: ReactNode }) {
       if (!active) return;
       traceUiAction("camera: mounting after responsive paint");
       setReady(true);
-    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     return () => {
       active = false;
       cancel();
