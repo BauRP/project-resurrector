@@ -6,9 +6,9 @@ describe("Astra Android display topology thread safety", () => {
   it("runs geometry measurements on Android UI rather than CapacitorPlugins worker",()=>{
     expect(java).toContain("activity.runOnUiThread(safe)");
     expect(java).toContain("Looper.myLooper() == Looper.getMainLooper()");
-    expect(java).toContain("onUiThread(call, () => call.resolve(snapshot()))");
-    expect(java).toContain("onUiThread(call, () => startObservingOnUi(call))");
-    expect(java).toContain("onUiThread(call, () => stopObservingOnUi(call))");
+    expect(java).toContain("onUiThread(call, () -> call.resolve(snapshot()))");
+    expect(java).toContain("onUiThread(call, () -> startObservingOnUi(call))");
+    expect(java).toContain("onUiThread(call, () -> stopObservingOnUi(call))");
     expect(java).toContain("root.getLocationInWindow");
     expect(java).toContain("ViewCompat.getRootWindowInsets");
   });
