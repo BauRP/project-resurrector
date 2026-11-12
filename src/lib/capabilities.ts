@@ -77,35 +77,35 @@ export function loadMatrix(): CapabilityMatrix | null {
     const validCamera = (v: unknown): v is CameraCaps => {
       if (!v || typeof v !== "object" || Array.isArray(v)) return false;
       const cam = v as Partial<CameraCaps>;
-      return typeof cam.available === "boolean" &&
-        (cam.deviceId === null || typeof cam.deviceId === "string" && cam.deviceId.length <= 128) &&
-        typeof cam.label === "string" && cam.label.length <= 256 &&
-        strings(cam.resolutions) && numbers(cam.fps) && numbers(cam.highSpeed) &&
-        (cam.candidateResolutions === undefined || strings(cam.candidateResolutions)) &&
-        (cam.candidateFps === undefined || numbers(cam.candidateFps)) &&
-        [cam.iso,cam.exposure,cam.focus,cam.colorTemperature,cam.zoom]
+      return typeof cam["available"] === "boolean" &&
+        (cam["deviceId"] === null || typeof cam["deviceId"] === "string" && cam["deviceId"].length <= 128) &&
+        typeof cam["label"] === "string" && cam["label"].length <= 256 &&
+        strings(cam["resolutions"]) && numbers(cam["fps"]) && numbers(cam["highSpeed"]) &&
+        (cam["candidateResolutions"] === undefined || strings(cam["candidateResolutions"])) &&
+        (cam["candidateFps"] === undefined || numbers(cam["candidateFps"])) &&
+        [cam["iso"],cam["exposure"],cam["focus"],cam["colorTemperature"],cam["zoom"]]
           .every(range => range === null || numericRange(range)) &&
-        typeof cam.whiteBalance === "boolean" && typeof cam.torch === "boolean" &&
-        typeof cam.maxWidth === "number" && Number.isFinite(cam.maxWidth) &&
-        cam.maxWidth >= 0 && cam.maxWidth <= 100000 &&
-        typeof cam.maxHeight === "number" && Number.isFinite(cam.maxHeight) &&
-        cam.maxHeight >= 0 && cam.maxHeight <= 100000 &&
-        typeof cam.maxFps === "number" && Number.isFinite(cam.maxFps) &&
-        cam.maxFps >= 0 && cam.maxFps <= 10000;
+        typeof cam["whiteBalance"] === "boolean" && typeof cam["torch"] === "boolean" &&
+        typeof cam["maxWidth"] === "number" && Number.isFinite(cam["maxWidth"]) &&
+        cam["maxWidth"] >= 0 && cam["maxWidth"] <= 100000 &&
+        typeof cam["maxHeight"] === "number" && Number.isFinite(cam["maxHeight"]) &&
+        cam["maxHeight"] >= 0 && cam["maxHeight"] <= 100000 &&
+        typeof cam["maxFps"] === "number" && Number.isFinite(cam["maxFps"]) &&
+        cam["maxFps"] >= 0 && cam["maxFps"] <= 10000;
     };
     const validNativeCamera = (v: unknown): boolean => {
       if (!v || typeof v !== "object" || Array.isArray(v)) return false;
       const cam = v as Record<string, unknown>;
-      return typeof cam.cameraId === "string" && cam.cameraId.length <= 128 &&
-        (cam.facing === "back" || cam.facing === "front" || cam.facing === "external") &&
-        strings(cam.sizes) && strings(cam.fpsRanges) && strings(cam.profiles) &&
-        typeof cam.manualSensor === "boolean" && typeof cam.toneCurve === "boolean" &&
-        (cam.isoRange === null || numericRange(cam.isoRange)) &&
-        Array.isArray(cam.highSpeed) && cam.highSpeed.length <= 1000 &&
-        cam.highSpeed.every((v: unknown) => {
+      return typeof cam["cameraId"] === "string" && cam["cameraId"].length <= 128 &&
+        (cam["facing"] === "back" || cam["facing"] === "front" || cam["facing"] === "external") &&
+        strings(cam["sizes"]) && strings(cam["fpsRanges"]) && strings(cam["profiles"]) &&
+        typeof cam["manualSensor"] === "boolean" && typeof cam["toneCurve"] === "boolean" &&
+        (cam["isoRange"] === null || numericRange(cam["isoRange"])) &&
+        Array.isArray(cam["highSpeed"]) && cam["highSpeed"].length <= 1000 &&
+        cam["highSpeed"].every((v: unknown) => {
           if (!v || typeof v !== "object" || Array.isArray(v)) return false;
           const high = v as Record<string, unknown>;
-          return typeof high.size === "string" && high.size.length <= 128 && numbers(high.fps);
+          return typeof high["size"] === "string" && high["size"].length <= 128 && numbers(high["fps"]);
         });
     };
     if (!validCamera(matrix.rear) || !validCamera(matrix.front) ||
@@ -262,10 +262,10 @@ export async function probeDevice(
       const n = await withTimeout(MultiCamNative.getCapabilities(), 3000, "native capabilities");
       hardwareCameras = n.cameras;
       for (const cam of n.cameras) {
-        const target = cam.facing === "front" ? front : rear;
+        const target = cam["facing"] === "front" ? front : rear;
         // High-speed capabilities belong to their actual native camera ID.
         // Do not pool modes from incompatible lenses into front/rear UI controls.
-        if (cam.isoRange && !target.iso) target.iso = cam.isoRange;
+        if (cam["isoRange"] && !target.iso) target.iso = cam["isoRange"];
       }
     } catch { /* native plugin unavailable */ }
   }

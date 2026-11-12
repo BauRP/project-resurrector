@@ -10,7 +10,9 @@ describe("Camera2 binder-heavy operations do not occupy the shared Capacitor wor
     expect(dispatch).toContain(`cameraOperationWorker.execute(() -> ${worker}(call))`);
     expect(code).toContain(`private void ${worker}(PluginCall call)`);
   }
-  expect(code).toContain("cameraOperationWorker.shutdownNow()");
+  expect(code).toContain("cameraOperationWorker.execute(this::cleanup)");
+  expect(code).toContain("cameraOperationWorker.shutdown()");
+  expect(code).not.toContain("cameraOperationWorker.shutdownNow()");
  });
  it("moves RAW characteristics enumeration to a dedicated worker",()=>{
   const code=readFileSync("android/app/src/main/java/app/lovable/multicampov/RawDngPlugin.java","utf8");
