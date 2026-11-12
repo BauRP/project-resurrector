@@ -41,15 +41,19 @@ export function scheduleAfterPaintTask(task: () => void, fallbackMs = 450): () =
  * screens. Unlike persistence scheduling, a visible stalled renderer must NOT
  * force-mount another screen just because a fallback timer expired. Native
  * recovery remains available if the renderer is truly stuck.
- * Hidden WebViews (which intentionally suppress RAF) retain a bounded fallback.
+ * Hidden WebViews (which intentionally suppress RAF) retain a bounded fallback
+ * unless the caller is a heavy screen that must wait for the next foreground.
  */
 export function scheduleAfterResponsivePaint(
   task: () => void,
-  options: { stableFrames?: number; maxFrameGapMs?: number; backgroundFallbackMs?: number } = {},
+  options: { stableFrames?: number; maxFrameGapMs?: number; backgroundFallbackMs?: number; visibleOnly?: boolean } = {},
 ): () => void {
   const targetFrames = Math.max(2, options.stableFrames ?? 3);
   const maxGap = options.maxFrameGapMs ?? 125;
   const backgroundFallbackMs = options.backgroundFallbackMs ?? 1800;
+  // Never mount GPU-heavy Camera2/media panels while Android has hidden this
+  // WebView. Persistence callers keep their existing background fallback.
+  const visibleOnly = options.visibleOnly ?? false;
   let finished = false;
   let frame = 0;
   let settled: ReturnType<typeof setTimeout> | null = null;
@@ -72,12 +76,16 @@ export function scheduleAfterResponsivePaint(
   };
   const finish = () => {
     if (finished) return;
+    if (visibleOnly && document.hidden) {
+      armBackground();
+      return;
+    }
     cancel();
     task();
   };
   const armBackground = () => {
     clearScheduled();
-    fallback = setTimeout(finish, backgroundFallbackMs);
+    if (!visibleOnly) fallback = setTimeout(finish, backgroundFallbackMs);
   };
   const tick = (now: number) => {
     frame = 0;
@@ -97,8 +105,10 @@ export function scheduleAfterResponsivePaint(
     clearScheduled();
     stable = 0;
     lastFrame = null;
-    if (typeof requestAnimationFrame !== "function") armBackground();
-    else frame = requestAnimationFrame(tick);
+    if (typeof requestAnimationFrame !== "function") {
+      // Browsers without RAF still get their working panel when foregrounded.
+      fallback = setTimeout(finish, backgroundFallbackMs);
+    } else frame = requestAnimationFrame(tick);
   };
   function onVisibility() {
     if (finished) return;
