@@ -31,7 +31,7 @@ describe("lightweight appearance preferences", () => {
   it("rejects corrupted initial appearance fields before the first Android paint", () => {
     window.localStorage.setItem("multicam-pov-ui-prefs-native", JSON.stringify({
       theme: "dark", language: "not_valid!!", hardwareAcceleration: "yes",
-      selectedLut: { malicious: true },
+      selectedLut: "ValidButUnrelatedProjectLut",
     }));
     const first = createMulticamStore().getSnapshot();
     expect(first.theme).toBe("dark");

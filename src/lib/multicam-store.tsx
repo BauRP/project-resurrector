@@ -59,7 +59,15 @@ function readImmediateAppearance(): Partial<StateData> {
     // The very first React paint must not receive a malformed locale or
     // object-shaped preference. Use exactly the same checked whitelist as
     // the deferred Android project recovery, without reading bulky data.
-    return sanitizePersistedState(JSON.parse(raw));
+    const checked = sanitizePersistedState(JSON.parse(raw));
+    // This small key is only for appearance preferences, never project
+    // content. Corrupt or extra fields must not restore a partial project
+    // during the first synchronous React paint.
+    const patch: Partial<StateData> = {};
+    if (checked.theme !== undefined) patch.theme = checked.theme;
+    if (checked.language !== undefined) patch.language = checked.language;
+    if (checked.hardwareAcceleration !== undefined) patch.hardwareAcceleration = checked.hardwareAcceleration;
+    return patch;
   } catch { return {}; }
 }
 const defaults: StateData = {
