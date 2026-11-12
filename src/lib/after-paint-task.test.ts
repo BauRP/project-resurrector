@@ -112,6 +112,20 @@ describe("Astra hidden Android WebView startup", () => {
     cancel();
   });
 
+  it("does not accumulate fallback timers in a hidden WebView without RAF", () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    const task = vi.fn();
+    const cancel = scheduleAfterResponsivePaint(task, {
+      visibleOnly: true, backgroundFallbackMs: 30,
+    });
+    vi.advanceTimersByTime(2000);
+    expect(task).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    cancel();
+  });
+
   it("never fires a cancelled camera load after coming back from background", () => {
     vi.useFakeTimers();
     let hidden = true;
