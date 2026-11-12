@@ -1,6 +1,8 @@
 package app.lovable.multicampov;
 
 import android.graphics.Rect;
+import android.app.Activity;
+import android.os.Looper;
 import android.util.DisplayMetrics;
 import androidx.core.content.ContextCompat;
 import android.view.View;
@@ -158,7 +160,9 @@ public class DisplayTopologyPlugin extends Plugin {
      */
     private final Set<String> activeOwners = new HashSet<>();
 
-    private synchronized JSObject snapshot() {
+    // Called on Android MAIN only. Reads View dimensions/insets and must
+    // never run on CapacitorPlugins' background taskHandler thread.
+    private JSObject snapshot() {
         JSObject result = new JSObject();
         final android.app.Activity host=getActivity();
         if(host==null||host.isDestroyed()){
@@ -274,11 +278,41 @@ public class DisplayTopologyPlugin extends Plugin {
         return key.toString();
     }
 
-    @PluginMethod
-    public void getState(PluginCall call) { call.resolve(snapshot()); }
+    /**
+     * Capacitor invokes plugin methods from its worker. Every View read and
+     * WindowManager owner transition runs on Android MAIN. No instance
+     * monitor is held while registering/unregistering OEM listeners.
+     */
+    private void onUiThread(PluginCall call, Runnable action) {
+        final Activity activity = getActivity();
+        if (activity == null) {
+            call.reject("Fold Activity unavailable");
+            return;
+        }
+        final Runnable safe = () -> {
+            if (activity.isFinishing() || activity.isDestroyed()) {
+                call.reject("Fold Activity unavailable");
+                return;
+            }
+            try { action.run(); }
+            catch (RuntimeException error) {
+                call.reject("Window topology operation failed: " + error.getMessage());
+            }
+        };
+        if (Looper.myLooper() == Looper.getMainLooper()) safe.run();
+        else activity.runOnUiThread(safe);
+    }
 
     @PluginMethod
-    public synchronized void startObserving(PluginCall call) {
+    public void getState(PluginCall call) {
+        onUiThread(call, () -> call.resolve(snapshot()));
+    }
+
+    @PluginMethod
+    public void startObserving(PluginCall call) {
+        onUiThread(call, () -> startObservingOnUi(call));
+    }
+    private void startObservingOnUi(PluginCall call) {
         String ownerId = call.getString("ownerId");
         if (ownerId == null || ownerId.isEmpty()) {
             call.reject("Fold observer ownerId is required");
@@ -304,7 +338,10 @@ public class DisplayTopologyPlugin extends Plugin {
             observerLease = lease;
             listener = info -> {
                 JSObject pendingTopologyNotification = null;
-                synchronized (DisplayTopologyPlugin.this) {
+                // WindowInfoTracker was registered with Android MAIN executor,
+                // the same thread as start/stop and snapshot. No Java monitor
+                // may surround recording observation or View geometry reads.
+                {
                     // A queued callback may arrive after observer teardown or
                     // after a newer Activity has registered its own listener.
                     if (ownerGeneration != observerGeneration || listener == null ||
@@ -375,7 +412,10 @@ public class DisplayTopologyPlugin extends Plugin {
     }
 
     @PluginMethod
-    public synchronized void stopObserving(PluginCall call) {
+    public void stopObserving(PluginCall call) {
+        onUiThread(call, () -> stopObservingOnUi(call));
+    }
+    private void stopObservingOnUi(PluginCall call) {
         String ownerId = call.getString("ownerId");
         if (ownerId == null || ownerId.isEmpty()) {
             call.reject("Fold observer ownerId is required");
@@ -386,7 +426,9 @@ public class DisplayTopologyPlugin extends Plugin {
         call.resolve();
     }
 
-    private synchronized void stopListener() {
+    // Only called on MAIN. Registration/removal can cross an OEM Binder;
+    // never hold a synchronized monitor across either external call.
+    private void stopListener() {
         observerGeneration++;
         // An old Activity may stop after a new one registered. Only the
         // matching lease may report an observation gap to the recorder.
