@@ -34,7 +34,7 @@ describe("Clean-install navigation and standalone WebView on Android", () => {
   it("separates a hidden emulator window from real idle Camera failures", () => {
     const test = readFileSync("android/app/src/androidTest/java/app/lovable/multicampov/MulticamFreezeNavigationInstrumentedTest.java","utf8");
     expect(test).not.toContain("document.visibilityState==='visible'&&");
-    expect(test).toContain('eventually(running, web.get(), "!!document.querySelector(\\'.camera-screen\\')")');
+    expect(test).toContain("eventually(running, web.get(), \"!!document.querySelector('.camera-screen')\")");
     expect(test).toContain('assertEquals("Idle Camera disappeared; diagnostic=" + evidence');
     expect(test).toContain('eval(running, web.get(), "1+1===2")');
   });
