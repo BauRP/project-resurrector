@@ -83,7 +83,12 @@ export function CameraWorkspace() {
     // Keep retrying only the READ-ONLY ownership check, with backoff and one
     // bounded attempt at a time; never trigger getUserMedia or start Camera2.
     return startNativeStatusRecovery(
-      () => bounded(nativeCapture.status(), 2200, "Camera2 startup ownership"),
+      // nativeCapture.status() already enforces a 6-second deadline.
+      // A second 2.2-second outer deadline can expire while Android Binder
+      // is still processing the original status request, then schedule a
+      // duplicate ownership probe into the same slow Camera2 system.
+      // Keep one bounded query per attempt and preserve retry backoff.
+      () => nativeCapture.status(),
       status => {
         setStatusNotice("");
         if (manualModeSelection.current) return;
