@@ -101,8 +101,28 @@ export async function writeAsyncProjectSnapshot(value: SavedProjectSnapshot): Pr
       tx.oncomplete = () => finish();
       tx.onerror = () => finish(tx.error ?? new Error("Project save failed"));
       tx.onabort = () => finish(tx.error ?? new Error("Project save aborted"));
-      try { tx.objectStore(STORE).put(value, KEY); }
-      catch (error) {
+      // Competing Activity instances can finish in reverse order. Check and
+      // replace inside ONE readwrite transaction: an old WebView must never
+      // overwrite a newer project snapshot saved by its successor.
+      try {
+        const objectStore = tx.objectStore(STORE);
+        const previous = objectStore.get(KEY);
+        previous.onsuccess = () => {
+          if (finished) return;
+          const saved = validSnapshot(previous.result as unknown);
+          if (saved && saved.savedAt >= value.savedAt) return;
+          try { objectStore.put(value, KEY); }
+          catch (error) {
+            try { tx.abort(); } catch { /* Transaction already completed. */ }
+            finish(error instanceof Error ? error : new Error("Project save failed"));
+          }
+        };
+        previous.onerror = () => {
+          try { tx.abort(); } catch { /* Transaction already completed. */ }
+          finish(previous.error ?? new Error("Project snapshot comparison failed"));
+        };
+      } catch (error) {
+        try { tx.abort(); } catch { /* Transaction already completed. */ }
         finish(error instanceof Error ? error : new Error("Project save failed"));
       }
     });

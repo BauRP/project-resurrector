@@ -38,6 +38,13 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
    expect(src).toContain("lastLegacyBackupStamp = value.savedAt");
    expect(src).toContain("if (!document.hidden) await new Promise<void>");
  });
+ it("uses an atomic timestamp-guarded IndexedDB transaction for old Activity writes",()=>{
+   const db = readFileSync("src/lib/async-project-persistence.ts","utf8");
+   expect(db).toContain('const previous = objectStore.get(KEY)');
+   expect(db).toContain('saved.savedAt >= value.savedAt');
+   expect(db).toContain('objectStore.put(value, KEY)');
+   expect(db).toContain('db.transaction(STORE, "readwrite")');
+ });
  it("never overwrites user changes from an older asynchronous database response",()=>{
    expect(src).toContain("modifiedProjectKeys.add(key)");
    expect(src).toContain("!modifiedProjectKeys.has(key)");

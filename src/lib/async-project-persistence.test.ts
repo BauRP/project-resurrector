@@ -65,6 +65,62 @@ describe("Astra async project saves do not block Android navigation", () => {
     }
   });
 
+  it("does not let an older Activity overwrite a later project in IndexedDB", async () => {
+    const { writeAsyncProjectSnapshot } = await import("./async-project-persistence");
+    const actual = { savedAt: 300, state: { markers: ["newer"] } };
+    const put = vi.fn();
+    const close = vi.fn();
+    let currentSaved: unknown = actual;
+    const tx = {
+      oncomplete: undefined as undefined | (() => void),
+      onerror: undefined as undefined | (() => void),
+      onabort: undefined as undefined | (() => void),
+      error: null,
+      abort: vi.fn(),
+      objectStore: () => ({
+        get: () => {
+          const request = {
+            result: currentSaved,
+            onsuccess: undefined as undefined | (() => void),
+            onerror: undefined as undefined | (() => void),
+          };
+          queueMicrotask(() => request.onsuccess?.());
+          return request;
+        },
+        put,
+      }),
+    };
+    const db = {
+      close, onversionchange: null,
+      transaction: () => {
+        // A readwrite transaction waits until its read finishes.
+        queueMicrotask(() => queueMicrotask(() => tx.oncomplete?.()));
+        return tx;
+      },
+      objectStoreNames: { contains: () => true },
+    };
+    const req: { result: typeof db; onsuccess?: () => void } = { result: db };
+    vi.stubGlobal("indexedDB", {
+      open: () => {
+        queueMicrotask(() => req.onsuccess?.());
+        return req;
+      },
+    });
+    try {
+      await writeAsyncProjectSnapshot({ savedAt: 200, state: { markers: ["old"] } });
+      expect(put).not.toHaveBeenCalled();
+      currentSaved = { savedAt: 100, state: { markers: ["earlier"] } };
+      await writeAsyncProjectSnapshot({ savedAt: 400, state: { markers: ["newest"] } });
+      expect(put).toHaveBeenCalledTimes(1);
+      expect(put).toHaveBeenCalledWith(
+        { savedAt: 400, state: { markers: ["newest"] } }, "latest",
+      );
+      expect(close).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("handles an environment with no IndexedDB without inventing restored data", async () => {
     if (typeof indexedDB === "undefined")
       expect(await readAsyncProjectSnapshot()).toBeNull();
