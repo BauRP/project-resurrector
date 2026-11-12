@@ -17,6 +17,21 @@ import com.getcapacitor.PluginMethod;
  */
 @CapacitorPlugin(name = "DeviceMetrics")
 public class DeviceMetricsPlugin extends Plugin {
+    // A JavaScript timeout does not cancel an OEM battery/storage call.
+    // Reject queue buildup, but keep returning the last actual measurements.
+    private final java.util.concurrent.atomic.AtomicBoolean readInFlight =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+    private volatile Integer lastBattery = null;
+    private volatile Long lastStorageMB = null;
+
+    private JSObject cachedMetrics() {
+        JSObject result = new JSObject();
+        Integer battery = lastBattery;
+        Long storage = lastStorageMB;
+        result.put("battery", battery == null ? org.json.JSONObject.NULL : battery);
+        result.put("storageMB", storage == null ? org.json.JSONObject.NULL : storage);
+        return result;
+    }
     private final java.util.concurrent.ExecutorService worker =
         java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "multicam-device-metrics");
@@ -26,6 +41,10 @@ public class DeviceMetricsPlugin extends Plugin {
 
     @PluginMethod
     public void read(PluginCall call) {
+        if (!readInFlight.compareAndSet(false, true)) {
+            call.resolve(cachedMetrics());
+            return;
+        }
         final Context context = getContext().getApplicationContext();
         try {
             worker.execute(() -> {
@@ -44,16 +63,19 @@ public class DeviceMetricsPlugin extends Plugin {
                     long available = fs.getAvailableBytes();
                     if (available >= 0) storageMB = available / (1024L * 1024L);
 
-                    JSObject data = new JSObject();
-                    data.put("battery", percent == null ? org.json.JSONObject.NULL : percent);
-                    data.put("storageMB", storageMB == null ? org.json.JSONObject.NULL : storageMB);
-                    call.resolve(data);
+                    lastBattery = percent;
+                    lastStorageMB = storageMB;
+                    call.resolve(cachedMetrics());
                 } catch (Exception error) {
-                    call.reject("Показатели устройства недоступны: " + error.getMessage());
+                    // A temporary OEM failure must not erase the last reading.
+                    call.resolve(cachedMetrics());
+                } finally {
+                    readInFlight.set(false);
                 }
             });
         } catch (java.util.concurrent.RejectedExecutionException error) {
-            call.reject("Android закрывает мониторинг устройства");
+            readInFlight.set(false);
+            call.resolve(cachedMetrics());
         }
     }
 
