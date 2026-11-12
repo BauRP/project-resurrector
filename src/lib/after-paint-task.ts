@@ -78,8 +78,14 @@ export function scheduleAfterResponsivePaint(
   };
   const finish = () => {
     if (finished) return;
+    // Android may move a foreground WebView to the background after the
+    // no-RAF fallback timer was armed. Check visibility AGAIN at execution
+    // time. Without this guard, optional GPU-heavy panels can mount behind
+    // the user's back on older Chromium versions lacking RAF.
+    // A falsely-hidden but ACTUALLY painting emulator still has stable
+    // frame evidence and can enter normally.
     if (visibleOnly && document.hidden &&
-        typeof requestAnimationFrame === "function" && stable < targetFrames) {
+        (typeof requestAnimationFrame !== "function" || stable < targetFrames)) {
       armBackground();
       return;
     }

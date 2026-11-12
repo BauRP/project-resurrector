@@ -126,6 +126,28 @@ describe("Astra hidden Android WebView startup", () => {
     cancel();
   });
 
+  it("does not mount heavy panels if no-RAF WebView hides after its foreground timer started", () => {
+    vi.useFakeTimers();
+    let hidden = false;
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    vi.stubGlobal("requestAnimationFrame", undefined);
+    const task = vi.fn();
+    const cancel = scheduleAfterResponsivePaint(task, {
+      visibleOnly: true, backgroundFallbackMs: 30,
+    });
+    // Android may suppress a visibilitychange event during Activity pause.
+    hidden = true;
+    vi.advanceTimersByTime(100);
+    expect(task).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    // The next genuine foreground event resumes the ordinary bounded timer.
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    vi.advanceTimersByTime(30);
+    expect(task).toHaveBeenCalledOnce();
+    cancel();
+  });
+
   it("never fires a cancelled camera load after coming back from background", () => {
     vi.useFakeTimers();
     let hidden = true;

@@ -33,6 +33,13 @@ describe("native bridge must not freeze the initial camera screen", () => {
     expect(await screen.findByText("Камера пока выключена", {}, { timeout: 4000 })).toBeInTheDocument();
     expect(mocks.status).toHaveBeenCalledTimes(1);
   });
+  it("does the initial read-only ownership check when Android falsely reports hidden", async () => {
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
+    await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(1));
+    // No native recording, microphone, or preview is opened by this check.
+  });
+
   it("preserves Camera2 ownership restoration and checks status before returning to WebView", async () => {
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
     expect(mocks.status).toHaveBeenCalledTimes(1);

@@ -72,6 +72,12 @@ export function CameraWorkspace() {
   }, [mode]);
   useEffect(() => {
     if (!isNative()) return;
+    // CameraWorkspace is itself mounted only after responsive frames by
+    // CameraEntryGate. A falsely-hidden Android WebView must not skip its
+    // FIRST read-only Camera2 ownership check forever, otherwise a running
+    // native recording cannot restore its mode on app reopening. Defer only
+    // subsequent retry polls while truly backgrounded.
+    let initialOwnershipRead = true;
     // Emulators can have no usable camera at all. A failed status read is
     // neither permission to open WebView's camera nor a reason to block tabs.
     // Keep retrying only the READ-ONLY ownership check, with backoff and one
@@ -88,7 +94,13 @@ export function CameraWorkspace() {
           setMode("native");
       },
       () => setStatusNotice("Camera2 пока не отвечает. Приложение работает; проверю её снова автоматически."),
-      () => !document.hidden,
+      () => {
+        if (initialOwnershipRead) {
+          initialOwnershipRead = false;
+          return true;
+        }
+        return !document.hidden;
+      },
     );
   }, []);
 

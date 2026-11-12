@@ -363,6 +363,12 @@ public class MulticamFreezeNavigationInstrumentedTest {
                     eval(running, view,
                         "!!document.querySelector('.bottom-nav button:nth-child(3)')"));
                 checks++;
+                // Keep positive evidence before a software GPU dies. A
+                // missing final summary alone cannot distinguish a stalled
+                // Chromium renderer from a disappearing entire QEMU process.
+                Log.i("MultiCamFreezeTest", "Cold-start healthy sample=" +
+                    checks + " elapsedMs=" +
+                    (android.os.SystemClock.uptimeMillis() - start));
                 Thread.sleep(1500);
             }
             // Each iteration independently verifies both JavaScript and the
