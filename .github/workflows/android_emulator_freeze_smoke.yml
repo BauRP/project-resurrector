@@ -30,6 +30,12 @@ jobs:
           - api: 35
             gpu: swiftshader
             resolution: full
+          # Diagnose whether the API35 SwiftShader full-resolution crash
+          # depends on the virtual GPU framebuffer size. This adds evidence
+          # without replacing or weakening the mandatory full-size profile.
+          - api: 35
+            gpu: swiftshader
+            resolution: compact
           - api: 35
             gpu: swangle
             resolution: full

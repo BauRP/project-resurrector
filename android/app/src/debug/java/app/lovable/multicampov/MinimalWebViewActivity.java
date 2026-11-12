@@ -3,6 +3,8 @@ package app.lovable.multicampov;
 import android.app.Activity;
 import android.os.Bundle;
 import android.webkit.WebView;
+import android.view.ViewGroup;
+import android.view.ViewParent;
 
 /** DEBUG ONLY: independent Chromium/WebView baseline without React/Capacitor. */
 public final class MinimalWebViewActivity extends Activity {
@@ -21,9 +23,15 @@ public final class MinimalWebViewActivity extends Activity {
     }
     @Override public void onDestroy() {
         if (view != null) {
-            view.stopLoading();
-            view.destroy();
+            // Remove Chromium's surface from its parent before destroying it.
+            // Otherwise a software GPU emulator may keep a stale compositor
+            // layer while the next, real Capacitor Activity is being started.
+            WebView retiring = view;
             view = null;
+            retiring.stopLoading();
+            ViewParent parent = retiring.getParent();
+            if (parent instanceof ViewGroup) ((ViewGroup) parent).removeView(retiring);
+            retiring.destroy();
         }
         super.onDestroy();
     }
