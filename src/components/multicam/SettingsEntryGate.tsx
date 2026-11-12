@@ -12,6 +12,9 @@ import { traceUiAction } from "@/lib/freeze-action-trace";
  * The Settings tab already mounts optional camera/network/storage controls
  * in stages. Wait only for three responsive browser frames to retire the
  * outgoing screen, then display its lightweight controls immediately.
+ * Preserve the bounded background fallback for the lightweight shell when
+ * Android intentionally suppresses rAF during Activity restoration. Heavy
+ * Settings subpanels now wait for responsive frames on foreground.
  *
  * Native UiFreezeMonitor still runs independently and retains the ability
  * to record renderer unresponsiveness. No Settings, Camera2, recording,
@@ -26,7 +29,7 @@ export function SettingsEntryGate({ children }: { children: ReactNode }) {
       if (!alive) return;
       traceUiAction("settings: opening without waiting for GPU frame commit");
       setReady(true);
-    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
     return () => {
       alive = false;
       cancel();
