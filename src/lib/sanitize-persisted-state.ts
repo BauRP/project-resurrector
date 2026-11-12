@@ -18,48 +18,48 @@ export function sanitizePersistedState(value: unknown): Partial<StateData> {
   const src = record(value);
   if (!src) return {};
   const out: Partial<StateData> = {};
-  if (src.theme === "light" || src.theme === "dark") out.theme = src.theme;
-  if (short(src.language, 12) && /^[a-zA-Z-]{2,12}$/.test(src.language))
-    out.language = src.language;
-  if (typeof src.hardwareAcceleration === "boolean")
-    out.hardwareAcceleration = src.hardwareAcceleration;
-  if (short(src.selectedLut, 128)) out.selectedLut = src.selectedLut;
-  if (short(src.teleprompterText, 65536)) out.teleprompterText = src.teleprompterText;
-  if (finite(src.teleprompterSpeed, 0, 1000)) out.teleprompterSpeed = src.teleprompterSpeed;
-  if (finite(src.teleprompterSize, 8, 256)) out.teleprompterSize = src.teleprompterSize;
+  if (src["theme"] === "light" || src["theme"] === "dark") out.theme = src["theme"];
+  if (short(src["language"], 12) && /^[a-zA-Z-]{2,12}$/.test(src["language"]))
+    out.language = src["language"];
+  if (typeof src["hardwareAcceleration"] === "boolean")
+    out.hardwareAcceleration = src["hardwareAcceleration"];
+  if (short(src["selectedLut"], 128)) out.selectedLut = src["selectedLut"];
+  if (short(src["teleprompterText"], 65536)) out.teleprompterText = src["teleprompterText"];
+  if (finite(src["teleprompterSpeed"], 0, 1000)) out.teleprompterSpeed = src["teleprompterSpeed"];
+  if (finite(src["teleprompterSize"], 8, 256)) out.teleprompterSize = src["teleprompterSize"];
 
-  const cfg = record(src.exportConfig);
+  const cfg = record(src["exportConfig"]);
   if (cfg) {
     const textKeys = ["aspect", "resolution", "fps", "videoCodec", "audioCodec", "sampleRate"] as const;
     const textValid = textKeys.every(key => short(cfg[key], 64));
-    if (textValid && finite(cfg.bitrate, 0, 1000) && finite(cfg.audioBitrate, 0, 2000)) {
+    if (textValid && finite(cfg["bitrate"], 0, 1000) && finite(cfg["audioBitrate"], 0, 2000)) {
       out.exportConfig = {
-        aspect: cfg.aspect as string, resolution: cfg.resolution as string,
-        fps: cfg.fps as string, videoCodec: cfg.videoCodec as string,
-        audioCodec: cfg.audioCodec as string, sampleRate: cfg.sampleRate as string,
-        bitrate: cfg.bitrate as number, audioBitrate: cfg.audioBitrate as number,
+        aspect: cfg["aspect"] as string, resolution: cfg["resolution"] as string,
+        fps: cfg["fps"] as string, videoCodec: cfg["videoCodec"] as string,
+        audioCodec: cfg["audioCodec"] as string, sampleRate: cfg["sampleRate"] as string,
+        bitrate: cfg["bitrate"] as number, audioBitrate: cfg["audioBitrate"] as number,
       };
     }
   }
-  const markers = boundedArray(src.markers);
+  const markers = boundedArray(src["markers"]);
   if (markers) out.markers = markers.flatMap((v): Marker[] => {
     const m = record(v);
-    return m && id(m.id) && finite(m.time, 0, 86400) && short(m.label, 4096)
-      ? [{ id: m.id, time: m.time, label: m.label }] : [];
+    return m && id(m["id"]) && finite(m["time"], 0, 86400) && short(m["label"], 4096)
+      ? [{ id: m["id"], time: m["time"], label: m["label"] }] : [];
   });
-  const cuts = boundedArray(src.cuts);
+  const cuts = boundedArray(src["cuts"]);
   if (cuts) out.cuts = cuts.flatMap((v): Cut[] => {
     const c = record(v);
-    return c && id(c.id) && finite(c.time, 0, 86400) &&
-      Number.isSafeInteger(c.camera) && finite(c.camera, 0, 256)
-      ? [{ id: c.id, time: c.time, camera: c.camera }] : [];
+    return c && id(c["id"]) && finite(c["time"], 0, 86400) &&
+      Number.isSafeInteger(c["camera"]) && finite(c["camera"], 0, 256)
+      ? [{ id: c["id"], time: c["time"], camera: c["camera"] }] : [];
   });
-  const subtitles = boundedArray(src.subtitles);
+  const subtitles = boundedArray(src["subtitles"]);
   if (subtitles) out.subtitles = subtitles.flatMap((v): Subtitle[] => {
     const sub = record(v);
-    return sub && id(sub.id) && finite(sub.start, 0, 86400) &&
-      finite(sub.end, sub.start, 86400) && short(sub.text, 8192)
-      ? [{ id: sub.id, start: sub.start, end: sub.end, text: sub.text }] : [];
+    return sub && id(sub["id"]) && finite(sub["start"], 0, 86400) &&
+      finite(sub["end"], sub["start"], 86400) && short(sub["text"], 8192)
+      ? [{ id: sub["id"], start: sub["start"], end: sub["end"], text: sub["text"] }] : [];
   });
   return out;
 }
