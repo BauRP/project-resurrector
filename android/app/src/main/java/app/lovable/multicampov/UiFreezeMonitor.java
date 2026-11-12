@@ -55,10 +55,19 @@ public final class UiFreezeMonitor {
     private static Context context;
     private static volatile java.lang.ref.WeakReference<Runnable> webViewRecoveryListener =
         new java.lang.ref.WeakReference<>(null);
+    private static volatile java.lang.ref.WeakReference<Runnable> webViewResponsiveListener =
+        new java.lang.ref.WeakReference<>(null);
 
     /** Runs only when native MAIN is alive but Chromium JS is nonresponsive. */
     public static void setWebViewRecoveryListener(Runnable listener) {
         webViewRecoveryListener = new java.lang.ref.WeakReference<>(listener);
+    }
+    public static void setWebViewResponsiveListener(Runnable listener) {
+        webViewResponsiveListener = new java.lang.ref.WeakReference<>(listener);
+    }
+    public static boolean javascriptRespondedRecently() {
+        final long last = webViewHeartbeat.get();
+        return last > 0L && SystemClock.uptimeMillis() - last < 2200L;
     }
 
 
@@ -158,8 +167,18 @@ public final class UiFreezeMonitor {
     public static void webViewPulse() {
         receivedJsHeartbeat.set(true);
         webViewHeartbeat.set(SystemClock.uptimeMillis());
-        webViewCaptured.set(false);
+        final boolean wasUnresponsive = webViewCaptured.getAndSet(false) ||
+            rendererUnresponsiveRecorded.getAndSet(false);
         earlyWebViewCaptured.set(false);
+        // Once the actual JS loop resumes, dismiss a stale *native* modal.
+        // Do not delete the diagnostic report; a dead renderer still requires
+        // the user to restart the UI manually.
+        if (wasUnresponsive) {
+            final Runnable listener = webViewResponsiveListener.get();
+            if (listener != null) MAIN.post(() -> {
+                if (foreground) listener.run();
+            });
+        }
     }
 
     /** A lightweight diagnostic breadcrumb, kept in memory until a freeze is
@@ -321,7 +340,12 @@ public final class UiFreezeMonitor {
                     // A JS-frozen WebView cannot render its own error notice.
                     // Present a native dialog while Android MAIN is responsive.
                     final Runnable recovery = webViewRecoveryListener.get();
-                    if (recovery != null)
+                    // A healthy independent JS probe means the renderer is
+                    // alive and only the Capacitor bridge may be delayed.
+                    // Persist evidence but don't cover working buttons with
+                    // a false native "WebView frozen" dialog.
+                    if (recovery != null &&
+                        (!independentRendererResponsive || rendererUnresponsiveRecorded.get()))
                         MAIN.post(() -> { if (foreground) recovery.run(); });
                     persistReport("MULTI-CAM POV: " +
                         (rendererUnresponsiveRecorded.get()

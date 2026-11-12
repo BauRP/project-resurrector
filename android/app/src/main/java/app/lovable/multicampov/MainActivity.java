@@ -21,7 +21,17 @@ public class MainActivity extends BridgeActivity {
     private AlertDialog recoveryDialog;
     private boolean recoveryPromptShown;
     private boolean rendererTerminated;
-    private final Runnable webViewRecovery = () -> showRecoveryDialog(false);
+    private final Runnable webViewRecovery = () -> {
+        // Watchdog posts are asynchronous. If JS recovered before MAIN
+        // handles the callback, do not show an already-stale dialog.
+        if (!UiFreezeMonitor.javascriptRespondedRecently()) showRecoveryDialog(false);
+    };
+    private final Runnable webViewResponsive = () -> {
+        if (!rendererTerminated && recoveryPromptShown) {
+            recoveryPromptShown = false;
+            dismissRecoveryDialog();
+        }
+    };
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -37,6 +47,7 @@ public class MainActivity extends BridgeActivity {
         UiFreezeMonitor.start(getApplicationContext(),
             bridge != null ? bridge.getWebView() : null);
         UiFreezeMonitor.setWebViewRecoveryListener(webViewRecovery);
+        UiFreezeMonitor.setWebViewResponsiveListener(webViewResponsive);
     }
 
     @Override public void onResume() {
@@ -52,6 +63,7 @@ public class MainActivity extends BridgeActivity {
     @Override public void onDestroy() {
         dismissRecoveryDialog();
         UiFreezeMonitor.setWebViewRecoveryListener(null);
+        UiFreezeMonitor.setWebViewResponsiveListener(null);
         UiFreezeMonitor.stop();
         super.onDestroy();
     }

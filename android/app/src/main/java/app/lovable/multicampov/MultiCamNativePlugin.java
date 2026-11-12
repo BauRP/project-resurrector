@@ -88,6 +88,8 @@ public class MultiCamNativePlugin extends Plugin {
             worker.setDaemon(true);
             return worker;
         });
+    private final java.util.concurrent.atomic.AtomicBoolean cleanupInProgress =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
     private HandlerThread thread;
     private Handler handler;
     private CameraManager.AvailabilityCallback availabilityWatcher;
@@ -184,13 +186,21 @@ public class MultiCamNativePlugin extends Plugin {
     @Override protected void handleOnDestroy() {
         cameraQueryWorker.shutdownNow();
         mp4InspectionWorker.shutdownNow();
-        cameraOperationWorker.shutdownNow();
+        // Drain already accepted camera operations and perform final close on
+        // their owner worker. Never close MediaRecorder/CameraDevice on Android
+        // MAIN during Activity destruction.
+        try { cameraOperationWorker.execute(this::cleanup); }
+        catch (java.util.concurrent.RejectedExecutionException ignored) {
+            Thread fallback = new Thread(this::cleanup, "multicam-camera-destroy-fallback");
+            fallback.setDaemon(true);
+            fallback.start();
+        }
+        cameraOperationWorker.shutdown();
         // Unregistering OEM CameraManager callbacks may block on a Binder.
         // Plugin teardown is on Android MAIN: do not wait for that Binder here.
         try { availabilityWorker.execute(this::stopAvailability); }
         catch (java.util.concurrent.RejectedExecutionException ignored) { }
         availabilityWorker.shutdown();
-        cleanup();
         super.handleOnDestroy();
     }
 
@@ -859,10 +869,26 @@ public class MultiCamNativePlugin extends Plugin {
     }
 
     private void cleanup() {
-        highSpeedStarted = false;
-        if (hsSession != null) { hsSession.close(); hsSession = null; }
-        if (device != null) { device.close(); device = null; }
-        if (recorder != null) { recorder.release(); recorder = null; }
-        if (thread != null) { thread.quitSafely(); thread = null; }
+        // Camera callbacks may arrive during destroy or after an operation
+        // failure. Avoid double-closing the same native recorder/session.
+        if (!cleanupInProgress.compareAndSet(false, true)) return;
+        try {
+            highSpeedStarted = false;
+            CameraConstrainedHighSpeedCaptureSession closingSession = hsSession;
+            CameraDevice closingDevice = device;
+            MediaRecorder closingRecorder = recorder;
+            HandlerThread closingThread = thread;
+            hsSession = null; device = null; recorder = null;
+            thread = null; handler = null;
+            try { if (closingSession != null) closingSession.close(); }
+            catch (RuntimeException ignored) { }
+            try { if (closingDevice != null) closingDevice.close(); }
+            catch (RuntimeException ignored) { }
+            try { if (closingRecorder != null) closingRecorder.release(); }
+            catch (RuntimeException ignored) { }
+            if (closingThread != null) closingThread.quitSafely();
+        } finally {
+            cleanupInProgress.set(false);
+        }
     }
 }
