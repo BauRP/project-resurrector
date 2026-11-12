@@ -76,6 +76,42 @@ describe("Astra hidden Android WebView startup", () => {
     cancel();
   });
 
+  it("allows real responsive frames when emulator wrongly reports a hidden WebView", () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const task = vi.fn();
+    const cancel = scheduleAfterResponsivePaint(task, {
+      visibleOnly: true, stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 40,
+    });
+    // A falsely-hidden WebView can still paint with a working RAF cadence.
+    frames.shift()?.(10);
+    frames.shift()?.(26);
+    frames.shift()?.(42);
+    vi.advanceTimersByTime(0);
+    expect(task).toHaveBeenCalledOnce();
+    cancel();
+  });
+
+  it("does not load the heavy screen from a background timer with stalled RAF", () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 91));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const task = vi.fn();
+    const cancel = scheduleAfterResponsivePaint(task, {
+      visibleOnly: true, backgroundFallbackMs: 20,
+    });
+    vi.advanceTimersByTime(500);
+    expect(task).not.toHaveBeenCalled();
+    cancel();
+  });
+
   it("never fires a cancelled camera load after coming back from background", () => {
     vi.useFakeTimers();
     let hidden = true;
