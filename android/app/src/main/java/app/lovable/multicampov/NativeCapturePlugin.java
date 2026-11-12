@@ -308,15 +308,22 @@ public class NativeCapturePlugin extends Plugin {
  
   });
  }
+ private final java.util.concurrent.atomic.AtomicBoolean previewFramePending =
+     new java.util.concurrent.atomic.AtomicBoolean(false);
  @PluginMethod public void previewFrame(PluginCall call) {
+   if(!previewFramePending.compareAndSet(false,true)){
+     call.reject("Предыдущий кадр Camera2 ещё обрабатывается");return;
+   }
    // A JPEG may be encoded while Camera2's shared state lock is held.
    // Waiting for it on Capacitor's main thread freezes every screen.
    try {
      statusWorker.execute(() -> {
        try { call.resolve(NativeCaptureService.previewFrame()); }
        catch (Exception error) { call.reject("Кадр Camera2 недоступен: " + error.getMessage()); }
+       finally { previewFramePending.set(false); }
      });
    } catch (java.util.concurrent.RejectedExecutionException error) {
+     previewFramePending.set(false);
      call.reject("Android закрывает предпросмотр Camera2");
    }
  }
@@ -411,19 +418,35 @@ public class NativeCapturePlugin extends Plugin {
   * Never synchronously build a full status JSON on Capacitor's UI thread.
   * Deliver the same fields and errors through the existing status worker.
   */
+ private final java.util.concurrent.atomic.AtomicInteger pendingStatusAcks =
+     new java.util.concurrent.atomic.AtomicInteger(0);
+ private static final int MAX_STATUS_ACKS = 16;
  private void resolveStatusAsync(PluginCall call) {
+   // All accepted camera-control operations still receive their authoritative
+   // response. A stuck vendor CameraService cannot queue unlimited replies.
+   if(pendingStatusAcks.incrementAndGet() > MAX_STATUS_ACKS){
+     pendingStatusAcks.decrementAndGet();
+     call.reject("Camera2: очередь подтверждений переполнена");return;
+   }
    final android.content.Context context = getContext().getApplicationContext();
    try {
      statusWorker.execute(() -> {
        try { call.resolve(NativeCaptureService.status(context)); }
        catch (Exception error) { call.reject("Статус Camera2 недоступен: " + error.getMessage()); }
+       finally { pendingStatusAcks.decrementAndGet(); }
      });
    } catch (java.util.concurrent.RejectedExecutionException error) {
+     pendingStatusAcks.decrementAndGet();
      call.reject("Android закрывает Camera2");
    }
  }
 
+ private final java.util.concurrent.atomic.AtomicBoolean historyPending =
+     new java.util.concurrent.atomic.AtomicBoolean(false);
  @PluginMethod public void auditHistory(PluginCall call){
+   if(!historyPending.compareAndSet(false,true)){
+     call.reject("Camera2: предыдущая проверка истории ещё выполняется");return;
+   }
    final android.content.Context context=getContext().getApplicationContext();
    try {
      statusWorker.execute(()->{
@@ -431,8 +454,10 @@ public class NativeCapturePlugin extends Plugin {
          NativeCaptureService.recoverAbandonedRecording(context);
          call.resolve(NativeCaptureAuditStore.history(context));
        } catch (Exception error) { call.reject("История Camera2 недоступна: "+error.getMessage()); }
+       finally { historyPending.set(false); }
      });
    } catch (java.util.concurrent.RejectedExecutionException error) {
+     historyPending.set(false);
      call.reject("Camera2 Activity закрыта");
    }
  }
