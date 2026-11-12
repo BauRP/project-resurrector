@@ -7,6 +7,7 @@ import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
+import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
@@ -364,12 +365,46 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       if (generation === loadGeneration.current) setLoading(false);
     }
   }, []);
-  useEffect(() => { void load(); const on = () => void load(); window.addEventListener("multicam-clips-changed", on); return () => {
-    loadGeneration.current++;
-    activeLibraryLoad.current?.abort();
-    activeLibraryLoad.current = null;
-    window.removeEventListener("multicam-clips-changed", on);
-  }; }, [load]);
+  useEffect(() => {
+    let alive = true;
+    let cancelInitialLoad: (() => void) | null = null;
+    const start = () => {
+      if (!alive || document.hidden) return;
+      cancelInitialLoad?.();
+      // Restoring the Editor after Activity recreation must not enumerate
+      // every stored video and decode metadata during its first painted frame.
+      // Run only after the renderer proved responsive. Real user library
+      // changes still trigger an immediate refresh below.
+      cancelInitialLoad = scheduleAfterResponsivePaint(() => {
+        cancelInitialLoad = null;
+        if (alive && !document.hidden) void load();
+      }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    };
+    if (Capacitor.isNativePlatform()) start();
+    else void load();
+    const onClipsChanged = () => {
+      cancelInitialLoad?.();
+      cancelInitialLoad = null;
+      if (alive && !document.hidden) void load();
+    };
+    const onVisibility = () => {
+      if (document.hidden) {
+        cancelInitialLoad?.();
+        cancelInitialLoad = null;
+      } else if (activeLibraryLoad.current === null) start();
+    };
+    window.addEventListener("multicam-clips-changed", onClipsChanged);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      cancelInitialLoad?.();
+      loadGeneration.current++;
+      activeLibraryLoad.current?.abort();
+      activeLibraryLoad.current = null;
+      window.removeEventListener("multicam-clips-changed", onClipsChanged);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [load]);
   // Analyse waveform ONLY for clips actually used by the timeline. This
   // leaves library browsing and opening Transition/Audio panels responsive.
   // No track, button or audio tool is disabled; timeline waves remain.
