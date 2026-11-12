@@ -2,6 +2,8 @@ import { restoreViewState, saveViewState } from "./fold-ui-recovery";
 import { scheduleAfterPaintTask } from "./after-paint-task";
 import { diagnosticCaptureGate } from "./diagnostic-capture-gate";
 import { sanitizePersistedState } from "./sanitize-persisted-state";
+import { createLatestProjectWriter, readAsyncProjectSnapshot, writeAsyncProjectSnapshot, type SavedProjectSnapshot } from "./async-project-persistence";
+import { Capacitor } from "@capacitor/core";
 import type React from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
 import type { CapabilityMatrix, Facing } from "./capabilities";
@@ -120,12 +122,19 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
   const store = ref.current;
   useEffect(() => {
     let patch: Partial<StateData> = {};
+    let lastLegacySavedAt = 0;
+    const nativeAsyncProject = Capacitor.isNativePlatform() && typeof indexedDB !== "undefined";
     try {
       const raw = window.localStorage.getItem("multicam-pov-state-native");
       // Do not parse an oversized legacy snapshot on the UI thread.
       // Skip damaged state without deleting the original saved bytes.
       const saved: unknown = raw && raw.length <= 262144 ? JSON.parse(raw) : {};
       patch = sanitizePersistedState(saved);
+      if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+        const stamp = (saved as Record<string,unknown>)["__savedAt"];
+        if (typeof stamp === "number" && Number.isSafeInteger(stamp) && stamp > 0)
+          lastLegacySavedAt = stamp;
+      }
     } catch { /* Restricted/corrupt main preferences do not block view recovery. */ }
     // New lightweight prefs override the legacy copy if both exist.
     try {
@@ -175,21 +184,42 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     let projectTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelProjectPaint: (() => void) | null = null;
     let projectDirty = false;
-    const flushProject = () => {
+    let lastSnapshotStamp = Math.max(Date.now() - 1, lastLegacySavedAt);
+    let restoreFromAsync = false;
+    let mounted = true;
+    const modifiedProjectKeys = new Set<string>();
+    const writeLegacySnapshot = (value: SavedProjectSnapshot) => {
+      try {
+        const raw = JSON.stringify({ ...value.state, __savedAt: value.savedAt });
+        if (raw.length <= 262144)
+          window.localStorage.setItem("multicam-pov-state-native", raw);
+      } catch { /* Keep old localStorage contents, never delete user data. */ }
+    };
+    const asyncWriter = createLatestProjectWriter<SavedProjectSnapshot>(async value => {
+      try { await writeAsyncProjectSnapshot(value); }
+      catch {
+        // Private-mode/older WebView fallback. This only runs after the
+        // browser could not commit the asynchronous transaction.
+        await new Promise<void>(resolve => {
+          scheduleAfterPaintTask(resolve, 2000);
+        });
+        writeLegacySnapshot(value);
+      }
+    });
+    const flushProject = (urgent = false) => {
       if (projectTimer !== null) clearTimeout(projectTimer);
       projectTimer = null;
       cancelProjectPaint?.();
       cancelProjectPaint = null;
-      if (!projectDirty) return;
+      if (!projectDirty && !(urgent && nativeAsyncProject)) return;
       projectDirty = false;
       const latest = store.getSnapshot();
-      try {
-        const json = JSON.stringify(Object.fromEntries(persistedKeys.map(k => [k, latest[k]])));
-        // An oversized snapshot cannot be restored after the next launch.
-        // Do not replace the last usable saved copy with an unreadable one.
-        // In-memory edits and the separate editor project remain available.
-        if (json.length <= 262144) window.localStorage.setItem("multicam-pov-state-native", json);
-      } catch { /* In-memory project state remains available. */ }
+      const state = Object.fromEntries(persistedKeys.map(k => [k, latest[k]]));
+      // A last-wins async queue does not block navigation to Camera/Settings.
+      // pagehide still writes a legacy emergency copy for interrupted IDB.
+      const value = { savedAt: ++lastSnapshotStamp, state };
+      if (nativeAsyncProject && !urgent) asyncWriter.enqueue(value);
+      else writeLegacySnapshot(value);
     };
     const scheduleProject = () => {
       projectDirty = true;
@@ -242,8 +272,8 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       }
       flushView();
     };
-    const onVisibility = () => { if (document.hidden) { repairOrFlushView(); flushProject(); flushPrefs(); } };
-    const onPageHide = () => { repairOrFlushView(); flushProject(); flushPrefs(); };
+    const onVisibility = () => { if (document.hidden) { repairOrFlushView(); flushProject(true); flushPrefs(); } };
+    const onPageHide = () => { repairOrFlushView(); flushProject(true); flushPrefs(); };
     // Activity destruction may dispatch pagehide without visibilitychange.
     window.addEventListener("pagehide", onPageHide);
     document.addEventListener("visibilitychange", onVisibility);
@@ -266,7 +296,15 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         if (tabChanged || cancelViewPaint === null) scheduleView();
       }
       const changedKeys = persistedKeys.filter((key, index) => !Object.is(values[index], previous[index]));
+      if (restoreFromAsync) {
+        previous = values;
+        return;
+      }
       if (changedKeys.length === 0) return;
+      changedKeys.forEach(key => {
+        if ((projectPersistedKeys as readonly string[]).includes(key))
+          modifiedProjectKeys.add(key);
+      });
       previous = values;
       // The preference snapshot is tiny, but even small localStorage writes
       // can stall the JavaScript thread on a busy Android WebView database.
@@ -277,14 +315,35 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
         scheduleProject();
       }
     });
+    // Read only after the initial Android UI paint. A late IndexedDB read
+    // may not override project fields the user has already edited.
+    const cancelAsyncRestore = nativeAsyncProject ? scheduleAfterPaintTask(() => {
+      void readAsyncProjectSnapshot().then(snapshot => {
+        if (!mounted || !snapshot || snapshot.savedAt <= lastLegacySavedAt) return;
+        const validated = sanitizePersistedState(snapshot.state);
+        const projectPatch = Object.fromEntries(projectPersistedKeys.filter(
+          key => !modifiedProjectKeys.has(key) && key in validated
+        ).map(key => [key, validated[key]])) as Partial<StateData>;
+        if (Object.keys(projectPatch).length === 0) return;
+        restoreFromAsync = true;
+        try { store.getSnapshot().set(projectPatch); }
+        finally {
+          previous = persistedKeys.map(k => store.getSnapshot()[k]);
+          restoreFromAsync = false;
+        }
+      }).catch(() => { /* Legacy snapshot still restored above. */ });
+    }, 1800) : null;
     return () => {
+      mounted = false;
+      cancelAsyncRestore?.();
       cancelStartupViewRepair?.();
       unsubscribe();
       window.removeEventListener("pagehide", onPageHide);
       document.removeEventListener("visibilitychange", onVisibility);
       repairOrFlushView();
-      flushProject();
+      flushProject(true);
       flushPrefs();
+      asyncWriter.close();
     };
   }, [store]);
   return <StoreContext.Provider value={store}>{children}</StoreContext.Provider>;
