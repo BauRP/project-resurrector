@@ -311,9 +311,62 @@ public class DisplayTopologyPlugin extends Plugin {
         else activity.runOnUiThread(safe);
     }
 
+    // A WebView timeout does not remove a queued Android MAIN task. Multiple
+    // getState() retries used to enqueue separate measurements while startup
+    // was slow. Coalesce them into ONE UI task with bounded waiting calls.
+    // The lock never wraps View reads, JS bridge replies or OEM code.
+    private static final int MAX_PENDING_STATE_READS = 24;
+    private final Object stateReadLock = new Object();
+    private final ArrayList<PluginCall> pendingStateReads = new ArrayList<>();
+    private boolean stateReadScheduled = false;
+
+    private void completeStateReads(JSObject state, String error) {
+        final ArrayList<PluginCall> waiting;
+        synchronized (stateReadLock) {
+            waiting = new ArrayList<>(pendingStateReads);
+            pendingStateReads.clear();
+            stateReadScheduled = false;
+        }
+        for (PluginCall waitingCall : waiting) {
+            if (error != null) waitingCall.reject(error);
+            else waitingCall.resolve(state);
+        }
+    }
+
     @PluginMethod
     public void getState(PluginCall call) {
-        onUiThread(call, () -> call.resolve(snapshot()));
+        final boolean schedule;
+        final boolean overflow;
+        synchronized (stateReadLock) {
+            overflow = pendingStateReads.size() >= MAX_PENDING_STATE_READS;
+            if (!overflow) pendingStateReads.add(call);
+            schedule = !overflow && !stateReadScheduled;
+            if (schedule) stateReadScheduled = true;
+        }
+        if (overflow) {
+            call.reject("Android display geometry request queue full");
+            return;
+        }
+        if (!schedule) return;
+        final Activity host = getActivity();
+        if (host == null || host.isFinishing() || host.isDestroyed()) {
+            completeStateReads(null, "Fold Activity unavailable");
+            return;
+        }
+        try {
+            host.runOnUiThread(() -> {
+                if (host.isFinishing() || host.isDestroyed()) {
+                    completeStateReads(null, "Fold Activity unavailable");
+                    return;
+                }
+                try { completeStateReads(snapshot(), null); }
+                catch (RuntimeException error) {
+                    completeStateReads(null, "Android display geometry failed: " + error.getMessage());
+                }
+            });
+        } catch (RuntimeException error) {
+            completeStateReads(null, "Android display geometry unavailable: " + error.getMessage());
+        }
     }
 
     @PluginMethod
@@ -499,6 +552,7 @@ public class DisplayTopologyPlugin extends Plugin {
 
     @Override
     protected void handleOnDestroy() {
+        completeStateReads(null, "Fold Activity destroyed");
         activeOwners.clear();
         stopListener();
         registrationWorker.shutdown();
