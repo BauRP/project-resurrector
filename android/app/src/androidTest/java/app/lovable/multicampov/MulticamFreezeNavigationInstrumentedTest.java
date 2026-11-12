@@ -141,13 +141,22 @@ public class MulticamFreezeNavigationInstrumentedTest {
             WebView view = web.get();
             assertNotNull("Isolated plain Android WebView is missing", view);
             eventually(running, view, "!!document.querySelector('#baseline')");
-            for (int i = 0; i < 5; i++) {
-                Thread.sleep(300);
-                assertEquals("true", eval(running, view,
-                    "(function(){var v=document.querySelector('#status');" +
-                    "if(!v)return false;v.textContent=String(Date.now());" +
-                    "return !!document.querySelector('#baseline')})()"));
+            // Match the REAL app's 30-second cold-start idle duration.
+            // A 4-second bare WebView baseline cannot distinguish a fragile
+            // emulator/GPU from an application-specific long-idle failure.
+            // Do not add React, native plugins, media, or camera access here.
+            long baselineStart = android.os.SystemClock.uptimeMillis();
+            int baselineChecks = 0;
+            while (android.os.SystemClock.uptimeMillis() - baselineStart < 30000L) {
+                assertEquals("Bare Chromium stopped during 30-second baseline at sample " + baselineChecks,
+                    "true", eval(running, view,
+                        "(function(){var v=document.querySelector('#status');" +
+                        "if(!v)return false;v.textContent=String(Date.now());" +
+                        "return !!document.querySelector('#baseline')})()"));
+                baselineChecks++;
+                Thread.sleep(1500);
             }
+            assertTrue("Bare WebView did not complete 30-second baseline", baselineChecks >= 15);
         } finally {
             finishAndWait(activity);
         }
