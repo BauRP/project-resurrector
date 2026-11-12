@@ -123,8 +123,11 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let patch: Partial<StateData> = {};
     let lastLegacySavedAt = 0;
-    const nativeAsyncProject = Capacitor.isNativePlatform() && typeof indexedDB !== "undefined";
-    try {
+    const nativePlatform = Capacitor.isNativePlatform();
+    const nativeAsyncProject = nativePlatform && typeof indexedDB !== "undefined";
+    // Legacy parsing used to run during React's initial mount. On Android
+    // defer it until after paint, keeping both the legacy bytes and all edits.
+    if (!nativePlatform) try {
       const raw = window.localStorage.getItem("multicam-pov-state-native");
       // Do not parse an oversized legacy snapshot on the UI thread.
       // Skip damaged state without deleting the original saved bytes.
@@ -187,6 +190,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     // Until the async database has been inspected, an emergency pagehide
     // write must NOT overwrite a newer saved project with legacy/defaults.
     let asyncRestoreCompleted = !nativeAsyncProject;
+    let legacyRestoreCompleted = !nativePlatform;
     let lastSnapshotStamp = Math.max(Date.now() - 1, lastLegacySavedAt);
     let restoreFromAsync = false;
     let mounted = true;
@@ -214,7 +218,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       projectTimer = null;
       cancelProjectPaint?.();
       cancelProjectPaint = null;
-      if (nativeAsyncProject && !asyncRestoreCompleted) return;
+      if (!legacyRestoreCompleted || (nativeAsyncProject && !asyncRestoreCompleted)) return;
       if (!projectDirty && !(urgent && nativeAsyncProject)) return;
       projectDirty = false;
       const latest = store.getSnapshot();
@@ -321,7 +325,12 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     });
     // Read only after the initial Android UI paint. A late IndexedDB read
     // may not override project fields the user has already edited.
-    const cancelAsyncRestore = nativeAsyncProject ? scheduleAfterPaintTask(() => {
+    const startAsyncRestore = () => {
+      if (!nativeAsyncProject) {
+        asyncRestoreCompleted = true;
+        if (projectDirty) scheduleProject();
+        return;
+      }
       void readAsyncProjectSnapshot().then(snapshot => {
         if (!mounted) return;
         asyncRestoreCompleted = true;
@@ -340,14 +349,43 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
             }
           }
         }
-        // The user may have edited a setting before this read completed.
-        // Flush the merged state, never overwrite that edit with an old read.
+        // Edits made while restoration was pending take precedence.
         if (projectDirty) scheduleProject();
       }).catch(() => {
         if (!mounted) return;
         asyncRestoreCompleted = true;
         if (projectDirty) scheduleProject();
       });
+    };
+    const cancelAsyncRestore = nativePlatform ? scheduleAfterPaintTask(() => {
+      if (!mounted) return;
+      // Read legacy JSON only AFTER the initial Camera/Settings frame;
+      // this is a one-time migration, never an eager render-time parse.
+      try {
+        const raw = window.localStorage.getItem("multicam-pov-state-native");
+        const saved: unknown = raw && raw.length <= 262144 ? JSON.parse(raw) : {};
+        const validated = sanitizePersistedState(saved);
+        if (saved && typeof saved === "object" && !Array.isArray(saved)) {
+          const stamp = (saved as Record<string,unknown>)["__savedAt"];
+          if (typeof stamp === "number" && Number.isSafeInteger(stamp) && stamp > 0)
+            lastLegacySavedAt = stamp;
+        }
+        lastSnapshotStamp = Math.max(lastSnapshotStamp, lastLegacySavedAt);
+        const safe = Object.fromEntries(Object.entries(validated).filter(([key]) =>
+          !modifiedProjectKeys.has(key) &&
+          !Object.prototype.hasOwnProperty.call(patch, key)
+        )) as Partial<StateData>;
+        if (Object.keys(safe).length) {
+          restoreFromAsync = true;
+          try { store.getSnapshot().set(safe); }
+          finally {
+            previous = persistedKeys.map(k => store.getSnapshot()[k]);
+            restoreFromAsync = false;
+          }
+        }
+      } catch { /* Bad legacy storage bytes are retained, never erased. */ }
+      legacyRestoreCompleted = true;
+      startAsyncRestore();
     }, 1800) : null;
     return () => {
       mounted = false;

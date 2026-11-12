@@ -16,6 +16,13 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
    expect(src).toContain("lastLegacySavedAt");
    expect(src).toContain("snapshot.savedAt <= lastLegacySavedAt");
  });
+ it("defers legacy JSON parsing until after the first native render",()=>{
+   expect(src).toContain("if (!nativePlatform) try {");
+   expect(src).toContain("const cancelAsyncRestore = nativePlatform ? scheduleAfterPaintTask(() => {");
+   expect(src).toContain("legacyRestoreCompleted = true");
+   expect(src).toContain("!legacyRestoreCompleted ||");
+   expect(src).toContain("!Object.prototype.hasOwnProperty.call(patch, key)");
+ });
  it("does not overwrite newer IndexedDB data before initial recovery finishes",()=>{
    expect(src).toContain("let asyncRestoreCompleted = !nativeAsyncProject");
    expect(src).toContain("if (nativeAsyncProject && !asyncRestoreCompleted) return;");
