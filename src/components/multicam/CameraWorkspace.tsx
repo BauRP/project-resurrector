@@ -8,7 +8,8 @@ import { bounded } from "@/lib/async";
 import { startNativeStatusRecovery } from "@/lib/camera-availability-retry";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { Button } from "@/components/ui/button";
-import { CameraTab } from "./CameraTab";
+// The complete web camera and media/AI tools load after the native shell paints.
+const CameraTab = lazy(() => import("./CameraTab").then(m => ({ default: m.CameraTab })));
 // Native Camera2 viewer is excluded from the ordinary WebView startup bundle.
 const NativeRecordingPanel = lazy(() => import("./NativeRecordingPanel").then(m => ({ default: m.NativeRecordingPanel })));
 
@@ -22,6 +23,7 @@ export function CameraWorkspace() {
   const phase = useMulticamStore(s => s.recordingPhase);
   const [mode, setMode] = useState<Mode>("web"); // No permission or camera stream is opened here.
   const [nativeUiReady, setNativeUiReady] = useState(false);
+  const [webUiReady, setWebUiReady] = useState(() => !isNative());
   const [notice, setNotice] = useState("");
   const [statusNotice, setStatusNotice] = useState("");
   const [switching, setSwitching] = useState(false);
@@ -39,6 +41,22 @@ export function CameraWorkspace() {
   }, []);
 
   const manualModeSelection = useRef(false);
+  useEffect(() => {
+    if (mode !== "web") {
+      setWebUiReady(false);
+      return;
+    }
+    if (webUiReady) return;
+    // Astra: Android startup can restore the media-heavy CameraTab while
+    // WindowManager registration and WebView's first GPU frame are in flight.
+    // Keep every camera feature, but load that full module only after the
+    // lightweight mode/ownership shell has responded to several frames.
+    let alive = true;
+    const cancel = scheduleAfterResponsivePaint(() => {
+      if (alive) setWebUiReady(true);
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    return () => { alive = false; cancel(); };
+  }, [mode, webUiReady]);
   useEffect(() => {
     if (mode !== "native") {
       setNativeUiReady(false);
@@ -113,7 +131,11 @@ export function CameraWorkspace() {
     </div>}
     {statusNotice && <p role="status" className="shrink-0 bg-card p-2 text-xs text-muted-foreground">{statusNotice}</p>}
     {notice && <p role="alert" className="shrink-0 bg-card p-2 text-xs text-destructive">{notice}</p>}
-    {mode === "web" ? <div className="relative min-h-0 flex-1"><CameraTab onOpenNativeMode={isNative() ? () => { void switchTo("native"); } : undefined} /></div> :
+    {mode === "web" ? <div className="relative min-h-0 flex-1">
+      {webUiReady ? <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка камеры…</p>}>
+        <CameraTab onOpenNativeMode={isNative() ? () => { void switchTo("native"); } : undefined} />
+      </Suspense> : <p role="status" className="p-3 text-xs text-muted-foreground">Подготовка камеры…</p>}
+    </div> :
       <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
         <p className="text-xs text-muted-foreground">
           В этом режиме Android Camera2 владеет записью вне WebView. Предпросмотр WebView

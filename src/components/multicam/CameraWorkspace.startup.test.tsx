@@ -30,17 +30,17 @@ describe("native bridge must not freeze the initial camera screen", () => {
   it("renders with an Android binder status request that would never resolve", async () => {
     mocks.status.mockImplementation(() => new Promise(() => undefined));
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
-    expect(screen.getByText("Камера пока выключена")).toBeInTheDocument();
+    expect(await screen.findByText("Камера пока выключена", {}, { timeout: 4000 })).toBeInTheDocument();
     expect(mocks.status).toHaveBeenCalledTimes(1);
   });
   it("preserves Camera2 ownership restoration and checks status before returning to WebView", async () => {
     render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
     expect(mocks.status).toHaveBeenCalledTimes(1);
-    fireEvent.click(screen.getByRole("button", { name: "Перейти в Camera2" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Перейти в Camera2" }, { timeout: 4000 }));
     await waitFor(() => expect(screen.getByText("Нативная панель")).toBeInTheDocument());
     expect(mocks.status).toHaveBeenCalledTimes(1);
     fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
     await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(2));
-    expect(screen.getByText("Камера пока выключена")).toBeInTheDocument();
+    expect(await screen.findByText("Камера пока выключена", {}, { timeout: 4000 })).toBeInTheDocument();
   });
 });
