@@ -5,7 +5,9 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
  const src=readFileSync("src/lib/multicam-store.tsx","utf8");
  it("moves routine native snapshot writes off synchronous localStorage hot path",()=>{
    expect(src).toContain("const nativeAsyncProject = nativePlatform && typeof indexedDB");
-   expect(src).toContain("if (nativeAsyncProject && !urgent) asyncWriter.enqueue(value)");
+   expect(src).toContain("if (nativeAsyncProject) {");
+   expect(src).toContain("asyncWriter.enqueue(value)");
+   expect(src).toContain("pendingDurableSnapshot = value");
    expect(src).toContain("writeAsyncProjectSnapshot(value)");
    expect(src).toContain("createLatestProjectWriter");
  });
@@ -15,6 +17,8 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
    expect(src).toContain("if (raw.length <= 262144)");
    expect(src).toContain("lastLegacySavedAt");
    expect(src).toContain("snapshot.savedAt > lastLegacySavedAt");
+   expect(src).toContain("if (!projectDirty && !(urgent && pendingDurableSnapshot)) return;");
+   expect(src).toContain("pendingDurableSnapshot.savedAt > lastLegacyBackupStamp");
  });
  it("defers legacy JSON parsing until after the first native render",()=>{
    expect(src).toContain("if (!nativePlatform) try {");
@@ -28,6 +32,11 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
    expect(src).toContain("if (!legacyRestoreCompleted || (nativeAsyncProject && !asyncRestoreCompleted)) return;");
    expect(src).toContain("lastSnapshotStamp = Math.max(lastSnapshotStamp, snapshot.savedAt)");
    expect(src).toContain("if (projectDirty) scheduleProject()");
+ });
+ it("never overwrites a newer emergency save with an older timed-out write",()=>{
+   expect(src).toContain("if (value.savedAt <= lastLegacyBackupStamp) return true");
+   expect(src).toContain("lastLegacyBackupStamp = value.savedAt");
+   expect(src).toContain("if (!document.hidden) await new Promise<void>");
  });
  it("never overwrites user changes from an older asynchronous database response",()=>{
    expect(src).toContain("modifiedProjectKeys.add(key)");

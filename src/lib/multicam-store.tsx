@@ -192,25 +192,38 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     let asyncRestoreCompleted = !nativeAsyncProject;
     let legacyRestoreCompleted = !nativePlatform;
     let lastSnapshotStamp = Math.max(Date.now() - 1, lastLegacySavedAt);
+    let lastLegacyBackupStamp = lastLegacySavedAt;
+    let pendingDurableSnapshot: SavedProjectSnapshot | null = null;
     let restoreFromAsync = false;
     let mounted = true;
     const modifiedProjectKeys = new Set<string>();
-    const writeLegacySnapshot = (value: SavedProjectSnapshot) => {
+    const writeLegacySnapshot = (value: SavedProjectSnapshot): boolean => {
+      // An earlier timed-out IDB write may fail AFTER a newer emergency
+      // backup succeeded. Never overwrite that newer user project.
+      if (value.savedAt <= lastLegacyBackupStamp) return true;
       try {
         const raw = JSON.stringify({ ...value.state, __savedAt: value.savedAt });
-        if (raw.length <= 262144)
-          window.localStorage.setItem("multicam-pov-state-native", raw);
-      } catch { /* Keep old localStorage contents, never delete user data. */ }
+        if (raw.length > 262144) return false;
+        window.localStorage.setItem("multicam-pov-state-native", raw);
+        lastLegacyBackupStamp = value.savedAt;
+        return true;
+      } catch { return false; } // Retain existing saved bytes.
     };
     const asyncWriter = createLatestProjectWriter<SavedProjectSnapshot>(async value => {
-      try { await writeAsyncProjectSnapshot(value); }
-      catch {
-        // Private-mode/older WebView fallback. This only runs after the
-        // browser could not commit the asynchronous transaction.
-        await new Promise<void>(resolve => {
+      try {
+        await writeAsyncProjectSnapshot(value);
+        if (pendingDurableSnapshot?.savedAt === value.savedAt)
+          pendingDurableSnapshot = null;
+      } catch {
+        // If Android has already hidden the Activity, don't wait for a
+        // requestAnimationFrame that may never arrive. Visible errors still
+        // use a paint boundary before the synchronous emergency backup.
+        if (!document.hidden) await new Promise<void>(resolve => {
           scheduleAfterPaintTask(resolve, 2000);
         });
-        writeLegacySnapshot(value);
+        const safelyBackedUp = writeLegacySnapshot(value);
+        if (safelyBackedUp && pendingDurableSnapshot?.savedAt === value.savedAt)
+          pendingDurableSnapshot = null;
       }
     });
     const flushProject = (urgent = false) => {
@@ -219,15 +232,25 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       cancelProjectPaint?.();
       cancelProjectPaint = null;
       if (!legacyRestoreCompleted || (nativeAsyncProject && !asyncRestoreCompleted)) return;
-      if (!projectDirty && !(urgent && nativeAsyncProject)) return;
-      projectDirty = false;
-      const latest = store.getSnapshot();
-      const state = Object.fromEntries(persistedKeys.map(k => [k, latest[k]]));
-      // A last-wins async queue does not block navigation to Camera/Settings.
-      // pagehide still writes a legacy emergency copy for interrupted IDB.
-      const value = { savedAt: ++lastSnapshotStamp, state };
-      if (nativeAsyncProject && !urgent) asyncWriter.enqueue(value);
-      else writeLegacySnapshot(value);
+      // Previously EVERY pagehide/visibilitychange serialized the full
+      // project even when not a single field had changed. Avoid that costly
+      // synchronous WebView LevelDB operation while protecting pending edits.
+      if (!projectDirty && !(urgent && pendingDurableSnapshot)) return;
+      if (projectDirty) {
+        projectDirty = false;
+        const latest = store.getSnapshot();
+        const state = Object.fromEntries(persistedKeys.map(k => [k, latest[k]]));
+        const value = { savedAt: ++lastSnapshotStamp, state };
+        if (nativeAsyncProject) {
+          pendingDurableSnapshot = value;
+          asyncWriter.enqueue(value);
+        } else writeLegacySnapshot(value);
+      }
+      // Only a snapshot not yet durably acknowledged needs an emergency
+      // synchronous copy. A second pagehide must not write it again.
+      if (urgent && pendingDurableSnapshot &&
+          pendingDurableSnapshot.savedAt > lastLegacyBackupStamp)
+        writeLegacySnapshot(pendingDurableSnapshot);
     };
     const scheduleProject = () => {
       projectDirty = true;
@@ -371,6 +394,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
             lastLegacySavedAt = stamp;
         }
         lastSnapshotStamp = Math.max(lastSnapshotStamp, lastLegacySavedAt);
+        lastLegacyBackupStamp = Math.max(lastLegacyBackupStamp, lastLegacySavedAt);
         const safe = Object.fromEntries(Object.entries(validated).filter(([key]) =>
           !modifiedProjectKeys.has(key) &&
           !Object.prototype.hasOwnProperty.call(patch, key)

@@ -61,10 +61,29 @@ export async function writeAsyncProjectSnapshot(value: SavedProjectSnapshot): Pr
   try {
     await new Promise<void>((resolve, reject) => {
       const tx = db.transaction(STORE, "readwrite");
-      tx.objectStore(STORE).put(value, KEY);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => reject(tx.error ?? new Error("Project save failed"));
-      tx.onabort = () => reject(tx.error ?? new Error("Project save aborted"));
+      let finished = false;
+      const finish = (error?: Error) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(watchdog);
+        if (error) reject(error);
+        else resolve();
+      };
+      // IndexedDB request success is NOT a durable commit. Wait for the
+      // transaction itself, and abort a stuck OEM WebView transaction after
+      // seven seconds so the last-wins queue can recover and use the legacy
+      // backup instead of remaining blocked forever.
+      const watchdog = setTimeout(() => {
+        try { tx.abort(); } catch { /* Already completed or no longer active. */ }
+        finish(new Error("Project save timed out"));
+      }, 7000);
+      tx.oncomplete = () => finish();
+      tx.onerror = () => finish(tx.error ?? new Error("Project save failed"));
+      tx.onabort = () => finish(tx.error ?? new Error("Project save aborted"));
+      try { tx.objectStore(STORE).put(value, KEY); }
+      catch (error) {
+        finish(error instanceof Error ? error : new Error("Project save failed"));
+      }
     });
   } finally { db.close(); }
 }
