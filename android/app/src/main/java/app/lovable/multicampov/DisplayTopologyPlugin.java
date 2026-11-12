@@ -144,12 +144,28 @@ public class DisplayTopologyPlugin extends Plugin {
     }
     // Register/unregister OEM WindowManager Binder listeners outside Android
     // MAIN. Observed View geometry and listener state still live on MAIN.
+    // OEM Binder may never return from addWindowLayoutInfoListener().
+    // A single-thread executor with an unbounded queue lets retries and
+    // removals pile up behind that call forever. Two workers, NO queue:
+    // one stalled OEM registration cannot stall all future observer work.
+    // Rejected work fails quickly on MAIN instead of growing a hidden backlog.
     private final java.util.concurrent.ExecutorService registrationWorker =
-        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
-            Thread t = new Thread(r, "multicam-fold-registration");
-            t.setDaemon(true);
-            return t;
-        });
+        new java.util.concurrent.ThreadPoolExecutor(
+            1, 2, 30L, java.util.concurrent.TimeUnit.SECONDS,
+            new java.util.concurrent.SynchronousQueue<>(),
+            r -> {
+                Thread t = new Thread(r, "multicam-fold-registration");
+                t.setDaemon(true);
+                return t;
+            },
+            new java.util.concurrent.ThreadPoolExecutor.AbortPolicy());
+    // A timed-out native registration may still finish after its JavaScript
+    // owner has gone. Retire it atomically, then unregister on its own worker.
+    private java.util.concurrent.atomic.AtomicBoolean registrationAttemptRetired;
+    // When both OEM workers are stuck, permit at most ONE emergency cleanup
+    // thread per Activity; never create an unlimited number from UI retries.
+    private final java.util.concurrent.atomic.AtomicBoolean fallbackCleanupBusy =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
     private WindowInfoTrackerCallbackAdapter adapter;
     private Consumer<WindowLayoutInfo> listener;
     private WindowLayoutInfo latest;
@@ -519,6 +535,9 @@ public class DisplayTopologyPlugin extends Plugin {
             NativeCapturePlugin.onFoldGeometryChanged();
             final WindowInfoTrackerCallbackAdapter registeringAdapter = adapter;
             final Consumer<WindowLayoutInfo> registeringListener = listener;
+            final java.util.concurrent.atomic.AtomicBoolean retired =
+                new java.util.concurrent.atomic.AtomicBoolean(false);
+            registrationAttemptRetired = retired;
             registrationWatchdog = () -> {
                 // Runs on MAIN, where all observer generations and owner sets
                 // are updated. Late OEM completion is invalidated by teardown.
@@ -535,6 +554,13 @@ public class DisplayTopologyPlugin extends Plugin {
             registrationWorker.execute(() -> {
                 try {
                     registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener);
+                    // A late Binder completion must not leak a WindowManager
+                    // callback, even if its earlier queued stop ran first.
+                    if (retired.get()) {
+                        try { registeringAdapter.removeWindowLayoutInfoListener(registeringListener); }
+                        catch (RuntimeException ignored) { /* OEM already closed */ }
+                        return;
+                    }
                     host.runOnUiThread(() -> {
                         if (ownerGeneration != observerGeneration ||
                             listener != registeringListener || activeOwners.isEmpty()) return;
@@ -594,6 +620,10 @@ public class DisplayTopologyPlugin extends Plugin {
         if (registrationPending)
             finishRegistrationCalls("Fold observer stopped before registration");
         observerGeneration++;
+        if (registrationAttemptRetired != null) {
+            registrationAttemptRetired.set(true);
+            registrationAttemptRetired = null;
+        }
         // An old Activity may stop after a new one registered. Only the
         // matching lease may report an observation gap to the recorder.
         if(observerLease!=null){
@@ -617,12 +647,17 @@ public class DisplayTopologyPlugin extends Plugin {
                     catch (RuntimeException ignored) { /* Stale Activity */ }
                 });
             } catch (java.util.concurrent.RejectedExecutionException ignored) {
-                Thread cleanup = new Thread(() -> {
-                    try { removingAdapter.removeWindowLayoutInfoListener(removingListener); }
-                    catch (RuntimeException ignoredAgain) { }
-                }, "multicam-fold-cleanup");
-                cleanup.setDaemon(true);
-                cleanup.start();
+                if (fallbackCleanupBusy.compareAndSet(false, true)) {
+                    Thread cleanup = new Thread(() -> {
+                        try { removingAdapter.removeWindowLayoutInfoListener(removingListener); }
+                        catch (RuntimeException ignoredAgain) { /* OEM already stopped */ }
+                        finally { fallbackCleanupBusy.set(false); }
+                    }, "multicam-fold-cleanup");
+                    cleanup.setDaemon(true);
+                    cleanup.start();
+                }
+                // If a cleanup is already in progress, the retired
+                // registration removes itself after Binder eventually returns.
             }
         }
         latest = null;
