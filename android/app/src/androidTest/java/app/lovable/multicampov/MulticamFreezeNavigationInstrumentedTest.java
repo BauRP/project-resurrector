@@ -330,10 +330,22 @@ public class MulticamFreezeNavigationInstrumentedTest {
             }
             assertNotNull("Capacitor WebView is missing", web.get());
             eventually(running, web.get(), "!!document.querySelector('.bottom-nav button:nth-child(3)')");
+            // An emulator Activity may report visibilityState=hidden even
+            // while its JS renderer and Camera screen are fully responsive.
+            // Check the real DOM and repeated JS responses independently.
+            eventually(running, web.get(), "!!document.querySelector('.camera-screen')");
             for (int i = 0; i < 3; i++) {
                 Thread.sleep(1500);
-                assertEquals("true", eval(running, web.get(),
-                    "(function(){return document.visibilityState==='visible'&&!!document.querySelector('.camera-screen')})()"));
+                String evidence = eval(running, web.get(),
+                    "(function(){return JSON.stringify({visibility:document.visibilityState," +
+                    "camera:!!document.querySelector('.camera-screen')," +
+                    "loading:!!document.querySelector('.studio-tab-loading')," +
+                    "tab:document.documentElement.dataset.activeMulticamTab})})()");
+                assertEquals("Idle Camera disappeared; diagnostic=" + evidence,
+                    "true", eval(running, web.get(),
+                    "!!document.querySelector('.camera-screen')"));
+                assertEquals("JavaScript event loop did not respond", "true",
+                    eval(running, web.get(), "1+1===2"));
             }
         } finally {
             finishAndWait(activity);

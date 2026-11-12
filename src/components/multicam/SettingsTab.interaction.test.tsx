@@ -82,7 +82,7 @@ describe("settings actions remain interactive", () => {
   it("shows a real privacy empty-state and keeps the close button usable", async () => {
     view();
     fireEvent.click(screen.getByRole("button", { name: "Политика конфиденциальности" }));
-    expect(screen.getByRole("dialog")).toHaveTextContent("Текст политики конфиденциальности пока не добавлен");
+    expect(await screen.findByRole("dialog")).toHaveTextContent("Текст политики конфиденциальности пока не добавлен");
     fireEvent.click(screen.getByRole("button", { name: "Закрыть" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(screen.getByRole("radio", { name: "Светлая" })).toBeInTheDocument();

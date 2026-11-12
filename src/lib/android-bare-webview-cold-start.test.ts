@@ -31,6 +31,13 @@ describe("Clean-install navigation and standalone WebView on Android", () => {
     expect(test).toContain('click(running, view, ".bottom-nav button:nth-child(1)")');
   });
 
+  it("separates a hidden emulator window from real idle Camera failures", () => {
+    const test = readFileSync("android/app/src/androidTest/java/app/lovable/multicampov/MulticamFreezeNavigationInstrumentedTest.java","utf8");
+    expect(test).not.toContain("document.visibilityState==='visible'&&");
+    expect(test).toContain('eventually(running, web.get(), "!!document.querySelector(\\'.camera-screen\\')")');
+    expect(test).toContain('assertEquals("Idle Camera disappeared; diagnostic=" + evidence');
+    expect(test).toContain('eval(running, web.get(), "1+1===2")');
+  });
   it("does not make Settings loading depend on a 60fps WebView renderer", () => {
     const settings = readFileSync("src/components/multicam/SettingsTab.tsx","utf8");
     const app = readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
