@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { scheduleAfterPaintTask, scheduleAfterResponsivePaint } from "./after-paint-task";
 
-afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
+afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 describe("Android WebView non-blocking deferred persistence", () => {
   it("does not do synchronous storage work in the navigation task or first frame", () => {
