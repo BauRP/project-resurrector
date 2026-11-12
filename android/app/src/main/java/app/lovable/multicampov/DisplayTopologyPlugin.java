@@ -142,6 +142,14 @@ public class DisplayTopologyPlugin extends Plugin {
             return true;
         }
     }
+    // Register/unregister OEM WindowManager Binder listeners outside Android
+    // MAIN. Observed View geometry and listener state still live on MAIN.
+    private final java.util.concurrent.ExecutorService registrationWorker =
+        java.util.concurrent.Executors.newSingleThreadExecutor(r -> {
+            Thread t = new Thread(r, "multicam-fold-registration");
+            t.setDaemon(true);
+            return t;
+        });
     private WindowInfoTrackerCallbackAdapter adapter;
     private Consumer<WindowLayoutInfo> listener;
     private WindowLayoutInfo latest;
@@ -401,8 +409,32 @@ public class DisplayTopologyPlugin extends Plugin {
             // still-mounted old TextureView before the first WindowManager
             // callback can establish a new safe pane.
             NativeCapturePlugin.onFoldGeometryChanged();
-            adapter.addWindowLayoutInfoListener(host, main, listener);
-            call.resolve(snapshot());
+            final WindowInfoTrackerCallbackAdapter registeringAdapter = adapter;
+            final Consumer<WindowLayoutInfo> registeringListener = listener;
+            // OEM registration can block on Binder. Queue it on a dedicated
+            // thread and only take the measured View snapshot back on MAIN.
+            registrationWorker.execute(() -> {
+                try {
+                    registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener);
+                    host.runOnUiThread(() -> {
+                        if (ownerGeneration != observerGeneration ||
+                            listener != registeringListener || activeOwners.isEmpty()) {
+                            call.reject("Fold observer cancelled before registration");
+                            return;
+                        }
+                        call.resolve(snapshot());
+                    });
+                } catch (RuntimeException error) {
+                    host.runOnUiThread(() -> {
+                        if (ownerGeneration == observerGeneration &&
+                            listener == registeringListener) {
+                            activeOwners.remove(ownerId);
+                            stopListener();
+                        }
+                        call.reject("Window topology observer unavailable: " + error.getMessage());
+                    });
+                }
+            });
         } catch (RuntimeException error) {
             // Failed subscription must not leave a phantom observer owner.
             activeOwners.remove(ownerId);
@@ -440,12 +472,27 @@ public class DisplayTopologyPlugin extends Plugin {
                 NativeCapturePlugin.onFoldGeometryChanged();
             observerLease=null;
         }
-        if (listener != null && adapter != null) {
-            try { adapter.removeWindowLayoutInfoListener(listener); }
-            catch (RuntimeException ignored) { /* Activity may be destroyed. */ }
-        }
+        final WindowInfoTrackerCallbackAdapter removingAdapter = adapter;
+        final Consumer<WindowLayoutInfo> removingListener = listener;
         listener = null;
         adapter = null;
+        if (removingListener != null && removingAdapter != null) {
+            // This queued removal runs AFTER a pending registration on the
+            // same worker; a destroyed Activity cannot leak a stale listener.
+            try {
+                registrationWorker.execute(() -> {
+                    try { removingAdapter.removeWindowLayoutInfoListener(removingListener); }
+                    catch (RuntimeException ignored) { /* Stale Activity */ }
+                });
+            } catch (java.util.concurrent.RejectedExecutionException ignored) {
+                Thread cleanup = new Thread(() -> {
+                    try { removingAdapter.removeWindowLayoutInfoListener(removingListener); }
+                    catch (RuntimeException ignoredAgain) { }
+                }, "multicam-fold-cleanup");
+                cleanup.setDaemon(true);
+                cleanup.start();
+            }
+        }
         latest = null;
         lastNotifiedGeometry = null;
     }
@@ -454,6 +501,7 @@ public class DisplayTopologyPlugin extends Plugin {
     protected void handleOnDestroy() {
         activeOwners.clear();
         stopListener();
+        registrationWorker.shutdown();
         super.handleOnDestroy();
     }
 }
