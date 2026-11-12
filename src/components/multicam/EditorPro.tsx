@@ -367,9 +367,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, []);
   useEffect(() => {
     let alive = true;
+    // Only defer the first restored-library read; foregrounding an already
+    // loaded editor must never rescan every clip on each screen wake.
+    let initialPending = Capacitor.isNativePlatform();
     let cancelInitialLoad: (() => void) | null = null;
     const start = () => {
-      if (!alive || document.hidden) return;
+      if (!alive || document.hidden || !initialPending) return;
       cancelInitialLoad?.();
       // Restoring the Editor after Activity recreation must not enumerate
       // every stored video and decode metadata during its first painted frame.
@@ -377,12 +380,14 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       // changes still trigger an immediate refresh below.
       cancelInitialLoad = scheduleAfterResponsivePaint(() => {
         cancelInitialLoad = null;
+        initialPending = false;
         if (alive && !document.hidden) void load();
       }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
     };
     if (Capacitor.isNativePlatform()) start();
     else void load();
     const onClipsChanged = () => {
+      initialPending = false;
       cancelInitialLoad?.();
       cancelInitialLoad = null;
       if (alive && !document.hidden) void load();
@@ -391,7 +396,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       if (document.hidden) {
         cancelInitialLoad?.();
         cancelInitialLoad = null;
-      } else if (activeLibraryLoad.current === null) start();
+      } else if (initialPending) start();
     };
     window.addEventListener("multicam-clips-changed", onClipsChanged);
     document.addEventListener("visibilitychange", onVisibility);
