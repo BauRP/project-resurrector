@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { scheduleAfterPaintTask } from "./after-paint-task";
+import { scheduleAfterPaintTask, scheduleAfterResponsivePaint } from "./after-paint-task";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
@@ -45,6 +45,50 @@ describe("Android WebView non-blocking deferred persistence", () => {
     const cancel = scheduleAfterPaintTask(task);
     cancel();
     vi.runAllTimers();
+    expect(task).not.toHaveBeenCalled();
+  });
+});
+
+describe("Astra hidden Android WebView startup", () => {
+  it("does not mount a heavy camera panel in background, but resumes on visible frames", () => {
+    vi.useFakeTimers();
+    let hidden = true;
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const task = vi.fn();
+    const cancel = scheduleAfterResponsivePaint(task, {
+      stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 40, visibleOnly: true,
+    });
+    vi.advanceTimersByTime(500);
+    expect(task).not.toHaveBeenCalled();
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    frames.shift()?.(10);
+    frames.shift()?.(26);
+    frames.shift()?.(42);
+    vi.advanceTimersByTime(0);
+    expect(task).toHaveBeenCalledOnce();
+    cancel();
+  });
+
+  it("never fires a cancelled camera load after coming back from background", () => {
+    vi.useFakeTimers();
+    let hidden = true;
+    vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    const task = vi.fn();
+    const cancel = scheduleAfterResponsivePaint(task, {
+      visibleOnly: true, backgroundFallbackMs: 40,
+    });
+    cancel();
+    vi.advanceTimersByTime(400);
+    hidden = false;
+    document.dispatchEvent(new Event("visibilitychange"));
+    vi.runOnlyPendingTimers();
     expect(task).not.toHaveBeenCalled();
   });
 });
