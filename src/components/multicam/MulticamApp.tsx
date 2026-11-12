@@ -121,7 +121,7 @@ function MulticamAppContent() {
     // healthy frames on Settings; preserve normal Editor retry semantics.
     const cancelSettingsRestore = tab === "settings"
       ? scheduleAfterResponsivePaint(() => restorer.enter(tab, port),
-          { stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800 })
+          { stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true })
       : null;
     if (tab !== "settings")
       timers.push(window.setTimeout(() => restorer.enter(tab, port), 260));

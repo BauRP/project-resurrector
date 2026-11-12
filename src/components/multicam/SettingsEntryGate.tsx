@@ -26,7 +26,7 @@ export function SettingsEntryGate({ children }: { children: ReactNode }) {
       if (!alive) return;
       traceUiAction("settings: opening without waiting for GPU frame commit");
       setReady(true);
-    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     return () => {
       alive = false;
       cancel();

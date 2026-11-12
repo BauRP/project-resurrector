@@ -43,6 +43,6 @@ describe("Clean-install navigation and standalone WebView on Android", () => {
     const app = readFileSync("src/components/multicam/MulticamApp.tsx","utf8");
     expect(settings).not.toContain("maxFrameGapMs: 125");
     expect(settings).toContain("maxFrameGapMs: 350");
-    expect(app).toContain("{ stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800 }");
+    expect(app).toContain("{ stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true }");
   });
 });

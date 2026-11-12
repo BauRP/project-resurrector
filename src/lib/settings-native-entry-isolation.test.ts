@@ -12,6 +12,7 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(app).toContain("<SettingsEntryGate><Suspense");
     expect(gate).toContain("scheduleAfterResponsivePaint(");
     expect(gate).toContain("stableFrames: 3");
+    expect(gate).toContain("visibleOnly: true");
     // The old forced Android GPU frame-commit was a separate cause of
     // the Settings opening spinner on WebView 124/software renderers.
     expect(gate).not.toContain("uiFreeze.awaitVisualState()");

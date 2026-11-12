@@ -8,7 +8,9 @@ import { scheduleAfterResponsivePaint } from "./after-paint-task";
  *
  * Later groups retain their separate delays and must observe a sustained,
  * responsive JS frame cadence, including low-FPS software WebViews. If the visible renderer is blocked they
- * cannot mount, while hidden WebViews retain the scheduler's fallback.
+ * cannot mount. A truly hidden WebView waits for foreground frame delivery
+ * instead of mounting optional Camera2 and network controls from a timer.
+ * An emulator falsely reporting "hidden" still proceeds on healthy frames.
  * Camera2, network, privacy, and cache features are unchanged.
  */
 export function scheduleSettingsVisualStage(
@@ -19,5 +21,6 @@ export function scheduleSettingsVisualStage(
     stableFrames: options.stableFrames ?? 4,
     maxFrameGapMs: options.maxFrameGapMs ?? 350,
     backgroundFallbackMs: options.backgroundFallbackMs ?? 1800,
+    visibleOnly: true,
   });
 }
