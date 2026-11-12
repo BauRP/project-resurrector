@@ -13,7 +13,7 @@ describe("all runtime features stay enabled while Android operations are asynchr
   it("queries native Camera2 owner without blocking Android main thread", () => {
     const source=readFileSync("src/components/multicam/CameraWorkspace.tsx","utf8");
     const native=readFileSync("android/app/src/main/java/app/lovable/multicampov/NativeCapturePlugin.java","utf8");
-    expect(source).toContain('bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")');
+    expect(source).toContain('() => nativeCapture.status()');
     expect(native).toContain('statusWorker.execute(()->');
     expect(native).toContain("NativeCaptureService.status(context)");
     expect(native).toContain("NativeCaptureService.isPreviewingForUi()");

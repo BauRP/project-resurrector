@@ -24,7 +24,11 @@ describe("Camera2 and WebView ownership during async fold and record transitions
       const source=readFileSync("src/components/multicam/CameraWorkspace.tsx","utf8");
       // The WebView placeholder never queries the native binder on startup.
       // The timeout is still required when explicitly returning to WebView.
-      expect(source).toContain('bounded(nativeCapture.status(), 2200, "Camera2 startup ownership")');
+      expect(source).toContain('() => nativeCapture.status()');
+      // The native bridge owns the sole bounded startup deadline (6 s).
+      // Explicit owner handoff retains its separate 2.2-second UI deadline.
+      const nativeBridge=readFileSync("src/lib/native-capture.ts","utf8");
+      expect(nativeBridge).toContain('status: () => guard(rawNativeCapture.status(), 6000, "status")');
       expect(source).toContain('bounded(nativeCapture.status(), 2200, "Camera2 mode handoff")');
       expect(source).toContain('if (nativeRecorderOwnsCamera(status.state))');
       expect(source).toContain('if (!mayFinishCameraOwnerSwitch(');
