@@ -6,6 +6,7 @@ import { mayFinishCameraOwnerSwitch } from "@/lib/camera-owner-handoff";
 import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { bounded } from "@/lib/async";
 import { startNativeStatusRecovery } from "@/lib/camera-availability-retry";
+import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { Button } from "@/components/ui/button";
 import { CameraTab } from "./CameraTab";
 // Native Camera2 viewer is excluded from the ordinary WebView startup bundle.
@@ -20,6 +21,7 @@ export function CameraWorkspace() {
   const recording = useMulticamStore(s => s.recording);
   const phase = useMulticamStore(s => s.recordingPhase);
   const [mode, setMode] = useState<Mode>("web"); // No permission or camera stream is opened here.
+  const [nativeUiReady, setNativeUiReady] = useState(false);
   const [notice, setNotice] = useState("");
   const [statusNotice, setStatusNotice] = useState("");
   const [switching, setSwitching] = useState(false);
@@ -37,6 +39,19 @@ export function CameraWorkspace() {
   }, []);
 
   const manualModeSelection = useRef(false);
+  useEffect(() => {
+    if (mode !== "native") {
+      setNativeUiReady(false);
+      return;
+    }
+    // Restored native mode must not query CameraManager while the WebView
+    // retires the outgoing camera surface. No Camera2 capability is disabled.
+    let live = true;
+    const cancel = scheduleAfterResponsivePaint(() => {
+      if (live) setNativeUiReady(true);
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    return () => { live = false; cancel(); };
+  }, [mode]);
   useEffect(() => {
     if (!isNative()) return;
     // Emulators can have no usable camera at all. A failed status read is
@@ -105,9 +120,9 @@ export function CameraWorkspace() {
           отключён, чтобы не захватывать одну камеру дважды. Выберите объектив и начните съёмку.
           Системное уведомление позволяет остановить запись даже после изменения экрана.
         </p>
-        <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка нативной камеры…</p>}>
+        {nativeUiReady ? <Suspense fallback={<p role="status" className="p-3 text-xs text-muted-foreground">Загрузка нативной камеры…</p>}>
           <NativeRecordingPanel />
-        </Suspense>
+        </Suspense> : <p role="status" className="p-3 text-xs text-muted-foreground">Подготовка нативной камеры…</p>}
       </div>}
   </div>;
 }
