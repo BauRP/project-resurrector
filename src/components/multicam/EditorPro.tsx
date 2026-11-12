@@ -367,36 +367,33 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, []);
   useEffect(() => {
     let alive = true;
-    // Only defer the first restored-library read; foregrounding an already
-    // loaded editor must never rescan every clip on each screen wake.
+    // A clean editor restores its media library only after the first healthy
+    // WebView frames. During a real Android background the scheduler suspends
+    // heavy work; a false document.hidden flag must not strand the library.
     let initialPending = Capacitor.isNativePlatform();
     let cancelInitialLoad: (() => void) | null = null;
-    const start = () => {
-      if (!alive || document.hidden || !initialPending) return;
+    const scheduleLoad = () => {
+      if (!alive) return;
       cancelInitialLoad?.();
-      // Restoring the Editor after Activity recreation must not enumerate
-      // every stored video and decode metadata during its first painted frame.
-      // Run only after the renderer proved responsive. Real user library
-      // changes still trigger an immediate refresh below.
       cancelInitialLoad = scheduleAfterResponsivePaint(() => {
         cancelInitialLoad = null;
+        if (!alive) return;
         initialPending = false;
-        if (alive && !document.hidden) void load();
-      }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+        void load();
+      }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     };
-    if (Capacitor.isNativePlatform()) start();
+    if (Capacitor.isNativePlatform()) scheduleLoad();
     else void load();
     const onClipsChanged = () => {
-      initialPending = false;
-      cancelInitialLoad?.();
-      cancelInitialLoad = null;
-      if (alive && !document.hidden) void load();
+      // Do not drop the user's changed clips while the WebView says "hidden".
+      // Multiple rapid notifications coalesce into the latest one load.
+      if (Capacitor.isNativePlatform()) scheduleLoad();
+      else if (alive) void load();
     };
     const onVisibility = () => {
-      if (document.hidden) {
-        cancelInitialLoad?.();
-        cancelInitialLoad = null;
-      } else if (initialPending) start();
+      // A pre-restore hidden state is not reliable on Android emulators.
+      // scheduleAfterResponsivePaint observes foreground and valid frames.
+      if (initialPending && cancelInitialLoad === null) scheduleLoad();
     };
     window.addEventListener("multicam-clips-changed", onClipsChanged);
     document.addEventListener("visibilitychange", onVisibility);
