@@ -56,12 +56,10 @@ function readImmediateAppearance(): Partial<StateData> {
     if (typeof window === "undefined") return {};
     const raw = window.localStorage.getItem(UI_PREFS_KEY);
     if (!raw || raw.length > 2048) return {};
-    const prefs = JSON.parse(raw) as Partial<StateData>;
-    const patch: Partial<StateData> = {};
-    if (prefs.theme === "light" || prefs.theme === "dark") patch.theme = prefs.theme;
-    if (typeof prefs.language === "string" && prefs.language.length <= 12) patch.language = prefs.language;
-    if (typeof prefs.hardwareAcceleration === "boolean") patch.hardwareAcceleration = prefs.hardwareAcceleration;
-    return patch;
+    // The very first React paint must not receive a malformed locale or
+    // object-shaped preference. Use exactly the same checked whitelist as
+    // the deferred Android project recovery, without reading bulky data.
+    return sanitizePersistedState(JSON.parse(raw));
   } catch { return {}; }
 }
 const defaults: StateData = {

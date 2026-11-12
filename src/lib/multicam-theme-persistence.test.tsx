@@ -28,6 +28,20 @@ describe("lightweight appearance preferences", () => {
     expect(first.hardwareAcceleration).toBe(false);
   });
 
+  it("rejects corrupted initial appearance fields before the first Android paint", () => {
+    window.localStorage.setItem("multicam-pov-ui-prefs-native", JSON.stringify({
+      theme: "dark", language: "not_valid!!", hardwareAcceleration: "yes",
+      selectedLut: { malicious: true },
+    }));
+    const first = createMulticamStore().getSnapshot();
+    expect(first.theme).toBe("dark");
+    expect(first.language).toBe("ru");
+    expect(first.hardwareAcceleration).toBe(true);
+    expect(first.selectedLut).toBe("Neutral");
+    // Invalid bytes are preserved for diagnostics, never silently erased.
+    expect(window.localStorage.getItem("multicam-pov-ui-prefs-native")).toContain("not_valid!!");
+  });
+
   it("ignores malformed or oversized appearance preferences without breaking startup", () => {
     window.localStorage.setItem("multicam-pov-ui-prefs-native", "{bad");
     expect(createMulticamStore().getSnapshot().theme).toBe("light");
