@@ -30,6 +30,8 @@ describe("Astra Android 15 freeze smoke must distinguish renderer stalls from te
     expect(workflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("Retry infrastructure-disconnected emulator once");
     expect(workflow).toContain("mode: isolated");
+    expect(workflow).toContain("emulator_build: '15917651'");
+    expect(workflow).toContain("emulator-build: ${{ matrix.emulator_build || '' }}");
     expect(workflow).toContain("mode: full");
     expect(workflow).toContain("MULTICAM_SMOKE_MODE: ${{ matrix.mode }}");
     const runner = readFileSync("scripts/run-android-freeze-test.sh", "utf8");

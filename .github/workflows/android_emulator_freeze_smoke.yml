@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   emulator-smoke:
-    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }}, ${{ matrix.resolution }}, ${{ matrix.mode }})"
+    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }}, ${{ matrix.resolution }}, ${{ matrix.mode }}, emulator=${{ matrix.emulator_build || 'current' }})"
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -46,6 +46,15 @@ jobs:
             gpu: swiftshader
             resolution: full
             mode: isolated
+          # July 2026 Android Emulator 37.1.11, build 15917651.
+          # A previous stable emulator is compared against the current
+          # SwiftShader failure, while the original current-version tests
+          # remain mandatory. No app or Android feature is disabled.
+          - api: 35
+            gpu: swiftshader
+            resolution: full
+            mode: isolated
+            emulator_build: '15917651'
           - api: 35
             gpu: swangle
             resolution: full
@@ -95,6 +104,7 @@ jobs:
           MULTICAM_SMOKE_MODE: ${{ matrix.mode }}
         with:
           api-level: ${{ matrix.api }}
+          emulator-build: ${{ matrix.emulator_build || '' }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -118,6 +128,7 @@ jobs:
           MULTICAM_SMOKE_MODE: ${{ matrix.mode }}
         with:
           api-level: ${{ matrix.api }}
+          emulator-build: ${{ matrix.emulator_build || '' }}
           target: google_apis
           arch: x86_64
           profile: pixel_6
@@ -140,7 +151,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}-${{ matrix.resolution }}-${{ matrix.mode }}
+          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}-${{ matrix.resolution }}-${{ matrix.mode }}-emulator${{ matrix.emulator_build || 'current' }}
           if-no-files-found: ignore
           path: |
             android/app/build/reports/androidTests/connected/
