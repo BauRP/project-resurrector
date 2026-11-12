@@ -66,7 +66,7 @@ describe("Android button-only navigation responsiveness without GPU transforms",
   it("checks cold native Camera launch before other WebView diagnostic Activities", () => {
     const nativeTest = readFileSync("android/app/src/androidTest/java/app/lovable/multicampov/MulticamFreezeNavigationInstrumentedTest.java","utf8");
     expect(nativeTest).toContain("a0IdleLaunchRendererRespondsWithoutUserMedia");
-    expect(nativeTest).toContain("aBaselineChromiumWithoutReactStillExecutesJavascript");
+    expect(nativeTest).toContain("a000BaselineChromiumWithoutReactStillExecutesJavascript");
     expect(nativeTest).toContain("MethodSorters.NAME_ASCENDING");
   });
 });

@@ -8,7 +8,9 @@ describe("Astra cold Android WebView is isolated from app startup",()=>{
    const idle=instrument.indexOf("public void a00ColdStartIdleThirtySecondsWithoutTouches()");
    expect(baseline).toBeGreaterThan(0);
    expect(idle).toBeGreaterThan(0);
-   const before=instrument.slice(baseline,idle);
+   const firstMethodEnd=instrument.indexOf("private static void isolateThenNavigate",baseline);
+   expect(firstMethodEnd).toBeGreaterThan(baseline);
+   const before=instrument.slice(baseline,firstMethodEnd);
    expect(before).toContain("MinimalWebViewActivity.class");
    expect(before).not.toContain("MainActivity.class");
    expect(instrument).toContain("@org.junit.FixMethodOrder(org.junit.runners.MethodSorters.NAME_ASCENDING)");
