@@ -184,6 +184,9 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     let projectTimer: ReturnType<typeof setTimeout> | null = null;
     let cancelProjectPaint: (() => void) | null = null;
     let projectDirty = false;
+    // Until the async database has been inspected, an emergency pagehide
+    // write must NOT overwrite a newer saved project with legacy/defaults.
+    let asyncRestoreCompleted = !nativeAsyncProject;
     let lastSnapshotStamp = Math.max(Date.now() - 1, lastLegacySavedAt);
     let restoreFromAsync = false;
     let mounted = true;
@@ -211,6 +214,7 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
       projectTimer = null;
       cancelProjectPaint?.();
       cancelProjectPaint = null;
+      if (nativeAsyncProject && !asyncRestoreCompleted) return;
       if (!projectDirty && !(urgent && nativeAsyncProject)) return;
       projectDirty = false;
       const latest = store.getSnapshot();
@@ -319,19 +323,31 @@ export function MulticamStoreProvider({ children }: { children: ReactNode }) {
     // may not override project fields the user has already edited.
     const cancelAsyncRestore = nativeAsyncProject ? scheduleAfterPaintTask(() => {
       void readAsyncProjectSnapshot().then(snapshot => {
-        if (!mounted || !snapshot || snapshot.savedAt <= lastLegacySavedAt) return;
-        const validated = sanitizePersistedState(snapshot.state);
-        const projectPatch = Object.fromEntries(projectPersistedKeys.filter(
-          key => !modifiedProjectKeys.has(key) && key in validated
-        ).map(key => [key, validated[key]])) as Partial<StateData>;
-        if (Object.keys(projectPatch).length === 0) return;
-        restoreFromAsync = true;
-        try { store.getSnapshot().set(projectPatch); }
-        finally {
-          previous = persistedKeys.map(k => store.getSnapshot()[k]);
-          restoreFromAsync = false;
+        if (!mounted) return;
+        asyncRestoreCompleted = true;
+        if (snapshot) lastSnapshotStamp = Math.max(lastSnapshotStamp, snapshot.savedAt);
+        if (snapshot && snapshot.savedAt > lastLegacySavedAt) {
+          const validated = sanitizePersistedState(snapshot.state);
+          const projectPatch = Object.fromEntries(projectPersistedKeys.filter(
+            key => !modifiedProjectKeys.has(key) && key in validated
+          ).map(key => [key, validated[key]])) as Partial<StateData>;
+          if (Object.keys(projectPatch).length > 0) {
+            restoreFromAsync = true;
+            try { store.getSnapshot().set(projectPatch); }
+            finally {
+              previous = persistedKeys.map(k => store.getSnapshot()[k]);
+              restoreFromAsync = false;
+            }
+          }
         }
-      }).catch(() => { /* Legacy snapshot still restored above. */ });
+        // The user may have edited a setting before this read completed.
+        // Flush the merged state, never overwrite that edit with an old read.
+        if (projectDirty) scheduleProject();
+      }).catch(() => {
+        if (!mounted) return;
+        asyncRestoreCompleted = true;
+        if (projectDirty) scheduleProject();
+      });
     }, 1800) : null;
     return () => {
       mounted = false;
