@@ -93,8 +93,9 @@ export function scheduleAfterResponsivePaint(
       // A hidden WebView normally suspends this frame; it resumes on return.
       // A falsely-hidden but painting WebView will still get its camera UI.
       frame = requestAnimationFrame(tick);
-    } else {
-      // Older browsers without RAF must not stay stuck on "Preparing camera".
+    } else if (!document.hidden) {
+      // A browser without RAF can mount panels in the foreground only.
+      // Never recursively re-arm a hidden fallback every 1800ms.
       fallback = setTimeout(finish, backgroundFallbackMs);
     }
   };
