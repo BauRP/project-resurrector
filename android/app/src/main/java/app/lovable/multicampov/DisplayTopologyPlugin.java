@@ -177,9 +177,22 @@ public class DisplayTopologyPlugin extends Plugin {
         }
     }
     private static final int MAX_PENDING_REGISTRATION_CALLS = 24;
+    // A vendor WindowManager Binder can stop replying indefinitely. One
+    // timed-out registration must not retain owner calls or keep Camera2's
+    // fold-safety lease in an apparently registered state.
+    private static final long REGISTRATION_TIMEOUT_MS = 8000L;
+    private final android.os.Handler registrationHandler =
+        new android.os.Handler(Looper.getMainLooper());
+    private Runnable registrationWatchdog;
+    private void cancelRegistrationWatchdog() {
+        if (registrationWatchdog == null) return;
+        registrationHandler.removeCallbacks(registrationWatchdog);
+        registrationWatchdog = null;
+    }
     private boolean registrationPending = false;
     private final ArrayList<PendingRegistration> registrationCalls = new ArrayList<>();
     private void finishRegistrationCalls(String error) {
+        cancelRegistrationWatchdog();
         ArrayList<PendingRegistration> waiting = new ArrayList<>(registrationCalls);
         registrationCalls.clear();
         registrationPending = false;
@@ -506,6 +519,17 @@ public class DisplayTopologyPlugin extends Plugin {
             NativeCapturePlugin.onFoldGeometryChanged();
             final WindowInfoTrackerCallbackAdapter registeringAdapter = adapter;
             final Consumer<WindowLayoutInfo> registeringListener = listener;
+            registrationWatchdog = () -> {
+                // Runs on MAIN, where all observer generations and owner sets
+                // are updated. Late OEM completion is invalidated by teardown.
+                if (registrationPending && ownerGeneration == observerGeneration &&
+                    listener == registeringListener) {
+                    activeOwners.clear();
+                    stopListener(); // Reject callers, preserve UNKNOWN fold safety.
+                }
+            };
+            registrationHandler.postDelayed(registrationWatchdog,
+                REGISTRATION_TIMEOUT_MS);
             // OEM registration can block on Binder. Queue it on a dedicated
             // thread and only take the measured View snapshot back on MAIN.
             registrationWorker.execute(() -> {
@@ -566,6 +590,7 @@ public class DisplayTopologyPlugin extends Plugin {
     // Only called on MAIN. Registration/removal can cross an OEM Binder;
     // never hold a synchronized monitor across either external call.
     private void stopListener() {
+        cancelRegistrationWatchdog();
         if (registrationPending)
             finishRegistrationCalls("Fold observer stopped before registration");
         observerGeneration++;
