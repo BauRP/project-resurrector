@@ -45,7 +45,17 @@ public class DeviceMetricsPlugin extends Plugin {
             call.resolve(cachedMetrics());
             return;
         }
-        final Context context = getContext().getApplicationContext();
+        // During Activity recreation Capacitor can dispose this plugin
+        // between the request arriving and the worker accepting it.
+        // Never leave the in-flight flag stuck after a null Context.
+        final Context appContext = getContext();
+        if (appContext == null) {
+            readInFlight.set(false);
+            call.resolve(cachedMetrics());
+            return;
+        }
+        final Context applicationContext = appContext.getApplicationContext();
+        final Context context = applicationContext == null ? appContext : applicationContext;
         try {
             worker.execute(() -> {
                 try {
@@ -63,8 +73,10 @@ public class DeviceMetricsPlugin extends Plugin {
                     long available = fs.getAvailableBytes();
                     if (available >= 0) storageMB = available / (1024L * 1024L);
 
-                    lastBattery = percent;
-                    lastStorageMB = storageMB;
+                    // Unavailable OEM readings must never erase the last
+                    // valid battery or free-storage measurement.
+                    if (percent != null) lastBattery = percent;
+                    if (storageMB != null) lastStorageMB = storageMB;
                     call.resolve(cachedMetrics());
                 } catch (Exception error) {
                     // A temporary OEM failure must not erase the last reading.

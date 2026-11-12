@@ -27,6 +27,44 @@ describe("Astra async project saves do not block Android navigation", () => {
     expect(write).toHaveBeenCalledTimes(1);
     writer.close();
   });
+  it("aborts a real stalled IndexedDB read transaction instead of only timing out JavaScript", async () => {
+    vi.useFakeTimers();
+    const abort = vi.fn();
+    const close = vi.fn();
+    const tx: {
+      oncomplete?: () => void; onerror?: () => void; onabort?: () => void;
+      error: null; abort: () => void;
+      objectStore: () => { get: () => { result: undefined } };
+    } = {
+      error: null, abort,
+      objectStore: () => ({ get: () => ({ result: undefined }) }),
+    };
+    const db = {
+      close, onversionchange: null,
+      transaction: () => tx,
+      objectStoreNames: { contains: () => true },
+    };
+    const request: { result: typeof db; onsuccess?: () => void } = { result: db };
+    vi.stubGlobal("indexedDB", {
+      open: () => {
+        queueMicrotask(() => request.onsuccess?.());
+        return request;
+      },
+    });
+    try {
+      const outcome = readAsyncProjectSnapshot().then(
+        () => "resolved", () => "rejected",
+      );
+      await vi.advanceTimersByTimeAsync(5010);
+      expect(await outcome).toBe("rejected");
+      expect(abort).toHaveBeenCalledTimes(1);
+      expect(close).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("handles an environment with no IndexedDB without inventing restored data", async () => {
     if (typeof indexedDB === "undefined")
       expect(await readAsyncProjectSnapshot()).toBeNull();

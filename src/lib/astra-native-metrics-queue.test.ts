@@ -7,6 +7,9 @@ describe("Astra native DeviceMetrics timeout queue", () => {
    expect(java).toContain("AtomicBoolean readInFlight");
    expect(java).toContain("readInFlight.compareAndSet(false, true)");
    expect(java).toContain("readInFlight.set(false);");
+   expect(java).toContain("if (appContext == null)");
+   expect(java).toContain("if (percent != null) lastBattery = percent");
+   expect(java).toContain("if (storageMB != null) lastStorageMB = storageMB");
    expect(java).toContain("worker.execute(() -> {");
  });
  it("keeps real battery and storage monitoring, returning last real readings",()=>{

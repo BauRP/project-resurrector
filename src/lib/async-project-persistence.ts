@@ -43,15 +43,36 @@ export async function readAsyncProjectSnapshot(): Promise<SavedProjectSnapshot |
   if (typeof indexedDB === "undefined") return null;
   const db = await openProjectDb();
   try {
-    return await bounded(new Promise<SavedProjectSnapshot | null>((resolve, reject) => {
+    return await new Promise<SavedProjectSnapshot | null>((resolve, reject) => {
       const tx = db.transaction(STORE, "readonly");
-      const req = tx.objectStore(STORE).get(KEY);
       let value: unknown = null;
-      req.onsuccess = () => { value = req.result as unknown; };
-      tx.oncomplete = () => resolve(validSnapshot(value));
-      tx.onerror = () => reject(tx.error ?? new Error("Project load failed"));
-      tx.onabort = () => reject(tx.error ?? new Error("Project load aborted"));
-    }), 5000, "Read project state");
+      let settled = false;
+      const finish = (error?: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(watchdog);
+        if (error) reject(error);
+        else resolve(validSnapshot(value));
+      };
+      // A rejected JavaScript Promise does not stop an IndexedDB operation.
+      // Abort the real native transaction when a WebView backend stalls,
+      // otherwise old reads can pile up behind new project saves.
+      const watchdog = setTimeout(() => {
+        try { tx.abort(); } catch { /* The transaction may already be inactive. */ }
+        finish(new Error("Project read timed out"));
+      }, 5000);
+      tx.oncomplete = () => finish();
+      tx.onerror = () => finish(tx.error ?? new Error("Project load failed"));
+      tx.onabort = () => finish(tx.error ?? new Error("Project load aborted"));
+      try {
+        const req = tx.objectStore(STORE).get(KEY);
+        req.onsuccess = () => { value = req.result as unknown; };
+        req.onerror = () => finish(req.error ?? new Error("Project read failed"));
+      } catch (error) {
+        try { tx.abort(); } catch { /* Invalid or already finished transaction. */ }
+        finish(error instanceof Error ? error : new Error("Project read failed"));
+      }
+    });
   } finally { db.close(); }
 }
 
