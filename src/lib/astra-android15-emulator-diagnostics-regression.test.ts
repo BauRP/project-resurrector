@@ -29,5 +29,14 @@ describe("Astra Android 15 freeze smoke must distinguish renderer stalls from te
     expect(workflow).toContain("gpu: swangle\n            resolution: full");
     expect(workflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("Retry infrastructure-disconnected emulator once");
+    expect(workflow).toContain("mode: isolated");
+    expect(workflow).toContain("mode: full");
+    expect(workflow).toContain("MULTICAM_SMOKE_MODE: ${{ matrix.mode }}");
+    const runner = readFileSync("scripts/run-android-freeze-test.sh", "utf8");
+    expect(runner).toContain("#a00ColdStartIdleThirtySecondsWithoutTouches");
+    expect(runner).toContain('TEST_TARGET="$TEST_TARGET#a00ColdStartIdleThirtySecondsWithoutTouches"');
+    expect(runner).toContain('case "$SMOKE_MODE" in');
+    expect(runner).toContain('QEMU_HEALTH_FILE=');
+    expect(runner).toContain('"$QEMU_WATCHER_PID"');
   });
 });

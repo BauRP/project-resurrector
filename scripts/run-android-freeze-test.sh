@@ -2,6 +2,16 @@
 set -euo pipefail
 cd "$GITHUB_WORKSPACE"
 ATTEMPT="${MULTICAM_SMOKE_ATTEMPT:-1}"
+SMOKE_MODE="${MULTICAM_SMOKE_MODE:-full}"
+TEST_TARGET="app.lovable.multicampov.MulticamFreezeNavigationInstrumentedTest"
+case "$SMOKE_MODE" in
+  full) ;;  # original complete 10-test suite
+  isolated)
+    # Isolated real app cold start: no baseline Activity and no prior GPU
+    # teardown in this Android process. Same app, same 30-second assertions.
+    TEST_TARGET="$TEST_TARGET#a00ColdStartIdleThirtySecondsWithoutTouches" ;;
+  *) echo "Unknown Android smoke mode: $SMOKE_MODE" >&2; exit 2 ;;
+esac
 INFRA_MARKER="$GITHUB_WORKSPACE/android-emulator-infra-lost.txt"
 rm -f "$INFRA_MARKER"
 LOG_FILE="$GITHUB_WORKSPACE/android-freeze-emulator-logcat-${ATTEMPT}.txt"
@@ -14,7 +24,7 @@ if [[ "${MULTICAM_EMULATOR_RESOLUTION:-full}" == "compact" ]]; then
 fi
 HOST_FILE="$GITHUB_WORKSPACE/android-freeze-host-${ATTEMPT}.txt"
 {
-  echo "===== Host and emulator before test, attempt $ATTEMPT ====="
+  echo "===== Host and emulator before test, attempt $ATTEMPT; mode=$SMOKE_MODE ====="
   date -u
   uname -a
   free -m
@@ -32,6 +42,19 @@ STACK_FILE="$GITHUB_WORKSPACE/android-freeze-renderer-stacks-${ATTEMPT}.txt"
 # Save the actual parent shell PID before creating a subshell. The watcher
 # exits when this test script ends, even if Gradle and QEMU have exited.
 WATCH_PARENT_PID="$BASHPID"
+# A native QEMU crash can remove the entire virtual device before Android can
+# deliver a final logcat line. Sample HOST process memory, status and CPU
+# without touching WebView, Camera2 or the emulator's own render thread.
+QEMU_HEALTH_FILE="$GITHUB_WORKSPACE/android-freeze-qemu-health-${ATTEMPT}.txt"
+(
+  while kill -0 "$WATCH_PARENT_PID" 2>/dev/null; do
+    echo "===== $(date -u +%FT%TZ) QEMU host process ====="
+    ps -eo pid=,comm=,rss=,vsz=,%cpu=,stat= 2>/dev/null |
+      awk '$2 ~ /^qemu-system-x86/ { print }' || true
+    sleep 4
+  done
+) </dev/null >"$QEMU_HEALTH_FILE" 2>&1 &
+QEMU_WATCHER_PID=$!
 (
   tail --pid="$WATCH_PARENT_PID" -n 0 -F "$LOG_FILE" | while IFS= read -r line; do
     if [[ "$line" == *"MultiCamFreezeTest: WebView did not reply"* ]]; then
@@ -56,12 +79,12 @@ WATCH_PARENT_PID="$BASHPID"
   done
 ) </dev/null >"$GITHUB_WORKSPACE/android-freeze-stack-watcher-${ATTEMPT}.txt" 2>&1 &
 STACK_WATCHER_PID=$!
-trap 'kill "$LOGCAT_PID" "$STACK_WATCHER_PID" 2>/dev/null || true' EXIT
+trap 'kill "$LOGCAT_PID" "$STACK_WATCHER_PID" "$QEMU_WATCHER_PID" 2>/dev/null || true' EXIT
 cd "$GITHUB_WORKSPACE/android"
 chmod +x ./gradlew
 set +e
 ./gradlew connectedDebugAndroidTest --no-daemon --stacktrace \
-  -Pandroid.testInstrumentationRunnerArguments.class=app.lovable.multicampov.MulticamFreezeNavigationInstrumentedTest
+  -Pandroid.testInstrumentationRunnerArguments.class="$TEST_TARGET"
 result=$?
 set -e
 echo "===== Instrumentation evidence (exit: $result, attempt $ATTEMPT) ====="

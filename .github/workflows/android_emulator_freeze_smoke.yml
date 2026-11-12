@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   emulator-smoke:
-    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }}, ${{ matrix.resolution }})"
+    name: "Android WebView navigation API${{ matrix.api }} (${{ matrix.gpu }}, ${{ matrix.resolution }}, ${{ matrix.mode }})"
     runs-on: ubuntu-latest
     timeout-minutes: 40
     strategy:
@@ -30,24 +30,37 @@ jobs:
           - api: 35
             gpu: swiftshader
             resolution: full
+            mode: full
           # Diagnose whether the API35 SwiftShader full-resolution crash
           # depends on the virtual GPU framebuffer size. This adds evidence
           # without replacing or weakening the mandatory full-size profile.
           - api: 35
             gpu: swiftshader
             resolution: compact
+            mode: full
+          # Run app cold start DIRECTLY on the unstable GPU, without a
+          # previously destroyed baseline WebView. This isolates whether
+          # renderer teardown is triggering QEMU loss. Keep all five full
+          # navigation regressions unchanged and mandatory.
+          - api: 35
+            gpu: swiftshader
+            resolution: full
+            mode: isolated
           - api: 35
             gpu: swangle
             resolution: full
+            mode: full
           - api: 36
             gpu: swangle
             resolution: full
+            mode: full
           # An additional 540x1200 profile distinguishes an application
           # renderer deadlock from the GitHub runner's extraordinarily slow
           # 1080x2400 software GPU. Keep every full-resolution regression.
           - api: 36
             gpu: swangle
             resolution: compact
+            mode: full
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -79,6 +92,7 @@ jobs:
         env:
           MULTICAM_SMOKE_ATTEMPT: "1"
           MULTICAM_EMULATOR_RESOLUTION: ${{ matrix.resolution }}
+          MULTICAM_SMOKE_MODE: ${{ matrix.mode }}
         with:
           api-level: ${{ matrix.api }}
           target: google_apis
@@ -101,6 +115,7 @@ jobs:
         env:
           MULTICAM_SMOKE_ATTEMPT: "2"
           MULTICAM_EMULATOR_RESOLUTION: ${{ matrix.resolution }}
+          MULTICAM_SMOKE_MODE: ${{ matrix.mode }}
         with:
           api-level: ${{ matrix.api }}
           target: google_apis
@@ -125,7 +140,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}-${{ matrix.resolution }}
+          name: android-freeze-smoke-results-api${{ matrix.api }}-${{ matrix.gpu }}-${{ matrix.resolution }}-${{ matrix.mode }}
           if-no-files-found: ignore
           path: |
             android/app/build/reports/androidTests/connected/
@@ -136,4 +151,5 @@ jobs:
             android-freeze-processes-*.txt
             android-freeze-renderer-stacks-*.txt
             android-freeze-stack-watcher-*.txt
+            android-freeze-qemu-health-*.txt
             android-emulator-infra-lost.txt
