@@ -15,7 +15,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(foldObserver).toContain("ContextCompat.getMainExecutor(getContext())");
   expect(foldObserver).not.toContain("getActivity().getMainExecutor()");
   expect(foldObserver).toContain("activeOwners.remove(ownerId);");
-  expect(foldObserver).toContain("adapter.addWindowLayoutInfoListener(host, main, listener);");
+  expect(foldObserver).toContain("registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener);");
  });
  it("persists all essential late-stage fold and MP4 audit fields",()=>{
   for(const key of ["mp4CheckpointAuditCompleted","mp4FoldPointsSkipped",
@@ -45,7 +45,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
  });
  it("activates the fold observer lease before registering its first callback",()=>{
   const before=foldObserver.indexOf("NativeCaptureService.observeFoldObserverActive(lease);");
-  const subscribe=foldObserver.indexOf("adapter.addWindowLayoutInfoListener(host, main, listener);");
+  const subscribe=foldObserver.indexOf("registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener);");
   expect(before).toBeGreaterThan(0);
   expect(subscribe).toBeGreaterThan(before);
  });
@@ -181,7 +181,7 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(resume).toContain("lastSensorNs=0L;");
  });
  it("hides stale TextureView immediately when a new fold observer has unknown topology",()=>{
-  const start=foldObserver.slice(foldObserver.indexOf("armSurfaceLease(lease);"),foldObserver.indexOf("adapter.addWindowLayoutInfoListener"));
+  const start=foldObserver.slice(foldObserver.indexOf("armSurfaceLease(lease);"),foldObserver.indexOf("registeringAdapter.addWindowLayoutInfoListener"));
   expect(start).toContain("NativeCapturePlugin.onFoldGeometryChanged()");
  });
  it("ignores stale Camera2 callbacks from previous sessions after fold surface rebind",()=>{

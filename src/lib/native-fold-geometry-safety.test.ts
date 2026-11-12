@@ -34,7 +34,7 @@ describe("native WindowManager hinge safety gate",()=>{
   expect(code).toContain('result.put("source","android-activity-unavailable")');
   expect(code).toContain('call.reject("Fold Activity unavailable")');
   expect(code).toContain("WindowInfoTracker.getOrCreate(host)");
-  expect(code).toContain("adapter.addWindowLayoutInfoListener(host, main, listener)");
+  expect(code).toContain("registeringAdapter.addWindowLayoutInfoListener(host, main, registeringListener)");
  });
  it("does not invent folds and maintains native observer leases",()=>{
   expect(code).toContain("if(!fold.isSeparating())continue;");
