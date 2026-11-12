@@ -14,7 +14,7 @@ describe("Astra durable async native project state with lifecycle backup",()=>{
  it("preserves emergency legacy copy when Android destroys WebView",()=>{
    expect(src).toContain("const onPageHide = () => { repairOrFlushView(); flushProject(true); flushPrefs(); };");
    expect(src).toContain("const onVisibility = () => { if (document.hidden) { repairOrFlushView(); flushProject(true);");
-   expect(src).toContain("if (raw.length <= 262144)");
+   expect(src).toContain("if (raw.length > 262144) return false;");
    expect(src).toContain("lastLegacySavedAt");
    expect(src).toContain("snapshot.savedAt > lastLegacySavedAt");
    expect(src).toContain("if (!projectDirty && !(urgent && pendingDurableSnapshot)) return;");
