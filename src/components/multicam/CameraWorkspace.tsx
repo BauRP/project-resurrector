@@ -54,7 +54,7 @@ export function CameraWorkspace() {
     let alive = true;
     const cancel = scheduleAfterResponsivePaint(() => {
       if (alive) setWebUiReady(true);
-    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     return () => { alive = false; cancel(); };
   }, [mode, webUiReady]);
   useEffect(() => {
@@ -67,7 +67,7 @@ export function CameraWorkspace() {
     let live = true;
     const cancel = scheduleAfterResponsivePaint(() => {
       if (live) setNativeUiReady(true);
-    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800 });
+    }, { stableFrames: 3, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     return () => { live = false; cancel(); };
   }, [mode]);
   useEffect(() => {
