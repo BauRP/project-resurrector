@@ -7,7 +7,6 @@ import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
-import { waitForEditorQuietInput } from "@/lib/editor-quiet-input";
 import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
 import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
@@ -441,17 +440,16 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           // four stable frames before EACH CPU-heavy decode attempt.
           const responsive = await waitForEditorResponsiveIdle(abort.signal);
           if (!responsive || !live) { waveformAttempted.current.delete(m.id); break; }
-          // Waveform decoding competes with live video playback and seeking.
-          // Keep this optional job available, but run it after user activity.
-          if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) {
-            waveformAttempted.current.delete(m.id);
-            break;
-          }
+          // Read the original clip once, then let the waveform decoder run
+          // cooperatively. A user tap or playback START must stop ongoing
+          // optional PCM scanning, not merely postpone its initial launch.
+          // Preserve the full waveform density on a later quiet retry.
           db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
           const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
-          if (!original || !live) { waveformAttempted.current.delete(m.id); continue; }
-          const peaks = await editorMediaWorkQueue.run(
-            () => analyseWaveformForTimeline(original, m.duration, abort.signal), abort.signal);
+          if (!original || !live || abort.signal.aborted) { waveformAttempted.current.delete(m.id); continue; }
+          const peaks = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
+            attemptSignal => editorMediaWorkQueue.run(
+              () => analyseWaveformForTimeline(original, m.duration, attemptSignal), attemptSignal));
           if (!live || abort.signal.aborted || !peaks) { waveformAttempted.current.delete(m.id); break; }
           analysisCache.set(m.id, { duration: m.duration, peaks });
           setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));

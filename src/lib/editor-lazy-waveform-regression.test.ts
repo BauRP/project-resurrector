@@ -12,8 +12,9 @@ describe("opening editor and transitions never decodes entire unused media libra
   expect(library).toContain("analysisCache.set(clip.id, { duration, peaks })");
   expect(code).toContain("const timelineWaveformKey = useMemo(");
   expect(code).toContain("if (!required.has(m.id) || waveformAttempted.current.has(m.id)) continue");
-  expect(code).toContain("const peaks = await editorMediaWorkQueue.run(");
-  expect(code).toContain("() => analyseWaveformForTimeline(original, m.duration, abort.signal)");
+  expect(code).toContain("const peaks = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,");
+  expect(code).toContain("() => analyseWaveformForTimeline(original, m.duration, attemptSignal)");
+  expect(code).toContain("() => editorMediaWorkQueue.run(");
   expect(code).toContain("setMedia(current => current.map(");
   expect(code).toContain("await new Promise<void>(resolve => window.setTimeout(resolve, 0))");
  });

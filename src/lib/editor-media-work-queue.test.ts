@@ -52,7 +52,7 @@ describe("editor media workload prevents concurrent Android WebView decoders", (
   it("routes all timeline background media work through the shared decoder lane", () => {
     const code = readFileSync("src/components/multicam/EditorPro.tsx", "utf8");
     expect(code).toContain("editorMediaWorkQueue.run(");
-    expect(code).toContain("() => analyseWaveformForTimeline(original, m.duration, abort.signal)");
+    expect(code).toContain("() => analyseWaveformForTimeline(original, m.duration, attemptSignal)");
     expect(code).toContain("runEditorQuietMediaWork(abort.signal, () => playbackActive.current");
     expect(code).toContain("() => makeThumbs(m.url, m.duration, 10, attemptSignal)");
     expect(code).toContain("() => generateProxy(m.id, m.url, attemptSignal)");
