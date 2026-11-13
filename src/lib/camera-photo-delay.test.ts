@@ -33,7 +33,9 @@ describe("Astra: photo countdown never runs after Camera exits", () => {
     expect(camera).toContain("if (request.signal.aborted || !cameraMounted.current) return;");
     expect(camera).toContain("if (countdown || photoCountdown.current) return;");
     expect(camera).toContain("waitForPhotoDelay(1000, request.signal)");
-    expect(camera).toContain("waitForPhotoDelay(400, photoAbort.signal)");
+    // Bracket timing moved into its separately tested exposure controller.
+    const bracket = readFileSync("src/lib/camera-photo-bracket.ts", "utf8");
+    expect(bracket).toContain("waitForPhotoDelay(400, signal)");
     expect(camera).toContain("waitForPhotoDelay(120, photoAbort.signal)");
     expect(camera).toContain("if (cameraMounted.current) void shootOnce()");
     expect(camera).toContain("if (intervalRef.current !== null) window.clearInterval(intervalRef.current)");
