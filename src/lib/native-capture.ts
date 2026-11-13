@@ -1,5 +1,6 @@
 import {registerPlugin, type PluginListenerHandle} from "@capacitor/core";
 import { bounded } from "./async";
+import { createSingleFlight } from "./single-flight";
 export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;captureId?:number;stabilization:string;directPreviewActive?:boolean;
  cameraSensorFrames?:number;cameraSensorFps?:number;
@@ -56,6 +57,10 @@ export interface NativeCaptureBridge {
  requestPermissions(options?:{permissions:string[]}):Promise<Record<string,string>>;
 }
 const rawNativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
+// Astra: timed-out JS callers do NOT cancel the original Camera2 Binder call.
+// Coalesce all status polls until Android actually settles, avoiding an
+// unbounded queue from startup, camera and diagnostics after a slow OEM reply.
+const pendingCamera2Status = createSingleFlight(() => rawNativeCapture.status());
 /** A missing emulator Camera2/Capacitor callback must release the React
  * controls. A timed-out operation is UNKNOWN, never an implicit success,
  * stop, retry, or permission grant. The service remains the source of truth.
@@ -71,7 +76,7 @@ export const nativeCapture: NativeCaptureBridge = {
   stop: () => guard(rawNativeCapture.stop(), 30000, "stop"),
   pause: () => guard(rawNativeCapture.pause(), 12000, "pause"),
   resume: () => guard(rawNativeCapture.resume(), 12000, "resume"),
-  status: () => guard(rawNativeCapture.status(), 6000, "status"),
+  status: () => guard(pendingCamera2Status(), 6000, "status"),
   auditHistory: () => guard(rawNativeCapture.auditHistory(), 15000, "auditHistory"),
   retryGalleryPublication: () => guard(rawNativeCapture.retryGalleryPublication(), 30000, "retryGalleryPublication"),
   previewFrame: () => guard(rawNativeCapture.previewFrame(), 5000, "previewFrame"),

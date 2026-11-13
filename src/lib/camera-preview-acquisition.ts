@@ -55,7 +55,10 @@ export async function acquireWebViewPreviewWithNativeGuard(
     if (diagnosticCaptureGate.activeOperation() !== null)
       throw new NativeCameraBusyError();
     if(!nativeStatus)return;
-    const state=(await bounded(nativeStatus(),2000,"Native Camera2 owner")).state;
+    // NativeCapture.status already has a six-second deadline. A shorter
+    // deadline here needlessly causes retries before Android Binder replies.
+    // Keep a bounded fail-closed result for non-native test bridges, too.
+    const state=(await bounded(nativeStatus(),6500,"Native Camera2 owner")).state;
     if(!current())throw new CameraSupersededError();
     if (diagnosticCaptureGate.activeOperation() !== null)
       throw new NativeCameraBusyError();

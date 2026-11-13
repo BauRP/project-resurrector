@@ -110,6 +110,29 @@ describe("safe WebView camera acquisition across Camera2 and fold lifecycle",()=
    expect(secondStop).toHaveBeenCalledOnce();
    expect(audio.stop).toHaveBeenCalledOnce();
  });
+ it("does not start a WebView camera after a stalled Camera2 status query",async()=>{
+   vi.useFakeTimers();
+   try {
+     const gum=vi.fn();
+     vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
+     const never=new Promise<{state:string}>(()=>undefined);
+     const call=acquireWebViewPreviewWithNativeGuard(Symbol("pending-native"),
+       {video:true,audio:false},()=>never);
+     const rejected=expect(call).rejects.toThrow("Native Camera2 owner: timeout");
+     await vi.advanceTimersByTimeAsync(2000);
+     expect(gum).not.toHaveBeenCalled();
+     await vi.advanceTimersByTimeAsync(4500);
+     await rejected;
+     expect(gum).not.toHaveBeenCalled();
+   }finally { vi.useRealTimers(); }
+ });
+ it("the Camera2 status bridge stays single-flight across timed-out views",()=>{
+   const bridge=readFileSync("src/lib/native-capture.ts","utf8");
+   expect(bridge).toContain("createSingleFlight(() => rawNativeCapture.status())");
+   expect(bridge).toContain('status: () => guard(pendingCamera2Status(), 6000, "status")');
+   const preview=readFileSync("src/lib/camera-preview-acquisition.ts","utf8");
+   expect(preview).toContain('bounded(nativeStatus(),6500,"Native Camera2 owner")');
+ });
  it("never attempts getUserMedia when native Camera2 is recording",async()=>{
   const gum=vi.fn();vi.stubGlobal("navigator",{mediaDevices:{getUserMedia:gum}});
   await expect(acquireWebViewPreviewWithNativeGuard(Symbol("ui"),{video:true,audio:true},
