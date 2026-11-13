@@ -419,7 +419,19 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   useEffect(() => { if (s.eyeAF && !s.aiEnabled) void applyAdvanced(stream, { focusMode: "continuous" }); }, [s.eyeAF, s.aiEnabled, stream]);
   const faceBox = useFaceTracking(videoRef, stream, s.eyeAF || s.aiEnabled, s.aiEnabled && s.focusModeAI === "hybrid_nearest_priority");
   const [countdown, setCountdown] = useState(0); const [flash, setFlash] = useState(0); const [photoMsg, setPhotoMsg] = useState("");
-  const [lastPhoto, setLastPhoto] = useState<string | null>(null); const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
+  const [lastPhoto, setLastPhoto] = useState<string | null>(null);
+  const photoNoticeTimer = useRef<number | null>(null);
+  const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
+  // One object URL at a time: a closed camera must not retain image Blob memory.
+  useEffect(() => () => {
+    if (lastPhoto) URL.revokeObjectURL(lastPhoto);
+  }, [lastPhoto]);
+  useEffect(() => () => {
+    if (photoNoticeTimer.current !== null) {
+      window.clearTimeout(photoNoticeTimer.current);
+      photoNoticeTimer.current = null;
+    }
+  }, []);
   useEffect(() => () => {
     if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
   }, []);
@@ -886,7 +898,17 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
 
   const wbTint = s.wbKelvin === null ? "" : s.wbKelvin < 5600 ? ` sepia(${((5600 - s.wbKelvin) / 3100) * 0.35})` : ` hue-rotate(${((s.wbKelvin - 5600) / 2400) * -12}deg) saturate(.92)`;
   const previewFilter = [s.capture.profile === "standard" ? "" : toneFilter(s.capture.profile), tuneFilter(s), kelvinFilter(s.wbKelvin)].filter(Boolean).join(" ");
-  const notify = (m: string) => { setPhotoMsg(m); window.setTimeout(() => setPhotoMsg(""), 2500); };
+  const notify = (m: string) => {
+    if (!cameraMounted.current) return;
+    // A burst of photos or retries previously accumulated stale 2.5 s timers
+    // and caused old notifications to overwrite fresh user feedback.
+    if (photoNoticeTimer.current !== null) window.clearTimeout(photoNoticeTimer.current);
+    setPhotoMsg(m);
+    photoNoticeTimer.current = window.setTimeout(() => {
+      photoNoticeTimer.current = null;
+      if (cameraMounted.current) setPhotoMsg("");
+    }, 2500);
+  };
   // Closing/switching the camera cancels expensive photo pixel loops rather
   // than letting a stale 40-frame exposure pin the old WebView memory.
   // A user can exit Camera while the delayed shutter is counting down.
@@ -972,7 +994,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     // IndexedDB may finish committing AFTER the user closed this camera.
     // Never show a stale flash/toast or create an orphaned object URL.
     if (photoAbort.signal.aborted || !cameraMounted.current) return;
-    setFlash((f) => f + 1); setLastPhoto((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(shots[shots.length - 1]!); });
+    setFlash((f) => f + 1); setLastPhoto(URL.createObjectURL(shots[shots.length - 1]!));
     notify(shots.length > 1 ? `Сохранено ${shots.length} кадров из видеопотока` : "Кадр видеопотока сохранён");
     } catch (error) {
       if (!photoAbort.signal.aborted && cameraMounted.current)
