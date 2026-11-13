@@ -7,6 +7,8 @@ import { HelpDot } from "./Help";
 import { cameraController, checkAppliedCameraSetting } from "@/lib/camera-controller";
 import { clipCurve } from "@/lib/audio-limiter";
 import { createPhotoFrameStack } from "@/lib/photo-stacking";
+import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
+import { responsiveHiddenFrameGuard } from "@/lib/raf-visibility";
 
 /* ---------- Track helpers (all features are capability-checked at runtime) ---------- */
 type Caps = Record<string, unknown>;
@@ -152,21 +154,32 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
     const det = new Ctor({ fastMode: true, maxDetectedFaces: 4 }); let alive = true; let last: "face" | "center" | null = null;
     let nextFrame: number | null = null;
     let detectionInFlight = false;
+    let hiddenFrameProbe: (() => void) | null = null;
     let lastFocusPoint: {x:number;y:number}|null = null;
     let lastFocusSubmitted = 0;
     let focusBusy = false;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
+    // Never run FaceDetector on a genuinely hidden or stalled renderer.
+    // Some emulators misreport hidden while WebView is visibly painting; in
+    // that case three real RAF callbacks let the current face tools work.
+    const armHiddenFrameProbe = () => {
+      if (!alive || hiddenFrameProbe) return;
+      hiddenFrameProbe = scheduleAfterResponsivePaint(() => {
+        hiddenFrameProbe = null;
+        if (alive) void loop(true);
+      }, { visibleOnly: true, stableFrames: 3, maxFrameGapMs: 350 });
+    };
     const scheduleNext = () => {
-      // Pause expensive video detection in a hidden Android WebView; resume
-      // when foregrounded without starting overlapping native GPU requests.
-      if (!alive || document.hidden || detectionInFlight || nextFrame !== null) return;
+      if (!alive || detectionInFlight || nextFrame !== null || hiddenFrameProbe) return;
       nextFrame = window.setTimeout(() => {
         nextFrame = null;
-        void loop();
+        if (!alive) return;
+        if (document.hidden) armHiddenFrameProbe();
+        else void loop();
       }, 120);
     };
-    const loop = async () => {
-      if (!alive || document.hidden || detectionInFlight) return;
+    const loop = async (responsiveHiddenFrames = false) => {
+      if (!alive || detectionInFlight || (document.hidden && !responsiveHiddenFrames)) return;
       detectionInFlight = true;
       try {
       const v = videoRef.current;
@@ -175,7 +188,7 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
           const faces = await det.detect(v);
           // OEM face detection may resolve after the camera has unmounted.
           // Do not update old UI or try to focus an obsolete camera owner.
-          if (!alive || document.hidden) return;
+          if (!alive || (document.hidden && !responsiveHiddenFrames)) return;
           const big = faces.map((f) => f.boundingBox).sort((a, b) => b.width * b.height - a.width * a.height)[0];
           if (big) {
             const b = { x: big.x / v.videoWidth, y: big.y / v.videoHeight, w: big.width / v.videoWidth, h: big.height / v.videoHeight }; setBox(b);
@@ -217,14 +230,20 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
       if (document.hidden) {
         if (nextFrame !== null) window.clearTimeout(nextFrame);
         nextFrame = null;
-      } else if (!detectionInFlight) void loop();
-      // If the prior detector is still running, its finally will resume
-      // the cadence without overlapping another expensive detection.
+        if (!detectionInFlight) armHiddenFrameProbe();
+      } else {
+        hiddenFrameProbe?.();
+        hiddenFrameProbe = null;
+        if (!detectionInFlight) void loop();
+      }
+      // An in-flight detector's finally schedules only one follow-up cycle.
     };
     document.addEventListener("visibilitychange", onVisibility);
-    void loop();
+    if (document.hidden) armHiddenFrameProbe();
+    else void loop();
     return () => {
       alive = false;
+      hiddenFrameProbe?.();
       document.removeEventListener("visibilitychange", onVisibility);
       if (nextFrame !== null) window.clearTimeout(nextFrame);
     };
@@ -237,13 +256,15 @@ const IRE: [number, [number, number, number]][] = [[0.02, [128, 0, 160]], [0.1, 
 export function FalseColorOverlay({ videoRef }: { videoRef: RefObject<HTMLVideoElement | null> }) {
   const canvas = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
-    let raf = 0; let last = 0; const lut = new Uint8ClampedArray(256 * 3);
+    let raf = 0; let last = 0;
+    const hasVisibleFrameCadence = responsiveHiddenFrameGuard(350, 3);
+    const lut = new Uint8ClampedArray(256 * 3);
     for (let i = 0; i < 256; i++) { const l = i / 255; const c = IRE.find(([lim]) => l < lim)?.[1] ?? [255, 0, 0]; lut.set(c, i * 3); }
     const tick = (t: number) => {
       raf = requestAnimationFrame(tick);
       // Some software WebViews still deliver RAF while hidden: do not read
       // a camera GPU surface that is not visible to the user.
-      if (document.hidden || t - last < 66) return;
+      if (!hasVisibleFrameCadence(t, document.hidden) || t - last < 66) return;
       last = t;
       const v = videoRef.current; const c = canvas.current;
       if (!v || !c || !v.videoWidth || v.readyState < 2) return;

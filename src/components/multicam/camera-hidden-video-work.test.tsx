@@ -15,6 +15,9 @@ describe("Astra: video analysis stays responsive through Android background tran
     vi.useFakeTimers();
     let hidden = false;
     vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
+    // A truly hidden WebView has no RAF callbacks.
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 91));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     const detect = vi.fn().mockResolvedValue([]);
     vi.stubGlobal("FaceDetector", class { detect = detect; });
     const stream = { getVideoTracks: () => [{ readyState: "live", getCapabilities: () => ({}) }] } as unknown as MediaStream;
@@ -43,11 +46,40 @@ describe("Astra: video analysis stays responsive through Android background tran
     await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
     expect(detect).toHaveBeenCalledTimes(afterReturn);
   });
+  it("continues recognition if Android falsely marks a painting WebView hidden", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (cb: FrameRequestCallback) => {
+      frames.push(cb);
+      return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const detect = vi.fn().mockResolvedValue([]);
+    vi.stubGlobal("FaceDetector", class { detect = detect; });
+    const stream = { getVideoTracks: () => [{ readyState: "live", getCapabilities: () => ({}) }] } as unknown as MediaStream;
+    const video = { videoWidth: 640, videoHeight: 480 } as HTMLVideoElement;
+    const { unmount } = renderHook(() => {
+      const ref = useRef<HTMLVideoElement | null>(video);
+      return useFaceTracking(ref, stream, true, false);
+    });
+    expect(detect).not.toHaveBeenCalled();
+    await act(async () => {
+      frames.shift()?.(10);
+      frames.shift()?.(26);
+      frames.shift()?.(42);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(detect).toHaveBeenCalledOnce();
+    unmount();
+  });
   it("does not overlap a slow FaceDetector across a background/foreground cycle", async () => {
     vi.useFakeTimers();
     let hidden = false;
     vi.spyOn(document, "hidden", "get").mockImplementation(() => hidden);
     let resolve!: (faces: []) => void;
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 91));
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
     const detect = vi.fn(() => new Promise<[]>(r => { resolve = r; }));
     vi.stubGlobal("FaceDetector", class { detect = detect; });
     const stream = { getVideoTracks: () => [{ readyState: "live", getCapabilities: () => ({}) }] } as unknown as MediaStream;
@@ -72,7 +104,8 @@ describe("Astra: video analysis stays responsive through Android background tran
   it("preserves false-color overlay but skips hidden GPU readback", () => {
     const source = readFileSync("src/components/multicam/CameraPro.tsx", "utf8");
     const overlay = source.slice(source.indexOf("export function FalseColorOverlay"), source.indexOf("/* ---------- Vertical VU meter"));
-    expect(overlay).toContain("if (document.hidden || t - last < 66) return;");
+    expect(overlay).toContain("responsiveHiddenFrameGuard(350, 3)");
+    expect(overlay).toContain("if (!hasVisibleFrameCadence(t, document.hidden) || t - last < 66) return;");
     expect(overlay).toContain("v.readyState < 2");
     expect(overlay).toContain("ctx.drawImage(v, 0, 0, w, h)");
     expect(overlay).toContain("catch { /* Retired camera surface:");

@@ -39,6 +39,18 @@ describe("Astra Camera2/WebView photo-bracket cleanup", () => {
     expect(apply.mock.calls.map(([ev]) => ev)).toEqual([-2, 0]);
   });
 
+  it("restores neutral EV when a bracket was cancelled but its lens is still current", async () => {
+    vi.useFakeTimers();
+    const ctrl = new AbortController();
+    const apply = vi.fn(async (_ev: number) => true);
+    const capture = vi.fn(async () => new Blob(["frame"]));
+    const pending = runExposureBracket([-2, 0, 2], apply, capture, ctrl.signal, () => true);
+    await vi.advanceTimersByTimeAsync(100);
+    ctrl.abort();
+    await expect(pending).resolves.toEqual([]);
+    expect(apply.mock.calls.map(([ev]) => ev)).toEqual([-2, 0]);
+    expect(capture).not.toHaveBeenCalled();
+  });
   it("does not touch the replaced stream after cancellation", async () => {
     vi.useFakeTimers();
     const ctrl = new AbortController();

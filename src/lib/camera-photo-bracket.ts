@@ -33,7 +33,9 @@ export async function runExposureBracket<T>(
       if (frame !== null) shots.push(frame);
     }
   } finally {
-    if (attemptedExposure && !signal.aborted && isCurrent()) {
+    // Aborting a bracket on the SAME active lens still needs an exposure
+    // reset. Only a retired MediaStream must be left untouched.
+    if (attemptedExposure && isCurrent()) {
       // A failed reset should not hide the original capture error or cause
       // the frame-saving loop to hang on an already failed shooting request.
       try { await applyExposure(0); }
