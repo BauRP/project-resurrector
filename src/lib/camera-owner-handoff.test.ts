@@ -28,7 +28,8 @@ describe("Camera2 and WebView ownership during async fold and record transitions
       // The native bridge owns the sole bounded startup deadline (6 s).
       // Explicit owner handoff retains its separate 2.2-second UI deadline.
       const nativeBridge=readFileSync("src/lib/native-capture.ts","utf8");
-      expect(nativeBridge).toContain('status: () => guard(rawNativeCapture.status(), 6000, "status")');
+      expect(nativeBridge).toContain('status: () => guard(pendingCamera2Status(), 6000, "status")');
+      expect(nativeBridge).toContain("createSingleFlight(() => rawNativeCapture.status())");
       expect(source).toContain('bounded(nativeCapture.status(), 2200, "Camera2 mode handoff")');
       expect(source).toContain('if (nativeRecorderOwnsCamera(status.state))');
       expect(source).toContain('if (!mayFinishCameraOwnerSwitch(');

@@ -61,7 +61,7 @@ describe("QR pairing scanner must not evict the recording camera",()=>{
     const source=readFileSync("src/components/multicam/ConnectModal.tsx","utf8");
     const scanner=source.slice(source.indexOf("function Scanner("));
     const helper=readFileSync("src/lib/camera-preview-acquisition.ts","utf8");
-    expect(helper).toContain('bounded(nativeStatus(),2000,"Native Camera2 owner")');
+    expect(helper).toContain('bounded(nativeStatus(),6500,"Native Camera2 owner")');
     expect(scanner).toContain('if(now-lastScanAt<150 || document.visibilityState==="hidden"){');
     expect(scanner).toContain("lastScanAt=now;");
     expect(scanner).toContain("qrScanDimensions(v.videoWidth,v.videoHeight)");

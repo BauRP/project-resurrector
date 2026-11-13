@@ -18,8 +18,11 @@ describe("Astra: bound Camera2 Binder status traffic to a single native request"
     expect(await b).toBe("recording");
     expect(await c).toBe("recording");
     await Promise.resolve();
-    await query();
+    const fresh=query();
+    await Promise.resolve();
     expect(raw).toHaveBeenCalledTimes(2);
+    resolve("idle");
+    await expect(fresh).resolves.toBe("idle");
   });
   it("a timed-out caller does not start another native query until Android returns", async () => {
     vi.useFakeTimers();
@@ -33,8 +36,11 @@ describe("Astra: bound Camera2 Binder status traffic to a single native request"
     expect(raw).toHaveBeenCalledOnce();
     resolve("idle");
     expect(await later).toBe("idle");
-    await query();
+    const fresh=query();
+    await Promise.resolve();
     expect(raw).toHaveBeenCalledTimes(2);
+    resolve("idle");
+    await expect(fresh).resolves.toBe("idle");
   });
   it("a failed Android bridge releases the lease for the next Activity", async () => {
     const raw=vi.fn().mockRejectedValueOnce(Error("Activity destroyed")).mockResolvedValueOnce("idle");
