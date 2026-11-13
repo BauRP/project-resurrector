@@ -19,7 +19,7 @@ describe("long-session camera and editor memory safety", () => {
   it("keeps actual face tracking and audio monitoring with lifecycle safeguards", () => {
     const camera = readFileSync("src/components/multicam/CameraPro.tsx","utf8");
     expect(camera).toContain("const faces = await det.detect(v)");
-    expect(camera).toContain("if (!alive) return;");
+    expect(camera).toContain("if (!alive || document.hidden) return;");
     expect(camera).toContain("if (nextFrame !== null) window.clearTimeout(nextFrame)");
     expect(camera).toContain("if (t - last >= 40)");
     expect(camera).toContain("getFloatTimeDomainData(buf)");

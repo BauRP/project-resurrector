@@ -9,6 +9,6 @@ describe("AI tracking keeps real face focus while avoiding repeated OEM commands
   expect(s).toContain("if (poi && !focusBusy");
   expect(s).toContain('pointsOfInterest: [center]');
   expect(s).toContain('pointsOfInterest: [{ x: 0.5, y: 0.5 }]');
-  expect(s).toContain("if (!alive) return;");
+  expect(s).toContain("if (!alive || document.hidden) return;");
  });
 });
