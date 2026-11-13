@@ -1,6 +1,7 @@
 import { nativeCapture } from "@/lib/native-capture";
 import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
 import { waitForPhotoDelay } from "@/lib/camera-photo-delay";
+import { runExposureBracket } from "@/lib/camera-photo-bracket";
 import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 import { isRetryableCameraPreviewError, previewRetryDelay } from "@/lib/camera-availability-retry";
 import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
@@ -99,6 +100,9 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const activePhoto = useRef<AbortController | null>(null);
   const photoCountdown = useRef<AbortController | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
+  // The latest media owner, used to reject stale exposure commands after lens changes.
+  const latestPhotoStream = useRef<MediaStream | null>(stream);
+  latestPhotoStream.current = stream;
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
   const [previewRequested, setPreviewRequested] = useState(false);
   const previewFailures = useRef(0);
@@ -963,16 +967,19 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     const v = videoRef.current; if (!v || cameraState !== "live" || !v.videoWidth) { notify("Камера недоступна — снимок невозможен"); return; }
     const sh = s.shoot; const shots: Blob[] = []; let mode = "single";
     if (sh.bracket) {
-      mode = "bracket"; const r = capRange(trackCaps(stream), "exposureCompensation");
-      for (const ev of [-2, 0, 2]) {
-        if (photoAbort.signal.aborted || !cameraMounted.current) return;
-        if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) });
-        if (!(await waitForPhotoDelay(400, photoAbort.signal)) || !cameraMounted.current) return;
-        const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal);
-        if (b) shots.push(b);
-      }
-      if (r && !photoAbort.signal.aborted && cameraMounted.current)
-        await applyAdvanced(stream, { exposureCompensation: 0 });
+      mode = "bracket";
+      const r = capRange(trackCaps(stream), "exposureCompensation");
+      const bracket = await runExposureBracket(
+        [-2, 0, 2],
+        (ev) => r
+          ? applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) })
+          : Promise.resolve(),
+        () => grabFrames(v, previewFilter, 1, 0, photoAbort.signal),
+        photoAbort.signal,
+        () => cameraMounted.current && latestPhotoStream.current === stream,
+        Boolean(r),
+      );
+      shots.push(...bracket);
     } else if (sh.burst) {
       mode = "burst";
       for (let k = 0; k < 5; k++) {
