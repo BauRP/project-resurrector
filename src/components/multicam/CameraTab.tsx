@@ -420,7 +420,19 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const faceBox = useFaceTracking(videoRef, stream, s.eyeAF || s.aiEnabled, s.aiEnabled && s.focusModeAI === "hybrid_nearest_priority");
   const [countdown, setCountdown] = useState(0); const [flash, setFlash] = useState(0); const [photoMsg, setPhotoMsg] = useState("");
   const [lastPhoto, setLastPhoto] = useState<string | null>(null); const intervalRef = useRef<number | null>(null); const [intervalOn, setIntervalOn] = useState(false);
-  useEffect(() => () => { if (intervalRef.current) window.clearInterval(intervalRef.current); }, []);
+  useEffect(() => () => {
+    if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
+  }, []);
+  useEffect(() => {
+    // Interval callbacks capture the MediaStream of the old camera.
+    // On an external camera disconnect, fold remount or lens change, stop
+    // that schedule before it can keep reading the retired stream.
+    if (intervalRef.current !== null) {
+      window.clearInterval(intervalRef.current);
+      intervalRef.current = null;
+      setIntervalOn(false);
+    }
+  }, [stream]);
   useEffect(() => { const video = videoRef.current; if (!video) return; video.srcObject = stream; return () => { if (video.srcObject === stream) video.srcObject = null; }; }, [stream, cameraState]);
   // The WebView has no guaranteed background camera entitlement. Only react
   // to loss of actual video input; do not interpret CSS resize/folding as a camera error.
