@@ -10,7 +10,11 @@ describe("Settings JavaScript does not eagerly pull networking and WebRTC into t
     expect(settings).not.toContain('from "./useMesh"');
     expect(settings).not.toContain("mesh.diagnose()");
     expect(settings).toContain('lazy(() => import("./SettingsNetworkContent")');
-    expect(settings).toContain("{readyBody && <>");
+    expect(settings).not.toContain("{readyBody && <>");
+    expect(settings).toContain("SettingsNetworkPlaceholder");
+    expect(settings).not.toContain("readyUtilities");
+    expect(settings).not.toContain("readyAdvanced");
+    expect(settings).toContain("stableFrames: 3, maxFrameGapMs: 350");
     expect(settings).toContain("<SettingsNetworkContent />");
     expect(settings).toContain("Светлая");
     expect(settings).toContain("Тёмная");

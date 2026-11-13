@@ -1638,3 +1638,9 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   transform: none !important;
   opacity: .90;
 }
+
+/* Android 9 LDPlayer: Camera2 / diagnostics triggers must never overlap. */
+.settings-fold-workspace .settings-advanced-actions { display:grid; grid-template-columns:minmax(0,1fr); gap:.55rem; }
+.settings-fold-workspace .settings-tool-trigger { display:flex; align-items:center; width:100%; min-width:0; min-height:3.1rem; gap:.65rem; padding:.65rem .85rem; text-align:start; }
+.settings-fold-workspace .settings-tool-trigger > span { min-width:0; flex:1 1 auto; white-space:normal; overflow-wrap:anywhere; line-height:1.25; }
+.settings-fold-workspace .settings-tool-trigger > svg { flex:none; width:1.1rem; height:1.1rem; }
