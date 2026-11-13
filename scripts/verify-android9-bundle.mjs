@@ -20,8 +20,9 @@ if (legacyScript === -1 || firstModule === -1) {
   throw new Error("Android 9 startup polyfill missing or executed after the app module");
 }
 const legacyContent = await readFile(join(outputRoot, "legacy-globalthis.js"), "utf8");
-if (!legacyContent.includes('Object.defineProperty(window, "globalThis"')) {
-  throw new Error("Android 9 legacy globalThis asset missing from APK");
+if (!legacyContent.includes('Object.defineProperty(window, "globalThis"') ||
+    !legacyContent.includes('window.queueMicrotask = function')) {
+  throw new Error("Android 9 legacy globalThis/queueMicrotask asset missing from APK");
 }
 const violations = [];
 let scanned = 0;

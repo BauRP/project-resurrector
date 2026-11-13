@@ -11,15 +11,30 @@ describe("Android 9 WebView 69 application entry compatibility", () => {
     expect(entry).toContain('<script src="/legacy-globalthis.js"></script>');
     expect(entry.indexOf('<script src="/legacy-globalthis.js">')).toBeLessThan(entry.indexOf('<script type="module"'));
     const window: Record<string, unknown> = {};
-    runInNewContext(legacy, { window, Object });
+    runInNewContext(legacy, { window, Object, Promise, setTimeout });
     expect(window['globalThis']).toBe(window);
-    runInNewContext(legacy, { window, Object });
+    expect(typeof window['queueMicrotask']).toBe("function");
+    const shim = window['queueMicrotask'];
+    runInNewContext(legacy, { window, Object, Promise, setTimeout });
     expect(window['globalThis']).toBe(window);
+    expect(window['queueMicrotask']).toBe(shim);
+  });
+
+  it("schedules callbacks asynchronously on the old WebView fallback", async () => {
+    const window: Record<string, unknown> = {};
+    runInNewContext(legacy, { window, Object, Promise, setTimeout });
+    const queue = window['queueMicrotask'] as (fn: () => void) => void;
+    const received: string[] = [];
+    queue(() => { received.push("microtask"); });
+    expect(received).toEqual([]);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(received).toEqual(["microtask"]);
   });
 
   it("checks the emitted HTML and actual legacy asset before Android install", () => {
     expect(verifier).toContain("Android 9 startup polyfill missing");
     expect(verifier).toContain("legacyScript === -1 || firstModule === -1");
     expect(verifier).toContain('join(outputRoot, "legacy-globalthis.js")');
+    expect(verifier).toContain("window.queueMicrotask = function");
   });
 });
