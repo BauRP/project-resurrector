@@ -151,18 +151,31 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
     const Ctor = (window as unknown as { FaceDetector: FaceDetectorCtor }).FaceDetector;
     const det = new Ctor({ fastMode: true, maxDetectedFaces: 4 }); let alive = true; let last: "face" | "center" | null = null;
     let nextFrame: number | null = null;
+    let detectionInFlight = false;
     let lastFocusPoint: {x:number;y:number}|null = null;
     let lastFocusSubmitted = 0;
     let focusBusy = false;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
+    const scheduleNext = () => {
+      // Pause expensive video detection in a hidden Android WebView; resume
+      // when foregrounded without starting overlapping native GPU requests.
+      if (!alive || document.hidden || detectionInFlight || nextFrame !== null) return;
+      nextFrame = window.setTimeout(() => {
+        nextFrame = null;
+        void loop();
+      }, 120);
+    };
     const loop = async () => {
+      if (!alive || document.hidden || detectionInFlight) return;
+      detectionInFlight = true;
+      try {
       const v = videoRef.current;
       if (v && v.videoWidth) {
         try {
           const faces = await det.detect(v);
           // OEM face detection may resolve after the camera has unmounted.
           // Do not update old UI or try to focus an obsolete camera owner.
-          if (!alive) return;
+          if (!alive || document.hidden) return;
           const big = faces.map((f) => f.boundingBox).sort((a, b) => b.width * b.height - a.width * a.height)[0];
           if (big) {
             const b = { x: big.x / v.videoWidth, y: big.y / v.videoHeight, w: big.width / v.videoWidth, h: big.height / v.videoHeight }; setBox(b);
@@ -176,7 +189,7 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
               lastFocusPoint = center;
               lastFocusSubmitted = performance.now();
               void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [center] })
-                .finally(() => { focusBusy = false; });
+                .then(() => { focusBusy = false; }, () => { focusBusy = false; });
             }
             last = "face";
           } else {
@@ -188,17 +201,33 @@ export function useFaceTracking(videoRef: RefObject<HTMLVideoElement | null>, st
               if (!focusBusy) {
                 focusBusy = true;
                 void applyAdvanced(stream, { focusMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] })
-                  .finally(() => { focusBusy = false; });
+                  .then(() => { focusBusy = false; }, () => { focusBusy = false; });
               }
               last = "center";
             }
           }
         } catch { /* frame not ready */ }
       }
-      if (alive) nextFrame = window.setTimeout(() => void loop(), 120);
+      } finally {
+        detectionInFlight = false;
+        scheduleNext();
+      }
     };
+    const onVisibility = () => {
+      if (document.hidden) {
+        if (nextFrame !== null) window.clearTimeout(nextFrame);
+        nextFrame = null;
+      } else if (!detectionInFlight) void loop();
+      // If the prior detector is still running, its finally will resume
+      // the cadence without overlapping another expensive detection.
+    };
+    document.addEventListener("visibilitychange", onVisibility);
     void loop();
-    return () => { alive = false; if (nextFrame !== null) window.clearTimeout(nextFrame); };
+    return () => {
+      alive = false;
+      document.removeEventListener("visibilitychange", onVisibility);
+      if (nextFrame !== null) window.clearTimeout(nextFrame);
+    };
   }, [enabled, hybrid, stream, videoRef]);
   return box;
 }
@@ -211,17 +240,26 @@ export function FalseColorOverlay({ videoRef }: { videoRef: RefObject<HTMLVideoE
     let raf = 0; let last = 0; const lut = new Uint8ClampedArray(256 * 3);
     for (let i = 0; i < 256; i++) { const l = i / 255; const c = IRE.find(([lim]) => l < lim)?.[1] ?? [255, 0, 0]; lut.set(c, i * 3); }
     const tick = (t: number) => {
-      raf = requestAnimationFrame(tick); if (t - last < 66) return; last = t;
-      const v = videoRef.current; const c = canvas.current; if (!v || !c || !v.videoWidth) return;
+      raf = requestAnimationFrame(tick);
+      // Some software WebViews still deliver RAF while hidden: do not read
+      // a camera GPU surface that is not visible to the user.
+      if (document.hidden || t - last < 66) return;
+      last = t;
+      const v = videoRef.current; const c = canvas.current;
+      if (!v || !c || !v.videoWidth || v.readyState < 2) return;
       const w = 240; const h = Math.round((w * v.videoHeight) / v.videoWidth);
       // Assigning canvas dimensions reallocates its GPU buffer. A 15 fps
       // false-color overlay must reuse the buffer when camera size is stable.
       if (c.width !== w) c.width = w;
       if (c.height !== h) c.height = h;
-      const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
-      ctx.drawImage(v, 0, 0, w, h); const img = ctx.getImageData(0, 0, w, h); const d = img.data;
-      for (let i = 0; i < d.length; i += 4) { const y = Math.round(0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!); d[i] = lut[y * 3]!; d[i + 1] = lut[y * 3 + 1]!; d[i + 2] = lut[y * 3 + 2]!; }
-      ctx.putImageData(img, 0, 0);
+      // Android may release an old TextureView between the dimension check
+      // and drawImage. Avoid repeated uncaught exceptions on each frame.
+      try {
+        const ctx = c.getContext("2d", { willReadFrequently: true }); if (!ctx) return;
+        ctx.drawImage(v, 0, 0, w, h); const img = ctx.getImageData(0, 0, w, h); const d = img.data;
+        for (let i = 0; i < d.length; i += 4) { const y = Math.round(0.2126 * d[i]! + 0.7152 * d[i + 1]! + 0.0722 * d[i + 2]!); d[i] = lut[y * 3]!; d[i + 1] = lut[y * 3 + 1]!; d[i + 2] = lut[y * 3 + 2]!; }
+        ctx.putImageData(img, 0, 0);
+      } catch { /* Retired camera surface: retry on the next live frame. */ }
     };
     raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
   }, [videoRef]);
