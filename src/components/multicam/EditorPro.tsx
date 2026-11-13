@@ -7,6 +7,7 @@ import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
+import { waitForEditorQuietInput } from "@/lib/editor-quiet-input";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
@@ -305,6 +306,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // out-of-range positions and does not restore an active recorder.
   const [t, setT] = useState(() => restoreViewState().playhead ?? 0);
   const [playing, setPlaying] = useState(false);
+  const playbackActive = useRef(playing);
+  playbackActive.current = playing;
   const [selected, setSelected] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [subState, setSubState] = useState<"off" | "working" | "on">("off");
@@ -491,6 +494,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           // A full second 24fps encoder must not initialize during Editor
           // first paint. Wait for responsive frames without removing proxies.
           if (!(await waitForEditorResponsiveIdle(abort.signal))) return;
+          // Avoid launching a second real-time decoder/encoder while the
+          // user is playing a clip or tapping controls in Android 9 WebView.
+          // A proxy remains available automatically once editing settles.
+          if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) return;
           if (!live || abort.signal.aborted) return;
           const blob = await editorMediaWorkQueue.run(
             () => generateProxy(m.id, m.url, abort.signal), abort.signal);
