@@ -33,6 +33,22 @@ describe("Editor waveform decode is deferred until responsive WebView frames", (
     expect(complete).toHaveBeenCalledWith(true);
   });
 
+  it("loads media after steady frames if Android falsely reports hidden", async () => {
+    vi.useFakeTimers();
+    vi.spyOn(document, "hidden", "get").mockReturnValue(true);
+    const frames: FrameRequestCallback[] = [];
+    vi.stubGlobal("requestAnimationFrame", (frame: FrameRequestCallback) => {
+      frames.push(frame); return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const pending = waitForEditorResponsiveIdle();
+    await vi.advanceTimersByTimeAsync(550);
+    for (const t of [40, 80, 120, 160]) {
+      frames.shift()?.(t);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await expect(pending).resolves.toBe(true);
+  });
   it("cancels the pending decoder when user leaves Editor", async () => {
     vi.useFakeTimers();
     const controller = new AbortController();

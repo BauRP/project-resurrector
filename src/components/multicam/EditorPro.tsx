@@ -471,6 +471,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         try {
           let frames = thumbCache.get(m.id);
           if (!frames) {
+            // Android 9 WebView 124 can stall when thumbnail decoder setup
+            // collides with first Editor interactions or the preview renderer.
+            if (!(await waitForEditorResponsiveIdle(abort.signal))) return;
+            if (!live || abort.signal.aborted) return;
             frames = await editorMediaWorkQueue.run(
               () => makeThumbs(m.url, m.duration, 10, abort.signal), abort.signal);
             if (frames?.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
@@ -484,6 +488,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         if (!live || abort.signal.aborted) return;
         if (m.kind !== "video" || !neededIds.has(m.id) || loadedProxyIds.current.has(m.id)) continue;
         try {
+          // A full second 24fps encoder must not initialize during Editor
+          // first paint. Wait for responsive frames without removing proxies.
+          if (!(await waitForEditorResponsiveIdle(abort.signal))) return;
+          if (!live || abort.signal.aborted) return;
           const blob = await editorMediaWorkQueue.run(
             () => generateProxy(m.id, m.url, abort.signal), abort.signal);
           if (blob && live && !abort.signal.aborted) {

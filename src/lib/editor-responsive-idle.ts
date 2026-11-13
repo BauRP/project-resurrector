@@ -28,16 +28,16 @@ export function waitForEditorResponsiveIdle(signal?: AbortSignal): Promise<boole
     };
     const onAbort = () => finish(false);
     const onVisibility = () => {
-      if (!document.hidden) startFrames();
+      // LDPlayer can falsely report hidden despite real foreground RAFs.
+      startFrames();
     };
     const startFrames = () => {
       if (done || signal?.aborted) { finish(false); return; }
-      if (document.hidden) return; // Do not decode offscreen media.
+      // True background pages never provide a stable RAF sequence.
       cancelFrames?.();
       cancelFrames = scheduleAfterResponsivePaint(() => {
-        if (document.hidden) return; // Wait for visibility before decoding.
         finish(true);
-      }, { stableFrames: 4, maxFrameGapMs: 125, backgroundFallbackMs: 1800 });
+      }, { stableFrames: 4, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     };
     signal?.addEventListener("abort", onAbort, { once: true });
     document.addEventListener("visibilitychange", onVisibility);
