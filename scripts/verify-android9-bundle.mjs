@@ -7,6 +7,15 @@ import { join, relative, resolve } from "node:path";
 import ts from "typescript";
 
 const outputRoot = resolve(".output/public");
+// Chrome 69 does not expose the ES2020 globalThis binding. Bundled dependencies
+// reference it before React can mount, so verify the inline boot polyfill
+// exists and precedes the first production module script in the real APK HTML.
+const html = await readFile(join(outputRoot, "index.html"), "utf8");
+const legacyScript = html.indexOf('Object.defineProperty(window, "globalThis"');
+const firstModule = html.search(/<script[^>]+type=["']module["']/i);
+if (legacyScript === -1 || firstModule === -1 || legacyScript > firstModule) {
+  throw new Error("Android 9 startup polyfill missing or executed after the app module");
+}
 const violations = [];
 let scanned = 0;
 

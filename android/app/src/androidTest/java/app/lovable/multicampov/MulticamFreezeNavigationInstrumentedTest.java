@@ -194,6 +194,10 @@ public class MulticamFreezeNavigationInstrumentedTest {
             }
             WebView view = web.get();
             assertNotNull("Capacitor WebView is missing", view);
+            // Android 9/WebView 69 crashes before React when globalThis is
+            // missing. Explicitly assert the boot polyfill's runtime result.
+            assertEquals("Legacy WebView globalThis boot compatibility", "true",
+                eval(running, view, "typeof globalThis !== 'undefined'"));
             eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(3)')");
             assertEquals("true", eval(running, view,
                 "(function(){document.documentElement.dataset.multicamFreezeIsolation=" +
