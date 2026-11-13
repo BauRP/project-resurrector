@@ -12,9 +12,9 @@ describe("Android 9 WebView 69 application entry compatibility", () => {
     expect(entry.indexOf('<script src="/legacy-globalthis.js">')).toBeLessThan(entry.indexOf('<script type="module"'));
     const window: Record<string, unknown> = {};
     runInNewContext(legacy, { window, Object });
-    expect(window.globalThis).toBe(window);
+    expect(window['globalThis']).toBe(window);
     runInNewContext(legacy, { window, Object });
-    expect(window.globalThis).toBe(window);
+    expect(window['globalThis']).toBe(window);
   });
 
   it("checks the emitted HTML and actual legacy asset before Android install", () => {
