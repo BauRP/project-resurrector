@@ -1007,9 +1007,14 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
       if (!photoAbort.signal.aborted && cameraMounted.current)
         notify("Кадр не сохранён: " + (error instanceof Error ? error.message : String(error)));
     } finally {
-      if (activePhoto.current === photoAbort) activePhoto.current = null;
-      photoBusy.current = false;
-      if (cameraMounted.current) setPhotoProcessing(false);
+      // An older (aborted) photo or IndexedDB write may finish after a
+      // replacement photo has started. Only the current request may release
+      // the busy flag or reset the new request's progress indicator.
+      if (activePhoto.current === photoAbort) {
+        activePhoto.current = null;
+        photoBusy.current = false;
+        if (cameraMounted.current) setPhotoProcessing(false);
+      }
     }
   };
   const capturePhoto = async () => {
