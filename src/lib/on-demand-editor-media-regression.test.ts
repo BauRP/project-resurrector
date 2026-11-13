@@ -8,8 +8,21 @@ describe("on-demand editor media work", () => {
     expect(code).toContain('items.filter(i => i.kind === "video").map(i => i.mediaId)');
     expect(code).toContain('m.kind !== "video" || !neededIds.has(m.id)');
     expect(code).toContain('!neededIds.has(m.id) || loadedProxyIds.current.has(m.id)');
-    expect(code).toContain('}, [media, timelineVideoKey, cacheRevision])');
+    expect(code).toContain('}, [mediaSourceKey, timelineVideoKey, cacheRevision])');
     expect(code).toContain("setCacheRevision(n => n + 1)");
+  });
+  it("keeps background decoders alive across waveform-only state updates",()=>{
+    expect(code).toContain('const mediaSourceKey = useMemo(');
+    expect(code).toContain('media.map(m => [m.id, m.url, m.kind, m.duration])');
+    expect(code).toContain('}, [mediaSourceKey, timelineWaveformKey])');
+    expect(code).toContain('}, [mediaSourceKey, timelineVideoKey, cacheRevision])');
+    expect(code).not.toContain('}, [media, timelineWaveformKey])');
+    expect(code).not.toContain('}, [media, timelineVideoKey, cacheRevision])');
+  });
+  it("does not impose duplicate quiet periods before cooperative media tasks",()=>{
+    const optional = code.slice(code.indexOf('const clear = () =>'),code.indexOf('window.removeEventListener("multicam-preview-cache-cleared", clear);'));
+    expect(optional).not.toContain('waitForEditorQuietInput(abort.signal, () => playbackActive.current)');
+    expect(optional.match(/runEditorQuietMediaWork\(abort.signal, \(\) => playbackActive.current/g)?.length).toBe(2);
   });
   it("retains original playback and full proxy functions for timeline media",()=>{
     expect(code).toContain('() => makeThumbs(m.url, m.duration, 10, attemptSignal)');

@@ -16,7 +16,7 @@ describe("Android 9 old WebView paints before expensive Editor media work",()=>{
  });
  it("does not start thumbnail or waveform decoders while a video is playing",()=>{
    const thumb = editor.slice(editor.indexOf("frames = thumbCache.get(m.id)"), editor.indexOf("setThumbs(cur =>"));
-   expect(thumb).toContain("waitForEditorQuietInput(abort.signal, () => playbackActive.current)");
+   expect(thumb).toContain("runEditorQuietMediaWork(abort.signal, () => playbackActive.current");
    const waveform = editor.slice(editor.indexOf("const responsive = await waitForEditorResponsiveIdle"), editor.indexOf("analyseWaveformForTimeline(original"));
    expect(waveform).toContain("waitForEditorQuietInput(abort.signal, () => playbackActive.current)");
  });

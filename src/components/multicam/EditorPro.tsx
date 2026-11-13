@@ -315,6 +315,14 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const [loading, setLoading] = useState(true);
   const previewRef = useRef<HTMLDivElement>(null);
 
+  // Media waveforms are updated with setMedia(), but their updates must not
+  // restart ongoing thumbnail/proxy decoders or remount their codec surfaces.
+  // Only a changed original clip URL, kind, duration or library membership
+  // invalidates the optional media pipelines. Original video quality is intact.
+  const mediaSourceKey = useMemo(() => JSON.stringify(
+    media.map(m => [m.id, m.url, m.kind, m.duration])
+  ), [media]);
+
   // Only clips placed on the timeline need thumbnails and 480p scrubbing
   // copies. Library-only files remain untouched until actually edited.
   const timelineVideoKey = useMemo(() => JSON.stringify(
@@ -454,7 +462,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       }
     })().finally(() => { db?.close(); });
     return () => { live = false; abort.abort(); };
-  }, [media, timelineWaveformKey]);
+  }, [mediaSourceKey, timelineWaveformKey]);
   useEffect(() => {
     const abort = new AbortController();
     let live = true;
@@ -484,9 +492,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
             // Android 9 WebView 124 can stall when thumbnail decoder setup
             // collides with first Editor interactions or the preview renderer.
             if (!(await waitForEditorResponsiveIdle(abort.signal))) return;
-            // Thumbnail seeks share the WebView decoder with live playback.
-            // Avoid opening this secondary decoder during active interaction.
-            if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) return;
+            // The cooperative worker itself waits for quiet playback.
+            // Do not delay another 1.5 seconds here or create a duplicate gate.
             if (!live || abort.signal.aborted) return;
             frames = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
               attemptSignal => editorMediaWorkQueue.run(
@@ -505,10 +512,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           // A full second 24fps encoder must not initialize during Editor
           // first paint. Wait for responsive frames without removing proxies.
           if (!(await waitForEditorResponsiveIdle(abort.signal))) return;
-          // Avoid launching a second real-time decoder/encoder while the
-          // user is playing a clip or tapping controls in Android 9 WebView.
-          // A proxy remains available automatically once editing settles.
-          if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) return;
+          // The cooperative worker defers this second real-time encoder
+          // until input is quiet. Do not double the idle delay on every clip.
           if (!live || abort.signal.aborted) return;
           const blob = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
             attemptSignal => editorMediaWorkQueue.run(
@@ -528,7 +533,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       abort.abort();
       window.removeEventListener("multicam-preview-cache-cleared", clear);
     };
-  }, [media, timelineVideoKey, cacheRevision]);
+  }, [mediaSourceKey, timelineVideoKey, cacheRevision]);
   useEffect(() => () => proxyUrls.current.forEach((url) => URL.revokeObjectURL(url)), []);
   useEffect(() => {
     const now = new Set(media.map((m) => m.url));
