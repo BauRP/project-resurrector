@@ -957,10 +957,14 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
       if (photoAbort.signal.aborted) return;
       await savePhoto(b, { mode, camera: s.activeCamera, facing: s.facing });
     }
+    // IndexedDB may finish committing AFTER the user closed this camera.
+    // Never show a stale flash/toast or create an orphaned object URL.
+    if (photoAbort.signal.aborted || !cameraMounted.current) return;
     setFlash((f) => f + 1); setLastPhoto((old) => { if (old) URL.revokeObjectURL(old); return URL.createObjectURL(shots[shots.length - 1]!); });
     notify(shots.length > 1 ? `Сохранено ${shots.length} кадров из видеопотока` : "Кадр видеопотока сохранён");
     } catch (error) {
-      notify("Кадр не сохранён: " + (error instanceof Error ? error.message : String(error)));
+      if (!photoAbort.signal.aborted && cameraMounted.current)
+        notify("Кадр не сохранён: " + (error instanceof Error ? error.message : String(error)));
     } finally {
       if (activePhoto.current === photoAbort) activePhoto.current = null;
       photoBusy.current = false;

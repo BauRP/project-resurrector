@@ -37,5 +37,7 @@ describe("Astra: photo countdown never runs after Camera exits", () => {
     expect(camera).toContain("waitForPhotoDelay(120, photoAbort.signal)");
     expect(camera).toContain("if (cameraMounted.current) void shootOnce()");
     expect(camera).toContain("if (intervalRef.current) window.clearInterval(intervalRef.current)");
+    expect(camera).toContain("if (photoAbort.signal.aborted || !cameraMounted.current) return;");
+    expect(camera).toContain("if (!photoAbort.signal.aborted && cameraMounted.current)");
   });
 });
