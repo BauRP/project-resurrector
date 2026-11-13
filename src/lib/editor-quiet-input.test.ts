@@ -40,7 +40,7 @@ describe("Android 9 editor avoids background video encoders during user interact
  it("keeps original proxy and deferred video decoder functions",()=>{
   const editor=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
   expect(editor).toContain("waitForEditorQuietInput(abort.signal, () => playbackActive.current)");
-  expect(editor).toContain("() => generateProxy(m.id, m.url, abort.signal)");
+  expect(editor).toContain("() => generateProxy(m.id, m.url, attemptSignal)");
   expect(editor).toContain("source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? \"\"}");
  });
 });

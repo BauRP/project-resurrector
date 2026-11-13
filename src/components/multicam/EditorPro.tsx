@@ -8,6 +8,7 @@ import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { waitForEditorQuietInput } from "@/lib/editor-quiet-input";
+import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
@@ -487,8 +488,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
             // Avoid opening this secondary decoder during active interaction.
             if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) return;
             if (!live || abort.signal.aborted) return;
-            frames = await editorMediaWorkQueue.run(
-              () => makeThumbs(m.url, m.duration, 10, abort.signal), abort.signal);
+            frames = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
+              attemptSignal => editorMediaWorkQueue.run(
+                () => makeThumbs(m.url, m.duration, 10, attemptSignal), attemptSignal));
             if (frames?.length && !abort.signal.aborted) thumbCache.set(m.id, frames);
           }
           if (!live || abort.signal.aborted) return;
@@ -508,8 +510,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           // A proxy remains available automatically once editing settles.
           if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) return;
           if (!live || abort.signal.aborted) return;
-          const blob = await editorMediaWorkQueue.run(
-            () => generateProxy(m.id, m.url, abort.signal), abort.signal);
+          const blob = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
+            attemptSignal => editorMediaWorkQueue.run(
+              () => generateProxy(m.id, m.url, attemptSignal), attemptSignal));
           if (blob && live && !abort.signal.aborted) {
             const url = URL.createObjectURL(blob);
             proxyUrls.current.add(url);

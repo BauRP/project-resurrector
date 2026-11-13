@@ -8,9 +8,10 @@ describe("Android 9 old WebView paints before expensive Editor media work",()=>{
    const end=editor.indexOf("return () => {",start);
    const body=editor.slice(start,end);
    expect(body.match(/waitForEditorResponsiveIdle\(abort.signal\)/g)?.length).toBe(2);
-   expect(body).toContain("() => makeThumbs(m.url, m.duration, 10, abort.signal)");
-   expect(body).toContain("() => generateProxy(m.id, m.url, abort.signal)");
+   expect(body).toContain("() => makeThumbs(m.url, m.duration, 10, attemptSignal)");
+   expect(body).toContain("() => generateProxy(m.id, m.url, attemptSignal)");
    expect(body).toContain("editorMediaWorkQueue.run(");
+   expect(body).toContain("runEditorQuietMediaWork(abort.signal, () => playbackActive.current");
    expect(body).toContain("if (!live || abort.signal.aborted) return");
  });
  it("does not start thumbnail or waveform decoders while a video is playing",()=>{
