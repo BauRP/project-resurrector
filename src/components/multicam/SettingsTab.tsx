@@ -191,7 +191,7 @@ export function SettingsTab() {
 /** Stable network shape: the network stack loads after paint without shifting
  * Theme, Language, Storage, Render Engine or Camera2 action buttons. */
 function SettingsNetworkPlaceholder({tr,sessionCode,online}:{
- tr:(key:string)=>string; sessionCode:string; online:boolean;
+ tr:ReturnType<typeof useT>["t"]; sessionCode:string; online:boolean;
 }) {
  return <>
   <div className="grid grid-cols-3 gap-px overflow-hidden rounded-lg bg-border">
