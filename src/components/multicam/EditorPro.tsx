@@ -9,6 +9,7 @@ import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { waitForEditorQuietInput } from "@/lib/editor-quiet-input";
 import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
+import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
@@ -773,14 +774,14 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, [active, validTr, items, t]);
 
   useEffect(() => {
+    // Audio belongs to the original clip, not the silent scrubbing proxy.
+    // Avoid re-seeking and starting a new decoder playback promise on every
+    // 30 Hz timeline render. Only seek after an actual jump or sustained drift.
     for (const i of audible) {
       const el = audioRefs.current[i.id]; if (!el) continue;
       const inRange = t >= i.start && t < i.start + len(i);
-      if (!playing || !inRange || i.reverse) { if (!el.paused) el.pause(); continue; }
       const target = i.in + (t - i.start) * i.speed;
-      if (el.playbackRate !== i.speed) el.playbackRate = i.speed;
-      if (el.paused) { el.currentTime = target; void el.play().catch(() => undefined); }
-      else if (Math.abs(el.currentTime - target) > 0.3) el.currentTime = target;
+      syncEditorAudioElement(el, target, i.speed, playing && inRange && !i.reverse);
     }
   }, [t, playing, audible]);
 
