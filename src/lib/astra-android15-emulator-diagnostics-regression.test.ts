@@ -29,6 +29,8 @@ describe("Astra Android 15 freeze smoke must distinguish renderer stalls from te
     expect(workflow).toContain("gpu: swangle\n            resolution: full");
     expect(workflow).toContain("cancel-in-progress: true");
     expect(workflow).toContain("Retry infrastructure-disconnected emulator once");
+    expect(workflow).toContain("api: 28");
+    expect(workflow).toContain("gpu: swangle");
     expect(workflow).toContain("mode: isolated");
     expect(workflow).toContain("emulator_build: '15917651'");
     expect(workflow).toContain("emulator-build: ${{ matrix.emulator_build || '' }}");

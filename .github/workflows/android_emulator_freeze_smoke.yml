@@ -27,6 +27,13 @@ jobs:
         # failure is tied to its old Chromium compositor. Keep API35 as a
         # strict regression check; never conceal a failure with new API.
         include:
+          # LDPlayer report: API28 (Android 9), WebView 124 and responsive
+          # Android MAIN while Editor renderer stops answering. Test the
+          # matching Android API before any unrelated Android 15 regressions.
+          - api: 28
+            gpu: swangle
+            resolution: compact
+            mode: full
           - api: 35
             gpu: swiftshader
             resolution: full
