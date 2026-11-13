@@ -92,6 +92,8 @@ jobs:
         run: |
           bun run build:android
           bunx cap sync android
+      - name: Check Android 9 WebView 69 JavaScript syntax
+        run: node scripts/verify-android9-bundle.mjs
       # Catch Android instrumentation Java/manifest errors before a costly
       # emulator boot. This compile requires no device and does not run tests.
       - name: Compile Android instrumentation tests before starting emulator

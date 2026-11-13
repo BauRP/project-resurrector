@@ -45,6 +45,9 @@ jobs:
       - name: Build Capacitor SPA
         run: bun run build:android
 
+      - name: Check Android 9 WebView 69 JavaScript syntax
+        run: node scripts/verify-android9-bundle.mjs
+
       - name: Verify web output before Capacitor sync
         shell: bash
         run: |
