@@ -389,11 +389,27 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     if (!video.videoWidth || !video.videoHeight) return;
     const point = focusPointInVideoPreview(video,event.clientX,event.clientY);
     const ok = await cameraController.apply(stream, { focusMode: "continuous", pointsOfInterest: [point] });
-    if (!ok) setFocusError("Камера не применила фокус по точке");
+    // The old lens may finish answering after the user switches cameras.
+    if (!ok && cameraMounted.current && latestPhotoStream.current === stream)
+      setFocusError("Камера не применила фокус по точке");
   };
   // Pro tools: AI engine, metering, face tracking, RAW capability, photo capture.
   const [aiEngine, setAiEngine] = useState<"native" | "web" | null>(null);
-  useEffect(() => { if (!previewRequested) return; if (!s.aiEnabled) { setAiEngine(null); if (isNative()) void hybridAI(false, s.focusModeAI); return; } void hybridAI(true, s.focusModeAI).then(setAiEngine); }, [previewRequested, s.aiEnabled, s.focusModeAI]);
+  useEffect(() => {
+    if (!previewRequested) return;
+    let active = true;
+    if (!s.aiEnabled) {
+      setAiEngine(null);
+      if (isNative()) void hybridAI(false, s.focusModeAI);
+      return () => { active = false; };
+    }
+    // Android may reply after the lens is replaced or this camera screen is
+    // unmounted. Only the still-current AI selection can update UI state.
+    void hybridAI(true, s.focusModeAI)
+      .then(engine => { if (active) setAiEngine(engine); })
+      .catch(() => { if (active) setAiEngine("web"); });
+    return () => { active = false; };
+  }, [previewRequested, s.aiEnabled, s.focusModeAI]);
   const [rawNative, setRawNative] = useState(false);
   const [rawCameras, setRawCameras] = useState<NativeCameraProfile[]>([]);
   const cameraMounted = useRef(true);
@@ -401,24 +417,35 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const [photoProcessing, setPhotoProcessing] = useState(false);
   useEffect(() => {
     cameraMounted.current = true;
+    let active = true;
     if (isNative() && previewRequested) void MultiCamNative.getCapabilities().then(n => {
-      if (!cameraMounted.current) return;
+      // A prior capabilities request can complete after previewRequested
+      // flips off/on. The shared mounted ref alone cannot reject that old
+      // reply after a new effect has already set it back to true.
+      if (!active || !cameraMounted.current) return;
       const candidates = n.cameras.filter(c => c.raw);
       setRawCameras(candidates);
       setRawNative(candidates.length > 0);
-    }).catch(() => { if (cameraMounted.current) setRawNative(false); });
-    return () => { cameraMounted.current = false; };
+    }).catch(() => { if (active && cameraMounted.current) setRawNative(false); });
+    return () => { active = false; cameraMounted.current = false; };
   }, [previewRequested]);
   const [meterOk, setMeterOk] = useState(true);
   useEffect(() => {
     if (!previewRequested || !stream) return;
+    let active = true;
     const caps = trackCaps(stream); const poi = "pointsOfInterest" in caps;
     void nativeMetering(s.meterMode).then((native) => {
+      // Never submit an advanced constraint to a retired MediaStream just
+      // because the old native meter request finished late.
+      if (!active || latestPhotoStream.current !== stream) return;
       if (native) { setMeterOk(true); return; }
       if (!poi) { setMeterOk(false); return; }
       setMeterOk(true);
       void applyAdvanced(stream, s.meterMode === "matrix" ? { exposureMode: "continuous", pointsOfInterest: [] } : { exposureMode: "continuous", pointsOfInterest: [{ x: 0.5, y: 0.5 }] });
+    }).catch(() => {
+      if (active && latestPhotoStream.current === stream) setMeterOk(false);
     });
+    return () => { active = false; };
   }, [previewRequested, s.meterMode, stream]);
   useEffect(() => { if (s.eyeAF && !s.aiEnabled) void applyAdvanced(stream, { focusMode: "continuous" }); }, [s.eyeAF, s.aiEnabled, stream]);
   const faceBox = useFaceTracking(videoRef, stream, s.eyeAF || s.aiEnabled, s.aiEnabled && s.focusModeAI === "hybrid_nearest_priority");
