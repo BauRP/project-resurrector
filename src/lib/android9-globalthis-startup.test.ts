@@ -31,6 +31,22 @@ describe("Android 9 WebView 69 application entry compatibility", () => {
     expect(received).toEqual(["microtask"]);
   });
 
+  it("supports Object.fromEntries for editor module initialization on WebView 69", () => {
+    const legacyObject = Object.assign(function LegacyObject() {}, {
+      defineProperty: Object.defineProperty,
+      fromEntries: undefined as typeof Object.fromEntries | undefined,
+    });
+    const window: Record<string, unknown> = {};
+    runInNewContext(legacy, { window, Object: legacyObject, Promise, setTimeout });
+    expect(legacyObject.fromEntries).toBeTypeOf("function");
+    const convert = legacyObject.fromEntries!;
+    const converted = convert([["a", 7], ["b", 8], ["__proto__", "safe"]]);
+    expect(converted["a"]).toBe(7);
+    expect(converted["b"]).toBe(8);
+    expect(Object.prototype.hasOwnProperty.call(converted, "__proto__")).toBe(true);
+    expect(converted["__proto__"]).toBe("safe");
+  });
+
   it("checks the emitted HTML and actual legacy asset before Android install", () => {
     expect(verifier).toContain("Android 9 startup polyfill missing");
     expect(verifier).toContain("legacyScript === -1 || firstModule === -1");

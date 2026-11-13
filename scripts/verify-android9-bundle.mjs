@@ -21,8 +21,9 @@ if (legacyScript === -1 || firstModule === -1) {
 }
 const legacyContent = await readFile(join(outputRoot, "legacy-globalthis.js"), "utf8");
 if (!legacyContent.includes('Object.defineProperty(window, "globalThis"') ||
-    !legacyContent.includes('window.queueMicrotask = function')) {
-  throw new Error("Android 9 legacy globalThis/queueMicrotask asset missing from APK");
+    !legacyContent.includes('window.queueMicrotask = function') ||
+    !legacyContent.includes('Object.fromEntries = function')) {
+  throw new Error("Android 9 legacy globalThis/queueMicrotask/fromEntries asset missing from APK");
 }
 const violations = [];
 let scanned = 0;

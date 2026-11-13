@@ -19,3 +19,20 @@ if (typeof window.queueMicrotask !== "function") {
     });
   };
 }
+
+// WebView 69 also predates Object.fromEntries (Chrome 73). EditorPro builds
+// its color and transition maps at module evaluation, before its first paint.
+if (typeof Object.fromEntries !== "function") {
+  Object.fromEntries = function (entries) {
+    var result = {};
+    for (var pair of entries) {
+      Object.defineProperty(result, pair[0], {
+        value: pair[1],
+        writable: true,
+        configurable: true,
+        enumerable: true
+      });
+    }
+    return result;
+  };
+}
