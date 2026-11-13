@@ -10,7 +10,7 @@ describe("Android 9 editor avoids background video encoders during user interact
   let playing=true;
   const controller=new AbortController();
   const result=vi.fn();
-  const pending=waitForEditorQuietInput(controller.signal,()=>playing,1000).then(result);
+  const pending=waitForEditorQuietInput(controller.signal,()=>playing,1000); void pending.then(result);
   await vi.advanceTimersByTimeAsync(5000);
   expect(result).not.toHaveBeenCalled();
   playing=false;
@@ -21,7 +21,7 @@ describe("Android 9 editor avoids background video encoders during user interact
   vi.useFakeTimers();
   const ctrl=new AbortController();
   const result=vi.fn();
-  const pending=waitForEditorQuietInput(ctrl.signal,()=>false,1000).then(result);
+  const pending=waitForEditorQuietInput(ctrl.signal,()=>false,1000); void pending.then(result);
   await vi.advanceTimersByTimeAsync(950);
   window.dispatchEvent(new Event("pointerdown"));
   await vi.advanceTimersByTimeAsync(750);
