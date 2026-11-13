@@ -10,18 +10,8 @@ const htmlContent = `<!DOCTYPE html>
   </head>
   <body class="bg-[#EFF3F8] dark:bg-[#12161F] text-slate-900 dark:text-slate-100 select-none overflow-hidden">
     <div id="root"></div>
-    <!-- Chrome/WebView 69 on Android 9 predates the globalThis global.
-         This classic inline script MUST execute before any module bundle.
-         It adds the standard alias only; no app functionality is disabled. -->
-    <script>
-      if (typeof window.globalThis === "undefined") {
-        Object.defineProperty(window, "globalThis", {
-          value: window,
-          configurable: true,
-          writable: true
-        });
-      }
-    </script>
+    <!-- External classic script: Vite must not turn the polyfill into a module. -->
+    <script src="/legacy-globalthis.js"></script>
     <script type="module" src="/src/capacitor-main.tsx"></script>
   </body>
 </html>`;
