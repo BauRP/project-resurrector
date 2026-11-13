@@ -29,24 +29,29 @@ describe("CameraManager availability callbacks must not stall Android navigation
   });
 });
 
-describe("Settings staged native-first paint", () => {
-  const settings = readFileSync("src/components/multicam/SettingsTab.tsx","utf8");
-  it("shows theme and language before expensive controls without disabling them", () => {
-    expect(settings).toContain('useState(() => !Capacitor.isNativePlatform())');
-    expect(settings.indexOf('title={tc.theme}')).toBeLessThan(settings.indexOf('{readyBody && <>'));
-    expect(settings.indexOf('title={t.language}')).toBeLessThan(settings.indexOf('{readyBody && <>'));
-    for(const tool of ['title={t.network}', 'title={t.storage}', 'title={t.engine}', '<CameraDiagnostics />', '<NativeRecordingPanel previewIntervalMs={850} />'])
-      expect(settings).toContain(tool);
-  });
-  it("never mounts heavyweight Settings during a foreground renderer stall, retaining a bounded hidden-WebView fallback", () => {
-    expect(settings).toContain("scheduleSettingsVisualStage(() => {");
-    expect(settings).toContain("setReadyBody(true)");
-    expect(settings).toContain("stableFrames: 3");
-    expect(settings).toContain("backgroundFallbackMs: 1800");
-    expect(settings).toContain("}, 350)");
-    const scheduler = readFileSync("src/lib/after-paint-task.ts", "utf8");
-    expect(scheduler).toContain('if (document.hidden) armBackground();');
-    expect(scheduler).toContain("fallback = setTimeout(finish, backgroundFallbackMs)");
-    expect(scheduler).toContain("document.removeEventListener(\"visibilitychange\", onVisibility)");
-  });
+describe("Settings Android 9 first-paint without staggered controls", () => {
+ const settings = readFileSync("src/components/multicam/SettingsTab.tsx","utf8");
+ it("mounts all lightweight groups immediately while heavy Camera2 tools stay click-only",()=>{
+   expect(settings).toContain('useState(() => !Capacitor.isNativePlatform())');
+   const theme=settings.indexOf('title={tc.theme}');
+   const language=settings.indexOf('title={t.language}');
+   const camera=settings.indexOf('<section className="settings-advanced-tools"');
+   expect(theme).toBeGreaterThan(0);
+   expect(language).toBeGreaterThan(theme);
+   expect(camera).toBeGreaterThan(language);
+   expect(settings).not.toContain('{readyBody && <>');
+   expect(settings).not.toContain('{readyAdvanced && <section');
+   for(const tool of ['title={t.network}','title={t.storage}','title={t.engine}','<CameraDiagnostics />','<NativeRecordingPanel previewIntervalMs={850} />'])
+     expect(settings).toContain(tool);
+ });
+ it("keeps network observers lazy and leaves the fixed-size diagnostics placeholder visible",()=>{
+   expect(settings).toContain('scheduleSettingsVisualStage(() => {');
+   expect(settings).toContain('setReadyNetwork(true)');
+   expect(settings).toContain('stableFrames: 3');
+   expect(settings).toContain('backgroundFallbackMs: 1800');
+   expect(settings).toContain('SettingsNetworkPlaceholder');
+   const scheduler=readFileSync("src/lib/after-paint-task.ts","utf8");
+   expect(scheduler).toContain("requestAnimationFrame");
+   expect(scheduler).toContain('document.removeEventListener("visibilitychange", onVisibility)');
+ });
 });
