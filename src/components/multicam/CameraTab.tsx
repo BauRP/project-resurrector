@@ -1,5 +1,6 @@
 import { nativeCapture } from "@/lib/native-capture";
 import { scheduleAfterPaintTask } from "@/lib/after-paint-task";
+import { waitForPhotoDelay } from "@/lib/camera-photo-delay";
 import { isStaleCapture, interruptedOnCameraExit, STALE_CAPTURE_MESSAGE } from "@/lib/recording-state-recovery";
 import { isRetryableCameraPreviewError, previewRetryDelay } from "@/lib/camera-availability-retry";
 import { acquireWebViewPreviewWithNativeGuard, NativeCameraBusyError } from "@/lib/camera-preview-acquisition";
@@ -40,7 +41,6 @@ import { REMOTE_DIRECTOR_LOST_REASON } from "@/lib/remote-record-guard";
 import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { FOLD_EVENT, appendFoldTransition, normalizeFoldTransition, type FoldTransitionEvidence } from "@/lib/fold-recording-evidence";
 import { startDualRecording, independentStreamsReady, isDualEncoderStillFinishing, type DualRecordingSession } from "@/lib/dual-live-recording";
-const wait = (ms: number) => new Promise((r) => window.setTimeout(r, ms));
 
 /** Schedule every intended output frame even on 60/90/120 Hz displays.
  * A phase accumulator avoids the 25->20 fps slowdown caused by resetting
@@ -97,6 +97,7 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const stopReasonRef = useRef<string>("");
   const chunksRef = useRef<Blob[]>([]);
   const activePhoto = useRef<AbortController | null>(null);
+  const photoCountdown = useRef<AbortController | null>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraState, setCameraState] = useState<"loading" | "live" | "unavailable">("unavailable");
   const [previewRequested, setPreviewRequested] = useState(false);
@@ -876,7 +877,13 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
   const notify = (m: string) => { setPhotoMsg(m); window.setTimeout(() => setPhotoMsg(""), 2500); };
   // Closing/switching the camera cancels expensive photo pixel loops rather
   // than letting a stale 40-frame exposure pin the old WebView memory.
-  useEffect(() => () => { activePhoto.current?.abort(); }, [stream]);
+  // A user can exit Camera while the delayed shutter is counting down.
+  // Cancel both delayed work and any photo pixel processing on navigation,
+  // unmount, or lens change. Never wake a disposed Camera view.
+  useEffect(() => () => {
+    activePhoto.current?.abort();
+    photoCountdown.current?.abort();
+  }, [stream]);
   const shootOnce = async () => {
     if (photoBusy.current) return;
     const photoAbort = new AbortController();
@@ -923,9 +930,24 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     const sh = s.shoot; const shots: Blob[] = []; let mode = "single";
     if (sh.bracket) {
       mode = "bracket"; const r = capRange(trackCaps(stream), "exposureCompensation");
-      for (const ev of [-2, 0, 2]) { if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) }); await wait(400); const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); }
-      if (r) await applyAdvanced(stream, { exposureCompensation: 0 });
-    } else if (sh.burst) { mode = "burst"; for (let k = 0; k < 5; k++) { const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); await wait(120); } }
+      for (const ev of [-2, 0, 2]) {
+        if (photoAbort.signal.aborted || !cameraMounted.current) return;
+        if (r) await applyAdvanced(stream, { exposureCompensation: Math.min(r[1], Math.max(r[0], ev)) });
+        if (!(await waitForPhotoDelay(400, photoAbort.signal)) || !cameraMounted.current) return;
+        const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal);
+        if (b) shots.push(b);
+      }
+      if (r && !photoAbort.signal.aborted && cameraMounted.current)
+        await applyAdvanced(stream, { exposureCompensation: 0 });
+    } else if (sh.burst) {
+      mode = "burst";
+      for (let k = 0; k < 5; k++) {
+        if (photoAbort.signal.aborted || !cameraMounted.current) return;
+        const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal);
+        if (b) shots.push(b);
+        if (k < 4 && !(await waitForPhotoDelay(120, photoAbort.signal))) return;
+      }
+    }
     else if (sh.night) { mode = s.aiEnabled ? "night-ml" : "night"; const b = await grabFrames(v, previewFilter, s.aiEnabled ? 12 : 8, s.aiEnabled ? 900 : 600, photoAbort.signal); if (b) shots.push(b); }
     else if (sh.longExp) { mode = "long-exposure"; const b = await grabFrames(v, previewFilter, 40, 2000, photoAbort.signal); if (b) shots.push(b); }
     else { const b = await grabFrames(v, previewFilter, 1, 0, photoAbort.signal); if (b) shots.push(b); }
@@ -946,11 +968,34 @@ export function CameraTab({ onOpenNativeMode }: { onOpenNativeMode?: (() => void
     }
   };
   const capturePhoto = async () => {
+    if (!cameraMounted.current) return;
     if (intervalRef.current) { window.clearInterval(intervalRef.current); intervalRef.current = null; setIntervalOn(false); notify("Интервальная съёмка остановлена"); return; }
-    if (countdown) return;
-    if (s.shoot.timer) { for (let k = s.shoot.timer; k > 0; k--) { setCountdown(k); await wait(1000); } setCountdown(0); }
-    await shootOnce();
-    if (s.shoot.interval) { intervalRef.current = window.setInterval(() => void shootOnce(), s.shoot.interval * 1000); setIntervalOn(true); }
+    // Prevent duplicate countdowns before React disables the shutter.
+    if (countdown || photoCountdown.current) return;
+    const request = new AbortController();
+    photoCountdown.current = request;
+    try {
+      if (s.shoot.timer) {
+        for (let k = s.shoot.timer; k > 0; k--) {
+          if (request.signal.aborted || !cameraMounted.current) return;
+          setCountdown(k);
+          if (!(await waitForPhotoDelay(1000, request.signal))) return;
+        }
+      }
+      if (request.signal.aborted || !cameraMounted.current) return;
+      setCountdown(0);
+      await shootOnce();
+      if (request.signal.aborted || !cameraMounted.current) return;
+      if (s.shoot.interval) {
+        intervalRef.current = window.setInterval(() => {
+          if (cameraMounted.current) void shootOnce();
+        }, s.shoot.interval * 1000);
+        setIntervalOn(true);
+      }
+    } finally {
+      if (photoCountdown.current === request) photoCountdown.current = null;
+      if (cameraMounted.current) setCountdown(0);
+    }
   };
   const meterIcon = s.meterMode === "matrix" ? <Grid3x3 className="size-3.5" /> : s.meterMode === "center" ? <Circle className="size-3.5" /> : <Crosshair className="size-3.5" />;
   const meterLabel = s.meterMode === "matrix" ? "Матричный" : s.meterMode === "center" ? "Центральный" : "Точечный";
