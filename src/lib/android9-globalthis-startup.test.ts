@@ -19,7 +19,7 @@ describe("Android 9 WebView 69 application entry compatibility", () => {
 
   it("checks the emitted HTML and actual legacy asset before Android install", () => {
     expect(verifier).toContain("Android 9 startup polyfill missing");
-    expect(verifier).toContain("legacyScript > firstModule");
+    expect(verifier).toContain("legacyScript === -1 || firstModule === -1");
     expect(verifier).toContain('join(outputRoot, "legacy-globalthis.js")');
   });
 });

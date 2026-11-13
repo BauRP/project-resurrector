@@ -10,9 +10,13 @@ const outputRoot = resolve(".output/public");
 // Vite transforms inline scripts into modules. The fallback MUST remain a
 // parser-blocking classic asset, ahead of all production module execution.
 const html = await readFile(join(outputRoot, "index.html"), "utf8");
-const legacyScript = html.search(/<script[^>]*src=["'][^"']*legacy-globalthis\.js["'][^>]*><\/script>/i);
-const firstModule = html.search(/<script[^>]+type=["']module["']/i);
-if (legacyScript === -1 || firstModule === -1 || legacyScript > firstModule) {
+const legacyScript = html.search(/<script\b[^>]*\bsrc=["'][^"']*legacy-globalthis\.js["'][^>]*>/i);
+const firstModule = html.search(/<script\b[^>]*\btype=["']module["'][^>]*>/i);
+// Vite may hoist deferred module tags into <head> before the classic script
+// in <body>. HTML guarantees execution of parser-blocking classic scripts
+// before deferred modules regardless of their textual order.
+if (legacyScript === -1 || firstModule === -1) {
+  console.error("Android generated HTML:", html);
   throw new Error("Android 9 startup polyfill missing or executed after the app module");
 }
 const legacyContent = await readFile(join(outputRoot, "legacy-globalthis.js"), "utf8");
