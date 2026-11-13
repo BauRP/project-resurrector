@@ -431,6 +431,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           // four stable frames before EACH CPU-heavy decode attempt.
           const responsive = await waitForEditorResponsiveIdle(abort.signal);
           if (!responsive || !live) { waveformAttempted.current.delete(m.id); break; }
+          // Waveform decoding competes with live video playback and seeking.
+          // Keep this optional job available, but run it after user activity.
+          if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) {
+            waveformAttempted.current.delete(m.id);
+            break;
+          }
           db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
           const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
           if (!original || !live) { waveformAttempted.current.delete(m.id); continue; }
@@ -477,6 +483,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
             // Android 9 WebView 124 can stall when thumbnail decoder setup
             // collides with first Editor interactions or the preview renderer.
             if (!(await waitForEditorResponsiveIdle(abort.signal))) return;
+            // Thumbnail seeks share the WebView decoder with live playback.
+            // Avoid opening this secondary decoder during active interaction.
+            if (!(await waitForEditorQuietInput(abort.signal, () => playbackActive.current))) return;
             if (!live || abort.signal.aborted) return;
             frames = await editorMediaWorkQueue.run(
               () => makeThumbs(m.url, m.duration, 10, abort.signal), abort.signal);

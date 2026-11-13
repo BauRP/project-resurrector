@@ -13,6 +13,12 @@ describe("Android 9 old WebView paints before expensive Editor media work",()=>{
    expect(body).toContain("editorMediaWorkQueue.run(");
    expect(body).toContain("if (!live || abort.signal.aborted) return");
  });
+ it("does not start thumbnail or waveform decoders while a video is playing",()=>{
+   const thumb = editor.slice(editor.indexOf("frames = thumbCache.get(m.id)"), editor.indexOf("setThumbs(cur =>"));
+   expect(thumb).toContain("waitForEditorQuietInput(abort.signal, () => playbackActive.current)");
+   const waveform = editor.slice(editor.indexOf("const responsive = await waitForEditorResponsiveIdle"), editor.indexOf("analyseWaveformForTimeline(original"));
+   expect(waveform).toContain("waitForEditorQuietInput(abort.signal, () => playbackActive.current)");
+ });
  it("supports false-hidden Android and abort-cancellable idle stages",()=>{
    expect(scheduler).toContain("maxFrameGapMs: 350");
    expect(scheduler).toContain("visibleOnly: true");
