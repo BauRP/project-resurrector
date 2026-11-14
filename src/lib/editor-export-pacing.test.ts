@@ -40,6 +40,6 @@ describe("professional 30fps output pacing on 30-120Hz Android WebViews",()=>{
    }
    expect(seq.indexOf("if(position>=part.timelineEnd")).toBeLessThan(seq.indexOf("if(!shouldPaintExportFrame"));
    expect(simple.indexOf("if(at>=plan.segment.out")).toBeLessThan(simple.indexOf("if(!shouldPaintExportFrame"));
-   expect(seq).toContain("lastPaintMs=Number.NEGATIVE_INFINITY;\n          await loadPart(partIndex)");
+   expect(seq).toContain("lastPaintMs=Number.NEGATIVE_INFINITY;\n        await loadPart(partIndex)");
  });
 });
