@@ -16,6 +16,24 @@ export interface SequentialRenderPlan {
   overlays: SimpleOverlay[];
   duration: number;
 }
+
+/** Older callers can pass Blobs; streaming callers supply the next Blob only
+ * when its turn begins. The latter avoids keeping eight original video
+ * files and eight object URLs resident during Android WebView export. */
+export type SequentialSources = readonly Blob[] | ((partIndex:number)=>Promise<Blob>);
+export async function loadSequentialSource(
+  sources:SequentialSources, index:number, partCount:number, signal:AbortSignal,
+):Promise<Blob> {
+  if(signal.aborted)throw Error("Экспорт отменён");
+  if(!Number.isInteger(index)||index<0||index>=partCount||
+     (typeof sources!=="function"&&sources.length!==partCount))
+    throw Error("Неверная последовательность клипов");
+  const blob=typeof sources==="function"?await sources(index):sources[index];
+  if(signal.aborted)throw Error("Экспорт отменён");
+  if(!(blob instanceof Blob)||blob.size<1024||!blob.type.startsWith("video/"))
+    throw Error("В монтажном проекте найден пустой или неподдерживаемый клип.");
+  return blob;
+}
 export function planSequentialVideoRender(
   items: readonly (SimpleVideoSegment & {track:number})[],
   overlays: readonly SimpleOverlay[],
@@ -58,11 +76,11 @@ export function planSequentialVideoRender(
  * This does NOT establish sample-accurate audio/video splice on any device.
  */
 export async function renderSequentialVideoWebm(
-  plan:SequentialRenderPlan, sources:readonly Blob[], config:EditorExportConfig,
+  plan:SequentialRenderPlan, sources:SequentialSources, config:EditorExportConfig,
   signal:AbortSignal, report:(percent:number)=>void,
 ):Promise<{blob:Blob;filename:string}> {
   const output=webmOutputSize(config);
-  if(plan.parts.length!==sources.length || signal.aborted)
+  if((typeof sources!=="function"&&plan.parts.length!==sources.length)||signal.aborted)
     throw Error("Неверная последовательность клипов или экспорт отменён.");
   const mime="video/webm;codecs=vp8,opus";
   if(typeof MediaRecorder==="undefined"||!MediaRecorder.isTypeSupported(mime)||
@@ -76,7 +94,7 @@ export async function renderSequentialVideoWebm(
   const ctx=canvas.getContext("2d",{alpha:false});
   if(!ctx||typeof canvas.captureStream!=="function")
     throw Error("Кодирование из Canvas недоступно.");
-  const urls:string[]=[];
+  let currentUrl:string|null=null;
   let audio:AudioContext|null=null, stream:MediaStream|null=null, recorder:MediaRecorder|null=null;
   let frame=0, watchdog:ReturnType<typeof setTimeout>|null=null;
   let stopped=false,completed=false,partIndex=0,switching=false;
@@ -102,14 +120,23 @@ export async function renderSequentialVideoWebm(
   const loadPart=async(index:number)=>{
     const current=plan.parts[index];
     if(!current)throw Error("Позиция склейки недоступна.");
-    const nextUrl=urls[index];
-    if(!nextUrl)throw Error("Исходный видеофайл отсутствует");
+    // Read only the required original from IndexedDB. The previous Blob URL
+    // can be revoked as soon as its video element changes source.
+    const blob=await loadSequentialSource(sources,index,plan.parts.length,signal);
+    if(stopped||signal.aborted)throw Error("Экспорт отменён");
+    const nextUrl=URL.createObjectURL(blob);
+    const previousUrl=currentUrl;
+    currentUrl=nextUrl;
     video.pause();
-    video.src=nextUrl;video.load();
-    await bounded(new Promise<void>((resolve,reject)=>{
+    // Subscribe before load(): old Chromium can emit cached metadata as soon
+    // as the new object URL is assigned to the video element.
+    const metadata=new Promise<void>((resolve,reject)=>{
       video.onloadedmetadata=()=>resolve();
       video.onerror=()=>reject(Error("Невозможно декодировать клип "+(index+1)));
-    }),6500,"Истекло время открытия клипа.");
+    });
+    video.src=nextUrl;video.load();
+    if(previousUrl)URL.revokeObjectURL(previousUrl);
+    await bounded(metadata,6500,"Истекло время открытия клипа.");
     if(video.videoWidth<=0||video.videoHeight<=0 ||
        !Number.isFinite(video.duration) ||
        video.duration+.12<current.segment.out)
@@ -174,11 +201,6 @@ export async function renderSequentialVideoWebm(
   try {
     if(!document.body)throw Error("Рабочее окно редактора недоступно.");
     document.body.appendChild(video);
-    for(const blob of sources){
-      if(!blob||blob.size<1024||!blob.type.startsWith("video/"))
-        throw Error("В монтажном проекте найден пустой или неподдерживаемый клип.");
-      urls.push(URL.createObjectURL(blob));
-    }
     await loadPart(0);
     audio=new AudioContext();
     const audioSource=audio.createMediaElementSource(video);
@@ -227,7 +249,7 @@ export async function renderSequentialVideoWebm(
     stream?.getTracks().forEach(t=>t.stop());
     video.onended=null;video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
     video.removeAttribute("src");video.load();video.remove();
-    urls.forEach(url=>URL.revokeObjectURL(url));
+    if(currentUrl)URL.revokeObjectURL(currentUrl);
     if(audio)void audio.close().catch(()=>undefined);
   }
 }

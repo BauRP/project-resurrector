@@ -961,9 +961,14 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           config.resolution!=="720p"||config.fps!=="30")
           throw Error("Для склейки выберите VP8 / Opus, 720p и 30 FPS.");
         const plan=planSequentialVideoRender(renderItems,overlays,transitions.length,muted,hidden);
-        const files=await Promise.all(plan.parts.map(part=>readPersistedClip(part.segment.mediaId)));
         if(signal.aborted)throw Error("Экспорт отменён");
-        return renderSequentialVideoWebm(plan,files.map(file=>file.blob),config,signal,progress);
+        return renderSequentialVideoWebm(plan,async index=>{
+          const part=plan.parts[index];
+          if(!part||signal.aborted)throw Error("Экспорт отменён");
+          const file=await readPersistedClip(part.segment.mediaId);
+          if(signal.aborted)throw Error("Экспорт отменён");
+          return file.blob;
+        },config,signal,progress);
       }
       if (!choice.allowed) {
         const plan=planSimpleVideoRender(renderItems,overlays,transitions.length,
