@@ -24,7 +24,7 @@ export interface SequentialRenderPlan {
 /** Older callers still pass Blob[] or a Blob-producing loader. Newer
  * IndexedDB readers may also return the real stored recording duration.
  * Fetch only the CURRENT original and never load all clips simultaneously. */
-export interface SequentialSourceInfo { blob:Blob; duration?:number }
+export interface SequentialSourceInfo { blob:Blob; duration?:number | undefined }
 export type SequentialSource=Blob|SequentialSourceInfo;
 export type SequentialSources=readonly Blob[]|((partIndex:number)=>Promise<SequentialSource>);
 export async function loadSequentialSourceInfo(
