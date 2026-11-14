@@ -471,4 +471,89 @@ public class MulticamFreezeNavigationInstrumentedTest {
             finishAndWait(activity);
         }
     }
+    /**
+     * Reproduces the user's missing case: a real 15-second encoded clip on the
+     * Editor timeline while tapping controls and playing it. The earlier ten
+     * tests used no video, so they could not validate that freeze at all.
+     * This fixture exists only in Android instrumentation, never in the APK.
+     */
+    @Test
+    public void zRealFifteenSecondEditorVideoDoesNotFreezeWebView() throws Exception {
+        Activity activity = null;
+        try {
+            Intent launch = new Intent(InstrumentationRegistry.getInstrumentation().getTargetContext(),
+                MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = InstrumentationRegistry.getInstrumentation().startActivitySync(launch);
+            assertNotNull(activity);
+            Activity running = activity;
+            AtomicReference<WebView> web = new AtomicReference<>();
+            for (int attempt = 0; attempt < 60 && web.get() == null; attempt++) {
+                InstrumentationRegistry.getInstrumentation().runOnMainSync(() ->
+                    web.set(findWebView(running.getWindow().getDecorView())));
+                if (web.get() == null) Thread.sleep(100);
+            }
+            WebView view = web.get();
+            assertNotNull("Capacitor WebView is missing", view);
+            eventually(running, view, "!!document.querySelector('.bottom-nav button:nth-child(2)')");
+            java.io.ByteArrayOutputStream buffer = new java.io.ByteArrayOutputStream();
+            try (java.io.InputStream source = InstrumentationRegistry.getInstrumentation()
+                    .getContext().getAssets().open("editor-15s-smoke.js")) {
+                byte[] bytes = new byte[4096];
+                int n;
+                while ((n = source.read(bytes)) != -1) buffer.write(bytes, 0, n);
+            }
+            String startScript = new String(buffer.toByteArray(), java.nio.charset.StandardCharsets.UTF_8);
+            assertEquals("Synthetic encoded video must start", "true", eval(running, view, startScript));
+            long encodeDeadline = android.os.SystemClock.uptimeMillis() + 45000L;
+            String state = "";
+            while (android.os.SystemClock.uptimeMillis() < encodeDeadline) {
+                state = eval(running, view,
+                    "window.__multicam15sSmoke && window.__multicam15sSmoke.status");
+                if ("\"ready\"".equals(state) || state.contains("unsupported:") ||
+                        state.contains("error:")) break;
+                Thread.sleep(500);
+            }
+            Log.i("MultiCamFreezeTest", "15-second encoded clip fixture status: " + state);
+            // A WebView without the browser encoder cannot generate the fixture.
+            // Report the exact limitation rather than pretending it tested video.
+            org.junit.Assume.assumeFalse("WebView cannot create a 15-second fixture: " + state,
+                state.contains("unsupported:"));
+            assertEquals("Real 15-second test video was not saved", "\"ready\"", state);
+            click(running, view, ".bottom-nav button:nth-child(2)");
+            eventually(running, view, "!!document.querySelector('.editor-fold-workspace')");
+            long editorDeadline = android.os.SystemClock.uptimeMillis() + 30000L;
+            boolean loaded = false;
+            while (android.os.SystemClock.uptimeMillis() < editorDeadline) {
+                String result = eval(running, view,
+                    "(function(){var v=document.querySelector('video[aria-label=\"Видео дорожки 1\"]');" +
+                    "return !!v && !!v.currentSrc})()");
+                if ("true".equals(result)) { loaded = true; break; }
+                Thread.sleep(400);
+            }
+            assertTrue("Editor did not load the saved 15-second video", loaded);
+            click(running, view, "button[aria-label='Играть']");
+            int samples = 0;
+            for (int i = 0; i < 8; i++) {
+                Thread.sleep(850);
+                assertEquals("Editor JS event loop stalled while playing 15-second video",
+                    "true", eval(running, view, "1+1===2"));
+                assertEquals("Video layer disappeared during editor playback", "true",
+                    eval(running, view,
+                        "!!document.querySelector('video[aria-label=\"Видео дорожки 1\"]')"));
+                if (i == 1 || i == 3 || i == 5) {
+                    click(running, view, "button[role=tab][aria-selected=false]");
+                }
+                samples++;
+                Log.i("MultiCamFreezeTest", "15s real video editor responsive sample=" + samples);
+            }
+            // Navigation while the video decoder and optional media work are
+            // alive is the reported real-world freeze path.
+            click(running, view, ".bottom-nav button:nth-child(3)");
+            eventually(running, view, "!!document.querySelector('.settings-fold-workspace')");
+            assertEquals("UI lost JS responsiveness after leaving video Editor",
+                "true", eval(running, view, "1+1===2"));
+        } finally {
+            finishAndWait(activity);
+        }
+    }
 }
