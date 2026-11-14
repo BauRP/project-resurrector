@@ -7,6 +7,7 @@ import type { EditorExportConfig } from "./editor-render-bridge";
 import { webmOutputSize, type SimpleOverlay, type SimpleVideoSegment } from "./editor-webm-render";
 import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
 import { isEditorDecodedFrameReady } from "./editor-export-decoded-frame";
+import { awaitEditorExportStep } from "./editor-export-deadline";
 
 export interface SequentialPart {
   segment: SimpleVideoSegment;
@@ -100,33 +101,34 @@ export async function renderSequentialVideoWebm(
   let audio:AudioContext|null=null, stream:MediaStream|null=null, recorder:MediaRecorder|null=null;
   let frame=0, watchdog:ReturnType<typeof setTimeout>|null=null;
   let stopped=false,completed=false,partIndex=0,switching=false;
+  const pendingWork=new AbortController();
   let lastPaintMs=Number.NEGATIVE_INFINITY;
   const progressOnce=makeExportProgressReporter(report);
   let rejectFinish:((reason:Error)=>void)|null=null;
   const stop=(reason:string)=>{
     if(stopped)return;
     stopped=true;
+    pendingWork.abort();
     rejectFinish?.(Error(reason));
     try { video.pause();if(recorder?.state!=="inactive")recorder?.stop(); }
     catch {/* cleanup in finally */}
   };
   const abort=()=>stop("Экспорт отменён или приложение закрыто.");
   const hidden=()=>{if(document.hidden)abort();};
-  const bounded = async (task:Promise<unknown>,ms:number,message:string)=>{
-    let timeout:ReturnType<typeof setTimeout>|null=null;
-    try {
-      await Promise.race([task,new Promise((_resolve,reject)=>{
-        timeout=setTimeout(()=>reject(Error(message)),ms);
-      })]);
-      if(stopped||signal.aborted)throw Error("Экспорт отменён");
-    } finally {if(timeout!==null)clearTimeout(timeout);}
+  const bounded=async<T>(task:Promise<T>,ms:number,message:string):Promise<T>=>{
+    const value=await awaitEditorExportStep(task,ms,pendingWork.signal,message);
+    if(stopped||signal.aborted)throw Error("Экспорт отменён");
+    return value;
   };
   const loadPart=async(index:number)=>{
     const current=plan.parts[index];
     if(!current)throw Error("Позиция склейки недоступна.");
     // Read only the required original from IndexedDB. The previous Blob URL
     // can be revoked as soon as its video element changes source.
-    const blob=await loadSequentialSource(sources,index,plan.parts.length,signal);
+    // An IndexedDB clip read can hang after an Android Activity change.
+    // Abort the WAIT even when the underlying storage promise cannot cancel.
+    const blob=await bounded(loadSequentialSource(sources,index,plan.parts.length,
+      pendingWork.signal),13500,"Исходный клип слишком долго загружается.");
     if(stopped||signal.aborted)throw Error("Экспорт отменён");
     const nextUrl=URL.createObjectURL(blob);
     const previousUrl=currentUrl;
@@ -263,6 +265,7 @@ export async function renderSequentialVideoWebm(
     return {blob,filename:`multicam-joined-${Date.now()}.webm`};
   }finally{
     stopped=true;
+    pendingWork.abort();
     if(watchdog!==null)clearTimeout(watchdog);
     cancelAnimationFrame(frame);
     signal.removeEventListener("abort",abort);

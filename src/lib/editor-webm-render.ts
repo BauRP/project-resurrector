@@ -1,6 +1,7 @@
 import type { EditorExportConfig } from "./editor-render-bridge";
 import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
 import { isEditorDecodedFrameReady } from "./editor-export-decoded-frame";
+import { awaitEditorExportStep } from "./editor-export-deadline";
 /** Offline WebM video render of ONE source clip using the local Canvas/MediaRecorder
  * encoder and a real WebAudio track. Not a fake timer and not a full NLE.
  * Avoids silent loss of multi-layer video/audio, transitions and unsupported FX.
@@ -71,11 +72,6 @@ const LOOK_FILTER:Record<string,string>={
   "Яркий":"saturate(1.5) contrast(1.05)",
   "LOG → Rec709":"contrast(1.35) saturate(1.3)",
 };
-const guarded=async(p:Promise<unknown>,millis:number,reason:string):Promise<void>=>{
-  let timer:ReturnType<typeof setTimeout>|undefined;
-  try {await Promise.race([p,new Promise((_ok,reject)=>{timer=setTimeout(()=>reject(Error(reason)),millis);})]);}
-  finally {if(timer!==undefined)clearTimeout(timer);}
-};
 export async function renderSimpleVideoWebm(
   plan:SimpleRenderPlan, source:Blob, config:EditorExportConfig,
   signal:AbortSignal, progress:(n:number)=>void,
@@ -94,10 +90,14 @@ export async function renderSimpleVideoWebm(
   let audio:AudioContext|null=null, recorder:MediaRecorder|null=null, stream:MediaStream|null=null;
   let raf=0, watchdog:ReturnType<typeof setTimeout>|undefined;
   let halted=false,ended=false;
+  const pendingWork=new AbortController();
+  const guarded=<T>(task:Promise<T>,millis:number,reason:string)=>
+    awaitEditorExportStep(task,millis,pendingWork.signal,reason);
   let failRender:((error:Error)=>void)|null=null;
   const terminate=(reason:string)=>{
     if(halted)return;
     halted=true;
+    pendingWork.abort();
     failRender?.(Error(reason));
     try{video.pause();if(recorder?.state!=="inactive")recorder?.stop();}
     catch{/* resources released in finally */}
@@ -225,6 +225,7 @@ export async function renderSimpleVideoWebm(
     return {blob:result,filename:`multicam-render-${Date.now()}.webm`};
   }finally{
     halted=true;
+    pendingWork.abort();
     if(watchdog!==undefined)clearTimeout(watchdog);
     cancelAnimationFrame(raf);signal.removeEventListener("abort",abort);
     document.removeEventListener("visibilitychange",onHidden);
