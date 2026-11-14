@@ -31,6 +31,20 @@ describe("long-form Editor waveform viewport",()=>{
     expect(Math.max(...columns.map(p=>p.height))).toBe(96);
     expect(peaks.length).toBe(144000);
   });
+  it("retains exact maxima when a long waveform is viewed in narrow windows",()=>{
+    const peaks=Array.from({length:144000},(_,index)=>index===71000?0.97:
+      index===100000?1:((index*37)%80)/100);
+    // Wide two-hour view: each column covers hundreds of peaks. Regression
+    // protection for the cached maximum pyramid and reverse source ranges.
+    const forward=visibleWaveformColumns(peaks,7200,0,7200,false,0,360,0.05,0,360,0);
+    const reverse=visibleWaveformColumns(peaks,7200,0,7200,true,0,360,0.05,0,360,0);
+    expect(Math.max(...forward.map(p=>p.height))).toBe(96);
+    expect(Math.max(...reverse.map(p=>p.height))).toBe(96);
+    expect(forward.length).toBeLessThanOrEqual(512);
+    expect(reverse.length).toBeLessThanOrEqual(512);
+    const expected=Math.max(...peaks.slice(70700,71200));
+    expect(expected).toBeGreaterThanOrEqual(.97);
+  });
   it("handles offscreen ranges and corrupted input",()=>{
     expect(visibleWaveformColumns([1],10,0,10,false,0,100,10,1000,320,104)).toEqual([]);
     expect(visibleWaveformColumns([1],10,0,10,false,0,Infinity,10,0,320,104)).toEqual([]);
