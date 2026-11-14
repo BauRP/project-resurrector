@@ -5,6 +5,7 @@
  */
 import type { EditorExportConfig } from "./editor-render-bridge";
 import { webmOutputSize, type SimpleOverlay, type SimpleVideoSegment } from "./editor-webm-render";
+import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
 
 export interface SequentialPart {
   segment: SimpleVideoSegment;
@@ -98,6 +99,8 @@ export async function renderSequentialVideoWebm(
   let audio:AudioContext|null=null, stream:MediaStream|null=null, recorder:MediaRecorder|null=null;
   let frame=0, watchdog:ReturnType<typeof setTimeout>|null=null;
   let stopped=false,completed=false,partIndex=0,switching=false;
+  let lastPaintMs=Number.NEGATIVE_INFINITY;
+  const progressOnce=makeExportProgressReporter(report);
   let rejectFinish:((reason:Error)=>void)|null=null;
   const stop=(reason:string)=>{
     if(stopped)return;
@@ -150,10 +153,11 @@ export async function renderSequentialVideoWebm(
     }
     video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
   };
-  const draw=()=>{
+  const draw=(nowMs:number)=>{
     if(stopped||completed||switching)return;
     const part=plan.parts[partIndex]!;
     const position=video.currentTime-part.segment.in;
+    // Switching and finalization are checked before render throttling.
     if(position>=part.timelineEnd-part.timelineStart-.025){
       if(partIndex===plan.parts.length-1){
         completed=true;
@@ -166,6 +170,7 @@ export async function renderSequentialVideoWebm(
           video.pause();
           if(recorder?.state==="recording")recorder.pause();
           partIndex++;
+          lastPaintMs=Number.NEGATIVE_INFINITY;
           await loadPart(partIndex);
           if(stopped)return;
           if(recorder?.state==="paused")recorder.resume();
@@ -176,6 +181,10 @@ export async function renderSequentialVideoWebm(
       })();
       return;
     }
+    if(!shouldPaintExportFrame(nowMs,lastPaintMs)){
+      frame=requestAnimationFrame(draw);return;
+    }
+    lastPaintMs=nowMs;
     const w=output.width,h=output.height;
     ctx.fillStyle="#000000";ctx.fillRect(0,0,w,h);
     const scale=Math.min(w/video.videoWidth,h/video.videoHeight);
@@ -191,7 +200,7 @@ export async function renderSequentialVideoWebm(
       ctx.fillStyle=/^#[a-fA-F0-9]{6}$/.test(overlay.color)?overlay.color:"#ffffff";
       ctx.fillText(overlay.text.slice(0,160),x,y);ctx.restore();
     }
-    report(Math.max(0,Math.min(95,Math.floor(timelineTime/plan.duration*95))));
+    progressOnce(Math.max(0,Math.min(95,Math.floor(timelineTime/plan.duration*95))));
     frame=requestAnimationFrame(draw);
   };
   signal.addEventListener("abort",abort,{once:true});
@@ -236,7 +245,7 @@ export async function renderSequentialVideoWebm(
       plan.duration*1700+30000);
     const blob=await finished;
     if(stopped||signal.aborted)throw Error("Склейка отменена");
-    report(100);
+    progressOnce(100);
     return {blob,filename:`multicam-joined-${Date.now()}.webm`};
   }finally{
     stopped=true;

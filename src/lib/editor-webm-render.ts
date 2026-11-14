@@ -1,4 +1,5 @@
 import type { EditorExportConfig } from "./editor-render-bridge";
+import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
 /** Offline WebM video render of ONE source clip using the local Canvas/MediaRecorder
  * encoder and a real WebAudio track. Not a fake timer and not a full NLE.
  * Avoids silent loss of multi-layer video/audio, transitions and unsupported FX.
@@ -146,11 +147,21 @@ export async function renderSimpleVideoWebm(
         else {const result=new Blob(pieces,{type:"video/webm"});
           result.size>=1024?resolve(result):reject(Error("WebM-кодировщик вернул пустой файл"));}};
     });
-    const draw=()=>{
+    let lastPaintMs=Number.NEGATIVE_INFINITY;
+    const progressOnce=makeExportProgressReporter(progress);
+    const draw=(nowMs:number)=>{
       if(halted||ended)return;
       const at=video.currentTime;
       const local=(at-plan.segment.in)/plan.segment.speed;
+      // Keep the completion check outside the draw throttle: a slow emulator
+      // must still stop its encoder exactly when the source trim ends.
       if(at>=plan.segment.out-.02){ended=true;try{recorder!.stop();}catch{/* onerror */}return;}
+      // The output stream records at 30fps. Repainting the same 720p canvas
+      // at 60/90/120Hz wastes GPU work and can stall the WebView renderer.
+      if(!shouldPaintExportFrame(nowMs,lastPaintMs)){
+        raf=requestAnimationFrame(draw);return;
+      }
+      lastPaintMs=nowMs;
       ctx.save();
       ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
       ctx.filter=LOOK_FILTER[plan.segment.look]??"none";
@@ -179,7 +190,7 @@ export async function renderSimpleVideoWebm(
           ctx.fillText(line.slice(0,160),x,top);
         });ctx.restore();
       }
-      progress(Math.max(0,Math.min(95,Math.floor(local/plan.duration*95))));
+      progressOnce(Math.max(0,Math.min(95,Math.floor(local/plan.duration*95))));
       raf=requestAnimationFrame(draw);
     };
     video.onended=()=>{
@@ -193,7 +204,7 @@ export async function renderSimpleVideoWebm(
     watchdog=setTimeout(()=>terminate("Рендер превысил допустимое время и остановлен"),Math.ceil(plan.duration*1000*2+14000));
     const result=await finished;
     if(signal.aborted)throw Error("Экспорт отменён");
-    progress(100);
+    progressOnce(100);
     return {blob:result,filename:`multicam-render-${Date.now()}.webm`};
   }finally{
     halted=true;
