@@ -32,6 +32,8 @@ import { shouldAutoEncodeFullProxy } from "@/lib/editor-longform-policy";
 import { visibleWaveformColumns } from "@/lib/editor-visible-waveform";
 import { needsEditorColorFilter, editorVideoFilter } from "@/lib/editor-video-filter";
 import { selectEditorClipDuration } from "@/lib/editor-media-duration";
+import { probeEditorImportDuration } from "@/lib/editor-import-duration";
+import { detachedAudioMediaIds, selectedVideoItemId } from "@/lib/editor-timeline-lookup";
 import { timelineMinZoom, timelineTime, visibleTiles, visibleRulerTicks } from "@/lib/timeline";
 import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, type TrackKind } from "@/lib/timeline-tracks";
 import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
@@ -198,13 +200,10 @@ async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
   const url = URL.createObjectURL(clip.blob);
   const cached = analysisCache.get(clip.id);
   if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
-  // A recorded WebM may have a verified finite capture duration even when
-  // Chromium 69 reports Infinity or stalls opening its metadata decoder.
-  // Reuse that duration at library discovery, avoiding a SECOND decoder
-  // while the Editor is mounting. Imported clips without stored duration
-  // still use the normal browser metadata path.
-  const recorded = clip.blob.type.startsWith("video/webm")
-    ? selectEditorClipDuration(Number.NaN, clip.duration) : null;
+  // A verified stored duration, captured on import or recording, avoids
+  // creating an extra WebView metadata decoder every time the Editor opens.
+  // Unknown/invalid durations still go through real metadata probing.
+  const recorded = selectEditorClipDuration(Number.NaN, clip.duration);
   if (recorded !== null) {
     const peaks: number[] = [];
     analysisCache.set(clip.id, { duration: recorded, peaks });
@@ -718,7 +717,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     const id = `import-${uid()}`;
     setAttaching(true);
     try {
-      await saveClip({ id, createdAt: Date.now(), camera: track, blob: file, kind, name: file.name });
+      // Probe ONLY metadata while the user imports, then persist it alongside
+      // the untouched original. A missing/unsupported decoder never blocks
+      // saving: the Editor retains its existing metadata fallback.
+      const duration = await probeEditorImportDuration(file, kind);
+      await saveClip({ id, createdAt: Date.now(), camera: track, blob: file, kind,
+        name: file.name, ...(duration === null ? {} : {duration}) });
       pendingRef.current = { id, track };
       window.dispatchEvent(new Event("multicam-clips-changed"));
     } catch { setImportErr("Не удалось сохранить файл в хранилище"); }
@@ -762,9 +766,13 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   }, [playing, total, zoom]);
 
   const active = useMemo(() => [...items].filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i)).sort((a, b) => a.track - b.track)[0] ?? null, [items, t, hidden]);
-  const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (!selected || !items.some(x=>x.id === selected && x.kind === "video") || i.id === selected)).sort((a,b)=>a.track-b.track),[items,t,hidden,selected]);
+  // Never scan the entire project INSIDE every visible-clip check (quadratic
+  // work when hundreds of clips are played/scrubbed across an hour).
+  const selectedVideoId = useMemo(() => selectedVideoItemId(items, selected), [items,selected]);
+  const detachedAudioIds = useMemo(() => detachedAudioMediaIds(items), [items]);
+  const visibleVideos = useMemo(() => items.filter((i) => i.kind === "video" && !hidden[`v${i.track}`] && t >= i.start && t < i.start + len(i) && (!selectedVideoId || i.id === selectedVideoId)).sort((a,b)=>a.track-b.track),[items,t,hidden,selectedVideoId]);
   /** Items whose sound is heard: audio clips on unmuted lanes, and video clips with attached (not detached) audio on unmuted lanes. Visibility does not affect sound. */
-  const audible = useMemo(() => items.filter((i) => i.kind === "audio" ? !muted[`a${i.track}`] : !muted[`v${i.track}`] && !items.some((a) => a.kind === "audio" && a.mediaId === i.mediaId)), [items, muted]);
+  const audible = useMemo(() => items.filter((i) => i.kind === "audio" ? !muted[`a${i.track}`] : !muted[`v${i.track}`] && !detachedAudioIds.has(i.mediaId)), [items, muted, detachedAudioIds]);
   // A large timeline can contain hundreds of clips, but only overlapping
   // audio requires a live decoder. Mount just the current sources (and a short
   // warm-up interval) instead of keeping every hidden <audio> open in WebView.

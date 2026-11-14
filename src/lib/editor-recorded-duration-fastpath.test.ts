@@ -4,8 +4,8 @@ import { selectEditorClipDuration } from "./editor-media-duration";
 
 describe("lazy Editor metadata on Android 9 and multi-hour WebM", () => {
   const code = readFileSync("src/components/multicam/EditorPro.tsx", "utf8");
-  it("does not start a second video decoder for WebM with saved duration", () => {
-    const lookup=code.indexOf('const recorded = clip.blob.type.startsWith("video/webm")');
+  it("does not start a second decoder for saved-duration original video or audio", () => {
+    const lookup=code.indexOf('const recorded = selectEditorClipDuration(Number.NaN, clip.duration)');
     const mount=code.indexOf('const v = document.createElement("video"); v.preload = "metadata";');
     expect(lookup).toBeGreaterThan(0);
     expect(lookup).toBeLessThan(mount);
