@@ -11,6 +11,9 @@ describe("real 15-second Android WebView Editor freeze reproduction", () => {
     expect(fixture).toContain("15000");
     expect(fixture).toContain('indexedDB.open("multicam-pov-media", 1)');
     expect(fixture).toContain('localStorage.setItem("multicam-editor-project-v1"');
+    expect(fixture).toContain('localStorage.setItem("multicam-view-state-v1"');
+    expect(fixture).toContain("playhead: 0");
+    expect(fixture).toContain("duration: 15, blob: blob");
   });
   it("checks renderer responses, playback controls and navigation with the actual video decoder", () => {
     expect(java).toContain("zRealFifteenSecondEditorVideoDoesNotFreezeWebView");

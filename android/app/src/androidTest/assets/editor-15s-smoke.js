@@ -66,12 +66,17 @@
             var tx = db.transaction("clips", "readwrite");
             tx.objectStore("clips").put({
               id: id, createdAt: Date.now(), camera: 1, kind: "video",
-              name: "Editor smoke 15 seconds.webm", blob: blob
+              name: "Editor smoke 15 seconds.webm", duration: 15, blob: blob
             });
             tx.onerror = function () { db.close(); fail(tx.error || "Saving fixture failed"); };
             tx.oncomplete = function () {
               db.close();
               try {
+                // A prior instrumentation test may leave the playhead beyond
+                // the 14.5-second fixture. Start every playback test at zero.
+                localStorage.setItem("multicam-view-state-v1", JSON.stringify({
+                  tab: "camera", playhead: 0
+                }));
                 localStorage.setItem("multicam-editor-project-v1", JSON.stringify({
                   items: [{
                     id: "editor-smoke-timeline-item", mediaId: id, kind: "video",

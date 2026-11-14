@@ -29,11 +29,12 @@ import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
 import { shouldAutoEncodeFullProxy } from "@/lib/editor-longform-policy";
 import { visibleWaveformColumns } from "@/lib/editor-visible-waveform";
+import { selectEditorClipDuration } from "@/lib/editor-media-duration";
 import { timelineMinZoom, timelineTime, visibleTiles, visibleRulerTicks } from "@/lib/timeline";
 import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, type TrackKind } from "@/lib/timeline-tracks";
 import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
 
-interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
+interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; duration?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
 interface Media { id: string; camera: number; kind: "video" | "audio"; name: string; url: string; duration: number; peaks: number[] }
 interface CropBox { x: number; y: number; w: number; h: number }
 const FULL_CROP: CropBox = { x: 0, y: 0, w: 100, h: 100 };
@@ -205,7 +206,29 @@ async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
       const onAbort = () => reject(new Error("Editor metadata cancelled"));
       abortMetadata = onAbort;
       signal?.addEventListener("abort", onAbort, { once: true });
-      v.onloadedmetadata = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); else { v.currentTime = 1e7; v.ontimeupdate = () => { if (Number.isFinite(v.duration) && v.duration > 0) resolve(v.duration); }; } };
+      const reportDuration = (allowSeekTime = false) => {
+        const seekableEnd = allowSeekTime && v.seekable.length
+          ? v.seekable.end(v.seekable.length - 1) : undefined;
+        const duration = selectEditorClipDuration(
+          v.duration, clip.duration, seekableEnd,
+          allowSeekTime ? v.currentTime : undefined
+        );
+        if (duration !== null) resolve(duration);
+      };
+      v.onloadedmetadata = () => {
+        // Old Chromium/Android WebView often reports Infinity for recorded
+        // WebM without a SeekHead/Duration cue. A known recording duration
+        // avoids an unnecessary huge seek; otherwise inspect the end of
+        // seekable media after a single seek, never pretend it is zero.
+        const duration = selectEditorClipDuration(v.duration, clip.duration);
+        if (duration !== null) { resolve(duration); return; }
+        v.onseeked = () => reportDuration(true);
+        v.ontimeupdate = () => reportDuration(true);
+        v.ondurationchange = () => reportDuration(true);
+        reportDuration(true);
+        try { v.currentTime = 1e7; }
+        catch { /* WebView may reject seeking until more media is buffered */ }
+      };
       v.onerror = () => reject(new Error("Не удалось прочитать видео"));
       if (signal?.aborted) { onAbort(); return; }
       try { v.src = url; v.load(); }
@@ -214,7 +237,7 @@ async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
   } catch (error) { URL.revokeObjectURL(url); throw error; }
   finally {
     if (abortMetadata) signal?.removeEventListener("abort", abortMetadata);
-    v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null;
+    v.onloadedmetadata = null; v.onerror = null; v.ontimeupdate = null; v.onseeked = null; v.ondurationchange = null;
     v.pause(); v.removeAttribute("src"); v.load();
   }
   if (signal?.aborted) { URL.revokeObjectURL(url); throw new Error("Editor metadata cancelled"); }
