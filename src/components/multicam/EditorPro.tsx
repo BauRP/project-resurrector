@@ -196,6 +196,19 @@ async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
   const url = URL.createObjectURL(clip.blob);
   const cached = analysisCache.get(clip.id);
   if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
+  // A recorded WebM may have a verified finite capture duration even when
+  // Chromium 69 reports Infinity or stalls opening its metadata decoder.
+  // Reuse that duration at library discovery, avoiding a SECOND decoder
+  // while the Editor is mounting. Imported clips without stored duration
+  // still use the normal browser metadata path.
+  const recorded = clip.blob.type.startsWith("video/webm")
+    ? selectEditorClipDuration(Number.NaN, clip.duration) : null;
+  if (recorded !== null) {
+    const peaks: number[] = [];
+    analysisCache.set(clip.id, { duration: recorded, peaks });
+    return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video",
+      name: clip.name ?? "", url, duration: recorded, peaks };
+  }
   const v = document.createElement("video"); v.preload = "metadata";
   let duration: number;
   let abortMetadata: (() => void) | null = null;
