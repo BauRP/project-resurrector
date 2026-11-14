@@ -6,6 +6,7 @@
 import type { EditorExportConfig } from "./editor-render-bridge";
 import { webmOutputSize, type SimpleOverlay, type SimpleVideoSegment } from "./editor-webm-render";
 import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
+import { isEditorDecodedFrameReady } from "./editor-export-decoded-frame";
 
 export interface SequentialPart {
   segment: SimpleVideoSegment;
@@ -184,12 +185,20 @@ export async function renderSequentialVideoWebm(
     if(!shouldPaintExportFrame(nowMs,lastPaintMs)){
       frame=requestAnimationFrame(draw);return;
     }
+    if(!isEditorDecodedFrameReady(video)){
+      frame=requestAnimationFrame(draw);return;
+    }
     lastPaintMs=nowMs;
     const w=output.width,h=output.height;
-    ctx.fillStyle="#000000";ctx.fillRect(0,0,w,h);
-    const scale=Math.min(w/video.videoWidth,h/video.videoHeight);
-    const dw=video.videoWidth*scale,dh=video.videoHeight*scale;
-    ctx.drawImage(video,(w-dw)/2,(h-dh)/2,dw,dh);
+    try{
+      ctx.fillStyle="#000000";ctx.fillRect(0,0,w,h);
+      const scale=Math.min(w/video.videoWidth,h/video.videoHeight);
+      const dw=video.videoWidth*scale,dh=video.videoHeight*scale;
+      ctx.drawImage(video,(w-dw)/2,(h-dh)/2,dw,dh);
+    }catch(error){
+      stop("Декодер видео перестал отдавать кадры: "+String(error));
+      return;
+    }
     const timelineTime=part.timelineStart+Math.max(0,position);
     for(const overlay of plan.overlays){
       if(timelineTime<overlay.start||timelineTime>=overlay.end)continue;
@@ -235,7 +244,12 @@ export async function renderSequentialVideoWebm(
     // Metadata is not proof of a decoded first frame. Never throw from
     // drawImage before the decoder delivers current video data.
     ctx.fillStyle="#000000";ctx.fillRect(0,0,output.width,output.height);
-    if(video.readyState>=2)ctx.drawImage(video,0,0,output.width,output.height);
+    if(isEditorDecodedFrameReady(video)){
+      // The initial frame is optional; the guarded RAF loop will detect a
+      // persistent codec fault and end the export with an actionable error.
+      try{ctx.drawImage(video,0,0,output.width,output.height);}
+      catch{/* Decoder may still be switching surfaces after metadata. */}
+    }
     video.onended=()=>{if(!switching&&!completed)
       stop("Клип завершился раньше выбранной точки склейки");};
     recorder.start(1000);

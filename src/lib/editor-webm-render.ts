@@ -1,5 +1,6 @@
 import type { EditorExportConfig } from "./editor-render-bridge";
 import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
+import { isEditorDecodedFrameReady } from "./editor-export-decoded-frame";
 /** Offline WebM video render of ONE source clip using the local Canvas/MediaRecorder
  * encoder and a real WebAudio track. Not a fake timer and not a full NLE.
  * Avoids silent loss of multi-layer video/audio, transitions and unsupported FX.
@@ -105,6 +106,9 @@ export async function renderSimpleVideoWebm(
   signal.addEventListener("abort",abort,{once:true});
   const onHidden=()=>{if(document.hidden)abort();};
   document.addEventListener("visibilitychange",onHidden);
+  // Android Activity recreation / WebView teardown can dispatch pagehide
+  // without visibilitychange. Stop encoding before its surface is destroyed.
+  window.addEventListener("pagehide",abort);
   try{
     if(!document.body)throw Error("Страница редактора недоступна");
     document.body.append(video);
@@ -161,20 +165,33 @@ export async function renderSimpleVideoWebm(
       if(!shouldPaintExportFrame(nowMs,lastPaintMs)){
         raf=requestAnimationFrame(draw);return;
       }
+      if(!isEditorDecodedFrameReady(video)){
+        // Media metadata is not a decoded frame. Wait for the decoder
+        // without corrupting the encoder or permanently losing the RAF loop.
+        raf=requestAnimationFrame(draw);return;
+      }
       lastPaintMs=nowMs;
       ctx.save();
-      ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
-      ctx.filter=LOOK_FILTER[plan.segment.look]??"none";
-      ctx.globalAlpha=plan.segment.opacity/100;
-      const crop=plan.segment.crop??{x:0,y:0,w:100,h:100};
-      const sx=video.videoWidth*crop.x/100,sy=video.videoHeight*crop.y/100;
-      const sw=video.videoWidth*crop.w/100,sh=video.videoHeight*crop.h/100;
-      const zoom=plan.segment.scale/100;
-      const fill=Math.max(w/sw,h/sh)*zoom;
-      const dw=sw*fill,dh=sh*fill;
-      ctx.drawImage(video,sx,sy,sw,sh,
-        (w-dw)/2+plan.segment.posX/100*w,(h-dh)/2,dw,dh);
-      ctx.restore();
+      try{
+        ctx.fillStyle="#000";ctx.fillRect(0,0,w,h);
+        ctx.filter=LOOK_FILTER[plan.segment.look]??"none";
+        ctx.globalAlpha=plan.segment.opacity/100;
+        const crop=plan.segment.crop??{x:0,y:0,w:100,h:100};
+        const sx=video.videoWidth*crop.x/100,sy=video.videoHeight*crop.y/100;
+        const sw=video.videoWidth*crop.w/100,sh=video.videoHeight*crop.h/100;
+        const zoom=plan.segment.scale/100;
+        const fill=Math.max(w/sw,h/sh)*zoom;
+        const dw=sw*fill,dh=sh*fill;
+        ctx.drawImage(video,sx,sy,sw,sh,
+          (w-dw)/2+plan.segment.posX/100*w,(h-dh)/2,dw,dh);
+      }catch(error){
+        // Never strand the finished promise after Canvas/MediaCodec throws
+        // during an animation frame (common with destroyed GPU surfaces).
+        terminate("Декодер видео перестал отдавать кадры: "+String(error));
+        return;
+      }finally{
+        ctx.restore();
+      }
       for(const overlay of plan.overlays){
         if(local<overlay.start||local>=overlay.end)continue;
         ctx.save();const size=Math.max(8,Math.min(70,overlay.size));
@@ -211,6 +228,8 @@ export async function renderSimpleVideoWebm(
     if(watchdog!==undefined)clearTimeout(watchdog);
     cancelAnimationFrame(raf);signal.removeEventListener("abort",abort);
     document.removeEventListener("visibilitychange",onHidden);
+    window.removeEventListener("pagehide",abort);
+    video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
     try{if(recorder?.state!=="inactive")recorder?.stop();}catch{/* cleanup */}
     stream?.getTracks().forEach(t=>t.stop());
     video.pause();video.removeAttribute("src");video.load();video.remove();
