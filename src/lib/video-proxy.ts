@@ -1,5 +1,6 @@
 import { bounded } from "./async";
 import { readProxy, writeProxy } from "./media-cache";
+import { shouldAutoEncodeFullProxy } from "./editor-longform-policy";
 
 /** Real 480p silent scrubbing proxy; audio and export continue using the original. */
 export async function generateProxy(id: string, source: string, signal: AbortSignal): Promise<Blob | null> {
@@ -45,7 +46,8 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       catch (error) { finish(error instanceof Error ? error : new Error(String(error))); }
     });
     if (signal.aborted) return null;
-    if (Math.min(video.videoWidth, video.videoHeight) <= 480 || signal.aborted) return null;
+    if (Math.min(video.videoWidth, video.videoHeight) <= 480 || signal.aborted ||
+        !shouldAutoEncodeFullProxy(video.duration)) return null;
     const canvas = document.createElement("canvas");
     const scale = 480 / Math.min(video.videoWidth, video.videoHeight);
     canvas.width = Math.round(video.videoWidth * scale / 2) * 2; canvas.height = Math.round(video.videoHeight * scale / 2) * 2;

@@ -27,6 +27,8 @@ import { canExportOriginalClip } from "@/lib/editor-original-export";
 import { readPersistedClip } from "@/lib/clip-persistence";
 import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
+import { shouldAutoEncodeFullProxy } from "@/lib/editor-longform-policy";
+import { visibleWaveformColumns } from "@/lib/editor-visible-waveform";
 import { timelineMinZoom, timelineTime, visibleTiles, visibleRulerTicks } from "@/lib/timeline";
 import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, type TrackKind } from "@/lib/timeline-tracks";
 import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
@@ -507,6 +509,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       for (const m of media) {
         if (!live || abort.signal.aborted) return;
         if (m.kind !== "video" || !neededIds.has(m.id) || loadedProxyIds.current.has(m.id)) continue;
+        // 30min/1h/2h originals stay directly editable. Do not spin another
+        // full-length decoder+encoder on the UI WebView merely for scrubbing.
+        // This never trims video or affects original-quality export.
+        if (!shouldAutoEncodeFullProxy(m.duration)) continue;
         try {
           // A full second 24fps encoder must not initialize during Editor
           // first paint. Wait for responsive frames without removing proxies.
@@ -1028,7 +1034,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         const th = lane.kind === "video" ? thumbs[i.mediaId] : undefined; const n = th?.length && m ? Math.max(1, Math.ceil(w / TILE)) : 0;
         return <div key={i.id} onPointerDown={dragItem(i)} className={`timeline-clip absolute inset-y-1 cursor-grab overflow-hidden rounded [touch-action:none] ${lane.kind === "video" ? "bg-primary/30" : "bg-status/25"} ${selected === i.id ? "ring-2 ring-primary" : ""} ${(lane.kind === "video" ? hidden[lane.key] : muted[lane.key]) ? "opacity-40" : ""}`} style={{ left: i.start * zoom, width: w }}>
           {n > 0 && th && m && <div className="pointer-events-none absolute inset-0">{Array.from({ length: Math.max(0, tiles.end - tiles.first) }, (_, offset) => { const k = tiles.first + offset; const frac = (k + 0.5) / n; const src = i.reverse ? i.out - frac * (i.out - i.in) : i.in + frac * (i.out - i.in); const idx = Math.min(th.length - 1, Math.max(0, Math.floor((src / m.duration) * th.length))); return <img key={k} src={th[idx]} alt="" draggable={false} className="absolute h-full object-cover" style={{ left: k * TILE, width: TILE }} />; })}</div>}
-          <svg className={`pointer-events-none absolute inset-x-0 bottom-0 w-full ${n > 0 ? "h-1/3 opacity-70" : "h-full"}`} preserveAspectRatio="none" viewBox="0 0 100 100">{m && m.peaks.length > 0 && (() => { const a = Math.floor((i.in / m.duration) * m.peaks.length); const b = Math.max(a + 1, Math.ceil((i.out / m.duration) * m.peaks.length)); const seg = m.peaks.slice(a, b); if (i.reverse) seg.reverse(); return seg.map((p, k) => (HEAD + i.start * zoom + (k / seg.length) * w >= scrollX - TILE && HEAD + i.start * zoom + (k / seg.length) * w <= scrollX + tlW + TILE) ? <rect key={k} x={(k / seg.length) * 100} width={100 / seg.length * 0.8} y={50 - p * 48} height={Math.max(1, p * 96)} className="fill-foreground/60" /> : null); })()}</svg>
+          <svg className={`pointer-events-none absolute inset-x-0 bottom-0 w-full ${n > 0 ? "h-1/3 opacity-70" : "h-full"}`} preserveAspectRatio="none" viewBox="0 0 100 100">{m && m.peaks.length > 0 && visibleWaveformColumns(m.peaks, m.duration, i.in, i.out, i.reverse, i.start, w, zoom, scrollX, tlW, HEAD, TILE).map(column => <rect key={column.index} x={column.x} width={column.width} y={column.y} height={column.height} className="fill-foreground/60" />)}</svg>
           <span className="relative rounded-br bg-background px-1 text-[8px] font-semibold">{i.speed !== 1 && `${i.speed}× `}{i.reverse && "⟲"}</span>
         </div>; })}
       {lane.kind === "video" && validTr.filter((tr) => tr.track === lane.track).map((tr) => { const b = items.find((i) => i.id === tr.bId)!; return <button key={tr.id} aria-label={`Переход ${TR_NAME[tr.type]}`} title={TR_NAME[tr.type]} onPointerDown={(e) => { e.stopPropagation(); setSelTr(tr.id); setSelected(null); }} className={`absolute top-1/2 z-10 flex size-5 -translate-x-1/2 -translate-y-1/2 rotate-45 items-center justify-center rounded-sm border ${selTr === tr.id ? "border-primary bg-primary text-primary-foreground ring-2 ring-primary" : "border-foreground/60 bg-background"}`} style={{ left: b.start * zoom }}><Blend className="size-3 -rotate-45" /></button>; })}
