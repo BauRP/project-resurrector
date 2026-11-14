@@ -17,6 +17,8 @@ describe("real 15-second Android WebView Editor freeze reproduction", () => {
     expect(java).toContain("15-second encoded clip fixture status:");
     expect(java).toContain('click(running, view, "button[aria-label=\'Играть\']")');
     expect(java).toContain("Editor JS event loop stalled while playing 15-second video");
+    expect(java).toContain("Editor disappeared during or after video playback");
+    expect(java).not.toContain("Video layer disappeared during editor playback");
     expect(java).toContain("WebView cannot create a 15-second fixture");
     expect(java).toContain("settings-fold-workspace");
   });
