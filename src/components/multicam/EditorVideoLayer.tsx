@@ -14,12 +14,13 @@ export interface EditorVideoLayerProps {
   speed: number;
   reverse: boolean;
   playing: boolean;
+  audioEnabled: boolean;
   style: CSSProperties;
   zIndex: number;
   label: string;
 }
 export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,speed,
-  reverse,playing,style,zIndex,label}:EditorVideoLayerProps) {
+  reverse,playing,audioEnabled,style,zIndex,label}:EditorVideoLayerProps) {
   const ref=useRef<HTMLVideoElement>(null);
   const previousTarget=useRef<number|null>(null);
   const lastCorrection=useRef(Number.NEGATIVE_INFINITY);
@@ -59,7 +60,9 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
   useEffect(()=>{
     const v=ref.current;
     if(!v||!source)return;
-    v.muted=true;
+    // When playing the untouched original, video+audio share one decoder.
+    // Silent proxy sources continue to use separate original-audio elements.
+    v.muted=!audioEnabled;
     wantsPlayback.current=playing&&!reverse;
     const to=target();
     if(!Number.isFinite(to))return;
@@ -101,8 +104,8 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
         try{v.currentTime=to;}catch{/* decoder not ready */}
       }
     }
-  },[timelineTime,start,inPoint,outPoint,speed,reverse,playing,source]);
-  return <video ref={ref} muted playsInline preload="metadata"
+  },[timelineTime,start,inPoint,outPoint,speed,reverse,playing,audioEnabled,source]);
+  return <video ref={ref} muted={!audioEnabled} playsInline preload="metadata"
     aria-label={label}
     className="absolute inset-0 h-full w-full object-cover"
     style={{...style,zIndex,pointerEvents:"none"}} />;

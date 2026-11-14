@@ -9,6 +9,7 @@ import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
 import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
+import { sharedEditorVideoAudioIds } from "@/lib/editor-audio-routing";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
@@ -767,8 +768,16 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // A large timeline can contain hundreds of clips, but only overlapping
   // audio requires a live decoder. Mount just the current sources (and a short
   // warm-up interval) instead of keeping every hidden <audio> open in WebView.
+  // Ordinary visible video already has a usable original audio stream. Do not
+  // open an extra hidden <audio> decoder for those same bytes in old WebView.
+  // Silent proxies, hidden/unselected video and detached audio keep their
+  // existing independent original-source audio path.
+  const sharedVideoAudioIds = useMemo(() =>
+    sharedEditorVideoAudioIds(visibleVideos, audible, proxies),
+    [visibleVideos, audible, proxies]);
   const activeAudible = useMemo(() => audible.filter(i =>
-    t >= i.start - 0.5 && t < i.start + len(i)), [audible, t]);
+    t >= i.start - 0.5 && t < i.start + len(i) &&
+    !sharedVideoAudioIds.has(i.id)), [audible, t, sharedVideoAudioIds]);
 
   const validTr = useMemo(() => transitions.filter((tr) => { const a = items.find((i) => i.id === tr.aId); const b = items.find((i) => i.id === tr.bId); return a && b && a.kind === "video" && b.kind === "video" && a.track === tr.track && b.track === tr.track && Math.abs(a.start + len(a) - b.start) < 0.15; }), [transitions, items]);
   const trStyle = useMemo<{ filter: string; transform: string; opacity: number; clip?: string }>(() => {
@@ -1090,6 +1099,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}
         timelineTime={t} start={i.start} inPoint={i.in} outPoint={i.out}
         speed={i.speed} reverse={i.reverse} playing={playing}
+        audioEnabled={sharedVideoAudioIds.has(i.id)}
         label={`Видео дорожки ${i.track}`}
         zIndex={index+1}
         style={{filter:editorVideoFilter(i.id, i.color, LOOKS[i.look], i.id === active?.id ? trStyle.filter : ""),
