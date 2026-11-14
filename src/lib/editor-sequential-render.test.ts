@@ -1,6 +1,6 @@
 import {readFileSync} from "node:fs";
 import {describe,expect,it} from "vitest";
-import {planSequentialVideoRender, loadSequentialSource} from "./editor-sequential-render";
+import {planSequentialVideoRender, loadSequentialSource, loadSequentialSourceInfo} from "./editor-sequential-render";
 const one={kind:"video" as const,mediaId:"a",track:1,start:0,in:0,out:3,
  speed:1,reverse:false,opacity:100,scale:100,posX:0,look:"Без цвета"};
 const two={...one,mediaId:"b",start:3,in:1,out:5};
@@ -54,5 +54,36 @@ describe("sequential export opens only the current original, not all video Blobs
    expect(code).toContain("if(currentUrl)URL.revokeObjectURL(currentUrl)");
    expect(code).toContain("audioSource.connect(audioDest)");
    expect(code).toContain("recorder.start(1000)");
+ });
+});
+
+describe("sequential export preserves Android-recorded duration metadata",()=>{
+ const valid=()=>new Blob(["x".repeat(1500)],{type:"video/webm"});
+ it("fetches one source with its own verified duration without changing bytes",async()=>{
+   const controller=new AbortController();
+   const calls:number[]=[];
+   const read=async(index:number)=>{calls.push(index);return {blob:valid(),duration:7200};};
+   const info=await loadSequentialSourceInfo(read,0,3,controller.signal);
+   expect(info.blob.size).toBe(1500);
+   expect(info.duration).toBe(7200);
+   expect(calls).toEqual([0]);
+   expect((await loadSequentialSource([valid()],0,1,controller.signal)).size).toBe(1500);
+ });
+ it("keeps cancellation/codec rejection for metadata-bearing sources",async()=>{
+   const controller=new AbortController();
+   await expect(loadSequentialSourceInfo(async()=>({blob:new Blob(["x"],{type:"video/webm"}),duration:5}),
+     0,1,controller.signal)).rejects.toThrow();
+   controller.abort();
+   await expect(loadSequentialSourceInfo(async()=>({blob:valid(),duration:15}),
+     0,1,controller.signal)).rejects.toThrow("отменён");
+ });
+ it("uses duration saved by the Editor, without any extra decoder or more Blob URLs",()=>{
+   const editor=readFileSync("src/components/multicam/EditorPro.tsx","utf8");
+   const renderer=readFileSync("src/lib/editor-sequential-render.ts","utf8");
+   expect(editor).toContain("return {blob:file.blob,duration:file.duration}");
+   expect(renderer).toContain("canExportSegmentThrough(video.duration,original.duration,current.segment.out)");
+   expect(renderer).toContain("const nextUrl=URL.createObjectURL(original.blob)");
+   expect(renderer).toContain("const finishCurrentPart=()=>");
+   expect(renderer).toContain("finishCurrentPart();");
  });
 });

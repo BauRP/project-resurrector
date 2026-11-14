@@ -975,7 +975,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           if(!part||signal.aborted)throw Error("Экспорт отменён");
           const file=await readPersistedClip(part.segment.mediaId);
           if(signal.aborted)throw Error("Экспорт отменён");
-          return file.blob;
+          return {blob:file.blob,duration:file.duration};
         },config,signal,progress);
       }
       if (!choice.allowed) {

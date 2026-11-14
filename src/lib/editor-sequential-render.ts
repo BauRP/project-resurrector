@@ -8,6 +8,7 @@ import { webmOutputSize, type SimpleOverlay, type SimpleVideoSegment } from "./e
 import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
 import { isEditorDecodedFrameReady } from "./editor-export-decoded-frame";
 import { awaitEditorExportStep } from "./editor-export-deadline";
+import { canExportSegmentThrough, reachedExportTrimEnd } from "./editor-export-source-duration";
 
 export interface SequentialPart {
   segment: SimpleVideoSegment;
@@ -20,22 +21,31 @@ export interface SequentialRenderPlan {
   duration: number;
 }
 
-/** Older callers can pass Blobs; streaming callers supply the next Blob only
- * when its turn begins. The latter avoids keeping eight original video
- * files and eight object URLs resident during Android WebView export. */
-export type SequentialSources = readonly Blob[] | ((partIndex:number)=>Promise<Blob>);
-export async function loadSequentialSource(
+/** Older callers still pass Blob[] or a Blob-producing loader. Newer
+ * IndexedDB readers may also return the real stored recording duration.
+ * Fetch only the CURRENT original and never load all clips simultaneously. */
+export interface SequentialSourceInfo { blob:Blob; duration?:number }
+export type SequentialSource=Blob|SequentialSourceInfo;
+export type SequentialSources=readonly Blob[]|((partIndex:number)=>Promise<SequentialSource>);
+export async function loadSequentialSourceInfo(
   sources:SequentialSources, index:number, partCount:number, signal:AbortSignal,
-):Promise<Blob> {
+):Promise<SequentialSourceInfo> {
   if(signal.aborted)throw Error("Экспорт отменён");
   if(!Number.isInteger(index)||index<0||index>=partCount||
      (typeof sources!=="function"&&sources.length!==partCount))
     throw Error("Неверная последовательность клипов");
-  const blob=typeof sources==="function"?await sources(index):sources[index];
+  const value=typeof sources==="function"?await sources(index):sources[index];
   if(signal.aborted)throw Error("Экспорт отменён");
+  const blob=value instanceof Blob?value:value?.blob;
   if(!(blob instanceof Blob)||blob.size<1024||!blob.type.startsWith("video/"))
     throw Error("В монтажном проекте найден пустой или неподдерживаемый клип.");
-  return blob;
+  return {blob,duration:value instanceof Blob?undefined:value?.duration};
+}
+/** Compatibility for existing callers that only need source bytes. */
+export async function loadSequentialSource(
+  sources:SequentialSources, index:number, partCount:number, signal:AbortSignal,
+):Promise<Blob> {
+  return (await loadSequentialSourceInfo(sources,index,partCount,signal)).blob;
 }
 export function planSequentialVideoRender(
   items: readonly (SimpleVideoSegment & {track:number})[],
@@ -127,10 +137,10 @@ export async function renderSequentialVideoWebm(
     // can be revoked as soon as its video element changes source.
     // An IndexedDB clip read can hang after an Android Activity change.
     // Abort the WAIT even when the underlying storage promise cannot cancel.
-    const blob=await bounded(loadSequentialSource(sources,index,plan.parts.length,
+    const original=await bounded(loadSequentialSourceInfo(sources,index,plan.parts.length,
       pendingWork.signal),13500,"Исходный клип слишком долго загружается.");
     if(stopped||signal.aborted)throw Error("Экспорт отменён");
-    const nextUrl=URL.createObjectURL(blob);
+    const nextUrl=URL.createObjectURL(original.blob);
     const previousUrl=currentUrl;
     currentUrl=nextUrl;
     video.pause();
@@ -144,8 +154,7 @@ export async function renderSequentialVideoWebm(
     if(previousUrl)URL.revokeObjectURL(previousUrl);
     await bounded(metadata,6500,"Истекло время открытия клипа.");
     if(video.videoWidth<=0||video.videoHeight<=0 ||
-       !Number.isFinite(video.duration) ||
-       video.duration+.12<current.segment.out)
+       !canExportSegmentThrough(video.duration,original.duration,current.segment.out))
       throw Error("Сохранённый клип слишком короткий или не содержит декодируемого видео.");
     if(current.segment.in>.03){
       await bounded(new Promise<void>((resolve,reject)=>{
@@ -156,32 +165,36 @@ export async function renderSequentialVideoWebm(
     }
     video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
   };
+  const finishCurrentPart=()=>{
+    if(stopped||completed||switching)return;
+    if(partIndex===plan.parts.length-1){
+      completed=true;
+      try {recorder!.stop();}catch{stop("Не удалось завершить запись WebM");}
+      return;
+    }
+    switching=true;
+    void (async()=>{
+      try {
+        video.pause();
+        if(recorder?.state==="recording")recorder.pause();
+        partIndex++;
+        lastPaintMs=Number.NEGATIVE_INFINITY;
+        await loadPart(partIndex);
+        if(stopped)return;
+        if(recorder?.state==="paused")recorder.resume();
+        await bounded(video.play(),4500,"Следующий клип не запускается");
+        switching=false;
+        frame=requestAnimationFrame(draw);
+      }catch(err){stop(err instanceof Error?err.message:"Ошибка соединения видеоклипов");}
+    })();
+  };
   const draw=(nowMs:number)=>{
     if(stopped||completed||switching)return;
     const part=plan.parts[partIndex]!;
     const position=video.currentTime-part.segment.in;
     // Switching and finalization are checked before render throttling.
     if(position>=part.timelineEnd-part.timelineStart-.025){
-      if(partIndex===plan.parts.length-1){
-        completed=true;
-        try {recorder!.stop();}catch{stop("Не удалось завершить запись WebM");}
-        return;
-      }
-      switching=true;
-      void (async()=>{
-        try {
-          video.pause();
-          if(recorder?.state==="recording")recorder.pause();
-          partIndex++;
-          lastPaintMs=Number.NEGATIVE_INFINITY;
-          await loadPart(partIndex);
-          if(stopped)return;
-          if(recorder?.state==="paused")recorder.resume();
-          await bounded(video.play(),4500,"Следующий клип не запускается");
-          switching=false;
-          frame=requestAnimationFrame(draw);
-        }catch(err){stop(err instanceof Error?err.message:"Ошибка соединения видеоклипов");}
-      })();
+      finishCurrentPart();
       return;
     }
     if(!shouldPaintExportFrame(nowMs,lastPaintMs)){
@@ -252,8 +265,14 @@ export async function renderSequentialVideoWebm(
       try{ctx.drawImage(video,0,0,output.width,output.height);}
       catch{/* Decoder may still be switching surfaces after metadata. */}
     }
-    video.onended=()=>{if(!switching&&!completed)
-      stop("Клип завершился раньше выбранной точки склейки");};
+    video.onended=()=>{
+      if(switching||completed||stopped)return;
+      const current=plan.parts[partIndex];
+      if(current&&reachedExportTrimEnd(video.currentTime,current.segment.out)){
+        // Old WebView may send ended BEFORE the next RAF gets scheduled.
+        finishCurrentPart();
+      }else stop("Клип завершился раньше выбранной точки склейки");
+    };
     recorder.start(1000);
     await bounded(video.play(),4500,"Не удалось начать первый клип");
     frame=requestAnimationFrame(draw);

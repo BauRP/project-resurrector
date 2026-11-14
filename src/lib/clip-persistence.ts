@@ -4,7 +4,7 @@
  */
 export interface RecordedClip {
   id: string; createdAt: number; camera: number; mode: string;
-  profile: string; playbackRate: number; blob: Blob;
+  profile: string; playbackRate: number; duration?:number; blob: Blob;
   captureGroupId?: string;
   cameraDeviceId?: string;
   monotonicStartMs?: number;

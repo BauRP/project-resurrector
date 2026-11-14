@@ -2,6 +2,7 @@ import type { EditorExportConfig } from "./editor-render-bridge";
 import { shouldPaintExportFrame, makeExportProgressReporter } from "./editor-export-pacing";
 import { isEditorDecodedFrameReady } from "./editor-export-decoded-frame";
 import { awaitEditorExportStep } from "./editor-export-deadline";
+import { reachedExportTrimEnd } from "./editor-export-source-duration";
 /** Offline WebM video render of ONE source clip using the local Canvas/MediaRecorder
  * encoder and a real WebAudio track. Not a fake timer and not a full NLE.
  * Avoids silent loss of multi-layer video/audio, transitions and unsupported FX.
@@ -211,7 +212,13 @@ export async function renderSimpleVideoWebm(
       raf=requestAnimationFrame(draw);
     };
     video.onended=()=>{
-      if(!ended)terminate("Исходное видео закончилось раньше заданного конца монтажа");
+      if(ended||halted)return;
+      if(reachedExportTrimEnd(video.currentTime,plan.segment.out)){
+        // Do not report a false codec failure if ended beats the next RAF.
+        ended=true;
+        try{recorder!.stop();}
+        catch{terminate("Не удалось завершить запись WebM");}
+      }else terminate("Исходное видео закончилось раньше заданного конца монтажа");
     };
     recorder.start(1000);
     if(halted)throw Error("Экспорт отменён");

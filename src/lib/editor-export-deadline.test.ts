@@ -46,7 +46,7 @@ describe("Editor stops stale WebView encoder waits during navigation",()=>{
      expect(source).toContain("awaitEditorExportStep(");
      expect(source).toContain("canvas.captureStream(30)");
    }
-   expect(b).toContain("await bounded(loadSequentialSource(");
+   expect(b).toContain("await bounded(loadSequentialSourceInfo(");
    expect(b).toContain("audioSource.connect(audioDest)");
    expect(a).toContain("src.connect(dest)");
  });
