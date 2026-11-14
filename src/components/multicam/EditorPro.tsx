@@ -29,6 +29,7 @@ import { analysisCache, thumbCache } from "@/lib/media-cache";
 import { generateProxy } from "@/lib/video-proxy";
 import { shouldAutoEncodeFullProxy } from "@/lib/editor-longform-policy";
 import { visibleWaveformColumns } from "@/lib/editor-visible-waveform";
+import { needsEditorColorFilter, editorVideoFilter } from "@/lib/editor-video-filter";
 import { selectEditorClipDuration } from "@/lib/editor-media-duration";
 import { timelineMinZoom, timelineTime, visibleTiles, visibleRulerTicks } from "@/lib/timeline";
 import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, type TrackKind } from "@/lib/timeline-tracks";
@@ -1083,7 +1084,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     <div ref={monRef} className={`${pinMon ? "sticky z-20 -mx-4 bg-background px-4 pb-2 pt-1" : "relative"}`} style={pinMon ? { top: headerH } : undefined}>
     <div className="studio-monitor relative w-full overflow-hidden rounded-lg bg-letterbox" style={{ aspectRatio: "16 / 9" }} onClick={() => { setEditing(null); setAspOpen(false); }}>
     <div ref={previewRef} className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 overflow-hidden bg-viewfinder" style={canvasBox}>
-      {visibleVideos.map(i=><svg key={i.id} className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${i.id}`} c={colorOf(i)} /></defs></svg>)}
+      {visibleVideos.filter(i => needsEditorColorFilter(i.color)).map(i=><svg key={i.id} className="absolute size-0" aria-hidden><defs><ColorFilterDef id={`cc-${i.id}`} c={colorOf(i)} /></defs></svg>)}
       {activeAudible.map((i) => <audio key={i.id} ref={(el) => { if (el) audioRefs.current[i.id] = el; else delete audioRefs.current[i.id]; }} src={mediaById.get(i.mediaId)?.url} preload="metadata" className="hidden" />)}
       {visibleVideos.length ? visibleVideos.map((i,index)=><EditorVideoLayer key={i.id}
         source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}
@@ -1091,7 +1092,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         speed={i.speed} reverse={i.reverse} playing={playing}
         label={`Видео дорожки ${i.track}`}
         zIndex={index+1}
-        style={{filter:`url(#cc-${i.id}) ${LOOKS[i.look] === "none" ? "" : LOOKS[i.look]} ${i.id === active?.id ? trStyle.filter : ""}`,
+        style={{filter:editorVideoFilter(i.id, i.color, LOOKS[i.look], i.id === active?.id ? trStyle.filter : ""),
           opacity:(i.opacity/100)*(i.id === active?.id ? trStyle.opacity : 1),
           clipPath:i.id === active?.id ? trStyle.clip : undefined,
           transform:`translateX(${i.posX}%) scale(${i.scale/100}) ${i.id === active?.id ? trStyle.transform : ""} ${cropFor === i.id ? "" : cropTransform(i.crop)}`,
