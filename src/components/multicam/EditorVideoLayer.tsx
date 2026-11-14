@@ -32,6 +32,11 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
     const frame=(timelineTime-start)*speed;
     return Math.max(inPoint,Math.min(outPoint-.012,reverse?outPoint-frame:inPoint+frame));
   };
+  // A WebView can deliver loadedmetadata many seconds after a seek, resize or
+  // restored two-hour project. The source listener lives for the decoder's
+  // lifetime; read the CURRENT playhead, never the initial render's closure.
+  const latestTarget=useRef(target);
+  latestTarget.current=target;
   useEffect(()=>{
     const v=ref.current;
     if(!v)return;
@@ -44,7 +49,7 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
     v.pause();
     // A cached WebView video can dispatch loadedmetadata during load().
     // Install the handler first to retain the correct initial timeline frame.
-    const onReady=()=>{const to=target();if(Number.isFinite(to)){
+    const onReady=()=>{const to=latestTarget.current();if(Number.isFinite(to)){
       try{v.currentTime=to;}catch{/* codec not ready yet */}
     }};
     v.addEventListener("loadedmetadata",onReady);
