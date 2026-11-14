@@ -18,3 +18,11 @@ export function shouldCorrectPlayingVideo(
     Number.isFinite(previousDesired) && Math.abs(desired - previousDesired) > 0.35;
   return userJump || nowMs - lastCorrectionMs >= 650;
 }
+
+/** An asynchronous play() may settle after the user paused a preview. */
+export function pauseVideoAfterLatePlay(
+  video: Pick<HTMLVideoElement, "paused" | "pause">,
+  playbackStillWanted: boolean,
+): void {
+  if (!playbackStillWanted && !video.paused) video.pause();
+}

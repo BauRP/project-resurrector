@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from "react";
-import { shouldCorrectPlayingVideo } from "@/lib/editor-video-sync";
+import { shouldCorrectPlayingVideo, pauseVideoAfterLatePlay } from "@/lib/editor-video-sync";
 
 /** Each video layer has its own decoder. One shared <video> can only display
  * one of the simultaneous timeline sources, so never reuse it for overlays.
@@ -25,6 +25,8 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
   const lastCorrection=useRef(Number.NEGATIVE_INFINITY);
   const lastPlayAttempt=useRef(Number.NEGATIVE_INFINITY);
   const pendingPlay=useRef<Promise<void>|null>(null);
+  const wantsPlayback=useRef(false);
+  const sourceSession=useRef(0);
   const target=()=> {
     const frame=(timelineTime-start)*speed;
     return Math.max(inPoint,Math.min(outPoint-.012,reverse?outPoint-frame:inPoint+frame));
@@ -36,6 +38,7 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
     lastCorrection.current=Number.NEGATIVE_INFINITY;
     lastPlayAttempt.current=Number.NEGATIVE_INFINITY;
     pendingPlay.current=null;
+    sourceSession.current++;
     // A source change is a new decoder session: discard old playback first.
     v.pause();
     // A cached WebView video can dispatch loadedmetadata during load().
@@ -46,6 +49,8 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
     v.addEventListener("loadedmetadata",onReady);
     v.src=source;v.load();
     return ()=>{v.removeEventListener("loadedmetadata",onReady);v.pause();
+      wantsPlayback.current=false;
+      sourceSession.current++;
       pendingPlay.current=null;
       v.removeAttribute("src");v.load();};
     // source is the only signal for decoder ownership
@@ -55,6 +60,7 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
     const v=ref.current;
     if(!v||!source)return;
     v.muted=true;
+    wantsPlayback.current=playing&&!reverse;
     const to=target();
     if(!Number.isFinite(to))return;
     const prior=previousTarget.current;
@@ -71,8 +77,16 @@ export function EditorVideoLayer({source,timelineTime,start,inPoint,outPoint,spe
             try{v.currentTime=to;}catch{/* wait until metadata */}
           }
           try{
+            const session=sourceSession.current;
             const request=Promise.resolve(v.play()).then(
-              ()=>{if(pendingPlay.current===request)pendingPlay.current=null;},
+              ()=>{
+                if(pendingPlay.current===request)pendingPlay.current=null;
+                // Android may resolve play() after the user tapped Pause.
+                // Never restart a discarded video or interfere with a new
+                // decoder session when this promise completes too late.
+                if(sourceSession.current===session)
+                  pauseVideoAfterLatePlay(v,wantsPlayback.current);
+              },
               ()=>{if(pendingPlay.current===request)pendingPlay.current=null;},
             );
             pendingPlay.current=request;
