@@ -6,8 +6,24 @@ export function bounded<T>(promise: Promise<T>, ms: number, label: string, onLat
       (error) => { if (settled) return; settled = true; clearTimeout(timer); reject(error); });
   });
 }
-export async function retry<T>(operation: () => Promise<T>, attempts = 2): Promise<T> {
+/** Retry a genuinely failed operation, but never open a fresh media decoder
+ * after navigation has aborted the Editor. A completed successful operation
+ * remains with the caller, which owns and cleans up its temporary Blob URL.
+ */
+export async function retry<T>(
+  operation: () => Promise<T>,
+  attempts = 2,
+  signal?: AbortSignal,
+): Promise<T> {
   let error: unknown;
-  for (let i = 0; i < attempts; i++) { try { return await operation(); } catch (e) { error = e; } }
+  for (let i = 0; i < attempts; i++) {
+    if (signal?.aborted) throw new Error("Operation cancelled");
+    try {
+      return await operation();
+    } catch (e) {
+      error = e;
+      if (signal?.aborted) throw e;
+    }
+  }
   throw error;
 }
