@@ -24,9 +24,10 @@ export function saveEditorImportedClip<T extends { id: string; blob: Blob }>(cli
     };
     const watchdog = setTimeout(() => {
       // On timeout, the transaction might have just committed. Don't claim
-      // rollback or retry the same original automatically.
-      try { tx?.abort(); } catch { /* Already committed or unavailable. */ }
+      // rollback or retry the same original automatically. Settle with the
+      // accurate timeout reason BEFORE abort triggers an OEM onabort callback.
       finish(new Error("Сохранение клипа не подтвердилось. Проверьте медиатеку перед повторным импортом."));
+      try { tx?.abort(); } catch { /* Already committed or unavailable. */ }
     }, EDITOR_IMPORT_SAVE_TIMEOUT_MS);
     try {
       const request = indexedDB.open("multicam-pov-media", 1);
