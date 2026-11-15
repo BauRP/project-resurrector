@@ -115,11 +115,21 @@ function openClipLibrary(): Promise<IDBDatabase> {
       if (!req.result.objectStoreNames.contains("clips"))
         req.result.createObjectStore("clips", { keyPath: "id" });
     };
-    req.onblocked = () => reject(new Error("Медиатека занята другой вкладкой"));
-    req.onerror = () => reject(req.error);
+    // Chromium may fire "blocked" and deliver success much later, after the
+    // Editor has left the screen. Do not leak that obsolete database handle.
+    let rejected = false;
+    req.onblocked = () => {
+      rejected = true;
+      reject(new Error("Медиатека занята другой вкладкой"));
+    };
+    req.onerror = () => {
+      rejected = true;
+      reject(req.error);
+    };
     req.onsuccess = () => {
       const db = req.result;
       db.onversionchange = () => db.close();
+      if (rejected) { db.close(); return; }
       resolve(db);
     };
   });
