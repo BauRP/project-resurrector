@@ -7,6 +7,7 @@ import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
+import { readEditorClip, readEditorClipIds } from "@/lib/editor-idb-read";
 import { isCurrentEditorLibraryLoad } from "@/lib/editor-library-generation";
 import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
 import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
@@ -121,20 +122,6 @@ function openClipLibrary(): Promise<IDBDatabase> {
       db.onversionchange = () => db.close();
       resolve(db);
     };
-  });
-}
-function readClipIds(db: IDBDatabase): Promise<string[]> {
-  return new Promise((resolve, reject) => {
-    const req = db.transaction("clips", "readonly").objectStore("clips").getAllKeys();
-    req.onsuccess = () => resolve(req.result.filter((id): id is string => typeof id === "string"));
-    req.onerror = () => reject(req.error);
-  });
-}
-function readClip(db: IDBDatabase, id: string): Promise<StoredClip | null> {
-  return new Promise((resolve, reject) => {
-    const req = db.transaction("clips", "readonly").objectStore("clips").get(id);
-    req.onsuccess = () => resolve((req.result as StoredClip | undefined) ?? null);
-    req.onerror = () => reject(req.error);
   });
 }
 
@@ -385,11 +372,11 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     let library: IDBDatabase | null = null;
     try {
       library = await bounded(openClipLibrary(), 5000, "Media library", late => late.close());
-      const ids = await bounded(readClipIds(library), 5000, "Media keys");
+      const ids = await readEditorClipIds(library, controller.signal);
       for (const id of ids) {
         if (generation !== loadGeneration.current || controller.signal.aborted) break;
         let clip: StoredClip | null;
-        try { clip = await bounded(readClip(library, id), 5000, "Read clip"); }
+        try { clip = await readEditorClip<StoredClip>(library, id, controller.signal); }
         catch { errors.push(id); continue; }
         if (!clip) continue;
         if (generation !== loadGeneration.current || controller.signal.aborted) break;
@@ -487,7 +474,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           // optional PCM scanning, not merely postpone its initial launch.
           // Preserve the full waveform density on a later quiet retry.
           db ??= await bounded(openClipLibrary(), 5000, "Waveform library", late => late.close());
-          const original = await bounded(readClip(db, m.id), 5000, "Waveform clip");
+          const original = await readEditorClip<StoredClip>(db, m.id, abort.signal);
           if (!original || !live || abort.signal.aborted) { waveformAttempted.current.delete(m.id); continue; }
           const peaks = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
             attemptSignal => editorMediaWorkQueue.run(
