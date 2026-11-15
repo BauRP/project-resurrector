@@ -4,7 +4,7 @@ import { shouldAutoEncodeFullProxy } from "./editor-longform-policy";
 
 /** Real 480p silent scrubbing proxy; audio and export continue using the original. */
 export async function generateProxy(id: string, source: string, signal: AbortSignal): Promise<Blob | null> {
-  const cached = await readProxy(id); if (signal.aborted) return null; if (cached) return cached;
+  const cached = await readProxy(id, signal); if (signal.aborted) return null; if (cached) return cached;
   if (signal.aborted || typeof MediaRecorder === "undefined") return null;
   const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
