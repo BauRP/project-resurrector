@@ -83,10 +83,14 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
         ? fail(new Error("Proxy cancelled")) : succeed(new Blob(chunks, { type: mime }));
       recorder.onerror = () => fail(new Error("Proxy encoding failed"));
       video.onended = () => {
-        if (recorder?.state !== "inactive") {
-          try { recorder?.stop(); }
-          catch { fail(new Error("Proxy encoder could not stop")); return; }
+        if (recorder?.state === "inactive") {
+          // On some Android 9 WebViews the encoder dies without onstop.
+          // Do not leave the shared editor decoder lane waiting minutes.
+          fail(new Error("Proxy encoder ended without a completed recording"));
+          return;
         }
+        try { recorder?.stop(); }
+        catch { fail(new Error("Proxy encoder could not stop")); return; }
         // Some Android MediaCodec implementations never emit onstop after
         // end-of-video. Do not hold all subsequent editor jobs for ten minutes.
         stopWatchdog ??= setTimeout(() => fail(new Error("Proxy encoder stop timeout")), 2500);
@@ -105,7 +109,18 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       const interval = 1000 / 24;
       if (now + 0.75 >= deadline + interval) {
         deadline = now - deadline >= 2 * interval ? now : deadline + interval;
-        if (video.readyState >= 2) ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        if (video.readyState >= 2) {
+          // WebView can lose its compositor surface while still reporting
+          // HAVE_CURRENT_DATA. An exception from an rAF callback otherwise
+          // escapes the proxy promise and keeps MediaRecorder running.
+          try { ctx.drawImage(video, 0, 0, canvas.width, canvas.height); }
+          catch {
+            const failFrame = rejectPending;
+            if (failFrame) failFrame(new Error("Proxy decoder failed to provide a frame"));
+            stop();
+            return;
+          }
+        }
       }
       raf = requestAnimationFrame(draw);
     };
