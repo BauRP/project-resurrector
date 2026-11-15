@@ -8,6 +8,7 @@ import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { readEditorClip, readEditorClipIds } from "@/lib/editor-idb-read";
+import { saveEditorImportedClip } from "@/lib/editor-import-save";
 import { isCurrentEditorLibraryLoad } from "@/lib/editor-library-generation";
 import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
 import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
@@ -99,14 +100,7 @@ const uid = () => `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).t
 const len = (i: Item) => (i.out - i.in) / i.speed;
 const fmt = (t: number) => `${String(Math.floor(t / 60)).padStart(2, "0")}:${(t % 60).toFixed(2).padStart(5, "0")}`;
 
-function saveClip(clip: StoredClip): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const req = indexedDB.open("multicam-pov-media", 1);
-    req.onupgradeneeded = () => req.result.createObjectStore("clips", { keyPath: "id" });
-    req.onerror = () => reject(req.error);
-    req.onsuccess = () => { const tx = req.result.transaction("clips", "readwrite"); tx.objectStore("clips").put(clip); tx.oncomplete = () => { req.result.close(); resolve(); }; tx.onerror = () => { req.result.close(); reject(tx.error); }; };
-  });
-}
+const saveClip = saveEditorImportedClip<StoredClip>;
 /** Keep video Blobs out of a single giant getAll() response. */
 function openClipLibrary(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
