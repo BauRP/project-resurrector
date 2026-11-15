@@ -55,6 +55,10 @@ function fakeCache() {
     },
   });
   return {
+    async waitUntilReading() {
+      for (let i = 0; i < 12 && getCalls === 0; i++) await Promise.resolve();
+      expect(getCalls).toBe(1);
+    },
     get request() { return request; },
     resolveRead: (blob: Blob) => { request.result = blob; request.onsuccess?.(); },
     complete: () => tx.oncomplete?.(),
@@ -69,7 +73,7 @@ describe("Android editor stops optional preview cache IO on exit", () => {
   it("returns the cached proxy after IndexedDB commit with its LRU metadata", async () => {
     const cache = fakeCache();
     const requested = readProxy("clip");
-    await Promise.resolve();
+    await cache.waitUntilReading();
     const blob = new Blob(["preview"], { type: "video/webm" });
     cache.resolveRead(blob);
     cache.complete();
@@ -83,7 +87,7 @@ describe("Android editor stops optional preview cache IO on exit", () => {
     const cache = fakeCache();
     const controller = new AbortController();
     const requested = readProxy("clip", controller.signal);
-    await Promise.resolve();
+    await cache.waitUntilReading();
     controller.abort();
     await expect(requested).rejects.toThrow("Proxy cache read cancelled");
     expect(cache.aborts).toBe(1);
