@@ -3,7 +3,7 @@ import { readProxy, writeProxy } from "./media-cache";
 
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
 
-function cacheDb() {
+function cacheDb(autoOpen = true) {
   let openCallback: (() => void) | null = null;
   let blockedCallback: (() => void) | null = null;
   let closes = 0;
@@ -58,7 +58,7 @@ function cacheDb() {
       };
       openCallback = () => request.onsuccess?.();
       blockedCallback = () => request.onblocked?.();
-      queueMicrotask(() => openCallback?.());
+      if (autoOpen) queueMicrotask(() => openCallback?.());
       return request;
     },
   });
@@ -122,7 +122,7 @@ describe("optional preview writes cannot stall Android editor navigation", () =>
   });
 
   it("closes an obsolete cache connection that succeeded after onblocked", async () => {
-    const db = cacheDb();
+    const db = cacheDb(false);
     const pending = readProxy("clip");
     db.blocked();
     await expect(pending).rejects.toThrow("Кэш предпросмотра занят");
