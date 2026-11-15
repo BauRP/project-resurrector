@@ -1,3 +1,4 @@
+import { EDITOR_ACTIVE_INPUT_EVENTS, isEditorActiveInput } from "./editor-active-input";
 import { waitForEditorQuietInput } from "./editor-quiet-input";
 
 /**
@@ -18,12 +19,14 @@ export async function runEditorQuietMediaWork<T>(
 ): Promise<T | undefined> {
   if (session.aborted) return undefined;
   if (typeof window === "undefined") return work(session);
-  const inputEvents = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+  const inputEvents = EDITOR_ACTIVE_INPUT_EVENTS;
 
   while (!session.aborted) {
     if (!(await waitForEditorQuietInput(session, isPlaying, quietMs))) return undefined;
     const attempt = new AbortController();
-    const interrupt = () => attempt.abort();
+    const interrupt = (event?: Event) => {
+      if (!event || isEditorActiveInput(event)) attempt.abort();
+    };
     // A playback state change can happen without a pointer event, e.g. via
     // restored transport state. Poll only while an optional job is active.
     for (const event of inputEvents) {
