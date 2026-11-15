@@ -7,6 +7,7 @@ import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
+import { isCurrentEditorLibraryLoad } from "@/lib/editor-library-generation";
 import { runEditorQuietMediaWork } from "@/lib/editor-cooperative-work";
 import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
 import { sharedEditorVideoAudioIds } from "@/lib/editor-audio-routing";
@@ -399,7 +400,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         // Release the event loop between records for Settings/navigation.
         await new Promise<void>(resolve => window.setTimeout(resolve, 0));
       }
-      if (generation !== loadGeneration.current) {
+      // A cancelled scan must not publish URLs after its Editor has unmounted.
+      // Revoke every temporary URL so repeated tab changes cannot leak video blobs.
+      if (!isCurrentEditorLibraryLoad(generation, loadGeneration.current, controller.signal.aborted)) {
         results.forEach(({ media: item }) => URL.revokeObjectURL(item.url));
         return;
       }
@@ -408,12 +411,12 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       if (errors.length) setImportErr(`Не удалось открыть: ${errors.join(", ")}`);
     } catch {
       results.forEach(({ media: item }) => URL.revokeObjectURL(item.url));
-      if (generation === loadGeneration.current)
+      if (isCurrentEditorLibraryLoad(generation, loadGeneration.current, controller.signal.aborted))
         setImportErr("Хранилище недоступно. Повторите открытие медиатеки.");
     } finally {
       library?.close();
       if (activeLibraryLoad.current === controller) activeLibraryLoad.current = null;
-      if (generation === loadGeneration.current) setLoading(false);
+      if (isCurrentEditorLibraryLoad(generation, loadGeneration.current, controller.signal.aborted)) setLoading(false);
     }
   }, []);
   useEffect(() => {
