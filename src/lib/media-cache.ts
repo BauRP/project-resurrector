@@ -64,24 +64,69 @@ export function chooseProxyEvictions(existing:readonly ProxyMetadata[],incoming:
   }
   return victims;
 }
-export async function readProxy(id:string):Promise<Blob|null>{
-  const db=await previewCache();
+/** Stop optional proxy cache IO when Editor unmounts. A Promise timeout alone
+ * does not abort an active IndexedDB transaction on stalled Android WebView.
+ * This only touches regenerable preview blobs; user clips live in another DB.
+ */
+export async function readProxy(id: string, signal?: AbortSignal): Promise<Blob | null> {
+  if (signal?.aborted) return null;
+  const db = await previewCache();
   try {
-    return await bounded(new Promise<Blob|null>((resolve,reject)=>{
-      const tx=db.transaction(["proxies","proxy-meta"],"readwrite");
-      const get=tx.objectStore("proxies").get(id);
-      let value:Blob|null=null;
-      get.onsuccess=()=>{
-        if(get.result instanceof Blob){
-          value=get.result;
-          tx.objectStore("proxy-meta").put({id,size:value.size,touched:Date.now()} satisfies ProxyMetadata);
-        }
+    if (signal?.aborted) return null;
+    return await new Promise<Blob | null>((resolve, reject) => {
+      let tx: IDBTransaction;
+      let get: IDBRequest;
+      try {
+        tx = db.transaction(["proxies", "proxy-meta"], "readwrite");
+        get = tx.objectStore("proxies").get(id);
+      } catch (error) { reject(error); return; }
+
+      let settled = false;
+      let value: Blob | null = null;
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", cancel);
+        get.onsuccess = null;
+        get.onerror = null;
+        tx.oncomplete = null;
+        tx.onerror = null;
+        tx.onabort = null;
       };
-      tx.oncomplete=()=>resolve(value);
-      tx.onerror=()=>reject(tx.error);
-      tx.onabort=()=>reject(tx.error??new Error("Чтение кэша прервано"));
-    }),5000,"Read proxy");
-  }finally{db.close();}
+      const finish = (error?: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        if (error !== undefined) reject(error);
+        else resolve(value);
+      };
+      const cancel = () => {
+        // Report completion before a synchronous OEM onabort can override it.
+        finish(new Error("Proxy cache read cancelled"));
+        try { tx.abort(); } catch { /* The transaction already completed. */ }
+      };
+      const timer = setTimeout(() => {
+        finish(new Error("Read proxy: timeout"));
+        try { tx.abort(); } catch { /* Already completed. */ }
+      }, 5000);
+      get.onsuccess = () => {
+        if (signal?.aborted) { cancel(); return; }
+        try {
+          if (get.result instanceof Blob) {
+            value = get.result;
+            tx.objectStore("proxy-meta").put({
+              id, size: value.size, touched: Date.now(),
+            } satisfies ProxyMetadata);
+          }
+        } catch (error) { finish(error); try { tx.abort(); } catch { /* Not active. */ } }
+      };
+      get.onerror = () => finish(get.error ?? new Error("Proxy cache read failed"));
+      tx.oncomplete = () => finish();
+      tx.onerror = () => finish(tx.error ?? new Error("Proxy cache transaction failed"));
+      tx.onabort = () => finish(tx.error ?? new Error("Proxy cache transaction aborted"));
+      signal?.addEventListener("abort", cancel, { once: true });
+      if (signal?.aborted) cancel();
+    });
+  } finally { db.close(); }
 }
 export async function writeProxy(id:string,blob:Blob,signal?:AbortSignal):Promise<void>{
   // Do not persist oversized disposable previews. The original still plays.
