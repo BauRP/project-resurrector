@@ -84,9 +84,11 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
       recorder.onerror = () => fail(new Error("Proxy encoding failed"));
       video.onended = () => {
         if (recorder?.state === "inactive") {
-          // On some Android 9 WebViews the encoder dies without onstop.
-          // Do not leave the shared editor decoder lane waiting minutes.
-          fail(new Error("Proxy encoder ended without a completed recording"));
+          // Native MediaRecorder may enter "inactive" before its queued onstop
+          // arrives. Allow that valid event a short grace period, but never
+          // hold the shared decoder queue indefinitely on broken Android 9.
+          stopWatchdog ??= setTimeout(() =>
+            fail(new Error("Proxy encoder ended without a completed recording")), 2500);
           return;
         }
         try { recorder?.stop(); }
