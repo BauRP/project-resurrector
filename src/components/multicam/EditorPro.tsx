@@ -394,7 +394,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
         if (!clip) continue;
         if (generation !== loadGeneration.current || controller.signal.aborted) break;
         try {
-          const mediaItem = await retry(() => analyse(clip, controller.signal));
+          const mediaItem = await retry(() => analyse(clip, controller.signal), 2, controller.signal);
           results.push({ media: mediaItem, createdAt: clip.createdAt });
         } catch { errors.push(clip.name || clip.id); }
         // Release the event loop between records for Settings/navigation.
