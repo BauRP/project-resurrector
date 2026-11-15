@@ -9,7 +9,13 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
   const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
   let rejectPending: ((error: Error) => void) | null = null;
+  let stopped = false;
   const stop = () => {
+    // A frame-loss handler may call stop() before the enclosing finally.
+    // Stop MediaRecorder and each MediaStreamTrack only once, including Android
+    // implementations where repeated MediaCodec release can stall the renderer.
+    if (stopped) return;
+    stopped = true;
     // MediaRecorder.stop() is not guaranteed to send an onstop event when
     // Android destroys its codec. Release the waiting editor queue on abort.
     rejectPending?.(new Error("Proxy cancelled"));
