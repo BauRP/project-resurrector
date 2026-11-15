@@ -59,3 +59,56 @@ describe("editor media workload prevents concurrent Android WebView decoders", (
     expect(code).toContain("abort.abort()");
   });
 });
+
+
+describe("cancelled editor decoder work is removed immediately", () => {
+  it("releases hundreds of canceled waits without waiting for an active codec", async () => {
+    const queue = new EditorMediaWorkQueue();
+    let release!: () => void;
+    const active = queue.run(() => new Promise<void>(resolve => { release = resolve; }));
+    await Promise.resolve();
+    const controllers = Array.from({ length: 200 }, () => new AbortController());
+    const cancelled = controllers.map(controller =>
+      queue.run(async () => { throw new Error("cancelled media must not start"); }, controller.signal)
+    );
+    expect(queue.queuedCount).toBe(201);
+    controllers.forEach(controller => controller.abort());
+    expect(await Promise.all(cancelled)).toEqual(Array(200).fill(undefined));
+    expect(queue.queuedCount).toBe(1);
+    release();
+    await active;
+    expect(queue.queuedCount).toBe(0);
+  });
+
+  it("does not start another codec before a canceled active one finishes releasing MediaCodec", async () => {
+    const queue = new EditorMediaWorkQueue();
+    const cancelActive = new AbortController();
+    let release!: () => void;
+    let secondStarted = false;
+    const first = queue.run(async () => {
+      await new Promise<void>(resolve => { release = resolve; });
+      return "finished cleanup";
+    }, cancelActive.signal);
+    await Promise.resolve();
+    const second = queue.run(async () => {
+      secondStarted = true;
+      return "next";
+    });
+    cancelActive.abort();
+    await Promise.resolve();
+    expect(secondStarted).toBe(false);
+    expect(queue.queuedCount).toBe(2);
+    release();
+    expect(await first).toBe("finished cleanup");
+    expect(await second).toBe("next");
+    expect(queue.queuedCount).toBe(0);
+  });
+
+  it("skips an already-aborted request without touching the shared queue", async () => {
+    const queue = new EditorMediaWorkQueue();
+    const controller = new AbortController();
+    controller.abort();
+    expect(await queue.run(async () => { throw Error("should not start"); }, controller.signal)).toBeUndefined();
+    expect(queue.queuedCount).toBe(0);
+  });
+});
