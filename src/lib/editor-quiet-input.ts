@@ -1,3 +1,4 @@
+import { EDITOR_ACTIVE_INPUT_EVENTS, isEditorActiveInput } from "./editor-active-input";
 /**
  * Android 9 WebView can lock its renderer when 24fps proxy encoding starts
  * while a 15-second clip is playing or the user repeatedly taps the editor.
@@ -12,8 +13,8 @@ export function waitForEditorQuietInput(
    let done = false;
    let lastInput = Date.now();
    let timer: ReturnType<typeof setTimeout> | null = null;
-   const events = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
-   const onInput = () => { lastInput = Date.now(); };
+   const events = EDITOR_ACTIVE_INPUT_EVENTS;
+   const onInput = (event: Event) => { if (isEditorActiveInput(event)) lastInput = Date.now(); };
    const finish = (ok: boolean) => {
      if (done) return;
      done = true;
