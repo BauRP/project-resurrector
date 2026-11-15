@@ -39,11 +39,15 @@ export async function previewCache():Promise<IDBDatabase>{
         request.transaction?.objectStore("proxies").clear();
       }
     };
-    request.onblocked=()=>reject(new Error("Кэш предпросмотра занят"));
-    request.onerror=()=>reject(request.error);
+    // A blocked open can succeed much later. Its success cannot reopen a
+    // connection that the caller has already abandoned.
+    let abandoned=false;
+    request.onblocked=()=>{abandoned=true;reject(new Error("Кэш предпросмотра занят"));};
+    request.onerror=()=>{abandoned=true;reject(request.error??new Error("Не удалось открыть кэш"));};
     request.onsuccess=()=>{
       const db=request.result;
       db.onversionchange=()=>db.close();
+      if(abandoned){db.close();return;}
       resolve(db);
     };
   }),5000,"Preview cache",db=>db.close());
@@ -128,34 +132,67 @@ export async function readProxy(id: string, signal?: AbortSignal): Promise<Blob 
     });
   } finally { db.close(); }
 }
+/** The optional proxy write must not survive a closed Editor or hold a
+ * stuck WebView transaction after its deadline. Original recorded clips
+ * belong to a different database and are never affected by this operation.
+ */
 export async function writeProxy(id:string,blob:Blob,signal?:AbortSignal):Promise<void>{
-  // Do not persist oversized disposable previews. The original still plays.
   if(blob.size>CACHE_LIMIT_BYTES)return;
+  if(signal?.aborted)throw new Error("Proxy cancelled");
   const db=await previewCache();
-  try {
-    await bounded(new Promise<void>((resolve,reject)=>{
-      if(signal?.aborted){reject(new Error("Proxy cancelled"));return;}
-      const tx=db.transaction(["proxies","proxy-meta"],"readwrite");
-      const previews=tx.objectStore("proxies");
-      const meta=tx.objectStore("proxy-meta");
-      const onAbort=()=>{try{tx.abort();}catch{/* commit already finished */}};
-      signal?.addEventListener("abort",onAbort,{once:true});
-      const detach=()=>signal?.removeEventListener("abort",onAbort);
-      const get=meta.getAll();
+  try{
+    if(signal?.aborted)throw new Error("Proxy cancelled");
+    await new Promise<void>((resolve,reject)=>{
+      let tx:IDBTransaction;
+      let get:IDBRequest;
+      try{
+        tx=db.transaction(["proxies","proxy-meta"],"readwrite");
+        get=tx.objectStore("proxy-meta").getAll();
+      }catch(error){reject(error);return;}
+      let settled=false;
+      let timer:ReturnType<typeof setTimeout>|null=null;
+      const cleanup=()=>{
+        if(timer!==null)clearTimeout(timer);
+        signal?.removeEventListener("abort",onAbort);
+        get.onsuccess=null;get.onerror=null;
+        tx.oncomplete=null;tx.onerror=null;tx.onabort=null;
+      };
+      const finish=(error?:unknown)=>{
+        if(settled)return;
+        settled=true;
+        cleanup();
+        if(error!==undefined)reject(error);else resolve();
+      };
+      const cancel=(reason:string)=>{
+        finish(new Error(reason));
+        try{tx.abort();}catch{/* already committed or closed */}
+      };
+      const onAbort=()=>cancel("Proxy cancelled");
       get.onsuccess=()=>{
         if(signal?.aborted){onAbort();return;}
-        const next:ProxyMetadata={id,size:blob.size,touched:Date.now()};
-        const evicted=chooseProxyEvictions(get.result as ProxyMetadata[],next);
-        if(!evicted.includes(id)){
-          previews.put(blob,id);
-          meta.put(next);
+        try{
+          const previews=tx.objectStore("proxies");
+          const meta=tx.objectStore("proxy-meta");
+          const next:ProxyMetadata={id,size:blob.size,touched:Date.now()};
+          const evicted=chooseProxyEvictions(get.result as ProxyMetadata[],next);
+          if(!evicted.includes(id)){
+            previews.put(blob,id);
+            meta.put(next);
+          }
+          for(const victim of evicted){previews.delete(victim);meta.delete(victim);}
+        }catch(error){
+          finish(error);
+          try{tx.abort();}catch{/* transaction already closed */}
         }
-        for(const victim of evicted){previews.delete(victim);meta.delete(victim);}
       };
-      tx.oncomplete=()=>{detach();resolve();};
-      tx.onerror=()=>{detach();reject(tx.error);};
-      tx.onabort=()=>{detach();reject(tx.error??new Error("Запись кэша прервана"));};
-    }),7000,"Save proxy");
+      get.onerror=()=>finish(get.error??new Error("Не удалось прочитать метаданные кэша"));
+      tx.oncomplete=()=>finish();
+      tx.onerror=()=>finish(tx.error??new Error("Не удалось сохранить превью"));
+      tx.onabort=()=>finish(tx.error??new Error("Запись кэша прервана"));
+      signal?.addEventListener("abort",onAbort,{once:true});
+      timer=setTimeout(()=>cancel("Save proxy: timeout"),7000);
+      if(signal?.aborted)onAbort();
+    });
   }finally{db.close();}
 }
 export async function cacheBytes():Promise<number>{
