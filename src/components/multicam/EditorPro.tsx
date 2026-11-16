@@ -15,6 +15,7 @@ import { syncEditorAudioElement } from "@/lib/editor-audio-sync";
 import { sharedEditorVideoAudioIds } from "@/lib/editor-audio-routing";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
+import { staleEditorProxyIds, type EditorProxyHandle } from "@/lib/editor-proxy-url-lifecycle";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
@@ -331,7 +332,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const scrollSaveTimer = useRef<number | null>(null);
   const lastTimelineView = useRef({ left: 0, zoom: 8 });
   lastTimelineView.current.zoom = zoom;
-  const [proxies, setProxies] = useState<Record<string, string>>({}); const proxyUrls = useRef(new Set<string>());
+  const [proxies, setProxies] = useState<Record<string, string>>({});
+  const proxyUrls = useRef(new Set<string>());
+  const proxyHandles = useRef(new Map<string, EditorProxyHandle>());
   const [cacheRevision, setCacheRevision] = useState(0);
   // Activity recreation must restore the last safe playhead, not restart the
   // editor at zero after every fold. The view-state sanitizer rejects NaN and
@@ -495,6 +498,36 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
     })().finally(() => { db?.close(); });
     return () => { live = false; abort.abort(); };
   }, [mediaSourceKey, timelineWaveformKey]);
+  // The original media or timeline can change without unmounting Editor.
+  // Revoke only disposable proxy URLs whose clip is no longer in use or whose
+  // original source changed. Never revoke original media URLs here.
+  useEffect(() => {
+    const needed = new Set<string>(JSON.parse(timelineVideoKey) as string[]);
+    const sources = new Map(media.filter(m => m.kind === "video" && needed.has(m.id))
+      .map(m => [m.id, m.url] as const));
+    const stale = staleEditorProxyIds(proxyHandles.current, sources);
+    if (stale.length === 0) return;
+    for (const id of stale) {
+      const handle = proxyHandles.current.get(id);
+      if (!handle) continue;
+      URL.revokeObjectURL(handle.proxyUrl);
+      proxyUrls.current.delete(handle.proxyUrl);
+      proxyHandles.current.delete(id);
+      loadedProxyIds.current.delete(id);
+      // A replaced source with the same clip id requires fresh thumbnails.
+      thumbCache.delete(id);
+    }
+    setProxies(current => {
+      const next = { ...current };
+      for (const id of stale) delete next[id];
+      return next;
+    });
+    setThumbs(current => {
+      const next = { ...current };
+      for (const id of stale) delete next[id];
+      return next;
+    });
+  }, [mediaSourceKey, timelineVideoKey]);
   useEffect(() => {
     const abort = new AbortController();
     let live = true;
@@ -502,6 +535,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       abort.abort();
       proxyUrls.current.forEach((url) => URL.revokeObjectURL(url));
       proxyUrls.current.clear();
+      proxyHandles.current.clear();
       loadedProxyIds.current.clear();
       setProxies({});
       setThumbs({});
@@ -557,6 +591,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           if (blob && live && !abort.signal.aborted) {
             const url = URL.createObjectURL(blob);
             proxyUrls.current.add(url);
+            proxyHandles.current.set(m.id, { sourceUrl: m.url, proxyUrl: url });
             loadedProxyIds.current.add(m.id);
             setProxies(cur => ({ ...cur, [m.id]: url }));
           }
