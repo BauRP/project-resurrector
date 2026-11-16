@@ -195,22 +195,54 @@ export async function writeProxy(id:string,blob:Blob,signal?:AbortSignal):Promis
     });
   }finally{db.close();}
 }
+/** Read only tiny LRU metadata, never the video Blob contents. A hung WebView
+ * must abort the real IDB cursor transaction, not merely reject a Promise.
+ */
 export async function cacheBytes():Promise<number>{
   const db=await previewCache();
   try{
-    return await bounded(new Promise<number>((resolve,reject)=>{
-      const tx=db.transaction("proxy-meta","readonly");
+    return await new Promise<number>((resolve,reject)=>{
+      let tx:IDBTransaction;
+      let req:IDBRequest<IDBCursorWithValue|null>;
+      try{
+        tx=db.transaction("proxy-meta","readonly");
+        req=tx.objectStore("proxy-meta").openCursor();
+      }catch(error){reject(error);return;}
+      let settled=false;
       let size=0;
-      const req=tx.objectStore("proxy-meta").openCursor();
-      req.onsuccess=()=>{
-        const cur=req.result;
-        if(!cur)return;
-        size+=(cur.value as ProxyMetadata).size;
-        cur.continue();
+      const cleanup=()=>{
+        clearTimeout(timer);
+        req.onsuccess=null;req.onerror=null;
+        tx.oncomplete=null;tx.onerror=null;tx.onabort=null;
       };
-      tx.oncomplete=()=>resolve(size);
-      tx.onerror=()=>reject(tx.error);
-    }),5000,"Measure cache");
+      const finish=(error?:unknown)=>{
+        if(settled)return;
+        settled=true;
+        cleanup();
+        if(error!==undefined)reject(error);else resolve(size);
+      };
+      const cancel=(reason:string)=>{
+        finish(new Error(reason));
+        try{tx.abort();}catch{/* IDB transaction finished or disconnected */}
+      };
+      const timer=setTimeout(()=>cancel("Measure cache: timeout"),5000);
+      req.onsuccess=()=>{
+        if(settled)return;
+        try{
+          const cur=req.result;
+          if(!cur)return;
+          size+=(cur.value as ProxyMetadata).size;
+          cur.continue();
+        }catch(error){
+          finish(error);
+          try{tx.abort();}catch{/* Already closing */}
+        }
+      };
+      req.onerror=()=>finish(req.error??new Error("Не удалось прочитать размер кэша"));
+      tx.oncomplete=()=>finish();
+      tx.onerror=()=>finish(tx.error??new Error("Не удалось измерить кэш"));
+      tx.onabort=()=>finish(tx.error??new Error("Измерение кэша прервано"));
+    });
   }finally{db.close();}
 }
 export async function clearPreviewCache():Promise<number>{
