@@ -17,7 +17,7 @@ function mockCacheDb() {
   let eventCount = 0;
   let cursor: { value: unknown; continue: () => void } | null = null;
   let request: {
-    result: typeof cursor; error: Error | null;
+    result: { value: unknown; continue: () => void } | null; error: Error | null;
     onsuccess: (() => void) | null; onerror: (() => void) | null;
   } | undefined;
   let tx: {
