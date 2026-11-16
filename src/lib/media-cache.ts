@@ -245,18 +245,43 @@ export async function cacheBytes():Promise<number>{
     });
   }finally{db.close();}
 }
+/** Clear only disposable previews, and commit them as one transaction.
+ * On a lost Android WebView callback, cancel that transaction instead of
+ * allowing a background deletion to continue after Settings reports failure.
+ */
 export async function clearPreviewCache():Promise<number>{
   const db=await previewCache();
   try{
-    await bounded(new Promise<void>((resolve,reject)=>{
-      const tx=db.transaction(["proxies","proxy-meta"],"readwrite");
-      tx.objectStore("proxies").clear();
-      tx.objectStore("proxy-meta").clear();
-      tx.oncomplete=()=>resolve();
-      tx.onerror=()=>reject(tx.error);
-      tx.onabort=()=>reject(tx.error??new Error("Очистка кэша прервана"));
-    }),7000,"Clear previews");
+    await new Promise<void>((resolve,reject)=>{
+      let tx:IDBTransaction;
+      try{
+        tx=db.transaction(["proxies","proxy-meta"],"readwrite");
+        tx.objectStore("proxies").clear();
+        tx.objectStore("proxy-meta").clear();
+      }catch(error){reject(error);return;}
+      let settled=false;
+      const cleanup=()=>{
+        clearTimeout(timer);
+        tx.oncomplete=null;tx.onerror=null;tx.onabort=null;
+      };
+      const finish=(error?:unknown)=>{
+        if(settled)return;
+        settled=true;
+        cleanup();
+        if(error!==undefined)reject(error);else resolve();
+      };
+      const timer=setTimeout(()=>{
+        // A transaction that just committed cannot be rolled back. Report
+        // uncertainty rather than claiming that user videos were deleted.
+        finish(new Error("Clear previews: timeout"));
+        try{tx.abort();}catch{/* already committed */}
+      },7000);
+      tx.oncomplete=()=>finish();
+      tx.onerror=()=>finish(tx.error??new Error("Не удалось очистить кэш"));
+      tx.onabort=()=>finish(tx.error??new Error("Очистка кэша прервана"));
+    });
   }finally{db.close();}
+  // Do not announce a completed cache reset until IndexedDB committed.
   analysisCache.clear();thumbCache.clear();
   window.dispatchEvent(new Event("multicam-preview-cache-cleared"));
   return 0;
