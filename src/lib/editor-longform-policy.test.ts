@@ -17,7 +17,8 @@ describe("long-form Editor media policy",()=>{
  it("protects direct proxy calls while preserving the full original",()=>{
    const code=readFileSync("src/lib/video-proxy.ts","utf8");
    expect(code).toContain("!shouldAutoEncodeFullProxy(video.duration)");
-   expect(code).toContain("const cached = await readProxy(id, signal)");
+   expect(code).toContain("cached = await readProxy(id, signal)");
+   expect(code).toContain("if (cached) return cached;");
    expect(readFileSync("src/lib/editor-original-export.ts","utf8")).toContain("return {allowed:true}");
  });
 });
