@@ -4,7 +4,17 @@ import { shouldAutoEncodeFullProxy } from "./editor-longform-policy";
 
 /** Real 480p silent scrubbing proxy; audio and export continue using the original. */
 export async function generateProxy(id: string, source: string, signal: AbortSignal): Promise<Blob | null> {
-  const cached = await readProxy(id, signal); if (signal.aborted) return null; if (cached) return cached;
+  // Proxy cache is disposable. An IDB lock, quota error or interrupted
+  // cache lookup must not disable real scrubbing proxy generation.
+  // Keep navigation cancellation authoritative: never open a decoder
+  // after the editor has been closed.
+  let cached: Blob | null = null;
+  try { cached = await readProxy(id, signal); }
+  catch {
+    if (signal.aborted) return null;
+  }
+  if (signal.aborted) return null;
+  if (cached) return cached;
   if (signal.aborted || typeof MediaRecorder === "undefined") return null;
   const video = document.createElement("video"); video.muted = true; video.playsInline = true; video.preload = "auto";
   let stream: MediaStream | null = null; let recorder: MediaRecorder | null = null; let raf = 0;
@@ -136,7 +146,16 @@ export async function generateProxy(id: string, source: string, signal: AbortSig
     recorder.start(1000); draw(performance.now()); await bounded(video.play(), 5000, "Proxy playback");
     const duration = Number.isFinite(video.duration) ? video.duration : 60;
     const blob = await bounded(done, Math.min(600000, duration * 1000 + 10000), "Proxy encoding");
-    if (blob.size && !signal.aborted) { await writeProxy(id, blob, signal); return signal.aborted ? null : blob; }
+    if (blob.size && !signal.aborted) {
+      // Encoding has already succeeded. Losing the optional IndexedDB
+      // preview cache must not discard that finished video or require
+      // a second GPU/MediaCodec pass on this Editor mount.
+      try { await writeProxy(id, blob, signal); }
+      catch {
+        if (signal.aborted) return null;
+      }
+      return signal.aborted ? null : blob;
+    }
     return null;
   } finally { signal.removeEventListener("abort", stop); stop(); video.removeAttribute("src"); video.load(); }
 }
