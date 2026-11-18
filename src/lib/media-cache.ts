@@ -23,7 +23,7 @@ export class BoundedDerivedCache<K, V> extends Map<K, V> {
     return this;
   }
 }
-export const analysisCache=new BoundedDerivedCache<string,{duration:number;peaks:number[]}>(128);
+export const analysisCache=new BoundedDerivedCache<string,{duration:number;peaks:number[];sourceKey?:string}>(128);
 export const thumbCache=new BoundedDerivedCache<string,string[]>(64);
 
 /** Version 2 adds size and LRU metadata. Legacy cache blobs are regenerable;
