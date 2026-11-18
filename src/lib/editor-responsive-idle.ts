@@ -32,6 +32,10 @@ export function waitForEditorResponsiveIdle(signal?: AbortSignal): Promise<boole
       startFrames();
     };
     const startFrames = () => {
+      // If Android sent visibilitychange during the initial 550ms delay,
+      // its immediate RAF sequence replaces that timer. Do not cancel and
+      // restart the decoder gate on the original stale timer.
+      if (timer !== null) { clearTimeout(timer); timer = null; }
       if (done || signal?.aborted) { finish(false); return; }
       // True background pages never provide a stable RAF sequence.
       cancelFrames?.();
