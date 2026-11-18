@@ -33,6 +33,27 @@ describe("Editor waveform decode is deferred until responsive WebView frames", (
     expect(complete).toHaveBeenCalledWith(true);
   });
 
+  it("does not restart an active idle gate when resume arrives before initial delay", async () => {
+    vi.useFakeTimers();
+    const frames: FrameRequestCallback[] = [];
+    const cancelFrame=vi.fn();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      frames.push(callback); return frames.length;
+    });
+    vi.stubGlobal("cancelAnimationFrame",cancelFrame);
+    const promise=waitForEditorResponsiveIdle();
+    await vi.advanceTimersByTimeAsync(100);
+    document.dispatchEvent(new Event("visibilitychange"));
+    expect(frames).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(500);
+    // Previously the stale 550ms timer cancelled an already responsive RAF.
+    expect(cancelFrame).not.toHaveBeenCalled();
+    for (const t of [16, 32, 48, 64]) {
+      frames.shift()?.(t);
+      await vi.advanceTimersByTimeAsync(0);
+    }
+    await expect(promise).resolves.toBe(true);
+  });
   it("loads media after steady frames if Android falsely reports hidden", async () => {
     vi.useFakeTimers();
     vi.spyOn(document, "hidden", "get").mockReturnValue(true);
