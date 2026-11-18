@@ -13,7 +13,7 @@ describe("on-demand editor media work", () => {
   });
   it("keeps background decoders alive across waveform-only state updates",()=>{
     expect(code).toContain('const mediaSourceKey = useMemo(');
-    expect(code).toContain('media.map(m => [m.id, m.url, m.kind, m.duration])');
+    expect(code).toContain('media.map(m => [m.id, m.url, m.kind, m.duration, m.sourceKey])');
     expect(code).toContain('}, [mediaSourceKey, timelineWaveformKey])');
     expect(code).toContain('}, [mediaSourceKey, timelineVideoKey, cacheRevision])');
     expect(code).not.toContain('}, [media, timelineWaveformKey])');
@@ -26,7 +26,7 @@ describe("on-demand editor media work", () => {
   });
   it("retains original playback and full proxy functions for timeline media",()=>{
     expect(code).toContain('() => makeThumbs(m.url, m.duration, 10, attemptSignal)');
-    expect(code).toContain('() => generateProxy(m.id, m.url, attemptSignal)');
+    expect(code).toContain('() => generateProxy(`${m.id}:${m.sourceKey}`, m.url, attemptSignal)');
     expect(code).toContain('source={proxies[i.mediaId] ?? mediaById.get(i.mediaId)?.url ?? ""}');
     expect(code).toContain('loadedProxyIds.current.clear()');
     expect(code).toContain('editorMediaWorkQueue.run(');
