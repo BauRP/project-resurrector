@@ -112,7 +112,13 @@ public class MainActivity extends BridgeActivity {
                 webView.setWebViewRenderProcessClient(new WebViewRenderProcessClient() {
                     @Override public void onRenderProcessUnresponsive(WebView view, WebViewRenderProcess renderer) {
                         UiFreezeMonitor.recordRendererUnresponsive();
-                        runOnUiThread(() -> showRecoveryDialog(false));
+                        // The renderer can recover before this queued MAIN callback.
+                        // Reuse the heartbeat-checked recovery path: opening a
+                        // transient native AlertDialog triggers another GPU surface
+                        // composition on API35 SwiftShader and can obstruct live UI.
+                        // Sustained JS stalls still show the original recovery dialog
+                        // through UiFreezeMonitor's independent watchdog.
+                        runOnUiThread(webViewRecovery);
                     }
                     @Override public void onRenderProcessResponsive(WebView view, WebViewRenderProcess renderer) {
                         UiFreezeMonitor.recordRendererResponsive();
