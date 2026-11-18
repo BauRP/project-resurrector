@@ -72,6 +72,14 @@ describe("multi-hinge topology", () => {
     expect(output.regions.every(r=>r.width>0&&r.height>0)).toBe(true);
     expect(foldEventDetails(topology(many),600,450).usableRegions).toBeLessThanOrEqual(16);
   });
+  it("ignores duplicate OEM hinge entries without inventing extra panes", () => {
+    const fold = hinge(590,610);
+    const one = calculateDisplayRegions(topology([fold]),600,450);
+    const duplicated = calculateDisplayRegions(topology([fold,{...fold}]),600,450);
+    expect(duplicated.regions).toEqual(one.regions);
+    expect(duplicated.hinges).toHaveLength(1);
+    expect(foldEventDetails(topology([fold,{...fold}]),600,450).hingeCount).toBe(1);
+  });
   it("supports two actual Android hinge bounds for tri-fold devices", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);
     expect(result.regions).toHaveLength(3);
