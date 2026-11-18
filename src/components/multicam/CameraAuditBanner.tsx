@@ -47,8 +47,10 @@ export function CameraAuditBanner() {
     return () => { alive = false; cancel(); if (timer) window.clearTimeout(timer); };
   }, []);
 
-  if (!isNative()) return null;
-  const complete = audit?.state === "complete";
+  // The saved baseline is not a repeated startup progress screen.
+  // Full functional diagnosis has its own future completion state.
+  if (!isNative() || audit?.state === "complete") return null;
+  const complete = false;
   const percent = audit ? cameraAuditProgress(audit) : 0;
   const line = problem || (complete
     ? "Базовое обнаружение завершено. Подробная проверка режимов и кнопок ещё ожидает выполнения."
