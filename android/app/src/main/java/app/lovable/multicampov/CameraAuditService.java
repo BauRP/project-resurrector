@@ -47,7 +47,7 @@ public final class CameraAuditService extends Service {
         // AtomicFile.openRead() also recovers a previous committed backup.
         // A fresh install simply takes the missing-file exception below.
         try (InputStream in = file.openRead()) {
-            byte[] data = new byte[256 * 1024];
+            byte[] data = new byte[1024 * 1024];
             int length = 0;
             while (length < data.length) {
                 int n = in.read(data, length, data.length - length);
@@ -248,6 +248,9 @@ public final class CameraAuditService extends Service {
                         item.put("eisAppliedVerified", false);
                         item.put("manualControlsAppliedVerified", false);
                         item.put("photoSavedVerified", false);
+                        item.put("stillPhotoSizesDeclared", photoSizes(map));
+                        item.put("metadataOnly", true);
+                        item.put("timestamp", System.currentTimeMillis());
                         item.put("state", "metadata-collected");
                     } catch (Exception error) {
                         // Failure to obtain vendor metadata never means unsupported.
@@ -286,6 +289,32 @@ public final class CameraAuditService extends Service {
                 persist(this, saved);
             } catch (Exception ignored) { }
         }
+    }
+
+    private static JSONArray photoSizes(StreamConfigurationMap map) {
+        JSONArray output = new JSONArray();
+        if (map == null) return output;
+        // Device declarations only; JPEG output may still fail to capture.
+        Size[] declared;
+        try {
+            declared = map.getOutputSizes(android.graphics.ImageFormat.JPEG);
+        } catch (RuntimeException unsupported) {
+            return output;
+        }
+        if (declared == null) return output;
+        for (int i = 0; i < declared.length && i < MAX_MODES_PER_CAMERA; i++) {
+            Size value = declared[i];
+            if (value == null) continue;
+            JSONObject size = new JSONObject();
+            try {
+                size.put("width", value.getWidth());
+                size.put("height", value.getHeight());
+                output.put(size);
+            } catch (Exception ignored) {
+                // Ignore only an invalid vendor value, not all photo sizes.
+            }
+        }
+        return output;
     }
 
     private static Object optional(Object value) { return value == null ? JSONObject.NULL : value; }
