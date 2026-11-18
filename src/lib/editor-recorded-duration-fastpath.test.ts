@@ -10,7 +10,7 @@ describe("lazy Editor metadata on Android 9 and multi-hour WebM", () => {
     expect(lookup).toBeGreaterThan(0);
     expect(lookup).toBeLessThan(mount);
     expect(code).toContain("if (recorded !== null) {");
-    expect(code).toContain("analysisCache.set(clip.id, { duration: recorded, peaks });");
+    expect(code).toContain("analysisCache.set(clip.id, { duration: recorded, peaks, sourceKey });");
   });
   it("continues real metadata probing when source duration is missing or invalid", () => {
     for (const invalid of [undefined, NaN, Infinity, 0, -1, 86401]) {
@@ -23,7 +23,7 @@ describe("lazy Editor metadata on Android 9 and multi-hour WebM", () => {
       expect(selectEditorClipDuration(NaN, seconds)).toBe(seconds);
     }
     expect(code).toContain("const url = URL.createObjectURL(clip.blob);");
-    expect(code).toContain("analysisCache.set(clip.id, { duration: recorded, peaks });");
+    expect(code).toContain("analysisCache.set(clip.id, { duration: recorded, peaks, sourceKey });");
     expect(code).toContain("const peaks: number[] = [];");
   });
 });
