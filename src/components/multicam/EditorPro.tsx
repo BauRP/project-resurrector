@@ -6,6 +6,7 @@ import { planSimpleVideoRender, renderSimpleVideoWebm } from "@/lib/editor-webm-
 import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/lib/editor-project-recovery";
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
+import { editorWaveformDecision } from "@/lib/editor-waveform-retry";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { readEditorClip, readEditorClipIds } from "@/lib/editor-idb-read";
 import { saveEditorImportedClip } from "@/lib/editor-import-save";
@@ -486,8 +487,9 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           const peaks = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
             attemptSignal => editorMediaWorkQueue.run(
               () => analyseWaveformForTimeline(original, m.duration, attemptSignal), attemptSignal));
-          if (!live || abort.signal.aborted) { waveformAttempted.current.delete(m.id); break; }
-          if (!peaks) {
+          const decision = editorWaveformDecision(peaks, !live || abort.signal.aborted);
+          if (decision === "cancel") { waveformAttempted.current.delete(m.id); break; }
+          if (decision === "retry") {
             // Transient codec/storage failure: retry on a later timeline edit,
             // never in a tight decode loop on this WebView paint.
             waveformAttempted.current.delete(m.id);
