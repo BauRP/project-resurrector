@@ -13,6 +13,7 @@ import android.os.Build;
 import android.os.IBinder;
 import android.util.AtomicFile;
 import android.util.Range;
+import android.util.Rational;
 import android.util.Size;
 
 import androidx.core.content.ContextCompat;
@@ -36,12 +37,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class CameraAuditService extends Service {
     public static final String FILE_NAME = "multicam-first-run-audit-v1.json";
-    private static final int SCHEMA = 1;
+    private static final int SCHEMA = 2;
+    private static final int MAX_MODES_PER_CAMERA = 96;
     private final AtomicBoolean started = new AtomicBoolean(false);
 
     public static JSONObject read(Context context) {
         AtomicFile file = new AtomicFile(new File(context.getFilesDir(), FILE_NAME));
-        if (!file.getBaseFile().exists()) return blank();
+        // AtomicFile.openRead() also recovers a previous committed backup.
+        // A fresh install simply takes the missing-file exception below.
         try (InputStream in = file.openRead()) {
             byte[] data = new byte[256 * 1024];
             int length = 0;
@@ -97,7 +100,9 @@ public final class CameraAuditService extends Service {
                 inventory();
             } finally {
                 started.set(false);
-                stopSelf(startId);
+                // stopSelf(startId) can leave an orphan service if a second
+                // startService() arrived while the same worker was active.
+                stopSelf();
             }
         }, "multicam-camera-inventory-worker");
         worker.setPriority(Thread.MIN_PRIORITY);
@@ -120,6 +125,9 @@ public final class CameraAuditService extends Service {
             saved.put("state", "running");
             saved.put("total", ids.length);
             saved.put("androidSdk", Build.VERSION.SDK_INT);
+            saved.put("cameraCountSource", "CameraManager.getCameraIdList");
+            saved.put("recordingValidated", false);
+            saved.put("camera2InventoryOnly", true);
             saved.put("startedAt", saved.optLong("startedAt", System.currentTimeMillis()));
             saved.put("updatedAt", System.currentTimeMillis());
             saved.put("cameras", cameraResults);
@@ -127,7 +135,8 @@ public final class CameraAuditService extends Service {
 
             int completed = 0;
             for (String id : ids) {
-                if (!cameraResults.has(id)) {
+                JSONObject previous = cameraResults.optJSONObject(id);
+                if (previous == null || !"metadata-collected".equals(previous.optString("state"))) {
                     JSONObject item = new JSONObject();
                     item.put("cameraId", id);
                     item.put("source", "android-camera2-metadata");
@@ -140,6 +149,27 @@ public final class CameraAuditService extends Service {
                                 facing == CameraCharacteristics.LENS_FACING_BACK ? "back" : "external");
                         item.put("hardwareLevel", optional(c.get(CameraCharacteristics.INFO_SUPPORTED_HARDWARE_LEVEL)));
                         item.put("sensorOrientation", optional(c.get(CameraCharacteristics.SENSOR_ORIENTATION)));
+                        item.put("lensFacingDeclared", facing != null);
+                        item.put("afModesDeclared", integers(c.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES)));
+                        item.put("aeModesDeclared", integers(c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_MODES)));
+                        item.put("awbModesDeclared", integers(c.get(CameraCharacteristics.CONTROL_AWB_AVAILABLE_MODES)));
+                        item.put("afTriggerSupported", contains(
+                                c.get(CameraCharacteristics.CONTROL_AF_AVAILABLE_MODES),
+                                CameraCharacteristics.CONTROL_AF_MODE_AUTO));
+                        item.put("exposureLockDeclared", optional(c.get(CameraCharacteristics.CONTROL_AE_LOCK_AVAILABLE)));
+                        item.put("whiteBalanceLockDeclared", optional(c.get(CameraCharacteristics.CONTROL_AWB_LOCK_AVAILABLE)));
+                        Range<Integer> ev = c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_RANGE);
+                        Rational evStep = c.get(CameraCharacteristics.CONTROL_AE_COMPENSATION_STEP);
+                        item.put("exposureCompensationSteps", ev == null ? JSONObject.NULL :
+                                new JSONArray().put(ev.getLower()).put(ev.getUpper()));
+                        item.put("exposureStepEv", evStep == null ? JSONObject.NULL : evStep.doubleValue());
+                        Range<Integer>[] sensorFps = c.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+                        JSONArray fpsRanges = new JSONArray();
+                        if (sensorFps != null)
+                            for (Range<Integer> fps : sensorFps)
+                                fpsRanges.put(new JSONArray().put(fps.getLower()).put(fps.getUpper()));
+                        item.put("sensorFpsRangesDeclared", fpsRanges);
+                        item.put("appliedSensorFpsVerified", false);
                         item.put("flash", Boolean.TRUE.equals(c.get(CameraCharacteristics.FLASH_INFO_AVAILABLE)));
                         item.put("manualSensor", contains(
                                 c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES),
@@ -180,6 +210,33 @@ public final class CameraAuditService extends Service {
                             }
                         }
                         item.put("videoOutputSizesDeclared", sizes);
+                        JSONArray modeCandidates = new JSONArray();
+                        if (map != null) {
+                            Size[] declared = map.getOutputSizes(MediaRecorder.class);
+                            if (declared != null) {
+                                int count = 0;
+                                for (Size size : declared) {
+                                    if (count++ >= MAX_MODES_PER_CAMERA) break;
+                                    JSONObject mode = new JSONObject();
+                                    mode.put("width", size.getWidth());
+                                    mode.put("height", size.getHeight());
+                                    // This is a minimum frame duration declared by HAL,
+                                    // not a verified recording FPS or codec profile.
+                                    long ns = map.getOutputMinFrameDuration(MediaRecorder.class, size);
+                                    mode.put("minimumFrameDurationNs", ns > 0 ? ns : JSONObject.NULL);
+                                    mode.put("theoreticalUpperFps", ns > 0 ? 1_000_000_000.0 / ns : JSONObject.NULL);
+                                    mode.put("verifiedVideoRecording", false);
+                                    modeCandidates.put(mode);
+                                }
+                            }
+                        }
+                        item.put("videoModeCandidatesDeclared", modeCandidates);
+                        item.put("videoModeCandidatesTruncated", sizes.length() > MAX_MODES_PER_CAMERA);
+                        item.put("hdrRecordedVerified", false);
+                        item.put("oisAppliedVerified", false);
+                        item.put("eisAppliedVerified", false);
+                        item.put("manualControlsAppliedVerified", false);
+                        item.put("photoSavedVerified", false);
                         item.put("state", "metadata-collected");
                     } catch (Exception error) {
                         item.put("state", "unavailable");
@@ -187,12 +244,21 @@ public final class CameraAuditService extends Service {
                     }
                     cameraResults.put(id, item);
                 }
-                completed++;
+                if ("metadata-collected".equals(
+                        cameraResults.getJSONObject(id).optString("state"))) completed++;
                 saved.put("completed", completed);
                 saved.put("updatedAt", System.currentTimeMillis());
                 persist(this, saved);
                 if (Thread.currentThread().isInterrupted()) return;
             }
+            if (completed != ids.length) {
+                saved.put("state", "retry");
+                saved.put("error", "camera-metadata-temporarily-unavailable");
+                saved.put("updatedAt", System.currentTimeMillis());
+                persist(this, saved);
+                return;
+            }
+            saved.remove("error");
             saved.put("state", "complete");
             saved.put("completed", ids.length);
             saved.put("finishedAt", System.currentTimeMillis());
