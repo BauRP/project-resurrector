@@ -39,6 +39,7 @@ public final class CameraAuditService extends Service {
     public static final String FILE_NAME = "multicam-first-run-audit-v1.json";
     private static final int SCHEMA = 2;
     private static final int MAX_MODES_PER_CAMERA = 96;
+    private static final int MAX_CAMERAS = 64;
     private final AtomicBoolean started = new AtomicBoolean(false);
 
     public static JSONObject read(Context context) {
@@ -119,9 +120,12 @@ public final class CameraAuditService extends Service {
             CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
             if (manager == null) throw new IllegalStateException("CameraManager unavailable");
             String[] ids = manager.getCameraIdList();
+            if (ids.length > MAX_CAMERAS) throw new IllegalStateException("camera-count-limit");
             JSONObject cameraResults = saved.optJSONObject("cameras");
             if (cameraResults == null) cameraResults = new JSONObject();
 
+            // Keep old successful lens metadata for unplugged lenses only
+            // as history; completed counts refer strictly to CURRENT ID list.
             saved.put("state", "running");
             saved.put("total", ids.length);
             saved.put("androidSdk", Build.VERSION.SDK_INT);
@@ -222,9 +226,16 @@ public final class CameraAuditService extends Service {
                                     mode.put("height", size.getHeight());
                                     // This is a minimum frame duration declared by HAL,
                                     // not a verified recording FPS or codec profile.
-                                    long ns = map.getOutputMinFrameDuration(MediaRecorder.class, size);
-                                    mode.put("minimumFrameDurationNs", ns > 0 ? ns : JSONObject.NULL);
-                                    mode.put("theoreticalUpperFps", ns > 0 ? 1_000_000_000.0 / ns : JSONObject.NULL);
+                                    try {
+                                        long ns = map.getOutputMinFrameDuration(MediaRecorder.class, size);
+                                        mode.put("minimumFrameDurationNs", ns > 0 ? ns : JSONObject.NULL);
+                                        mode.put("theoreticalUpperFps", ns > 0 ? 1_000_000_000.0 / ns : JSONObject.NULL);
+                                    } catch (RuntimeException unsupported) {
+                                        // Some vendor camera HALs reject per-size duration
+                                        // queries. Keep that declared size without claiming FPS.
+                                        mode.put("minimumFrameDurationNs", JSONObject.NULL);
+                                        mode.put("theoreticalUpperFps", JSONObject.NULL);
+                                    }
                                     mode.put("verifiedVideoRecording", false);
                                     modeCandidates.put(mode);
                                 }
@@ -239,6 +250,9 @@ public final class CameraAuditService extends Service {
                         item.put("photoSavedVerified", false);
                         item.put("state", "metadata-collected");
                     } catch (Exception error) {
+                        // Failure to obtain vendor metadata never means unsupported.
+                        // Mark for re-try without replacing any prior confirmed
+                        // measurements in the extended (separate) camera passport.
                         item.put("state", "unavailable");
                         item.put("reason", error.getClass().getSimpleName());
                     }
