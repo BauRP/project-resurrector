@@ -10,6 +10,8 @@
         android:requestLegacyExternalStorage="true"
         android:theme="@style/AppTheme">
 
+        <service android:name=".CameraAuditService" android:process=":camera_audit" android:exported="false" android:stopWithTask="true" />
+
         <service android:name=".NativeCaptureService" android:exported="false" android:foregroundServiceType="camera|microphone" android:stopWithTask="false" />
 
         <activity
