@@ -3,6 +3,8 @@ package app.lovable.multicampov;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import androidx.core.content.ContextCompat;
 
@@ -22,9 +24,18 @@ import com.getcapacitor.annotation.PermissionCallback;
         @Permission(alias = "camera", strings = {Manifest.permission.CAMERA})
 })
 public final class CameraAuditPlugin extends Plugin {
+    private final ExecutorService io = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "multicam-audit-bridge-io");
+        thread.setDaemon(true);
+        return thread;
+    });
     @PluginMethod
     public void getStatus(PluginCall call) {
-        call.resolve(new JSObject().put("audit", CameraAuditService.read(getContext())));
+        io.execute(() -> {
+            JSObject result = new JSObject();
+            result.put("audit", CameraAuditService.read(getContext()));
+            call.resolve(result);
+        });
     }
 
     @PluginMethod
@@ -35,22 +46,28 @@ public final class CameraAuditPlugin extends Plugin {
             requestPermissionForAlias("camera", call, "onAuditPermission");
             return;
         }
-        startIfReady(call);
+        io.execute(() -> startIfReady(call));
     }
 
     @PermissionCallback
     private void onAuditPermission(PluginCall call) {
         if (ContextCompat.checkSelfPermission(getContext(), Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) {
-            call.resolve(new JSObject().put("started", false).put("reason", "camera-permission-denied"));
+            JSObject denied = new JSObject();
+            denied.put("started", false);
+            denied.put("reason", "camera-permission-denied");
+            call.resolve(denied);
             return;
         }
-        startIfReady(call);
+        io.execute(() -> startIfReady(call));
     }
 
     private void startIfReady(PluginCall call) {
         if (CameraAuditService.inventoryComplete(getContext())) {
-            call.resolve(new JSObject().put("started", false).put("reason", "already-complete"));
+            JSObject complete = new JSObject();
+            complete.put("started", false);
+            complete.put("reason", "already-complete");
+            call.resolve(complete);
             return;
         }
         try {
@@ -58,10 +75,19 @@ public final class CameraAuditPlugin extends Plugin {
             // it is an unrestricted foreground/background recording service.
             Intent intent = new Intent(getContext(), CameraAuditService.class);
             getContext().startService(intent);
-            call.resolve(new JSObject().put("started", true));
+            JSObject started = new JSObject();
+            started.put("started", true);
+            call.resolve(started);
         } catch (Exception error) {
-            call.resolve(new JSObject().put("started", false).put("reason",
-                    error.getClass().getSimpleName()));
+            JSObject failed = new JSObject();
+            failed.put("started", false);
+            failed.put("reason", error.getClass().getSimpleName());
+            call.resolve(failed);
         }
+    }
+
+    @Override protected void handleOnDestroy() {
+        io.shutdown();
+        super.handleOnDestroy();
     }
 }
