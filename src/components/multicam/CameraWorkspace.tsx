@@ -8,6 +8,7 @@ import { bounded } from "@/lib/async";
 import { startNativeStatusRecovery } from "@/lib/camera-availability-retry";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { Button } from "@/components/ui/button";
+import { CameraAuditBanner } from "./CameraAuditBanner";
 // The complete web camera and media/AI tools load after the native shell paints.
 const CameraTab = lazy(() => import("./CameraTab").then(m => ({ default: m.CameraTab })));
 // Native Camera2 viewer is excluded from the ordinary WebView startup bundle.
@@ -142,6 +143,7 @@ export function CameraWorkspace() {
   }, [mode,switching,blocked]);
 
   return <div className="flex h-full min-h-0 flex-col">
+    <CameraAuditBanner />
     {isNative() && mode === "native" && <div className="camera-mode-switch flex shrink-0 items-center justify-end gap-1 border-b border-border/40 bg-card/50 px-2 py-1" role="group" aria-label="Режим камеры">
       <span className="mr-auto truncate text-[10px] text-muted-foreground">Режим</span>
       <Button size="sm" className="h-7 min-h-0 px-2 text-[10px]" variant="outline"
