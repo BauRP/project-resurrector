@@ -27,7 +27,7 @@ describe("Editor waveform retry without Android WebView decode storms", () => {
     expect(source).toContain('if (decision === "retry") {');
     expect(source).toContain("waveformAttempted.current.delete(m.id)");
     expect(source).toContain("if (!canDecodeWaveformInMemory(clip.blob.size, duration, memoryGiB)) return [];");
-    expect(source).toContain("if (peaks.length > 0) {");
+    expect(source).toContain("if (peaks && peaks.length > 0) {");
     expect(source).toContain("analysisCache.set(m.id, { duration: m.duration, peaks });");
     expect(source).toContain("editorMediaWorkQueue.run(");
   });
