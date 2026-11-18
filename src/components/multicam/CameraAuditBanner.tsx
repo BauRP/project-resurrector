@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { isNative } from "@/lib/native";
 import { cameraAudit, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
@@ -7,6 +7,8 @@ import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 export function CameraAuditBanner() {
   const [audit, setAudit] = useState<CameraAuditCheckpoint | null>(null);
   const [problem, setProblem] = useState("");
+  const startedHere = useRef(false);
+  const [showCompleted, setShowCompleted] = useState(false);
   useEffect(() => {
     if (!isNative()) return;
     let alive = true;
@@ -16,6 +18,11 @@ export function CameraAuditBanner() {
         const response = await cameraAudit.getStatus();
         if (!alive) return;
         setAudit(response.audit);
+        if (response.audit.state === "complete" && startedHere.current) {
+          setShowCompleted(true);
+          timer = window.setTimeout(() => { if (alive) setShowCompleted(false); }, 4500);
+          return;
+        }
         if (response.audit.state !== "complete")
           timer = window.setTimeout(() => { if (alive) void read(); }, 1800);
       } catch {
@@ -30,6 +37,7 @@ export function CameraAuditBanner() {
         if (current.audit.state !== "complete") {
           const result = await cameraAudit.startIfNeeded();
           if (!alive) return;
+          if (result.started) startedHere.current = true;
           if (!result.started && result.reason === "camera-permission-denied") {
             setProblem("Для проверки камер требуется разрешение Android.");
             return;
@@ -49,8 +57,8 @@ export function CameraAuditBanner() {
 
   // The saved baseline is not a repeated startup progress screen.
   // Full functional diagnosis has its own future completion state.
-  if (!isNative() || audit?.state === "complete") return null;
-  const complete = false;
+  if (!isNative() || (audit?.state === "complete" && !showCompleted)) return null;
+  const complete = audit?.state === "complete";
   const percent = audit ? cameraAuditProgress(audit) : 0;
   const line = problem || (complete
     ? "Базовое обнаружение завершено. Подробная проверка режимов и кнопок ещё ожидает выполнения."
@@ -59,7 +67,7 @@ export function CameraAuditBanner() {
       : "Определяем объективы и сохраняем паспорт. Камера и другие разделы доступны.");
   return <section aria-label="Диагностика камер" className="mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3 text-foreground shadow-sm">
     <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold">
-      <span>{complete ? "Базовое обнаружение камер" : "Первичная проверка камер"}</span>
+      <span>{complete ? "Базовая проверка камер завершена" : "Первичная проверка камер"}</span>
       <span className="tabular-nums">{percent}%</span>
     </div>
     <div className="h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar"
