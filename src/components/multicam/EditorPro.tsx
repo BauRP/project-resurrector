@@ -7,6 +7,7 @@ import { loadEditorProject, saveEditorProject, queueEditorProjectSave } from "@/
 import { extractWaveformPeaks } from "@/lib/async-waveform-peaks";
 import { canDecodeWaveformInMemory } from "@/lib/waveform-memory-budget";
 import { editorWaveformDecision } from "@/lib/editor-waveform-retry";
+import { editorSourceKey, readCurrentEditorAnalysis } from "@/lib/editor-source-cache";
 import { waitForEditorResponsiveIdle } from "@/lib/editor-responsive-idle";
 import { readEditorClip, readEditorClipIds } from "@/lib/editor-idb-read";
 import { saveEditorImportedClip } from "@/lib/editor-import-save";
@@ -44,7 +45,7 @@ import { useTimelineTracks, trackLanes, timelineContentWidth, pinnedPlayhead, ty
 import { readTimelineAnchor, saveTimelineAnchor, scrollForTimelineAnchor } from "@/lib/editor-timeline-anchor";
 
 interface StoredClip { id: string; createdAt: number; camera: number; playbackRate?: number; duration?: number; blob: Blob; kind?: "video" | "audio"; name?: string }
-interface Media { id: string; camera: number; kind: "video" | "audio"; name: string; url: string; duration: number; peaks: number[] }
+interface Media { id: string; camera: number; kind: "video" | "audio"; name: string; url: string; duration: number; peaks: number[]; sourceKey: string }
 interface CropBox { x: number; y: number; w: number; h: number }
 const FULL_CROP: CropBox = { x: 0, y: 0, w: 100, h: 100 };
 interface Item { id: string; mediaId: string; kind: "video" | "audio"; track: number; start: number; in: number; out: number; speed: number; reverse: boolean; scale: number; posX: number; opacity: number; look: string; crop?: CropBox | undefined; color?: ColorAdj }
@@ -192,17 +193,18 @@ async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortS
 async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
   if (signal?.aborted) throw new Error("Editor media load cancelled");
   const url = URL.createObjectURL(clip.blob);
-  const cached = analysisCache.get(clip.id);
-  if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks };
+  const sourceKey = editorSourceKey(clip);
+  const cached = readCurrentEditorAnalysis(clip.id, sourceKey, analysisCache, thumbCache);
+  if (cached) return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: cached.duration, peaks: cached.peaks, sourceKey };
   // A verified stored duration, captured on import or recording, avoids
   // creating an extra WebView metadata decoder every time the Editor opens.
   // Unknown/invalid durations still go through real metadata probing.
   const recorded = selectEditorClipDuration(Number.NaN, clip.duration);
   if (recorded !== null) {
     const peaks: number[] = [];
-    analysisCache.set(clip.id, { duration: recorded, peaks });
+    analysisCache.set(clip.id, { duration: recorded, peaks, sourceKey });
     return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video",
-      name: clip.name ?? "", url, duration: recorded, peaks };
+      name: clip.name ?? "", url, duration: recorded, peaks, sourceKey };
   }
   const v = document.createElement("video"); v.preload = "metadata";
   let duration: number;
@@ -254,8 +256,8 @@ async function analyse(clip: StoredClip, signal?: AbortSignal): Promise<Media> {
   // merely because the Editor tab was opened, even before touching the audio
   // or transition panels. Waveforms are still generated for timeline media.
   const peaks: number[] = [];
-  analysisCache.set(clip.id, { duration, peaks });
-  return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks };
+  analysisCache.set(clip.id, { duration, peaks, sourceKey });
+  return { id: clip.id, camera: clip.camera ?? 1, kind: clip.kind ?? "video", name: clip.name ?? "", url, duration: duration * (clip.playbackRate && clip.playbackRate > 1 ? 1 : 1), peaks, sourceKey };
 }
 
 /** FileReader can be aborted when the editor closes. Blob.arrayBuffer()
@@ -355,7 +357,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   // Only a changed original clip URL, kind, duration or library membership
   // invalidates the optional media pipelines. Original video quality is intact.
   const mediaSourceKey = useMemo(() => JSON.stringify(
-    media.map(m => [m.id, m.url, m.kind, m.duration])
+    media.map(m => [m.id, m.url, m.kind, m.duration, m.sourceKey])
   ), [media]);
 
   // Only clips placed on the timeline need thumbnails and 480p scrubbing
@@ -496,7 +498,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
             continue;
           }
           if (peaks && peaks.length > 0) {
-            analysisCache.set(m.id, { duration: m.duration, peaks });
+            analysisCache.set(m.id, { duration: m.duration, peaks, sourceKey: m.sourceKey });
             setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
           }
         } catch {
@@ -597,7 +599,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           if (!live || abort.signal.aborted) return;
           const blob = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
             attemptSignal => editorMediaWorkQueue.run(
-              () => generateProxy(m.id, m.url, attemptSignal), attemptSignal));
+              () => generateProxy(`${m.id}:${m.sourceKey}`, m.url, attemptSignal), attemptSignal));
           if (blob && live && !abort.signal.aborted) {
             const url = URL.createObjectURL(blob);
             proxyUrls.current.add(url);
