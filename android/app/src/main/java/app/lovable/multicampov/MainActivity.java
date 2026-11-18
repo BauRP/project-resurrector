@@ -35,6 +35,7 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(CameraAuditPlugin.class);
         registerPlugin(MultiCamNativePlugin.class);
         registerPlugin(NativeCapturePlugin.class);
         registerPlugin(DisplayTopologyPlugin.class);
