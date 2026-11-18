@@ -84,6 +84,10 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   let split: Split = "none";
   let occluded = false;
   const usedHinges: FoldFeature[] = [];
+  // Some foldable OEMs emit the same geometry more than once in one
+  // WindowManager update. Deduplicate *identical* reports before pane
+  // calculation so duplicate callbacks cannot amplify layout work.
+  const seenFoldGeometry = new Set<string>();
   const hinges = topology.foldingFeatures.filter(f => f && typeof f === "object" && f.separating &&
     typeof f.orientation === "string" &&
     (f.orientation.toUpperCase().includes("VERTICAL") || f.orientation.toUpperCase().includes("HORIZONTAL")) &&
@@ -91,7 +95,14 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
     [f.leftPx, f.rightPx, f.topPx, f.bottomPx].every(Number.isFinite) &&
     f.rightPx >= f.leftPx && f.bottomPx >= f.topPx &&
     f.leftPx >= 0 && f.topPx >= 0 &&
-    f.rightPx <= topology.widthPx && f.bottomPx <= topology.heightPx);
+    f.rightPx <= topology.widthPx && f.bottomPx <= topology.heightPx)
+    .filter(f => {
+      const key = [f.leftPx,f.topPx,f.rightPx,f.bottomPx,
+        f.orientation,f.occlusion,f.state].join("|");
+      if (seenFoldGeometry.has(key)) return false;
+      seenFoldGeometry.add(key);
+      return true;
+    });
   // Processing order is NOT a physical posture: OEMs may enumerate the
   // exact same perpendicular folds in either order on consecutive callbacks.
   // Canonical geometry prevents fake transitions and unstable pane indices.
