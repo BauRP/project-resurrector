@@ -495,7 +495,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
             waveformAttempted.current.delete(m.id);
             continue;
           }
-          if (peaks.length > 0) {
+          if (peaks && peaks.length > 0) {
             analysisCache.set(m.id, { duration: m.duration, peaks });
             setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
           }
