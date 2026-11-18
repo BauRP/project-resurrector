@@ -9,7 +9,7 @@ describe("opening editor and transitions never decodes entire unused media libra
   expect(end).toBeGreaterThan(start);
   const library=code.slice(start,end);
   expect(library).not.toContain("clip.blob.arrayBuffer()");
-  expect(library).toContain("analysisCache.set(clip.id, { duration, peaks })");
+  expect(library).toContain("analysisCache.set(clip.id, { duration, peaks, sourceKey })");
   expect(code).toContain("const timelineWaveformKey = useMemo(");
   expect(code).toContain("if (!required.has(m.id) || waveformAttempted.current.has(m.id)) continue");
   expect(code).toContain("const peaks = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,");
