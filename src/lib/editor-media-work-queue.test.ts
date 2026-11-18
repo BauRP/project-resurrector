@@ -55,7 +55,7 @@ describe("editor media workload prevents concurrent Android WebView decoders", (
     expect(code).toContain("() => analyseWaveformForTimeline(original, m.duration, attemptSignal)");
     expect(code).toContain("runEditorQuietMediaWork(abort.signal, () => playbackActive.current");
     expect(code).toContain("() => makeThumbs(m.url, m.duration, 10, attemptSignal)");
-    expect(code).toContain("() => generateProxy(m.id, m.url, attemptSignal)");
+    expect(code).toContain("() => generateProxy(\`\${m.id}:\${m.sourceKey}\`, m.url, attemptSignal)");
     expect(code).toContain("abort.abort()");
   });
 });
