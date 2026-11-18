@@ -162,24 +162,36 @@ async function makeThumbs(url: string, duration: number, n = 10, signal?: AbortS
     for (let k = 0; k < n; k++) {
       if (signal?.aborted) return [];
       const time = Math.min(Math.max(0, duration - 0.05), ((k + 0.5) * duration) / n);
-      await new Promise<void>((res) => {
+      // A timed-out seek is NOT a decoded frame. Old WebView used to reuse
+      // the previous frame ten times and spend additional GPU time encoding
+      // duplicates. Keep already valid thumbnails, release this decoder and
+      // let the original video remain playable.
+      const seeked = await new Promise<boolean>((res) => {
         let done = false;
-        const finish = () => {
+        const finish = (ready = false) => {
           if (done) return;
           done = true;
           window.clearTimeout(timer);
-          v.removeEventListener("seeked", finish);
-          signal?.removeEventListener("abort", finish);
-          res();
+          v.removeEventListener("seeked", onSeeked);
+          signal?.removeEventListener("abort", onAbort);
+          res(ready);
         };
-        const timer = window.setTimeout(finish, 1500);
-        v.addEventListener("seeked", finish);
-        signal?.addEventListener("abort", finish, { once: true });
+        const onSeeked = () => finish(true);
+        const onAbort = () => finish();
+        const timer = window.setTimeout(() => finish(), 1500);
+        v.addEventListener("seeked", onSeeked);
+        signal?.addEventListener("abort", onAbort, { once: true });
         try { v.currentTime = time; } catch { finish(); }
       });
       if (signal?.aborted) return [];
-      ctx.drawImage(v, 0, 0, c.width, c.height);
-      out.push(c.toDataURL("image/jpeg", 0.6));
+      if (!seeked) break;
+      try {
+        ctx.drawImage(v, 0, 0, c.width, c.height);
+        out.push(c.toDataURL("image/jpeg", 0.6));
+      } catch {
+        // A failed canvas compositor must not throw away earlier valid frames.
+        break;
+      }
       // Yield so changing tabs, recording and Android UI callbacks can paint.
       await new Promise<void>(resolve => window.setTimeout(resolve, 0));
     }
