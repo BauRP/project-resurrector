@@ -287,21 +287,21 @@ function readWaveformData(blob: Blob, signal?: AbortSignal): Promise<ArrayBuffer
   });
 }
 
-async function analyseWaveformForTimeline(clip: StoredClip, duration: number, signal?: AbortSignal): Promise<number[]> {
+async function analyseWaveformForTimeline(clip: StoredClip, duration: number, signal?: AbortSignal): Promise<number[] | null> {
   try {
-    if (signal?.aborted) return [];
+    if (signal?.aborted) return null;
     // Avoid loading an entire multi-gigabyte MP4 or expanding hours of PCM
     // into WebView memory. Large original clips remain playable and editable;
     // only this optional full-file waveform cache is deferred.
     const memoryGiB = (navigator as Navigator & { deviceMemory?: number }).deviceMemory;
     if (!canDecodeWaveformInMemory(clip.blob.size, duration, memoryGiB)) return [];
     const bytes = await readWaveformData(clip.blob, signal);
-    if (signal?.aborted) return [];
+    if (signal?.aborted) return null;
     const ctx = new OfflineAudioContext(1, 44100, 44100);
     const buf = await bounded(ctx.decodeAudioData(bytes), 6000, "Audio analysis");
-    if (signal?.aborted) return [];
+    if (signal?.aborted) return null;
     return await extractWaveformPeaks(buf.getChannelData(0), duration, () => Boolean(signal?.aborted));
-  } catch { return []; }
+  } catch { return null; }
 }
 
 export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: ReactNode }) {
@@ -486,11 +486,19 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
           const peaks = await runEditorQuietMediaWork(abort.signal, () => playbackActive.current,
             attemptSignal => editorMediaWorkQueue.run(
               () => analyseWaveformForTimeline(original, m.duration, attemptSignal), attemptSignal));
-          if (!live || abort.signal.aborted || !peaks) { waveformAttempted.current.delete(m.id); break; }
-          analysisCache.set(m.id, { duration: m.duration, peaks });
-          setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
+          if (!live || abort.signal.aborted) { waveformAttempted.current.delete(m.id); break; }
+          if (!peaks) {
+            // Transient codec/storage failure: retry on a later timeline edit,
+            // never in a tight decode loop on this WebView paint.
+            waveformAttempted.current.delete(m.id);
+            continue;
+          }
+          if (peaks.length > 0) {
+            analysisCache.set(m.id, { duration: m.duration, peaks });
+            setMedia(current => current.map(entry => entry.id === m.id ? { ...entry, peaks } : entry));
+          }
         } catch {
-          if (!live) waveformAttempted.current.delete(m.id);
+          waveformAttempted.current.delete(m.id);
           // A failed waveform never hides the original video or audio.
         }
         await new Promise<void>(resolve => window.setTimeout(resolve, 0));
