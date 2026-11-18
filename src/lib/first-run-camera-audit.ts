@@ -1,4 +1,5 @@
 import { registerPlugin } from "@capacitor/core";
+import { bounded } from "./async";
 
 /** Camera2 metadata inventory is not a functional recording test. */
 export interface CameraAuditCheckpoint {
@@ -8,6 +9,8 @@ export interface CameraAuditCheckpoint {
   total: number;
   androidSdk?: number;
   advancedState: "pending";
+  recordingValidated?: false;
+  camera2InventoryOnly?: true;
   cameras: Record<string, {
     cameraId: string;
     source: "android-camera2-metadata";
@@ -15,6 +18,14 @@ export interface CameraAuditCheckpoint {
     state: "metadata-collected" | "unavailable";
     facing?: "front" | "back" | "external" | "unknown";
     physicalCameraIds?: string[];
+    metadataOnly?: true;
+    isoRange?: [number,number] | null;
+    sensorFpsRangesDeclared?: [number,number][];
+    videoModeCandidatesDeclared?: {width:number;height:number;minimumFrameDurationNs:number|null;theoreticalUpperFps:number|null;verifiedVideoRecording:false}[];
+    stillPhotoSizesDeclared?: {width:number;height:number}[];
+    afModesDeclared?: number[];
+    aeModesDeclared?: number[];
+    awbModesDeclared?: number[];
   }>;
   updatedAt?: number;
   error?: string;
@@ -32,6 +43,6 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
 }
 
 export const cameraAudit = {
-  getStatus: () => plugin.getStatus(),
+  getStatus: () => bounded(plugin.getStatus(), 2500, "Camera audit status"),
   startIfNeeded: () => plugin.startIfNeeded(),
 };
