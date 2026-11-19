@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isNative } from "@/lib/native";
-import { cameraAudit, cameraAuditPhase, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
+import { cameraAudit, cameraAuditPauseReason, cameraAuditPhase, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 
 /** Camera-only display of a separate-process read-only Camera2 metadata scan. */
@@ -83,7 +83,7 @@ export function CameraAuditBanner() {
   if (!isNative() || (phase === "done" && !showCompleted)) return null;
   const complete = phase === "done";
   const percent = audit ? cameraAuditProgress(audit) : 0;
-  const line = problem || (complete
+  const line = problem || (audit && cameraAuditPauseReason(audit)) || (complete
     ? "Проверка заявленных характеристик завершена. Испытания реальной записи ещё не проводились."
     : audit?.state === "retry" || audit?.codecState === "retry"
       ? "Проверка временно приостановлена. Результаты сохранены и продолжатся при следующем запуске."
