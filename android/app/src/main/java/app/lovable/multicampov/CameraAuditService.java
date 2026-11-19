@@ -75,7 +75,7 @@ public final class CameraAuditService extends Service {
         return result;
     }
 
-    private static void persist(Context context, JSONObject value) throws Exception {
+    static void persist(Context context, JSONObject value) throws Exception {
         AtomicFile file = new AtomicFile(new File(context.getFilesDir(), FILE_NAME));
         FileOutputStream out = null;
         try {
@@ -91,7 +91,9 @@ public final class CameraAuditService extends Service {
     }
 
     public static boolean inventoryComplete(Context context) {
-        return "complete".equals(read(context).optString("state"));
+        JSONObject saved = read(context);
+        return "complete".equals(saved.optString("state")) &&
+                "complete".equals(saved.optString("codecState"));
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -99,6 +101,9 @@ public final class CameraAuditService extends Service {
         Thread worker = new Thread(() -> {
             try {
                 inventory();
+                // Encoder checks are metadata-only and resume from their own
+                // per-camera checkpoint. They do not open a CameraDevice.
+                CameraAuditCodecStage.run(this);
             } finally {
                 started.set(false);
                 // stopSelf(startId) can leave an orphan service if a second
@@ -128,6 +133,12 @@ public final class CameraAuditService extends Service {
             // as history; completed counts refer strictly to CURRENT ID list.
             saved.put("state", "running");
             saved.put("total", ids.length);
+            JSONArray activeIds = new JSONArray();
+            for (String id : ids) activeIds.put(id);
+            saved.put("activeCameraIds", activeIds);
+            saved.put("codecState", "pending");
+            saved.put("codecCompleted", 0);
+            saved.put("codecTotal", ids.length);
             saved.put("androidSdk", Build.VERSION.SDK_INT);
             saved.put("cameraCountSource", "CameraManager.getCameraIdList");
             saved.put("recordingValidated", false);
