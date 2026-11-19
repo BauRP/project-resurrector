@@ -52,6 +52,36 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditProgress(finished)).toBe(100);
     expect(cameraAuditPhase(finished)).toBe("done");
   });
+  it("caps progress below 100 when codec evidence is incomplete", () => {
+    const state = checkpoint("complete",3,3);
+    state.codecState = "running";
+    state.codecTotal = 3;
+    state.codecCompleted = 3;
+    expect(cameraAuditProgress(state)).toBe(99);
+    state.codecState = "retry";
+    expect(cameraAuditProgress(state)).toBe(99);
+    expect(cameraAuditPhase(state)).toBe("codecs");
+  });
+  it("keeps saved encoder declarations separate from actual video evidence", () => {
+    const state = checkpoint("complete",1,1);
+    state.codecState = "complete";
+    state.cameras["0"] = {
+      cameraId: "0",
+      source: "android-camera2-metadata",
+      state: "metadata-collected",
+      verifiedRecording: false,
+      codecState: "complete",
+      codecChecks: [{
+        width: 1920, height: 1080, fpsRequested: 30,
+        recordedAndVerified: false,
+        status: "declared-compatible",
+        encoders: [{name:"vendor.encoder",mime:"video/avc",declaredOnly:true}],
+      }],
+    };
+    expect(cameraAuditProgress(state)).toBe(100);
+    expect(state.cameras["0"]!.codecChecks![0]!.recordedAndVerified).toBe(false);
+    expect(state.cameras["0"]!.verifiedRecording).toBe(false);
+  });
   it("rejects corrupt negative or missing totals and impossible overflows", () => {
     expect(cameraAuditProgress(checkpoint("running",-1,4))).toBe(0);
     expect(cameraAuditProgress(checkpoint("running",10,4))).toBe(50);
