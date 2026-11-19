@@ -645,3 +645,13 @@ routes/index.tsx ─► MulticamApp ─► MulticamStoreProvider (context)
 - Primary accent gradient: `linear-gradient(135deg, #6366F1, #A855F7, #EC4899)` (`--gradient-primary`) used for the play button, active tabs/pills and the theme segment control.
 - Zero-blending rule: every card, button, chip, timeline container and settings row carries a 1px `var(--border)` ring plus `--shadow-soft`; buttons get an active scale press and a hover lift. Card radius 20px, pill/button radius 12–16px.
 - Settings opens with a "Theme" section: a 48px-high segmented Light/Dark control (Sun/Moon icons) localized for all 17 languages.
+
+## Первоначальная диагностика камер: независимый процесс и возобновление (2026-11-19)
+
+- `CameraAuditService` работает в Android-процессе `:camera_audit`, читает только характеристики камер и объявления MediaCodec. Не открывает реальные камеры, микрофон или MediaRecorder. Это **не** полноценная проверка качества и работы записи.
+- Этап 1: `CameraManager` → отдельные Camera2 metadata entries; `AtomicFile` сохраняет результат после камеры. Повторный запуск пропускает успешные entries.
+- Этап 2: `CameraAuditCodecStage` → до 6 объявленных размеров × 4 частоты кадров на камеру, только декларации энкодеров, результаты покамерно сохраняются; не создаются видеоклипы. После закрытия приложение возобновляет оба этапа с последнего сохранённого шага. Заявленная совместимость кодека **не** гарантирует успешный файл.
+- `CameraAuditPlugin.getStatus()` отдаёт только компактную сводку на полоску камеры. Полный `getPassport()` доступен по запросу и не передаётся в WebView при регулярном обновлении; `CameraAuditBanner` существует только в `CameraWorkspace`.
+- Разрешение на камеру запрашивается отдельно. Android может прервать отдельную службу при сворачивании, выгрузке или ограничении батареи; продолжение при следующем открытии не должно выдавать пропущенные тесты за успех.
+- `cameraAuditProgress()` считает **только два базовых этапа**, а не 37 разделов новой полной диагностики. Глубокие функциональные и практические тесты остаются отдельной незавершённой частью пятого направления.
+
