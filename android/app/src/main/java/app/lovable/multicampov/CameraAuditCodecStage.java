@@ -38,6 +38,15 @@ final class CameraAuditCodecStage {
                 passport.put("activeCameraIds", ids);
                 CameraAuditService.persist(context, passport);
             }
+            // A device in thermal/memory distress must not start expensive
+            // codec metadata enumeration. Completed lens work stays on disk.
+            String pressureBefore = CameraAuditResourceGuard.pauseReason(context);
+            if (pressureBefore != null) {
+                passport.put("codecState", "retry");
+                passport.put("codecError", pressureBefore);
+                CameraAuditService.persist(context, passport);
+                return;
+            }
             // MediaCodecList is queried exactly once, never per lens/mode.
             MediaCodecInfo[] codecs = new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos();
             int completed = 0;
@@ -45,6 +54,14 @@ final class CameraAuditCodecStage {
             passport.put("codecState", "running");
             CameraAuditService.persist(context, passport);
             for (int i=0; i<ids.length(); i++) {
+                String pressure = CameraAuditResourceGuard.pauseReason(context);
+                if (pressure != null) {
+                    passport.put("codecState", "retry");
+                    passport.put("codecError", pressure);
+                    passport.put("updatedAt", System.currentTimeMillis());
+                    CameraAuditService.persist(context, passport);
+                    return;
+                }
                 String cameraId = ids.optString(i, "");
                 if (cameraId.isEmpty()) continue;
                 JSONObject camera = cameras.optJSONObject(cameraId);
