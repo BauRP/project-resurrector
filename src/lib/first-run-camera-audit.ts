@@ -14,6 +14,9 @@ export interface CameraAuditCheckpoint {
   codecCompleted?: number;
   codecTotal?: number;
   activeCameraIds?: string[];
+  /** Distinct counts. Never add logical IDs to physical sensors. */
+  camera2EnumeratedIdCount?: number;
+  physicalIdsDisclosed?: number;
   recordingValidated?: false;
   camera2InventoryOnly?: true;
   cameras: Record<string, {
