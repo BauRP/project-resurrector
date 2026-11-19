@@ -47,6 +47,7 @@ export interface CameraAuditCheckpoint {
 }
 interface CameraAuditPlugin {
   getStatus(): Promise<{audit:CameraAuditCheckpoint}>;
+  getPassport(): Promise<{audit:CameraAuditCheckpoint}>;
   startIfNeeded(): Promise<{started:boolean;reason?:string}>;
 }
 const plugin = registerPlugin<CameraAuditPlugin>("CameraAudit");
@@ -79,5 +80,6 @@ export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "cod
 
 export const cameraAudit = {
   getStatus: () => bounded(plugin.getStatus(), 2500, "Camera audit status"),
+  getPassport: () => bounded(plugin.getPassport(), 5000, "Camera audit passport"),
   startIfNeeded: () => plugin.startIfNeeded(),
 };
