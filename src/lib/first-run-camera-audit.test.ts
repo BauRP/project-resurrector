@@ -82,6 +82,18 @@ describe("first-install Camera2 inventory progress", () => {
     expect(state.cameras["0"]!.codecChecks![0]!.recordedAndVerified).toBe(false);
     expect(state.cameras["0"]!.verifiedRecording).toBe(false);
   });
+  it("cannot claim recording verified when both metadata stages are completed", () => {
+    const completed = checkpoint("complete",2,2);
+    completed.codecState = "complete";
+    completed.codecCompleted = 2;
+    completed.codecTotal = 2;
+    completed.recordingValidated = false;
+    completed.camera2InventoryOnly = true;
+    expect(cameraAuditPhase(completed)).toBe("done");
+    expect(cameraAuditProgress(completed)).toBe(100);
+    expect(completed.recordingValidated).toBe(false);
+    expect(completed.camera2InventoryOnly).toBe(true);
+  });
   it("rejects corrupt negative or missing totals and impossible overflows", () => {
     expect(cameraAuditProgress(checkpoint("running",-1,4))).toBe(0);
     expect(cameraAuditProgress(checkpoint("running",10,4))).toBe(50);
