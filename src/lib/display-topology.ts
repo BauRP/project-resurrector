@@ -43,6 +43,21 @@ export function windowClass(width: number) {
   return width < 600 ? "compact" : width < 840 ? "medium" : width < 1200 ? "expanded" : width < 1600 ? "large" : "extra-large";
 }
 const clamp = (value: number, low: number, high: number) => Math.min(high, Math.max(low, value));
+/** Do not subscribe to expensive subtree mutations for malformed OEM folds. */
+export function hasPlausibleSeparatingHinge(topology: DisplayTopology | null): boolean {
+  if (!topology || !Array.isArray(topology.foldingFeatures) ||
+      topology.foldingFeatures.length > 32 ||
+      !Number.isFinite(topology.widthPx) || topology.widthPx <= 0 ||
+      !Number.isFinite(topology.heightPx) || topology.heightPx <= 0) return false;
+  return topology.foldingFeatures.some(feature => feature && feature.separating &&
+    typeof feature.orientation === "string" &&
+    /vertical|horizontal/i.test(feature.orientation) &&
+    [feature.leftPx, feature.topPx, feature.rightPx, feature.bottomPx].every(Number.isFinite) &&
+    feature.leftPx >= 0 && feature.topPx >= 0 &&
+    feature.rightPx >= feature.leftPx && feature.bottomPx >= feature.topPx &&
+    feature.rightPx <= topology.widthPx && feature.bottomPx <= topology.heightPx);
+}
+
 /** Native folding bounds are in physical window pixels; map them to the WebView's actual CSS viewport.
  * Separate only when a feature physically occludes content or reports two logical regions.
  * Ignore unsupported/outside-window hinge geometries instead of inventing a posture.
@@ -648,7 +663,7 @@ export function startDisplayAdaptation(): () => void {
     observedTab = nextTab;
     // Real fold-pane geometry can change when controls expand/collapse, even
     // without a CSS viewport resize. Preserve that full observation path.
-    const foldHasSeparatingHinge = lastNative?.foldingFeatures.some(feature => feature.separating) === true;
+    const foldHasSeparatingHinge = hasPlausibleSeparatingHinge(lastNative);
     if (cameraChanged || tabChanged || foldHasSeparatingHinge) scheduleMeasure();
   }) : null;
   // Retain content observation for real separating hinges and for any
@@ -657,7 +672,7 @@ export function startDisplayAdaptation(): () => void {
   let contentObserved = false;
   const syncContentObservation = () => {
     if (!mutations || !content) return;
-    const needed = lastNative?.foldingFeatures.some(feature => feature.separating) === true;
+    const needed = hasPlausibleSeparatingHinge(lastNative);
     if (needed === contentObserved) return;
     contentObserved = needed;
     if (needed) mutations.observe(content, { childList: true, subtree: true });
