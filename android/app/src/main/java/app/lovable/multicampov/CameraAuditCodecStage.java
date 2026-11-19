@@ -5,8 +5,6 @@ import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.util.ArrayList;
-import java.util.List;
 
 /**
  * Declared encoder compatibility scan, performed by CameraAuditService in
@@ -15,7 +13,8 @@ import java.util.List;
  * Every finished camera's results are atomically committed.
  */
 final class CameraAuditCodecStage {
-    private static final int MAX_SIZES_PER_CAMERA = 12;
+    private static final int MAX_SIZES_PER_CAMERA = 6;
+    private static final int MAX_ENCODER_MATCHES = 4;
     private static final int[] FPS = {24, 30, 60, 120};
     private static final String[] VIDEO_MIMES = {
         "video/avc", "video/hevc", "video/x-vnd.on2.vp9", "video/av01"
@@ -29,7 +28,16 @@ final class CameraAuditCodecStage {
         try {
             JSONObject cameras = passport.optJSONObject("cameras");
             JSONArray ids = passport.optJSONArray("activeCameraIds");
-            if (cameras == null || ids == null) throw new IllegalStateException("Missing camera inventory");
+            if (cameras == null) throw new IllegalStateException("Missing camera inventory");
+            if (ids == null) {
+                // Upgrade an existing successful first-run passport without
+                // repeating its Camera2 metadata probes after an app update.
+                ids = new JSONArray();
+                java.util.Iterator<String> keys = cameras.keys();
+                while (keys.hasNext()) ids.put(keys.next());
+                passport.put("activeCameraIds", ids);
+                CameraAuditService.persist(context, passport);
+            }
             // MediaCodecList is queried exactly once, never per lens/mode.
             MediaCodecInfo[] codecs = new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos();
             int completed = 0;
@@ -111,7 +119,7 @@ final class CameraAuditCodecStage {
                                 entry.put("name", info.getName());
                                 entry.put("mime", mime);
                                 entry.put("declaredOnly", true);
-                                matched.put(entry);
+                                if (matched.length() < MAX_ENCODER_MATCHES) matched.put(entry);
                             }
                         } catch (RuntimeException brokenVendorCodec) {
                             unknown = true; // unknown != unsupported
