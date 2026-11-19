@@ -133,6 +133,7 @@ public final class CameraAuditService extends Service {
             // as history; completed counts refer strictly to CURRENT ID list.
             saved.put("state", "running");
             saved.put("total", ids.length);
+            saved.put("camera2EnumeratedIdCount", ids.length);
             JSONArray activeIds = new JSONArray();
             for (String id : ids) activeIds.put(id);
             saved.put("activeCameraIds", activeIds);
@@ -149,6 +150,7 @@ public final class CameraAuditService extends Service {
             persist(this, saved);
 
             int completed = 0;
+            java.util.Set<String> physicalIds = new java.util.HashSet<>();
             for (String id : ids) {
                 JSONObject previous = cameraResults.optJSONObject(id);
                 if (previous == null || !"metadata-collected".equals(previous.optString("state"))) {
@@ -275,9 +277,21 @@ public final class CameraAuditService extends Service {
                     }
                     cameraResults.put(id, item);
                 }
-                if ("metadata-collected".equals(
-                        cameraResults.getJSONObject(id).optString("state"))) completed++;
+                JSONObject current = cameraResults.getJSONObject(id);
+                if ("metadata-collected".equals(current.optString("state"))) {
+                    completed++;
+                    JSONArray physical = current.optJSONArray("physicalCameraIds");
+                    if (physical != null) {
+                        for (int index = 0; index < physical.length(); index++) {
+                            String childId = physical.optString(index, "");
+                            if (!childId.isEmpty()) physicalIds.add(childId);
+                        }
+                    }
+                }
                 saved.put("completed", completed);
+                // CameraManager ID count and unique physical sensor IDs are
+                // DIFFERENT views; never add these together as camera total.
+                saved.put("physicalIdsDisclosed", physicalIds.size());
                 saved.put("updatedAt", System.currentTimeMillis());
                 persist(this, saved);
                 if (Thread.currentThread().isInterrupted()) return;
