@@ -9,6 +9,11 @@ export interface CameraAuditCheckpoint {
   total: number;
   androidSdk?: number;
   advancedState: "pending";
+  /** Encoder compatibility is a separate saved stage, not a real video test. */
+  codecState?: "pending" | "running" | "retry" | "complete";
+  codecCompleted?: number;
+  codecTotal?: number;
+  activeCameraIds?: string[];
   recordingValidated?: false;
   camera2InventoryOnly?: true;
   cameras: Record<string, {
@@ -26,6 +31,16 @@ export interface CameraAuditCheckpoint {
     afModesDeclared?: number[];
     aeModesDeclared?: number[];
     awbModesDeclared?: number[];
+    codecState?: "complete";
+    codecCheckedAt?: number;
+    codecChecks?: {
+      width: number;
+      height: number;
+      fpsRequested: number;
+      recordedAndVerified: false;
+      status: "declared-compatible" | "not-declared-by-camera" | "not-declared-by-encoder" | "unknown";
+      encoders: { name: string; mime: string; declaredOnly: true }[];
+    }[];
   }>;
   updatedAt?: number;
   error?: string;
@@ -37,9 +52,29 @@ interface CameraAuditPlugin {
 const plugin = registerPlugin<CameraAuditPlugin>("CameraAudit");
 
 export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
-  if (audit.state === "complete") return 100;
-  if (!Number.isSafeInteger(audit.completed) || !Number.isSafeInteger(audit.total) || audit.total <= 0) return 0;
-  return Math.max(0, Math.min(99, Math.floor(100 * audit.completed / audit.total)));
+  const total = audit.total;
+  const completed = audit.completed;
+  if (!Number.isSafeInteger(total) || total < 0 ||
+      !Number.isSafeInteger(completed) || completed < 0) return 0;
+  const metadataDone = audit.state === "complete";
+  const codecDone = audit.codecState === "complete";
+  // Old valid passports are upgraded to codec checks without losing
+  // already collected Camera2 metadata. Zero-camera phones are supported.
+  if (metadataDone && codecDone) return 100;
+  if (total === 0) return 0;
+  const metadataSteps = Math.min(completed, total);
+  const codecSteps = metadataDone && Number.isSafeInteger(audit.codecCompleted) &&
+    Number.isSafeInteger(audit.codecTotal) && (audit.codecTotal ?? 0) > 0
+      ? Math.min(Math.max(0, audit.codecCompleted ?? 0), audit.codecTotal ?? 0) : 0;
+  const codecTotal = metadataDone && Number.isSafeInteger(audit.codecTotal) &&
+    (audit.codecTotal ?? 0) > 0 ? audit.codecTotal! : total;
+  return Math.max(0, Math.min(99, Math.floor(100 * (metadataSteps + codecSteps) /
+    (total + codecTotal))));
+}
+
+export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "codecs" | "done" {
+  if (audit.state !== "complete") return "metadata";
+  return audit.codecState === "complete" ? "done" : "codecs";
 }
 
 export const cameraAudit = {
