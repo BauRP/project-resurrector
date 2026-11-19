@@ -152,6 +152,14 @@ public final class CameraAuditService extends Service {
             int completed = 0;
             java.util.Set<String> physicalIds = new java.util.HashSet<>();
             for (String id : ids) {
+                String pressure = CameraAuditResourceGuard.pauseReason(this);
+                if (pressure != null) {
+                    saved.put("state", "retry");
+                    saved.put("error", pressure);
+                    saved.put("updatedAt", System.currentTimeMillis());
+                    persist(this, saved);
+                    return;
+                }
                 JSONObject previous = cameraResults.optJSONObject(id);
                 if (previous == null || !"metadata-collected".equals(previous.optString("state"))) {
                     JSONObject item = new JSONObject();
