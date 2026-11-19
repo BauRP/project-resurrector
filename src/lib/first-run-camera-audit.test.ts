@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cameraAuditProgress, cameraAuditPhase, type CameraAuditCheckpoint } from "./first-run-camera-audit";
+import { cameraAuditProgress, cameraAuditPhase, cameraAuditPauseReason, type CameraAuditCheckpoint } from "./first-run-camera-audit";
 
 const checkpoint = (state:CameraAuditCheckpoint["state"], completed:number, total:number):CameraAuditCheckpoint => ({
   schema:2,state,completed,total,advancedState:"pending",cameras:{},
@@ -93,6 +93,20 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditProgress(completed)).toBe(100);
     expect(completed.recordingValidated).toBe(false);
     expect(completed.camera2InventoryOnly).toBe(true);
+  });
+  it("keeps severe heat and low-memory pauses distinct from missing hardware support", () => {
+    const heat = checkpoint("retry", 1, 2);
+    heat.error = "thermal-severe";
+    expect(cameraAuditPauseReason(heat)).toContain("нагрев");
+    expect(cameraAuditProgress(heat)).toBe(25);
+    const lowMemory = checkpoint("complete",2,2);
+    lowMemory.codecState = "retry";
+    lowMemory.codecTotal = 2;
+    lowMemory.codecCompleted = 1;
+    lowMemory.codecError = "low-memory";
+    expect(cameraAuditPauseReason(lowMemory)).toContain("памяти");
+    expect(cameraAuditProgress(lowMemory)).toBe(75);
+    expect(cameraAuditPauseReason({...lowMemory, codecState: "complete"})).toBeNull();
   });
   it("rejects corrupt negative or missing totals and impossible overflows", () => {
     expect(cameraAuditProgress(checkpoint("running",-1,4))).toBe(0);
