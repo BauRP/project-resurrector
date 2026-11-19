@@ -47,6 +47,7 @@ export interface CameraAuditCheckpoint {
   }>;
   updatedAt?: number;
   error?: string;
+  codecError?: string;
 }
 interface CameraAuditPlugin {
   getStatus(): Promise<{audit:CameraAuditCheckpoint}>;
@@ -79,6 +80,22 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
 export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "codecs" | "done" {
   if (audit.state !== "complete") return "metadata";
   return audit.codecState === "complete" ? "done" : "codecs";
+}
+
+/** Human-readable pause reason; never translate OEM unknown into unsupported. */
+export function cameraAuditPauseReason(audit: CameraAuditCheckpoint): string | null {
+  const reason = audit.state === "retry" ? audit.error :
+    audit.codecState === "retry" ? audit.codecError : undefined;
+  switch (reason) {
+    case "thermal-severe":
+      return "Сильный нагрев. Проверка приостановлена, результаты сохранены.";
+    case "low-memory":
+      return "Мало свободной оперативной памяти. Проверка продолжится позднее.";
+    case "camera-metadata-temporarily-unavailable":
+      return "Android временно не предоставил характеристики всех камер.";
+    default:
+      return null;
+  }
 }
 
 export const cameraAudit = {
