@@ -32,6 +32,30 @@ public final class CameraAuditPlugin extends Plugin {
     @PluginMethod
     public void getStatus(PluginCall call) {
         io.execute(() -> {
+            org.json.JSONObject full = CameraAuditService.read(getContext());
+            JSObject summary = new JSObject();
+            // Never serialize a potentially large 1MB camera passport through
+            // the WebView bridge on the every-two-second progress poll.
+            summary.put("schema", full.optInt("schema", 2));
+            summary.put("state", full.optString("state", "not-started"));
+            summary.put("completed", full.optInt("completed", 0));
+            summary.put("total", full.optInt("total", 0));
+            summary.put("codecState", full.optString("codecState", "pending"));
+            summary.put("codecCompleted", full.optInt("codecCompleted", 0));
+            summary.put("codecTotal", full.optInt("codecTotal", 0));
+            summary.put("advancedState", full.optString("advancedState", "pending"));
+            summary.put("cameras", new org.json.JSONObject());
+            summary.put("updatedAt", full.optLong("updatedAt", 0));
+            JSObject result = new JSObject();
+            result.put("audit", summary);
+            call.resolve(result);
+        });
+    }
+
+    /** Full per-camera evidence is fetched only when explicitly needed. */
+    @PluginMethod
+    public void getPassport(PluginCall call) {
+        io.execute(() -> {
             JSObject result = new JSObject();
             result.put("audit", CameraAuditService.read(getContext()));
             call.resolve(result);
