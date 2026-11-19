@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isNative } from "@/lib/native";
-import { cameraAudit, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
+import { cameraAudit, cameraAuditPhase, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 
 /** Camera-only display of a separate-process read-only Camera2 metadata scan. */
@@ -18,12 +18,12 @@ export function CameraAuditBanner() {
         const response = await cameraAudit.getStatus();
         if (!alive) return;
         setAudit(response.audit);
-        if (response.audit.state === "complete" && startedHere.current) {
+        if (cameraAuditPhase(response.audit) === "done" && startedHere.current) {
           setShowCompleted(true);
           timer = window.setTimeout(() => { if (alive) setShowCompleted(false); }, 4500);
           return;
         }
-        if (response.audit.state !== "complete")
+        if (cameraAuditPhase(response.audit) !== "done")
           timer = window.setTimeout(() => { if (alive) void read(); }, 1800);
       } catch {
         if (alive) setProblem("Паспорт временно недоступен. Проверка возобновится при следующем запуске.");
@@ -34,7 +34,7 @@ export function CameraAuditBanner() {
       void cameraAudit.getStatus().then(async current => {
         if (!alive) return;
         setAudit(current.audit);
-        if (current.audit.state !== "complete") {
+        if (cameraAuditPhase(current.audit) !== "done") {
           const result = await cameraAudit.startIfNeeded();
           if (!alive) return;
           if (result.started) startedHere.current = true;
@@ -57,17 +57,20 @@ export function CameraAuditBanner() {
 
   // The saved baseline is not a repeated startup progress screen.
   // Full functional diagnosis has its own future completion state.
-  if (!isNative() || (audit?.state === "complete" && !showCompleted)) return null;
-  const complete = audit?.state === "complete";
+  const phase = audit ? cameraAuditPhase(audit) : "metadata";
+  if (!isNative() || (phase === "done" && !showCompleted)) return null;
+  const complete = phase === "done";
   const percent = audit ? cameraAuditProgress(audit) : 0;
   const line = problem || (complete
-    ? "Базовое обнаружение завершено. Подробная проверка режимов и кнопок ещё ожидает выполнения."
-    : audit?.state === "retry"
-      ? "Проверка приостановилась. Сохранённые результаты останутся до следующего запуска."
-      : "Определяем объективы и сохраняем паспорт. Камера и другие разделы доступны.");
+    ? "Проверка заявленных характеристик завершена. Испытания реальной записи ещё не проводились."
+    : audit?.state === "retry" || audit?.codecState === "retry"
+      ? "Проверка временно приостановлена. Результаты сохранены и продолжатся при следующем запуске."
+      : phase === "codecs"
+        ? "Сверяем заявленные видеорежимы с возможностями кодировщиков. Вы можете пользоваться приложением."
+        : "Определяем объективы и сохраняем паспорт. Камера и другие разделы доступны.");
   return <section aria-label="Диагностика камер" className="mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3 text-foreground shadow-sm">
     <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold">
-      <span>{complete ? "Базовая проверка камер завершена" : "Первичная проверка камер"}</span>
+      <span>{complete ? "Проверка характеристик завершена" : "Диагностика камер"}</span>
       <span className="tabular-nums">{percent}%</span>
     </div>
     <div className="h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar"
@@ -76,7 +79,7 @@ export function CameraAuditBanner() {
     </div>
     <p role="status" className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{line}</p>
     {audit && audit.total > 0 && <p className="mt-1 text-[10px] text-muted-foreground">
-      Получены сведения: {audit.completed} из {audit.total} камер. Практические испытания записи не засчитаны.
+      Объективы: {audit.completed}/{audit.total}. Кодеки: {audit.codecCompleted ?? 0}/{audit.codecTotal ?? audit.total}. Практическая запись не проверена.
     </p>}
   </section>;
 }
