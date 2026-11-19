@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { validFoldRegionGeometry } from "./fold-recording-evidence";
-import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldVisibleContentBounds, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
+import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldVisibleContentBounds, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, hasPlausibleSeparatingHinge, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
 const topology = (features: DisplayTopology["foldingFeatures"]): DisplayTopology => ({
   widthPx: 1200, heightPx: 900, widthDp: 600, heightDp: 450,
@@ -26,6 +26,15 @@ describe("adaptive window classes", () => {
   });
 });
 describe("multi-hinge topology", () => {
+  it("does not observe expensive fold-layout mutations for malformed OEM reports", () => {
+    expect(hasPlausibleSeparatingHinge(topology([hinge(590,610)]))).toBe(true);
+    expect(hasPlausibleSeparatingHinge(topology([]))).toBe(false);
+    expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),leftPx:Number.NaN}]))).toBe(false);
+    expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),rightPx:2000}]))).toBe(false);
+    expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),separating:false}]))).toBe(false);
+    expect(hasPlausibleSeparatingHinge(topology(Array.from({length:33},()=>hinge(590,610))))).toBe(false);
+  });
+
   it("preserves no fold when Android reports no fold", () => {
     expect(calculateDisplayRegions(topology([]), 600, 450).regions).toHaveLength(1);
   });
