@@ -79,7 +79,8 @@ export function CameraAuditBanner() {
     </div>
     <p role="status" className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{line}</p>
     {audit && audit.total > 0 && <p className="mt-1 text-[10px] text-muted-foreground">
-      Объективы: {audit.completed}/{audit.total}. Кодеки: {audit.codecCompleted ?? 0}/{audit.codecTotal ?? audit.total}. Практическая запись не проверена.
+      Доступные ID Camera2: {audit.camera2EnumeratedIdCount ?? audit.total}. Раскрытые физические сенсоры: {audit.physicalIdsDisclosed ?? 0} (не суммируются).
+      <span className="block">Характеристики: {audit.completed}/{audit.total}. Кодеки: {audit.codecCompleted ?? 0}/{audit.codecTotal ?? audit.total}. Практическая запись не проверена.</span>
     </p>}
   </section>;
 }
