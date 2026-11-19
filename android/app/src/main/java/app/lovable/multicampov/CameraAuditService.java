@@ -218,7 +218,10 @@ public final class CameraAuditService extends Service {
                         if (map != null) {
                             Size[] outputSizes = map.getOutputSizes(MediaRecorder.class);
                             if (outputSizes != null) {
-                                for (Size size : outputSizes) {
+                                int max = Math.min(outputSizes.length, MAX_MODES_PER_CAMERA);
+                                for (int i = 0; i < max; i++) {
+                                    Size size = outputSizes[i];
+                                    if (size == null) continue;
                                     sizes.put(new JSONObject().put("width", size.getWidth())
                                             .put("height", size.getHeight()));
                                 }
