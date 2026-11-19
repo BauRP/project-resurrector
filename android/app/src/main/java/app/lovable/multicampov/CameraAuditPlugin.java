@@ -48,6 +48,8 @@ public final class CameraAuditPlugin extends Plugin {
             summary.put("advancedState", full.optString("advancedState", "pending"));
             summary.put("cameras", new org.json.JSONObject());
             summary.put("updatedAt", full.optLong("updatedAt", 0));
+            summary.put("error", full.optString("error", ""));
+            summary.put("codecError", full.optString("codecError", ""));
             JSObject result = new JSObject();
             result.put("audit", summary);
             call.resolve(result);
