@@ -13,11 +13,31 @@ export function CameraAuditBanner() {
     if (!isNative()) return;
     let alive = true;
     let timer = 0;
+    let lastCheckpoint = "";
+    let lastChangedAt = Date.now();
+    const MAX_STALE_MS = 30000;
     const read = async () => {
       try {
         const response = await cameraAudit.getStatus();
         if (!alive) return;
         setAudit(response.audit);
+        const checkpoint = [
+          response.audit.state, response.audit.codecState,
+          response.audit.completed, response.audit.total,
+          response.audit.codecCompleted, response.audit.codecTotal,
+          response.audit.updatedAt,
+        ].join("|");
+        if (checkpoint !== lastCheckpoint) {
+          lastCheckpoint = checkpoint;
+          lastChangedAt = Date.now();
+        }
+        // A vendor CameraService can hang without returning another callback.
+        // Stop polling an unchanged checkpoint instead of waking WebView
+        // indefinitely. The saved service checkpoint remains authoritative.
+        if (Date.now() - lastChangedAt >= MAX_STALE_MS) {
+          setProblem("Android не отвечает на проверку. Прогресс сохранён; продолжим при следующем запуске.");
+          return;
+        }
         if (cameraAuditPhase(response.audit) === "done" && startedHere.current) {
           setShowCompleted(true);
           timer = window.setTimeout(() => { if (alive) setShowCompleted(false); }, 4500);
@@ -34,6 +54,8 @@ export function CameraAuditBanner() {
       void cameraAudit.getStatus().then(async current => {
         if (!alive) return;
         setAudit(current.audit);
+        // The first read is only a snapshot, not a test. The worker starts
+        // after it; the polling loop begins with its own progress timestamp.
         if (cameraAuditPhase(current.audit) !== "done") {
           const result = await cameraAudit.startIfNeeded();
           if (!alive) return;
