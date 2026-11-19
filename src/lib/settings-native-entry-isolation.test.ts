@@ -48,7 +48,8 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(settings).toContain('advancedPanel === "diagnostics" &&');
   });
   it("coalesces DOM churn on single screens but still tracks fold features and tab changes",()=>{
-    expect(folds).toContain('lastNative?.foldingFeatures.some(feature => feature.separating) === true');
+    expect(folds).toContain("hasPlausibleSeparatingHinge(lastNative)");
+    expect(folds).toContain("topology.foldingFeatures.length > 32");
     expect(folds).toContain("cameraChanged || tabChanged || foldHasSeparatingHinge");
     expect(folds).toContain('window.addEventListener("multicam-tab-rendered", onTabRendered)');
     expect(folds).toContain('window.removeEventListener("multicam-tab-rendered", onTabRendered)');
