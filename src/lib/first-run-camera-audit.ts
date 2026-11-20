@@ -13,6 +13,11 @@ export interface CameraAuditCheckpoint {
   codecState?: "pending" | "running" | "retry" | "complete";
   codecCompleted?: number;
   codecTotal?: number;
+  planState?: "pending" | "running" | "retry" | "complete";
+  planCompleted?: number;
+  planTotal?: number;
+  planCandidateCount?: number;
+  planError?: string;
   activeCameraIds?: string[];
   /** Distinct counts. Never add logical IDs to physical sensors. */
   camera2EnumeratedIdCount?: number;
@@ -36,6 +41,13 @@ export interface CameraAuditCheckpoint {
     awbModesDeclared?: number[];
     codecState?: "complete";
     codecCheckedAt?: number;
+    planState?: "complete";
+    planVersion?: number;
+    planCheckedAt?: number;
+    planEvidence?: "declared-compatible-only";
+    functionalPlan?: {key:string;cameraId:string;width:number;height:number;fps:number;
+      encoderName:string;encoderMime:string;status:"not-run";verifiedRecording:false;
+      evidence:"declared-compatible-only"}[];
     codecChecks?: {
       width: number;
       height: number;

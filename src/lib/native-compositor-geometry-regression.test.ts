@@ -12,7 +12,7 @@ describe("native WebView compositor and pane geometry stability",()=>{
   });
   it("only measures fold-pane rectangles when real separating features are present",()=>{
     const code=readFileSync("src/lib/display-topology.ts","utf8");
-    expect(code).toContain("const hasFoldBounds = lastNative?.foldingFeatures.some(f => f.separating) === true");
+    expect(code).toContain("const hasFoldBounds = hasPlausibleSeparatingHinge(lastNative);");
     expect(code).toContain("if (geometry.hinges.length === 0)");
     expect(code).toContain('root.dataset["foldWorkspace"] = "normal"');
     expect(code).toContain("for (const name of ordinaryVars) clearCss(name)");

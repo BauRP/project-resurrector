@@ -8,6 +8,12 @@ describe("Android camera audit polling", () => {
     expect(step).toContain("setAudit(response.audit)");
     expect(step.indexOf("setAudit(response.audit)")).toBeGreaterThan(step.indexOf("if (checkpoint !== lastCheckpoint)"));
   });
+  it("resumes planning on previous metadata-only installs",()=>{
+    expect(banner).toContain('current.audit.planState !== "complete"');
+    expect(banner).toContain('response.audit.planState === "complete"');
+    expect(banner).toContain("planCandidateCount");
+    expect(banner).toContain("Камера не открывается, запись не запускается");
+  });
   it("stops polling at a saved resource pause without misreporting a frozen renderer", () => {
     expect(banner).toContain('response.audit.state === "retry" || response.audit.codecState === "retry"');
     expect(banner).not.toContain("Android не отвечает на проверку.");

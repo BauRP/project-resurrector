@@ -45,7 +45,8 @@ public final class CameraAuditService extends Service {
     private static final String[] STATUS_KEYS = {
             "schema", "state", "completed", "total", "codecState",
             "codecCompleted", "codecTotal", "camera2EnumeratedIdCount",
-            "physicalIdsDisclosed", "advancedState", "updatedAt", "error", "codecError"
+            "physicalIdsDisclosed", "advancedState", "updatedAt", "error", "codecError",
+            "planState", "planTotal", "planCompleted", "planCandidateCount", "planError"
     };
     private static final int SCHEMA = 2;
     private static final int MAX_MODES_PER_CAMERA = 96;
@@ -172,9 +173,10 @@ public final class CameraAuditService extends Service {
     }
 
     public static boolean inventoryComplete(Context context) {
-        JSONObject saved = read(context);
+        JSONObject saved = readStatus(context);
         return "complete".equals(saved.optString("state")) &&
-                "complete".equals(saved.optString("codecState"));
+                "complete".equals(saved.optString("codecState")) &&
+                "complete".equals(saved.optString("planState"));
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -185,6 +187,8 @@ public final class CameraAuditService extends Service {
                 // Encoder checks are metadata-only and resume from their own
                 // per-camera checkpoint. They do not open a CameraDevice.
                 CameraAuditCodecStage.run(this);
+                // Declared-only functional test candidates; never starts recording.
+                CameraAuditPlanStage.run(this);
             } finally {
                 started.set(false);
                 // stopSelf(startId) can leave an orphan service if a second
@@ -221,6 +225,10 @@ public final class CameraAuditService extends Service {
             saved.put("codecState", "pending");
             saved.put("codecCompleted", 0);
             saved.put("codecTotal", ids.length);
+            saved.put("planState", "pending");
+            saved.put("planTotal", ids.length);
+            saved.put("planCompleted", 0);
+            saved.put("planCandidateCount", 0);
             saved.put("androidSdk", Build.VERSION.SDK_INT);
             saved.put("cameraCountSource", "CameraManager.getCameraIdList");
             saved.put("recordingValidated", false);
@@ -280,6 +288,10 @@ public final class CameraAuditService extends Service {
                         item.put("manualSensor", contains(
                                 c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES),
                                 CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_MANUAL_SENSOR));
+                        item.put("afMaxRegionsDeclared", optional(c.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AF)));
+                        item.put("aeMaxRegionsDeclared", optional(c.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AE)));
+                        item.put("awbMaxRegionsDeclared", optional(c.get(CameraCharacteristics.CONTROL_MAX_REGIONS_AWB)));
+                        item.put("capabilitiesDeclared", integers(c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES)));
                         item.put("rawDeclared", contains(
                                 c.get(CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES),
                                 CameraCharacteristics.REQUEST_AVAILABLE_CAPABILITIES_RAW));
@@ -290,6 +302,12 @@ public final class CameraAuditService extends Service {
                         Range<Integer> iso = c.get(CameraCharacteristics.SENSOR_INFO_SENSITIVITY_RANGE);
                         item.put("isoRange", iso == null ? JSONObject.NULL :
                                 new JSONArray().put(iso.getLower()).put(iso.getUpper()));
+                        android.util.SizeF physicalSize = c.get(CameraCharacteristics.SENSOR_INFO_PHYSICAL_SIZE);
+                        item.put("sensorPhysicalSizeMmDeclared", physicalSize == null ? JSONObject.NULL :
+                                new JSONArray().put(physicalSize.getWidth()).put(physicalSize.getHeight()));
+                        Size pixelArray = c.get(CameraCharacteristics.SENSOR_INFO_PIXEL_ARRAY_SIZE);
+                        item.put("pixelArraySizeDeclared", pixelArray == null ? JSONObject.NULL :
+                                new JSONArray().put(pixelArray.getWidth()).put(pixelArray.getHeight()));
                         Range<Long> shutter = c.get(CameraCharacteristics.SENSOR_INFO_EXPOSURE_TIME_RANGE);
                         item.put("exposureTimeNs", shutter == null ? JSONObject.NULL :
                                 new JSONArray().put(shutter.getLower()).put(shutter.getUpper()));

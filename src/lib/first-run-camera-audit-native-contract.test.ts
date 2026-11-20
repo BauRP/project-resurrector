@@ -7,6 +7,7 @@ const dir="android/app/src/main/java/app/lovable/multicampov/";
 const service=readFileSync(dir+"CameraAuditService.java","utf8");
 const plugin=readFileSync(dir+"CameraAuditPlugin.java","utf8");
 const codec=readFileSync(dir+"CameraAuditCodecStage.java","utf8");
+const plan=readFileSync(dir+"CameraAuditPlanStage.java","utf8");
 describe("first-run native camera audit cost and evidence",()=>{
   it("polls a tiny atomic status sidecar, keeping full passport on demand",()=>{
     expect(service).toContain("AtomicFile statusFile = new AtomicFile(");
@@ -26,6 +27,23 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(service).toContain("if (buffer.size() > MAX_PASSPORT_BYTES - n) return blank()");
     expect(service).toContain('throw new IOException("camera-passport-size-limit")');
     expect(service).not.toContain("byte[] data = new byte[1024 * 1024]");
+  });
+  it("resumes a distinct per-camera planned test stage without recording",()=>{
+    expect(service).toContain("CameraAuditPlanStage.run(this)");
+    expect(service).toContain('"complete".equals(saved.optString("planState"))');
+    expect(service).toContain('saved.put("planState", "pending")');
+    expect(plugin).toContain('summary.put("planCandidateCount"');
+    expect(plan).toContain("CameraAuditResourceGuard.pauseReason(context)");
+    expect(plan).toContain("CameraAuditService.persist(context, passport)");
+    expect(plan).toContain('item.put("status", "not-run")');
+    expect(plan).toContain('item.put("verifiedRecording", false)');
+    expect(plan).not.toContain("openCamera(");
+    expect(plan).not.toContain("new MediaRecorder(");
+  });
+  it("captures additional declared focus and sensor evidence",()=>{
+    for(const key of ["afMaxRegionsDeclared","aeMaxRegionsDeclared","awbMaxRegionsDeclared",
+      "pixelArraySizeDeclared","sensorPhysicalSizeMmDeclared","capabilitiesDeclared"])
+      expect(service).toContain('item.put("'+key+'"');
   });
   it("does not turn Camera2 declarations into proven recorded files",()=>{
     expect(service).toContain('item.put("verifiedRecording", false)');

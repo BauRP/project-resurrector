@@ -24,6 +24,8 @@ export function CameraAuditBanner() {
           response.audit.state, response.audit.codecState,
           response.audit.completed, response.audit.total,
           response.audit.codecCompleted, response.audit.codecTotal,
+          response.audit.planState, response.audit.planCompleted,
+          response.audit.planTotal, response.audit.planCandidateCount,
           response.audit.updatedAt,
         ].join("|");
         if (checkpoint !== lastCheckpoint) {
@@ -33,7 +35,8 @@ export function CameraAuditBanner() {
         }
         // A resource/permission pause is deliberate; another two-second
         // poll cannot resume the service. Reopen Camera to continue later.
-        if (response.audit.state === "retry" || response.audit.codecState === "retry") return;
+        if (response.audit.state === "retry" || response.audit.codecState === "retry" ||
+            response.audit.planState === "retry") return;
         // A vendor CameraService can hang without returning another callback.
         // Stop polling an unchanged checkpoint instead of waking WebView
         // indefinitely. The saved service checkpoint remains authoritative.
@@ -41,12 +44,14 @@ export function CameraAuditBanner() {
           setProblem("Проверка не продвигается. Результаты сохранены; продолжим при следующем запуске.");
           return;
         }
-        if (cameraAuditPhase(response.audit) === "done" && startedHere.current) {
+        const stagesComplete = cameraAuditPhase(response.audit) === "done" &&
+          response.audit.planState === "complete";
+        if (stagesComplete && startedHere.current) {
           setShowCompleted(true);
           timer = window.setTimeout(() => { if (alive) setShowCompleted(false); }, 4500);
           return;
         }
-        if (cameraAuditPhase(response.audit) !== "done")
+        if (!stagesComplete)
           timer = window.setTimeout(() => { if (alive) void read(); }, 1800);
       } catch {
         if (alive) setProblem("Паспорт временно недоступен. Проверка возобновится при следующем запуске.");
@@ -59,7 +64,8 @@ export function CameraAuditBanner() {
         setAudit(current.audit);
         // The first read is only a snapshot, not a test. The worker starts
         // after it; the polling loop begins with its own progress timestamp.
-        if (cameraAuditPhase(current.audit) !== "done") {
+        if (cameraAuditPhase(current.audit) !== "done" ||
+            current.audit.planState !== "complete") {
           const result = await cameraAudit.startIfNeeded();
           if (!alive) return;
           if (result.started) startedHere.current = true;
@@ -83,20 +89,23 @@ export function CameraAuditBanner() {
   // The saved baseline is not a repeated startup progress screen.
   // Full functional diagnosis has its own future completion state.
   const phase = audit ? cameraAuditPhase(audit) : "metadata";
-  if (!isNative() || (phase === "done" && !showCompleted)) return null;
-  const complete = phase === "done";
+  const complete = phase === "done" && audit?.planState === "complete";
+  if (!isNative() || (complete && !showCompleted)) return null;
+  // This percent is the metadata/codec baseline, not functional recording.
   const percent = audit ? cameraAuditProgress(audit) : 0;
   const line = problem || (audit && cameraAuditPauseReason(audit)) || (complete
     ? "Проверка заявленных характеристик завершена. Испытания реальной записи ещё не проводились."
-    : audit?.state === "retry" || audit?.codecState === "retry"
+    : audit?.state === "retry" || audit?.codecState === "retry" || audit?.planState === "retry"
       ? "Проверка временно приостановлена. Результаты сохранены и продолжатся при следующем запуске."
-      : phase === "codecs"
-        ? "Сверяем заявленные видеорежимы с возможностями кодировщиков. Вы можете пользоваться приложением."
-        : "Определяем объективы и сохраняем паспорт. Камера и другие разделы доступны.");
+      : phase === "done"
+        ? "Составляем список будущих испытаний. Камера не открывается, запись не запускается."
+        : phase === "codecs"
+          ? "Сверяем заявленные видеорежимы с возможностями кодировщиков. Вы можете пользоваться приложением."
+          : "Определяем объективы и сохраняем паспорт. Камера и другие разделы доступны.");
   return <section aria-label="Диагностика камер" className="mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3 text-foreground shadow-sm">
     <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold">
       <span>{complete ? "Проверка характеристик завершена" : "Диагностика камер"}</span>
-      <span className="tabular-nums">{percent}%</span>
+      <span className="tabular-nums">{percent}% характеристик</span>
     </div>
     <div className="h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar"
       aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-label="Обнаружение камер">
@@ -105,7 +114,7 @@ export function CameraAuditBanner() {
     <p role="status" className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{line}</p>
     {audit && audit.total > 0 && <p className="mt-1 text-[10px] text-muted-foreground">
       Доступные ID Camera2: {audit.camera2EnumeratedIdCount ?? audit.total}. Раскрытые физические сенсоры: {audit.physicalIdsDisclosed ?? 0} (не суммируются).
-      <span className="block">Характеристики: {audit.completed}/{audit.total}. Кодеки: {audit.codecCompleted ?? 0}/{audit.codecTotal ?? audit.total}. Практическая запись не проверена.</span>
+      <span className="block">Характеристики: {audit.completed}/{audit.total}. Кодеки: {audit.codecCompleted ?? 0}/{audit.codecTotal ?? audit.total}. План: {audit.planCompleted ?? 0}/{audit.planTotal ?? audit.total}, кандидатов: {audit.planCandidateCount ?? 0}. Практическая запись не проверена.</span>
     </p>}
   </section>;
 }
