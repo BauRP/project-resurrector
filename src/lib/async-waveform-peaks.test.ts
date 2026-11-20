@@ -10,6 +10,22 @@ describe("asynchronous waveform extraction keeps original peak density",()=>{
   expect(peaks[1]).toBeCloseTo(0.8);
   expect(peaks[19]).toBeCloseTo(1);
  });
+ it("preserves the tail of a non-divisible decoded audio buffer",async()=>{
+  const samples=new Float32Array(44123); // 44123 / 20 has a remainder
+  samples[44122]=-0.93;
+  const peaks=await extractWaveformPeaks(samples,1);
+  expect(peaks).toHaveLength(20);
+  expect(peaks[19]).toBeCloseTo(.93);
+ });
+ it("does not propagate corrupt non-finite audio into a waveform",async()=>{
+  const samples=new Float32Array(101);
+  samples[1]=Number.NaN;
+  samples[10]=Number.POSITIVE_INFINITY;
+  samples[100]=.7;
+  const peaks=await extractWaveformPeaks(samples,1);
+  expect(peaks.every(Number.isFinite)).toBe(true);
+  expect(peaks[19]).toBeCloseTo(.7);
+ });
  it("can stop an old waveform generation on editor unmount",async()=>{
   const cancelled=vi.fn(()=>true);
   await expect(extractWaveformPeaks(new Float32Array(100),1,cancelled)).rejects.toThrow("прерван");

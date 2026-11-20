@@ -20,6 +20,13 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(plugin).toContain('result.put("audit", CameraAuditService.read(getContext()))');
     expect(plugin).toContain('summary.put("cameras", new org.json.JSONObject())');
   });
+  it("preserves valid passports above 1 MiB without unbounded memory use",()=>{
+    expect(service).toContain("MAX_PASSPORT_BYTES = 8 * 1024 * 1024");
+    expect(service).toContain("ByteArrayOutputStream buffer");
+    expect(service).toContain("if (buffer.size() > MAX_PASSPORT_BYTES - n) return blank()");
+    expect(service).toContain('throw new IOException("camera-passport-size-limit")');
+    expect(service).not.toContain("byte[] data = new byte[1024 * 1024]");
+  });
   it("does not turn Camera2 declarations into proven recorded files",()=>{
     expect(service).toContain('item.put("verifiedRecording", false)');
     expect(service).toContain('mode.put("verifiedVideoRecording", false)');

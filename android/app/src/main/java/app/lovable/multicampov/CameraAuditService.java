@@ -23,6 +23,8 @@ import org.json.JSONObject;
 
 import java.io.File;
 import java.io.FileOutputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -48,6 +50,10 @@ public final class CameraAuditService extends Service {
     private static final int SCHEMA = 2;
     private static final int MAX_MODES_PER_CAMERA = 96;
     private static final int MAX_CAMERAS = 64;
+    // A dense 64-camera passport can legitimately exceed 1 MiB. Read and
+    // write with the same upper bound so a valid saved scan is never dropped
+    // merely because it outgrew the original fixed-size input buffer.
+    private static final int MAX_PASSPORT_BYTES = 8 * 1024 * 1024;
     private final AtomicBoolean started = new AtomicBoolean(false);
 
     public static JSONObject read(Context context) {
@@ -55,15 +61,16 @@ public final class CameraAuditService extends Service {
         // AtomicFile.openRead() also recovers a previous committed backup.
         // A fresh install simply takes the missing-file exception below.
         try (InputStream in = file.openRead()) {
-            byte[] data = new byte[1024 * 1024];
-            int length = 0;
-            while (length < data.length) {
-                int n = in.read(data, length, data.length - length);
-                if (n < 0) break;
-                length += n;
+            ByteArrayOutputStream buffer = new ByteArrayOutputStream(64 * 1024);
+            byte[] chunk = new byte[32 * 1024];
+            int n;
+            while ((n = in.read(chunk)) != -1) {
+                if (n == 0) continue;
+                if (buffer.size() > MAX_PASSPORT_BYTES - n) return blank();
+                buffer.write(chunk, 0, n);
             }
-            if (length == data.length) return blank();
-            JSONObject saved = new JSONObject(new String(data, 0, length, StandardCharsets.UTF_8));
+            JSONObject saved = new JSONObject(
+                    new String(buffer.toByteArray(), StandardCharsets.UTF_8));
             return saved.optInt("schema") == SCHEMA ? saved : blank();
         } catch (Exception ignored) {
             return blank(); // A corrupt checkpoint is never a successful scan.
@@ -148,6 +155,8 @@ public final class CameraAuditService extends Service {
         try {
             out = file.startWrite();
             byte[] data = value.toString().getBytes(StandardCharsets.UTF_8);
+            if (data.length > MAX_PASSPORT_BYTES)
+                throw new IOException("camera-passport-size-limit");
             out.write(data);
             out.flush();
             file.finishWrite(out);

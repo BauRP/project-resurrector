@@ -364,7 +364,7 @@ export function startDisplayAdaptation(): () => void {
     // Normal phones and Android emulators have no pane split. DOM
     // measurements on every Settings/editor layout can force Chromium
     // style/layout work; only real folding features need these rectangles.
-    const hasFoldBounds = lastNative?.foldingFeatures.some(f => f.separating) === true;
+    const hasFoldBounds = hasPlausibleSeparatingHinge(lastNative);
     const scroll = hasFoldBounds ? document.querySelector(".app-scroll")?.getBoundingClientRect() : null;
     const header = hasFoldBounds ? document.querySelector(".app-header")?.getBoundingClientRect() : null;
     const camera = hasFoldBounds ? document.querySelector(".camera-screen")?.getBoundingClientRect() : null;

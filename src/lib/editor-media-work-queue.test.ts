@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { EditorMediaWorkQueue } from "./editor-media-work-queue";
 import { readFileSync } from "node:fs";
 
@@ -40,6 +40,25 @@ describe("editor media workload prevents concurrent Android WebView decoders", (
     expect(await skipped).toBeUndefined();
     expect(await subsequent).toBe("ready");
     expect(queue.queuedCount).toBe(0);
+  });
+
+  it("lets the browser process input between consecutive expensive media jobs", async () => {
+    vi.useFakeTimers();
+    try {
+      const queue = new EditorMediaWorkQueue();
+      let finishFirst!: () => void;
+      const first = queue.run(() => new Promise<number>(resolve => { finishFirst = () => resolve(1); }));
+      let secondStarted = false;
+      const second = queue.run(async () => { secondStarted = true; return 2; });
+      await Promise.resolve();
+      finishFirst();
+      expect(await first).toBe(1);
+      expect(secondStarted).toBe(false); // no microtask-chain decoder monopolizing WebView
+      expect(queue.queuedCount).toBe(1);
+      await vi.runOnlyPendingTimersAsync();
+      expect(await second).toBe(2);
+      expect(queue.queuedCount).toBe(0);
+    } finally { vi.useRealTimers(); }
   });
 
   it("releases the queue after an encoder error", async () => {

@@ -9,6 +9,9 @@ export class EditorMediaWorkQueue {
   private active = false;
   private pending: Array<() => void> = [];
   private waiting = 0;
+  // Leave one browser event-loop turn between completed OPTIONAL media jobs,
+  // so a long run of thumbnail/waveform tasks cannot monopolize touch events.
+  private nextTurn: ReturnType<typeof setTimeout> | null = null;
 
   get queuedCount(): number { return this.waiting; }
 
@@ -37,7 +40,17 @@ export class EditorMediaWorkQueue {
       const finish = () => {
         this.waiting--;
         this.active = false;
-        this.drain();
+        // The previous decoder has fully released its resources. Pending
+        // tasks remain cancellable during this turn, and the renderer can
+        // handle a click/paint instead of chaining work in microtasks.
+        if (this.pending.length && this.nextTurn === null) {
+          this.nextTurn = setTimeout(() => {
+            this.nextTurn = null;
+            this.drain();
+          }, 0);
+        } else {
+          this.drain();
+        }
       };
       this.waiting++;
       this.pending.push(start);
@@ -49,7 +62,7 @@ export class EditorMediaWorkQueue {
   }
 
   private drain(): void {
-    if (this.active) return;
+    if (this.active || this.nextTurn !== null) return;
     const next = this.pending.shift();
     if (!next) return;
     this.active = true;

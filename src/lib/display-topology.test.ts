@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { validFoldRegionGeometry } from "./fold-recording-evidence";
 import { calculateDisplayRegions, fourPaneCameraLayout, clipFoldPaneToCamera, selectSafeFoldWorkspace, foldVisibleContentBounds, foldEventDetails, shouldPublishFoldObservation, startDisplayAdaptation, hasPlausibleSeparatingHinge, safeViewportDimension, retainedViewportDimension, windowClass, type DisplayTopology } from "./display-topology";
 
@@ -26,6 +27,10 @@ describe("adaptive window classes", () => {
   });
 });
 describe("multi-hinge topology", () => {
+  it("does not force expensive layout reads for malformed or out-of-window hinges",()=>{
+    const source=readFileSync("src/lib/display-topology.ts","utf8");
+    expect(source).toContain("const hasFoldBounds = hasPlausibleSeparatingHinge(lastNative);");
+  });
   it("does not observe expensive fold-layout mutations for malformed OEM reports", () => {
     expect(hasPlausibleSeparatingHinge(topology([hinge(590,610)]))).toBe(true);
     expect(hasPlausibleSeparatingHinge(topology([]))).toBe(false);
