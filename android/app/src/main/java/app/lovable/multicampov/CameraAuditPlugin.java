@@ -32,7 +32,7 @@ public final class CameraAuditPlugin extends Plugin {
     @PluginMethod
     public void getStatus(PluginCall call) {
         io.execute(() -> {
-            org.json.JSONObject full = CameraAuditService.read(getContext());
+            org.json.JSONObject full = CameraAuditService.readStatus(getContext());
             JSObject summary = new JSObject();
             // Never serialize a potentially large 1MB camera passport through
             // the WebView bridge on the every-two-second progress poll.

@@ -49,6 +49,13 @@ export function hasPlausibleSeparatingHinge(topology: DisplayTopology | null): b
       topology.foldingFeatures.length > 32 ||
       !Number.isFinite(topology.widthPx) || topology.widthPx <= 0 ||
       !Number.isFinite(topology.heightPx) || topology.heightPx <= 0) return false;
+  if (topology.source === "android-windowmanager-feature-overflow") return false;
+  const bounds = topology.webViewBoundsPx;
+  if (bounds && (![
+    bounds.left, bounds.top, bounds.right, bounds.bottom,
+  ].every(Number.isFinite) || bounds.left < 0 || bounds.top < 0 ||
+    bounds.right > topology.widthPx || bounds.bottom > topology.heightPx ||
+    bounds.right <= bounds.left || bounds.bottom <= bounds.top)) return false;
   return topology.foldingFeatures.some(feature => feature && feature.separating &&
     typeof feature.orientation === "string" &&
     /vertical|horizontal/i.test(feature.orientation) &&

@@ -33,6 +33,13 @@ describe("multi-hinge topology", () => {
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),rightPx:2000}]))).toBe(false);
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),separating:false}]))).toBe(false);
     expect(hasPlausibleSeparatingHinge(topology(Array.from({length:33},()=>hinge(590,610))))).toBe(false);
+    expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), source:"android-windowmanager-feature-overflow"})).toBe(false);
+    expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), webViewBoundsPx:{
+      left:10,top:0,right:1300,bottom:900,
+    }})).toBe(false);
+    expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), webViewBoundsPx:{
+      left:0,top:0,right:1200,bottom:900,
+    }})).toBe(true);
   });
 
   it("preserves no fold when Android reports no fold", () => {

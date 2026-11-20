@@ -5,6 +5,9 @@ import android.media.MediaCodecInfo;
 import android.media.MediaCodecList;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 
 /**
  * Declared encoder compatibility scan, performed by CameraAuditService in
@@ -96,15 +99,22 @@ final class CameraAuditCodecStage {
         JSONArray checks = new JSONArray();
         JSONArray sizes = camera.optJSONArray("videoModeCandidatesDeclared");
         if (sizes == null) return checks;
-        // Do not enumerate a Cartesian explosion on a low-end device. Prefer
-        // each distinct declared resolution in the original HAL order.
-        int examined = 0;
-        for (int i=0; i<sizes.length() && examined<MAX_SIZES_PER_CAMERA; i++) {
+        // Prioritize 1080p, 4K and 720p when the actual Camera2 HAL reports
+        // them. Vendor HAL ordering must not cause these common modes to be
+        // omitted by our six-size cost limit. No unreported mode is invented.
+        ArrayList<JSONObject> candidates = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (int i = 0; i < sizes.length(); i++) {
             JSONObject mode = sizes.optJSONObject(i);
             if (mode == null) continue;
             int width = mode.optInt("width"), height = mode.optInt("height");
-            if (width<1 || height<1 || width>8192 || height>8192) continue;
-            examined++;
+            if (width < 1 || height < 1 || width > 8192 || height > 8192) continue;
+            if (seen.add(width + "x" + height)) candidates.add(mode);
+        }
+        candidates.sort((a,b) -> Integer.compare(modePriority(a), modePriority(b)));
+        for (int i = 0; i < candidates.size() && i < MAX_SIZES_PER_CAMERA; i++) {
+            JSONObject mode = candidates.get(i);
+            int width = mode.optInt("width"), height = mode.optInt("height");
             double upper = mode.optDouble("theoreticalUpperFps", -1);
             for (int fps : FPS) {
                 JSONObject check = new JSONObject();
@@ -150,6 +160,16 @@ final class CameraAuditCodecStage {
             }
         }
         return checks;
+    }
+
+    private static int modePriority(JSONObject mode) {
+        int width = mode.optInt("width");
+        int height = mode.optInt("height");
+        int small = Math.min(width, height), large = Math.max(width, height);
+        if (small == 1080 && large == 1920) return 0;
+        if (small == 2160 && large == 3840) return 1;
+        if (small == 720 && large == 1280) return 2;
+        return 3;
     }
 
     private static boolean supportsType(MediaCodecInfo info, String mime) {

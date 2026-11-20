@@ -37,6 +37,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class CameraAuditService extends Service {
     public static final String FILE_NAME = "multicam-first-run-audit-v1.json";
+    private static final String STATUS_FILE_NAME = "multicam-first-run-audit-status-v1.json";
+    // Status polling must never parse the full per-camera JSON file. This small
+    // atomic sidecar contains only counters, errors and progress metadata.
+    private static final String[] STATUS_KEYS = {
+            "schema", "state", "completed", "total", "codecState",
+            "codecCompleted", "codecTotal", "camera2EnumeratedIdCount",
+            "physicalIdsDisclosed", "advancedState", "updatedAt", "error", "codecError"
+    };
     private static final int SCHEMA = 2;
     private static final int MAX_MODES_PER_CAMERA = 96;
     private static final int MAX_CAMERAS = 64;
@@ -62,6 +70,64 @@ public final class CameraAuditService extends Service {
         }
     }
 
+    /** Return the tiny status checkpoint; fall back to the canonical passport
+     * if upgrading an older install or recovering an interrupted atomic write.
+     * File length and timestamp prevent a stale sidecar from claiming success
+     * after the canonical checkpoint changes or disappears.
+     */
+    public static JSONObject readStatus(Context context) {
+        File passport = new File(context.getFilesDir(), FILE_NAME);
+        AtomicFile statusFile = new AtomicFile(new File(context.getFilesDir(), STATUS_FILE_NAME));
+        try (InputStream in = statusFile.openRead()) {
+            byte[] data = new byte[4096];
+            int used = 0;
+            while (used < data.length) {
+                int count = in.read(data, used, data.length - used);
+                if (count <= 0) break;
+                used += count;
+            }
+            if (used == data.length) return statusOnly(read(context));
+            JSONObject cached = new JSONObject(new String(data, 0, used, StandardCharsets.UTF_8));
+            if (!passport.isFile() ||
+                    cached.optLong("passportModifiedMs", -1) != passport.lastModified() ||
+                    cached.optLong("passportBytes", -1) != passport.length()) {
+                return statusOnly(read(context));
+            }
+            cached.remove("passportModifiedMs");
+            cached.remove("passportBytes");
+            return cached;
+        } catch (Exception ignored) {
+            return statusOnly(read(context));
+        }
+    }
+
+    private static JSONObject statusOnly(JSONObject passport) {
+        JSONObject status = new JSONObject();
+        for (String key : STATUS_KEYS) {
+            if (passport.has(key)) {
+                try { status.put(key, passport.opt(key)); }
+                catch (Exception ignored) { }
+            }
+        }
+        return status;
+    }
+
+    private static void persistStatus(Context context, JSONObject value, File canonical) throws Exception {
+        JSONObject status = statusOnly(value);
+        status.put("passportModifiedMs", canonical.lastModified());
+        status.put("passportBytes", canonical.length());
+        AtomicFile file = new AtomicFile(new File(context.getFilesDir(), STATUS_FILE_NAME));
+        FileOutputStream out = null;
+        try {
+            out = file.startWrite();
+            out.write(status.toString().getBytes(StandardCharsets.UTF_8));
+            file.finishWrite(out);
+        } catch (Exception error) {
+            if (out != null) file.failWrite(out);
+            throw error;
+        }
+    }
+
     private static JSONObject blank() {
         JSONObject result = new JSONObject();
         try {
@@ -76,7 +142,8 @@ public final class CameraAuditService extends Service {
     }
 
     static void persist(Context context, JSONObject value) throws Exception {
-        AtomicFile file = new AtomicFile(new File(context.getFilesDir(), FILE_NAME));
+        File canonical = new File(context.getFilesDir(), FILE_NAME);
+        AtomicFile file = new AtomicFile(canonical);
         FileOutputStream out = null;
         try {
             out = file.startWrite();
@@ -88,6 +155,11 @@ public final class CameraAuditService extends Service {
             if (out != null) file.failWrite(out);
             throw error;
         }
+        // The large passport is now durable. If the tiny status write fails,
+        // the next poll falls back to the authoritative passport rather than
+        // treating a completed camera as failed or redoing expensive work.
+        try { persistStatus(context, value, canonical); }
+        catch (Exception ignored) { }
     }
 
     public static boolean inventoryComplete(Context context) {
@@ -224,10 +296,12 @@ public final class CameraAuditService extends Service {
                         item.put("oisModes", integers(c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)));
                         item.put("eisModes", integers(c.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES)));
                         JSONArray sizes = new JSONArray();
+                        boolean videoSizesTruncated = false;
                         StreamConfigurationMap map = c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
                         if (map != null) {
                             Size[] outputSizes = map.getOutputSizes(MediaRecorder.class);
                             if (outputSizes != null) {
+                                videoSizesTruncated = outputSizes.length > MAX_MODES_PER_CAMERA;
                                 int max = Math.min(outputSizes.length, MAX_MODES_PER_CAMERA);
                                 for (int i = 0; i < max; i++) {
                                     Size size = outputSizes[i];
@@ -266,7 +340,7 @@ public final class CameraAuditService extends Service {
                             }
                         }
                         item.put("videoModeCandidatesDeclared", modeCandidates);
-                        item.put("videoModeCandidatesTruncated", sizes.length() > MAX_MODES_PER_CAMERA);
+                        item.put("videoModeCandidatesTruncated", videoSizesTruncated);
                         item.put("hdrRecordedVerified", false);
                         item.put("oisAppliedVerified", false);
                         item.put("eisAppliedVerified", false);
