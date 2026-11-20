@@ -8,6 +8,7 @@ import org.json.JSONObject;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.List;
 
 /**
  * Declared encoder compatibility scan, performed by CameraAuditService in
@@ -52,6 +53,9 @@ final class CameraAuditCodecStage {
             }
             // MediaCodecList is queried exactly once, never per lens/mode.
             MediaCodecInfo[] codecs = new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos();
+            // Preload vendor codec capabilities once per job, not repeatedly
+            // for each Camera2 resolution and FPS combination.
+            EncoderCatalog catalog = collectEncoderCapabilities(codecs);
             int completed = 0;
             passport.put("codecTotal", ids.length());
             passport.put("codecState", "running");
@@ -70,7 +74,7 @@ final class CameraAuditCodecStage {
                 JSONObject camera = cameras.optJSONObject(cameraId);
                 if (camera == null || !"metadata-collected".equals(camera.optString("state"))) continue;
                 if (!"complete".equals(camera.optString("codecState"))) {
-                    JSONArray checks = scanCamera(camera, codecs);
+                    JSONArray checks = scanCamera(camera, catalog);
                     camera.put("codecChecks", checks);
                     camera.put("codecState", "complete");
                     camera.put("codecCheckedAt", System.currentTimeMillis());
@@ -95,7 +99,47 @@ final class CameraAuditCodecStage {
         }
     }
 
-    private static JSONArray scanCamera(JSONObject camera, MediaCodecInfo[] codecs) throws Exception {
+    private static final class EncoderProfile {
+        final String name;
+        final String mime;
+        final MediaCodecInfo.VideoCapabilities video;
+        EncoderProfile(String name, String mime, MediaCodecInfo.VideoCapabilities video) {
+            this.name = name;
+            this.mime = mime;
+            this.video = video;
+        }
+    }
+    private static final class EncoderCatalog {
+        final List<EncoderProfile> profiles = new ArrayList<>();
+        boolean unknown;
+    }
+    private static EncoderCatalog collectEncoderCapabilities(MediaCodecInfo[] codecs) {
+        EncoderCatalog result = new EncoderCatalog();
+        for (MediaCodecInfo info : codecs) {
+            try {
+                if (!info.isEncoder()) continue;
+                for (String mime : VIDEO_MIMES) {
+                    try {
+                        if (!supportsType(info, mime)) continue;
+                        MediaCodecInfo.CodecCapabilities caps = info.getCapabilitiesForType(mime);
+                        MediaCodecInfo.VideoCapabilities video = caps.getVideoCapabilities();
+                        if (video == null) {
+                            result.unknown = true;
+                        } else {
+                            result.profiles.add(new EncoderProfile(info.getName(), mime, video));
+                        }
+                    } catch (RuntimeException brokenVendorCodec) {
+                        result.unknown = true;
+                    }
+                }
+            } catch (RuntimeException brokenVendorCodec) {
+                result.unknown = true;
+            }
+        }
+        return result;
+    }
+
+    private static JSONArray scanCamera(JSONObject camera, EncoderCatalog catalog) throws Exception {
         JSONArray checks = new JSONArray();
         JSONArray sizes = camera.optJSONArray("videoModeCandidatesDeclared");
         if (sizes == null) return checks;
@@ -132,25 +176,18 @@ final class CameraAuditCodecStage {
                     continue;
                 }
                 JSONArray matched = new JSONArray();
-                boolean unknown = false;
-                for (MediaCodecInfo info : codecs) {
-                    if (!info.isEncoder()) continue;
-                    for (String mime : VIDEO_MIMES) {
-                        try {
-                            if (!supportsType(info,mime)) continue;
-                            MediaCodecInfo.CodecCapabilities caps = info.getCapabilitiesForType(mime);
-                            MediaCodecInfo.VideoCapabilities video = caps.getVideoCapabilities();
-                            if (video == null) { unknown = true; continue; }
-                            if (video.areSizeAndRateSupported(width,height,fps)) {
-                                JSONObject entry = new JSONObject();
-                                entry.put("name", info.getName());
-                                entry.put("mime", mime);
-                                entry.put("declaredOnly", true);
-                                if (matched.length() < MAX_ENCODER_MATCHES) matched.put(entry);
-                            }
-                        } catch (RuntimeException brokenVendorCodec) {
-                            unknown = true; // unknown != unsupported
+                boolean unknown = catalog.unknown;
+                for (EncoderProfile profile : catalog.profiles) {
+                    try {
+                        if (profile.video.areSizeAndRateSupported(width, height, fps)) {
+                            JSONObject entry = new JSONObject();
+                            entry.put("name", profile.name);
+                            entry.put("mime", profile.mime);
+                            entry.put("declaredOnly", true);
+                            if (matched.length() < MAX_ENCODER_MATCHES) matched.put(entry);
                         }
+                    } catch (RuntimeException brokenVendorCodec) {
+                        unknown = true; // unknown != unsupported
                     }
                 }
                 check.put("encoders", matched);

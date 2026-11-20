@@ -32,6 +32,14 @@ describe("multi-hinge topology", () => {
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),leftPx:Number.NaN}]))).toBe(false);
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),rightPx:2000}]))).toBe(false);
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),separating:false}]))).toBe(false);
+    expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),topPx:120,bottomPx:180}]))).toBe(false);
+    expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), webViewBoundsPx:{
+      left:0,top:0,right:550,bottom:900,
+    }})).toBe(false);
+    expect(hasPlausibleSeparatingHinge(topology([{
+      leftPx:0,rightPx:1200,topPx:440,bottomPx:460,
+      orientation:"HORIZONTAL",state:"FLAT",occlusion:"FULL",separating:true,
+    }]))).toBe(true);
     expect(hasPlausibleSeparatingHinge(topology(Array.from({length:33},()=>hinge(590,610))))).toBe(false);
     expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), source:"android-windowmanager-feature-overflow"})).toBe(false);
     expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), webViewBoundsPx:{

@@ -28,6 +28,13 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(codec).toContain('entry.put("declaredOnly", true)');
     expect(codec).not.toContain('new MediaRecorder(');
   });
+  it("caches codec capability queries across all candidates and cameras",()=>{
+    expect(codec).toContain("EncoderCatalog catalog = collectEncoderCapabilities(codecs)");
+    expect(codec).toContain("JSONArray checks = scanCamera(camera, catalog)");
+    expect(codec).toContain("final List<EncoderProfile> profiles = new ArrayList<>()");
+    expect(codec).toContain("boolean unknown = catalog.unknown");
+    expect(codec).toContain("result.unknown = true");
+  });
   it("prioritizes declared common video sizes and deduplicates vendor entries",()=>{
     expect(codec).toContain("Set<String> seen = new HashSet<>()");
     expect(codec).toContain('seen.add(width + "x" + height)');

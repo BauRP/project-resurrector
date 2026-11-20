@@ -20,7 +20,6 @@ export function CameraAuditBanner() {
       try {
         const response = await cameraAudit.getStatus();
         if (!alive) return;
-        setAudit(response.audit);
         const checkpoint = [
           response.audit.state, response.audit.codecState,
           response.audit.completed, response.audit.total,
@@ -30,12 +29,16 @@ export function CameraAuditBanner() {
         if (checkpoint !== lastCheckpoint) {
           lastCheckpoint = checkpoint;
           lastChangedAt = Date.now();
+          setAudit(response.audit);
         }
+        // A resource/permission pause is deliberate; another two-second
+        // poll cannot resume the service. Reopen Camera to continue later.
+        if (response.audit.state === "retry" || response.audit.codecState === "retry") return;
         // A vendor CameraService can hang without returning another callback.
         // Stop polling an unchanged checkpoint instead of waking WebView
         // indefinitely. The saved service checkpoint remains authoritative.
         if (Date.now() - lastChangedAt >= MAX_STALE_MS) {
-          setProblem("Android не отвечает на проверку. Прогресс сохранён; продолжим при следующем запуске.");
+          setProblem("Проверка не продвигается. Результаты сохранены; продолжим при следующем запуске.");
           return;
         }
         if (cameraAuditPhase(response.audit) === "done" && startedHere.current) {

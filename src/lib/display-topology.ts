@@ -62,7 +62,18 @@ export function hasPlausibleSeparatingHinge(topology: DisplayTopology | null): b
     [feature.leftPx, feature.topPx, feature.rightPx, feature.bottomPx].every(Number.isFinite) &&
     feature.leftPx >= 0 && feature.topPx >= 0 &&
     feature.rightPx >= feature.leftPx && feature.bottomPx >= feature.topPx &&
-    feature.rightPx <= topology.widthPx && feature.bottomPx <= topology.heightPx);
+    feature.rightPx <= topology.widthPx && feature.bottomPx <= topology.heightPx &&
+    // Partial creases and hinges outside the active app window do not
+    // require costly subtree observation: they do not split its usable panes.
+    (/vertical/i.test(feature.orientation)
+      ? feature.topPx <= (bounds?.top ?? 0) &&
+        feature.bottomPx >= (bounds?.bottom ?? topology.heightPx) &&
+        feature.leftPx > (bounds?.left ?? 0) &&
+        feature.rightPx < (bounds?.right ?? topology.widthPx)
+      : feature.leftPx <= (bounds?.left ?? 0) &&
+        feature.rightPx >= (bounds?.right ?? topology.widthPx) &&
+        feature.topPx > (bounds?.top ?? 0) &&
+        feature.bottomPx < (bounds?.bottom ?? topology.heightPx)));
 }
 
 /** Native folding bounds are in physical window pixels; map them to the WebView's actual CSS viewport.
