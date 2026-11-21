@@ -20,8 +20,10 @@ final class CameraAuditPlanStage {
     static void run(Context context) {
         JSONObject passport = CameraAuditService.read(context);
         if (!"complete".equals(passport.optString("state")) ||
-                !"complete".equals(passport.optString("codecState")) ||
-                "complete".equals(passport.optString("planState"))) return;
+                !"complete".equals(passport.optString("codecState"))) return;
+        if ("complete".equals(passport.optString("planState")) &&
+                passport.optInt("planCompleted", -1) == passport.optInt("planTotal", -2) &&
+                passport.optInt("planTotal", -1) == passport.optInt("total", -2)) return;
         try {
             JSONObject cameras = passport.optJSONObject("cameras");
             JSONArray ids = passport.optJSONArray("activeCameraIds");

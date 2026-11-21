@@ -34,6 +34,8 @@ describe("first-install Camera2 inventory progress", () => {
       }],
     };
     state.codecState = "complete";
+    state.codecCompleted = 1;
+    state.codecTotal = 1;
     expect(cameraAuditProgress(state)).toBe(100);
     expect(state.cameras["rear"]?.verifiedRecording).toBe(false);
     expect(state.cameras["rear"]?.videoModeCandidatesDeclared?.[0]?.verifiedVideoRecording).toBe(false);
@@ -52,6 +54,24 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditProgress(finished)).toBe(100);
     expect(cameraAuditPhase(finished)).toBe("done");
   });
+  it("does not report completed for contradictory or missing atomic counters",()=>{
+    const metadata = checkpoint("complete",1,2);
+    metadata.codecState = "complete";
+    metadata.codecTotal = 2;
+    metadata.codecCompleted = 2;
+    expect(cameraAuditProgress(metadata)).toBeLessThan(100);
+    expect(cameraAuditPhase(metadata)).toBe("metadata");
+    const codec = checkpoint("complete",2,2);
+    codec.codecState = "complete";
+    codec.codecTotal = 2;
+    codec.codecCompleted = 1;
+    expect(cameraAuditProgress(codec)).toBeLessThan(100);
+    expect(cameraAuditPhase(codec)).toBe("codecs");
+    const missing = checkpoint("complete",2,2);
+    missing.codecState = "complete";
+    expect(cameraAuditProgress(missing)).toBeLessThan(100);
+    expect(cameraAuditPhase(missing)).toBe("codecs");
+  });
   it("caps progress below 100 when codec evidence is incomplete", () => {
     const state = checkpoint("complete",3,3);
     state.codecState = "running";
@@ -65,6 +85,8 @@ describe("first-install Camera2 inventory progress", () => {
   it("keeps saved encoder declarations separate from actual video evidence", () => {
     const state = checkpoint("complete",1,1);
     state.codecState = "complete";
+    state.codecCompleted = 1;
+    state.codecTotal = 1;
     state.cameras["0"] = {
       cameraId: "0",
       source: "android-camera2-metadata",

@@ -641,7 +641,8 @@ export function startDisplayAdaptation(): () => void {
     syncContentObservation();
     measure();
   };
-  const content = document.querySelector(".app-scroll");
+  // Tab changes can remount the scroll root under an unchanged app shell.
+  let observedContent: Element | null = null;
   // Coalesce resize/mutation bursts without postponing measurements forever:
   // continuous DOM mutations must not starve fold layout updates.
   const scheduleMeasure = () => {
@@ -670,7 +671,7 @@ export function startDisplayAdaptation(): () => void {
   // pane. Keep the observer attached for camera/tab remounts, but avoid
   // unnecessary forced layout reads on a regular Android emulator.
   let observedTab = root.dataset["activeMulticamTab"] ?? "";
-  const mutations = content && typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
+  const mutations = typeof MutationObserver !== "undefined" ? new MutationObserver(() => {
     const nextCamera = document.querySelector(".camera-screen");
     const cameraChanged = nextCamera !== observedCamera;
     if (cameraChanged) {
@@ -691,12 +692,15 @@ export function startDisplayAdaptation(): () => void {
   // and observing every Settings mutation needlessly schedules browser work.
   let contentObserved = false;
   const syncContentObservation = () => {
-    if (!mutations || !content) return;
-    const needed = hasPlausibleSeparatingHinge(lastNative);
-    if (needed === contentObserved) return;
+    if (!mutations) return;
+    const currentContent = document.querySelector(".app-scroll");
+    const needed = currentContent !== null && hasPlausibleSeparatingHinge(lastNative);
+    if (needed === contentObserved &&
+        (!needed || currentContent === observedContent)) return;
+    mutations.disconnect();
     contentObserved = needed;
-    if (needed) mutations.observe(content, { childList: true, subtree: true });
-    else mutations.disconnect();
+    observedContent = needed ? currentContent : null;
+    if (observedContent) mutations.observe(observedContent, { childList: true, subtree: true });
   };
   // Tab transitions already emit an explicit event, even on ordinary phones.
   // Retarget the ResizeObserver there without requiring a subtree observer.
@@ -708,6 +712,7 @@ export function startDisplayAdaptation(): () => void {
       observedCamera = nextCamera;
     }
     observedTab = root.dataset["activeMulticamTab"] ?? "";
+    syncContentObservation();
     scheduleMeasure();
   };
   window.addEventListener("multicam-tab-rendered", onTabRendered);

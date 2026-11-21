@@ -51,6 +51,24 @@ describe("first-run native camera audit cost and evidence",()=>{
       "pixelArraySizeDeclared","sensorPhysicalSizeMmDeclared","capabilitiesDeclared"])
       expect(service).toContain('item.put("'+key+'"');
   });
+  it("heals inconsistent native finished counters and preserves each lens checkpoint",()=>{
+    expect(service).toContain('saved.optInt("completed", -1) == total');
+    expect(service).toContain('saved.optInt("codecCompleted", -1) == total');
+    expect(service).toContain('saved.optInt("planCompleted", -1) == total');
+    expect(codec).toContain('passport.optInt("codecCompleted", -1) == passport.optInt("codecTotal", -2)');
+    expect(plan).toContain('passport.optInt("planCompleted", -1) == passport.optInt("planTotal", -2)');
+  });
+  it("reads video modes only once and prioritizes declared standard sizes",()=>{
+    const start=service.indexOf("java.util.ArrayList<Size> orderedVideoSizes");
+    const end=service.indexOf('item.put("videoModeCandidatesTruncated"',start);
+    const block=service.slice(start,end);
+    expect(block.match(/getOutputSizes\(MediaRecorder\.class\)/g)).toHaveLength(1);
+    expect(service).toContain("orderedVideoSizes.sort((x, y) ->");
+    expect(service).toContain("videoModePriority(x), videoModePriority(y)");
+    expect(service).toContain('item.put("nominalFovCandidatesDegrees", nominalAngles)');
+    expect(service).toContain('"calculated-from-camera2-metadata"');
+    expect(service).toContain('item.put("aperturesDeclared", apertureValues)');
+  });
   it("does not turn Camera2 declarations into proven recorded files",()=>{
     expect(service).toContain('item.put("verifiedRecording", false)');
     expect(service).toContain('mode.put("verifiedVideoRecording", false)');

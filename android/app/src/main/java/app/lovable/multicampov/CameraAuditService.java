@@ -174,9 +174,16 @@ public final class CameraAuditService extends Service {
 
     public static boolean inventoryComplete(Context context) {
         JSONObject saved = readStatus(context);
-        return "complete".equals(saved.optString("state")) &&
+        int total = saved.optInt("total", -1);
+        return total >= 0 &&
+                "complete".equals(saved.optString("state")) &&
+                saved.optInt("completed", -1) == total &&
                 "complete".equals(saved.optString("codecState")) &&
-                "complete".equals(saved.optString("planState"));
+                saved.optInt("codecTotal", -1) == total &&
+                saved.optInt("codecCompleted", -1) == total &&
+                "complete".equals(saved.optString("planState")) &&
+                saved.optInt("planTotal", -1) == total &&
+                saved.optInt("planCompleted", -1) == total;
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {
@@ -205,7 +212,8 @@ public final class CameraAuditService extends Service {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) return;
         JSONObject saved = read(this);
-        if ("complete".equals(saved.optString("state"))) return;
+        if ("complete".equals(saved.optString("state")) &&
+                saved.optInt("completed", -1) == saved.optInt("total", -2)) return;
         try {
             CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
             if (manager == null) throw new IllegalStateException("CameraManager unavailable");
@@ -315,57 +323,90 @@ public final class CameraAuditService extends Service {
                         JSONArray focalLengths = new JSONArray();
                         if (focal != null) for (float f : focal) focalLengths.put(f);
                         item.put("focalLengthsMm", focalLengths);
+                        JSONArray nominalAngles = new JSONArray();
+                        if (physicalSize != null && focal != null &&
+                                physicalSize.getWidth() > 0 && physicalSize.getHeight() > 0) {
+                            for (float focalMm : focal) {
+                                if (Float.isNaN(focalMm) || Float.isInfinite(focalMm) || focalMm <= 0) continue;
+                                double horizontal = Math.toDegrees(2.0 *
+                                        Math.atan(physicalSize.getWidth() / (2.0 * focalMm)));
+                                double vertical = Math.toDegrees(2.0 *
+                                        Math.atan(physicalSize.getHeight() / (2.0 * focalMm)));
+                                if (!Double.isNaN(horizontal) && !Double.isInfinite(horizontal) &&
+                                        !Double.isNaN(vertical) && !Double.isInfinite(vertical))
+                                    nominalAngles.put(new JSONObject()
+                                            .put("focalLengthMm", focalMm)
+                                            .put("horizontalDegrees", horizontal)
+                                            .put("verticalDegrees", vertical)
+                                            .put("evidence", "calculated-from-camera2-metadata"));
+                            }
+                        }
+                        // Logical camera declarations do not prove its selected
+                        // physical lens or its actual preview field of view.
+                        item.put("nominalFovCandidatesDegrees", nominalAngles);
+                        float[] apertures = c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_APERTURES);
+                        JSONArray apertureValues = new JSONArray();
+                        if (apertures != null) for (float aperture : apertures)
+                            if (aperture > 0 && !Float.isNaN(aperture) && !Float.isInfinite(aperture))
+                                apertureValues.put(aperture);
+                        item.put("aperturesDeclared", apertureValues);
                         JSONArray physical = new JSONArray();
                         if (Build.VERSION.SDK_INT >= 28) {
-                            for (String physicalId : c.getPhysicalCameraIds()) physical.put(physicalId);
+                            try {
+                                java.util.Set<String> physicalSet = c.getPhysicalCameraIds();
+                                if (physicalSet != null)
+                                    for (String physicalId : physicalSet) physical.put(physicalId);
+                            } catch (RuntimeException vendorDisclosureError) {
+                                item.put("physicalIdDisclosureState", "unknown");
+                            }
                         }
                         item.put("physicalCameraIds", physical);
                         item.put("oisModes", integers(c.get(CameraCharacteristics.LENS_INFO_AVAILABLE_OPTICAL_STABILIZATION)));
                         item.put("eisModes", integers(c.get(CameraCharacteristics.CONTROL_AVAILABLE_VIDEO_STABILIZATION_MODES)));
-                        JSONArray sizes = new JSONArray();
-                        boolean videoSizesTruncated = false;
                         StreamConfigurationMap map = c.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
+                        // Read OEM size declarations only once. The first 96 in
+                        // vendor order are not necessarily the usable modes.
+                        java.util.ArrayList<Size> orderedVideoSizes = new java.util.ArrayList<>();
+                        java.util.Set<String> seenVideoSizes = new java.util.HashSet<>();
                         if (map != null) {
-                            Size[] outputSizes = map.getOutputSizes(MediaRecorder.class);
-                            if (outputSizes != null) {
-                                videoSizesTruncated = outputSizes.length > MAX_MODES_PER_CAMERA;
-                                int max = Math.min(outputSizes.length, MAX_MODES_PER_CAMERA);
-                                for (int i = 0; i < max; i++) {
-                                    Size size = outputSizes[i];
-                                    if (size == null) continue;
-                                    sizes.put(new JSONObject().put("width", size.getWidth())
-                                            .put("height", size.getHeight()));
+                            try {
+                                Size[] declared = map.getOutputSizes(MediaRecorder.class);
+                                if (declared != null) for (Size size : declared) {
+                                    if (size == null || size.getWidth() < 1 || size.getHeight() < 1 ||
+                                            size.getWidth() > 8192 || size.getHeight() > 8192) continue;
+                                    if (seenVideoSizes.add(size.getWidth() + "x" + size.getHeight()))
+                                        orderedVideoSizes.add(size);
                                 }
+                            } catch (RuntimeException unsupportedVendorMap) {
+                                // A failed optional video declaration must not erase
+                                // ISO, focus, and sensor metadata for this lens.
+                                item.put("videoModeDeclarationState", "unknown");
                             }
+                        }
+                        orderedVideoSizes.sort((x, y) ->
+                                Integer.compare(videoModePriority(x), videoModePriority(y)));
+                        boolean videoSizesTruncated = orderedVideoSizes.size() > MAX_MODES_PER_CAMERA;
+                        JSONArray sizes = new JSONArray();
+                        JSONArray modeCandidates = new JSONArray();
+                        for (int i = 0; i < orderedVideoSizes.size() && i < MAX_MODES_PER_CAMERA; i++) {
+                            Size size = orderedVideoSizes.get(i);
+                            sizes.put(new JSONObject().put("width", size.getWidth())
+                                    .put("height", size.getHeight()));
+                            JSONObject mode = new JSONObject();
+                            mode.put("width", size.getWidth());
+                            mode.put("height", size.getHeight());
+                            try {
+                                long ns = map.getOutputMinFrameDuration(MediaRecorder.class, size);
+                                mode.put("minimumFrameDurationNs", ns > 0 ? ns : JSONObject.NULL);
+                                mode.put("theoreticalUpperFps", ns > 0 ? 1_000_000_000.0 / ns : JSONObject.NULL);
+                            } catch (RuntimeException unsupported) {
+                                mode.put("minimumFrameDurationNs", JSONObject.NULL);
+                                mode.put("theoreticalUpperFps", JSONObject.NULL);
+                            }
+                            mode.put("verifiedVideoRecording", false);
+                            modeCandidates.put(mode);
                         }
                         item.put("videoOutputSizesDeclared", sizes);
-                        JSONArray modeCandidates = new JSONArray();
-                        if (map != null) {
-                            Size[] declared = map.getOutputSizes(MediaRecorder.class);
-                            if (declared != null) {
-                                int count = 0;
-                                for (Size size : declared) {
-                                    if (count++ >= MAX_MODES_PER_CAMERA) break;
-                                    JSONObject mode = new JSONObject();
-                                    mode.put("width", size.getWidth());
-                                    mode.put("height", size.getHeight());
-                                    // This is a minimum frame duration declared by HAL,
-                                    // not a verified recording FPS or codec profile.
-                                    try {
-                                        long ns = map.getOutputMinFrameDuration(MediaRecorder.class, size);
-                                        mode.put("minimumFrameDurationNs", ns > 0 ? ns : JSONObject.NULL);
-                                        mode.put("theoreticalUpperFps", ns > 0 ? 1_000_000_000.0 / ns : JSONObject.NULL);
-                                    } catch (RuntimeException unsupported) {
-                                        // Some vendor camera HALs reject per-size duration
-                                        // queries. Keep that declared size without claiming FPS.
-                                        mode.put("minimumFrameDurationNs", JSONObject.NULL);
-                                        mode.put("theoreticalUpperFps", JSONObject.NULL);
-                                    }
-                                    mode.put("verifiedVideoRecording", false);
-                                    modeCandidates.put(mode);
-                                }
-                            }
-                        }
                         item.put("videoModeCandidatesDeclared", modeCandidates);
                         item.put("videoModeCandidatesTruncated", videoSizesTruncated);
                         item.put("hdrRecordedVerified", false);
@@ -426,6 +467,15 @@ public final class CameraAuditService extends Service {
                 persist(this, saved);
             } catch (Exception ignored) { }
         }
+    }
+
+    private static int videoModePriority(Size size) {
+        int small = Math.min(size.getWidth(), size.getHeight());
+        int large = Math.max(size.getWidth(), size.getHeight());
+        if (small == 1080 && large == 1920) return 0;
+        if (small == 2160 && large == 3840) return 1;
+        if (small == 720 && large == 1280) return 2;
+        return 3;
     }
 
     private static JSONArray photoSizes(StreamConfigurationMap map) {

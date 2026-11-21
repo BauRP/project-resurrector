@@ -77,7 +77,8 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
   const codecDone = audit.codecState === "complete";
   // Old valid passports are upgraded to codec checks without losing
   // already collected Camera2 metadata. Zero-camera phones are supported.
-  if (metadataDone && codecDone) return 100;
+  if (metadataDone && codecDone && completed === total &&
+      audit.codecTotal === total && audit.codecCompleted === total) return 100;
   if (total === 0) return 0;
   const metadataSteps = Math.min(completed, total);
   const codecSteps = metadataDone && Number.isSafeInteger(audit.codecCompleted) &&
@@ -90,8 +91,11 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
 }
 
 export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "codecs" | "done" {
-  if (audit.state !== "complete") return "metadata";
-  return audit.codecState === "complete" ? "done" : "codecs";
+  if (audit.state !== "complete" ||
+      audit.completed !== audit.total) return "metadata";
+  return audit.codecState === "complete" &&
+      audit.codecTotal === audit.total && audit.codecCompleted === audit.total
+        ? "done" : "codecs";
 }
 
 /** Human-readable pause reason; never translate OEM unknown into unsupported. */

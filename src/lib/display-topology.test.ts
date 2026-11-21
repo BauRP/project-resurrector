@@ -27,6 +27,14 @@ describe("adaptive window classes", () => {
   });
 });
 describe("multi-hinge topology", () => {
+  it("retargets the fold-only observer after a new tab remounts its content",()=>{
+    const source=readFileSync("src/lib/display-topology.ts","utf8");
+    expect(source).toContain("let observedContent: Element | null = null");
+    expect(source).toContain("currentContent === observedContent");
+    expect(source).toContain("mutations.disconnect();");
+    expect(source).toContain("if (observedContent) mutations.observe(observedContent");
+    expect(source).toContain("syncContentObservation();\n    scheduleMeasure();");
+  });
   it("does not force expensive layout reads for malformed or out-of-window hinges",()=>{
     const source=readFileSync("src/lib/display-topology.ts","utf8");
     expect(source).toContain("const hasFoldBounds = hasPlausibleSeparatingHinge(lastNative);");
