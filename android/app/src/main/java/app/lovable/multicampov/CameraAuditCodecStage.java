@@ -68,6 +68,13 @@ final class CameraAuditCodecStage {
             passport.put("codecTotal", ids.length());
             passport.put("codecState", "running");
             passport.remove("codecIntegrityVersion");
+            // An encoder metadata refresh invalidates the complete top-level
+            // trial plan even when its V2 version happens to match. Preserve
+            // per-camera plans as history, rebuilding only changed cameras
+            // after this stage finishes.
+            passport.put("planState", "pending");
+            passport.put("planCompleted", 0);
+            passport.put("planCandidateCount", 0);
             CameraAuditService.persist(context, passport);
             for (int i=0; i<ids.length(); i++) {
                 String pressure = CameraAuditResourceGuard.pauseReason(context);

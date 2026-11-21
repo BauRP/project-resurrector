@@ -42,6 +42,9 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(codec).toContain('camera.optJSONArray("codecChecks") == null');
     expect(codec).toContain('camera.optLong("codecCheckedAt", 0) <= 0');
     expect(codec).toContain('passport.put("codecIntegrityVersion", INTEGRITY_VERSION)');
+    expect(codec).toContain('passport.put("planState", "pending")');
+    expect(codec).toContain('passport.put("planCompleted", 0)');
+    expect(codec).toContain('passport.put("planCandidateCount", 0)');
     expect(plugin).toContain('summary.put("codecIntegrityVersion", full.optInt("codecIntegrityVersion", 0))');
     expect(plan).toContain('CameraAuditCodecStage.INTEGRITY_VERSION');
     expect(plan).toMatch(/item\.put\("status",\s*"not-run"\)/);
