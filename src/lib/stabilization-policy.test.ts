@@ -17,8 +17,12 @@ describe("mode-specific stabilization decision",()=>{
    expect(decideStabilizationForRecordedMode({...probe,framesObserved:3,confirmations:0},mode).recommendation).toBe("unknown");
    expect(decideStabilizationForRecordedMode({...probe,confirmations:NaN},mode).recommendation).toBe("unknown");
    expect(decideStabilizationForRecordedMode({...probe,framesObserved:7,confirmations:3},mode).recommendation).toBe("prefer-eis");
-   expect(decideStabilizationForRecordedMode({...probe,framesObserved:undefined},mode).recommendation).toBe("unknown");
-   expect(decideStabilizationForRecordedMode({...probe,confirmations:undefined},mode).recommendation).toBe("unknown");
+   const missingFrames = {...probe};
+   delete missingFrames.framesObserved;
+   const missingConfirmations = {...probe};
+   delete missingConfirmations.confirmations;
+   expect(decideStabilizationForRecordedMode(missingFrames,mode).recommendation).toBe("unknown");
+   expect(decideStabilizationForRecordedMode(missingConfirmations,mode).recommendation).toBe("unknown");
    expect(decideStabilizationForRecordedMode({...probe,framesObserved:2,confirmations:3},mode).recommendation).toBe("unknown");
    expect(decideStabilizationForRecordedMode({...probe,framesObserved:5,confirmations:2},mode).recommendation).toBe("unknown");
    expect(decideStabilizationForRecordedMode({...probe,captureResultEis:0},mode).recommendation).toBe("unknown");
