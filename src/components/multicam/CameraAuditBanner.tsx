@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { isNative } from "@/lib/native";
-import { cameraAudit, cameraAuditPauseReason, cameraAuditPhase, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
+import { cameraAudit, cameraAuditPauseReason, cameraAuditPhase, cameraAuditPlanComplete, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 
 /** Camera-only display of a separate-process read-only Camera2 metadata scan. */
@@ -26,17 +26,26 @@ export function CameraAuditBanner() {
           response.audit.codecCompleted, response.audit.codecTotal,
           response.audit.planState, response.audit.planCompleted,
           response.audit.planTotal, response.audit.planCandidateCount,
+          response.audit.error, response.audit.codecError, response.audit.planError,
           response.audit.updatedAt,
         ].join("|");
         if (checkpoint !== lastCheckpoint) {
           lastCheckpoint = checkpoint;
           lastChangedAt = Date.now();
           setAudit(response.audit);
+          // A real new checkpoint supersedes a previous stalled-bridge alert.
+          setProblem("");
         }
-        // A resource/permission pause is deliberate; another two-second
-        // poll cannot resume the service. Reopen Camera to continue later.
+        // On reopening Camera we may still see the OLD saved retry before
+        // Android's low-priority service changes it to running. Give the new
+        // invocation a bounded opportunity to resume. On a genuine thermal
+        // pause, stop polling rather than showing a fictitious renderer freeze.
         if (response.audit.state === "retry" || response.audit.codecState === "retry" ||
-            response.audit.planState === "retry") return;
+            response.audit.planState === "retry") {
+          if (startedHere.current && Date.now() - lastChangedAt < 8000)
+            timer = window.setTimeout(() => { if (alive) void read(); }, 1800);
+          return;
+        }
         // A vendor CameraService can hang without returning another callback.
         // Stop polling an unchanged checkpoint instead of waking WebView
         // indefinitely. The saved service checkpoint remains authoritative.
@@ -44,8 +53,7 @@ export function CameraAuditBanner() {
           setProblem("Проверка не продвигается. Результаты сохранены; продолжим при следующем запуске.");
           return;
         }
-        const stagesComplete = cameraAuditPhase(response.audit) === "done" &&
-          response.audit.planState === "complete";
+        const stagesComplete = cameraAuditPlanComplete(response.audit);
         if (stagesComplete && startedHere.current) {
           setShowCompleted(true);
           timer = window.setTimeout(() => { if (alive) setShowCompleted(false); }, 4500);
@@ -64,8 +72,7 @@ export function CameraAuditBanner() {
         setAudit(current.audit);
         // The first read is only a snapshot, not a test. The worker starts
         // after it; the polling loop begins with its own progress timestamp.
-        if (cameraAuditPhase(current.audit) !== "done" ||
-            current.audit.planState !== "complete") {
+        if (!cameraAuditPlanComplete(current.audit)) {
           const result = await cameraAudit.startIfNeeded();
           if (!alive) return;
           if (result.started) startedHere.current = true;
@@ -89,7 +96,7 @@ export function CameraAuditBanner() {
   // The saved baseline is not a repeated startup progress screen.
   // Full functional diagnosis has its own future completion state.
   const phase = audit ? cameraAuditPhase(audit) : "metadata";
-  const complete = phase === "done" && audit?.planState === "complete";
+  const complete = audit !== null && cameraAuditPlanComplete(audit);
   if (!isNative() || (complete && !showCompleted)) return null;
   // This percent is the metadata/codec baseline, not functional recording.
   const percent = audit ? cameraAuditProgress(audit) : 0;

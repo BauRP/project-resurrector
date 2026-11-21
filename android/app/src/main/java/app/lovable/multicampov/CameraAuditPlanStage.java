@@ -13,7 +13,7 @@ import java.util.ArrayList;
  */
 final class CameraAuditPlanStage {
     private static final int MAX_PLANS_PER_CAMERA = 8;
-    private static final int PLAN_VERSION = 1;
+    private static final int PLAN_VERSION = 2;
     private static final int[] PREFERRED_FPS = {30,60,24,120};
     private CameraAuditPlanStage() { }
 
@@ -51,11 +51,29 @@ final class CameraAuditPlanStage {
                     CameraAuditService.persist(context,passport);
                     return;
                 }
+                // A new codec scan invalidates previously planned modes.
+                // Never silently reuse camera-specific test candidates from
+                // a previous encoder snapshot, even if that plan said complete.
                 if (!"complete".equals(camera.optString("planState")) ||
-                        camera.optInt("planVersion",0) != PLAN_VERSION) {
+                        camera.optInt("planVersion",0) != PLAN_VERSION ||
+                        camera.optLong("planCodecCheckedAt",-1) !=
+                            camera.optLong("codecCheckedAt",-2) ||
+                        camera.optJSONArray("functionalPlan") == null) {
                     JSONArray planned = buildPlan(cameraId,camera.optJSONArray("codecChecks"));
                     camera.put("functionalPlan",planned);
+                    camera.put("planCodecCheckedAt",camera.optLong("codecCheckedAt",-2));
                     camera.put("planEvidence","declared-compatible-only");
+                    JSONObject pipeline = new JSONObject();
+                    // The whole chain is recorded per camera so later true
+                    // Preview/Encoder/File/Editor/Export tests can add proof,
+                    // without turning declarations into fake successes.
+                    pipeline.put("sensor","metadata-only");
+                    pipeline.put("preview","not-run");
+                    pipeline.put("encoder",planned.length() > 0 ? "candidate-only" : "unknown");
+                    pipeline.put("file","not-run");
+                    pipeline.put("editor","not-run");
+                    pipeline.put("export","not-run");
+                    camera.put("functionalPipeline",pipeline);
                     camera.put("planVersion",PLAN_VERSION);
                     camera.put("planState","complete");
                     camera.put("planCheckedAt",System.currentTimeMillis());

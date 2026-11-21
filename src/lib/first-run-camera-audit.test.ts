@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cameraAuditProgress, cameraAuditPhase, cameraAuditPauseReason, type CameraAuditCheckpoint } from "./first-run-camera-audit";
+import { cameraAuditProgress, cameraAuditPhase, cameraAuditPauseReason, cameraAuditPlanComplete, type CameraAuditCheckpoint } from "./first-run-camera-audit";
 
 const checkpoint = (state:CameraAuditCheckpoint["state"], completed:number, total:number):CameraAuditCheckpoint => ({
   schema:2,state,completed,total,advancedState:"pending",cameras:{},
@@ -71,6 +71,23 @@ describe("first-install Camera2 inventory progress", () => {
     missing.codecState = "complete";
     expect(cameraAuditProgress(missing)).toBeLessThan(100);
     expect(cameraAuditPhase(missing)).toBe("codecs");
+  });
+  it("only completes the saved candidate plan when all three stage counters match",()=>{
+    const state=checkpoint("complete",3,3);
+    state.codecState="complete";state.codecTotal=3;state.codecCompleted=3;
+    state.planState="complete";state.planTotal=3;state.planCompleted=1;
+    expect(cameraAuditPhase(state)).toBe("done");
+    expect(cameraAuditPlanComplete(state)).toBe(false);
+    state.planCompleted=3;
+    expect(cameraAuditPlanComplete(state)).toBe(true);
+    state.planTotal=2;
+    expect(cameraAuditPlanComplete(state)).toBe(false);
+    state.planTotal=3;state.state="retry";
+    expect(cameraAuditPlanComplete(state)).toBe(false);
+    const noCameras=checkpoint("complete",0,0);
+    noCameras.codecState="complete";noCameras.codecTotal=0;noCameras.codecCompleted=0;
+    noCameras.planState="complete";noCameras.planTotal=0;noCameras.planCompleted=0;
+    expect(cameraAuditPlanComplete(noCameras)).toBe(true);
   });
   it("caps progress below 100 when codec evidence is incomplete", () => {
     const state = checkpoint("complete",3,3);

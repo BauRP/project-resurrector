@@ -45,6 +45,12 @@ export interface CameraAuditCheckpoint {
     planVersion?: number;
     planCheckedAt?: number;
     planEvidence?: "declared-compatible-only";
+    planCodecCheckedAt?: number;
+    functionalPipeline?: {
+      sensor:"metadata-only";preview:"not-run";
+      encoder:"candidate-only"|"unknown";file:"not-run";
+      editor:"not-run";export:"not-run";
+    };
     functionalPlan?: {key:string;cameraId:string;width:number;height:number;fps:number;
       encoderName:string;encoderMime:string;status:"not-run";verifiedRecording:false;
       evidence:"declared-compatible-only"}[];
@@ -88,6 +94,17 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
     (audit.codecTotal ?? 0) > 0 ? audit.codecTotal! : total;
   return Math.max(0, Math.min(99, Math.floor(100 * (metadataSteps + codecSteps) /
     (total + codecTotal))));
+}
+
+/** Declared functional trial plan is an extra saved stage, never proof
+ * of captured media. A stale 'complete' label without matching counters
+ * cannot hide the Camera tab progress or skip the next incremental scan.
+ */
+export function cameraAuditPlanComplete(audit:CameraAuditCheckpoint): boolean {
+  return cameraAuditPhase(audit) === "done" &&
+    audit.planState === "complete" &&
+    Number.isSafeInteger(audit.planTotal) && audit.planTotal === audit.total &&
+    Number.isSafeInteger(audit.planCompleted) && audit.planCompleted === audit.total;
 }
 
 export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "codecs" | "done" {

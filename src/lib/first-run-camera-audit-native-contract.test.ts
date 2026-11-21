@@ -46,6 +46,17 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(plan).toContain("MAX_PLANS_PER_CAMERA");
     expect(plan).toContain('"declared-compatible".equals(check.optString("status"))');
   });
+  it("regenerates stale per-camera candidates after codec evidence changes",()=>{
+    expect(plan).toContain("PLAN_VERSION = 2");
+    expect(plan).toContain('camera.optLong("planCodecCheckedAt",-1) !=');
+    expect(plan).toContain('camera.optLong("codecCheckedAt",-2)');
+    expect(plan).toContain('camera.put("planCodecCheckedAt",camera.optLong("codecCheckedAt",-2))');
+    for (const key of ["sensor","preview","encoder","file","editor","export"])
+      expect(plan).toContain('pipeline.put("'+key+'"');
+    expect(plan).toContain('pipeline.put("preview","not-run")');
+    expect(plan).toContain('pipeline.put("file","not-run")');
+    expect(plan).toContain('pipeline.put("export","not-run")');
+  });
   it("captures additional declared focus and sensor evidence",()=>{
     for(const key of ["afMaxRegionsDeclared","aeMaxRegionsDeclared","awbMaxRegionsDeclared",
       "pixelArraySizeDeclared","sensorPhysicalSizeMmDeclared","capabilitiesDeclared"])

@@ -152,6 +152,30 @@ describe("multi-hinge topology", () => {
     expect(foldEventDetails(rotated,450,600).regionGeometry).toBe(
       "0,0,450,295;0,305,450,295");
   });
+  it("preserves both outward-fold panes with zero physical occlusion gap", () => {
+    // On an outward fold there is no black gap: WindowManager marks the
+    // separating crease as NONE and both sides remain visible.
+    const outward=topology([{
+      leftPx:600,rightPx:600,topPx:0,bottomPx:900,
+      orientation:"VERTICAL",state:"FLAT",occlusion:"NONE",separating:true,
+    }]);
+    expect(hasPlausibleSeparatingHinge(outward)).toBe(true);
+    const layout=calculateDisplayRegions(outward,600,450);
+    expect(layout.split).toBe("vertical");
+    expect(layout.occluded).toBe(false);
+    expect(layout.regions).toEqual([
+      {left:0,top:0,width:300,height:450},
+      {left:300,top:0,width:300,height:450},
+    ]);
+    expect(layout.hinges).toHaveLength(1);
+    // Non-separating surface decorations never manufacture an extra pane.
+    const unseparated=topology([{
+      leftPx:600,rightPx:600,topPx:0,bottomPx:900,
+      orientation:"VERTICAL",state:"FLAT",occlusion:"NONE",separating:false,
+    }]);
+    expect(calculateDisplayRegions(unseparated,600,450).regions).toHaveLength(1);
+    expect(hasPlausibleSeparatingHinge(unseparated)).toBe(false);
+  });
   it("supports two actual Android hinge bounds for tri-fold devices", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);
     expect(result.regions).toHaveLength(3);
