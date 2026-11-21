@@ -62,12 +62,12 @@
 | C-42 | Отчёт и источники | 1.0 | `src/lib/diagnostic-export.test.ts` |
 | C-43 | Этапы диагностики | 1.0 | `src/lib/camera-test-queue.test.ts` |
 
-### Раскладушки — теперь 28,5/36 = 79,17% (база 27,5/36 = 76,39%)
+### Раскладушки — теперь 29/36 = 80,56% (база 27,5/36 = 76,39%)
 Подтверждено: 19; частично: 17; без конкретных проверок: 0.
 
 | ID | Сценарий | Балл | Кодовая проверка |
 |---|---|---:|---|
-| F-01 | Book закрыт | 0.5 | `src/lib/display-topology.test.ts` |
+| F-01 | Book закрыт | **1.0** | `src/lib/display-topology.test.ts` (реальный cover→Book→cover, реальные WindowManager bounds, нет фиктивного hinge) |
 | F-02 | Book открыт | 1.0 | `src/lib/display-topology.test.ts` |
 | F-03 | Повторный fold | 1.0 | `src/lib/fold-recording-evidence.test.ts` |
 | F-04 | Предпросмотр при fold | 1.0 | `src/lib/native-preview-epoch.test.ts`, `src/lib/native-preview-lifecycle-contract.test.ts`, `src/lib/native-preview-placement.test.ts` |
@@ -104,8 +104,8 @@
 | F-35 | Редактор курсор | 1.0 | `src/lib/fold-ui-recovery.test.ts`, `src/components/multicam/EditorPro.tsx` |
 | F-36 | Activity recreation | 1.0 | `src/lib/fold-ui-recovery.test.ts` |
 
-### Общий индекс — теперь 86,71% (база 84,81%)
-Формула: (40 + 28,5) / 79 × 100% = 86,71%. Это взвешенное значение, учитывающее разное количество требований.
+### Общий индекс — теперь 87,34% (база 84,81%)
+Формула: (40 + 29) / 79 × 100% = 87,34%. Это взвешенное значение, учитывающее разное количество требований.
 
 Приоритет следующего аудита: C-21/C-22, C-05, F-17/F-23/F-24, C-20 и F-05/F-26. Редактировать баллы по исходным сценариям только с конкретной ссылкой на код/тест и успешной сборкой; при обнаружении нового дефекта снижать оценку, а не имитировать рост.
 
@@ -202,3 +202,7 @@
 
 - Прямой исполняемый сценарий outward fold: при `occlusion=NONE` и `separating=true` две панели разделяются без выдуманного чёрного зазора; при `separating=false` остаётся один viewport. `F-18` повышен 0,5→1,0 за программную геометрию. Не доказывает аппаратную поддержку Huawei/XTs.
 - [GitHub Actions #44902806897](https://github.com/BauRP/project-resurrector/actions/runs/44902806897) **SUCCESS**, 1087 unit-тестов, TypeScript, release APK/AAB. F=28,5/36=79,17%, общий индекс C+F=68,5/79=86,71%.
+
+### Дополнение F-01, 21 ноября 2026
+
+**Прямой тест закрытого Book**: при WindowManager cover 440×920 один экран и нет hinge, при раскрытии на 1200×900 с реальным разделителем 590–610 формируются две области 295×450 и 295×450, после закрытия снова одна область без старого зазора. Изменение F-01 0,5→1,0; **F 29/36 = 80,56%**, общий индекс **(40+29)/79 = 87,34%**. [CI #44924278391](https://github.com/BauRP/project-resurrector/actions/runs/44924278391) SUCCESS: 1102 тестов, Android APK+AAB. Это **программная** симуляция корректных native bounds, не физическое испытание Samsung/Huawei/OEM.
