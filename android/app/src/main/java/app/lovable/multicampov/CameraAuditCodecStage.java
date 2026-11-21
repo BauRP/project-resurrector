@@ -17,6 +17,9 @@ import java.util.List;
  * Every finished camera's results are atomically committed.
  */
 final class CameraAuditCodecStage {
+    // One migration pass repairs old passports whose summary counters were
+    // complete but whose per-camera JSON was truncated or never written.
+    static final int INTEGRITY_VERSION = 1;
     private static final int MAX_SIZES_PER_CAMERA = 6;
     private static final int MAX_ENCODER_MATCHES = 4;
     private static final int[] FPS = {24, 30, 60, 120};
@@ -32,7 +35,8 @@ final class CameraAuditCodecStage {
         // finished per-camera work.
         if ("complete".equals(passport.optString("codecState")) &&
                 passport.optInt("codecCompleted", -1) == passport.optInt("codecTotal", -2) &&
-                passport.optInt("codecTotal", -1) == passport.optInt("total", -2)) return;
+                passport.optInt("codecTotal", -1) == passport.optInt("total", -2) &&
+                passport.optInt("codecIntegrityVersion", 0) == INTEGRITY_VERSION) return;
         try {
             JSONObject cameras = passport.optJSONObject("cameras");
             JSONArray ids = passport.optJSONArray("activeCameraIds");
@@ -63,6 +67,7 @@ final class CameraAuditCodecStage {
             int completed = 0;
             passport.put("codecTotal", ids.length());
             passport.put("codecState", "running");
+            passport.remove("codecIntegrityVersion");
             CameraAuditService.persist(context, passport);
             for (int i=0; i<ids.length(); i++) {
                 String pressure = CameraAuditResourceGuard.pauseReason(context);
@@ -77,7 +82,12 @@ final class CameraAuditCodecStage {
                 if (cameraId.isEmpty()) continue;
                 JSONObject camera = cameras.optJSONObject(cameraId);
                 if (camera == null || !"metadata-collected".equals(camera.optString("state"))) continue;
-                if (!"complete".equals(camera.optString("codecState"))) {
+                // A camera marked complete without actual encoded-mode
+                // declarations is not a valid checkpoint. Repair ONLY it,
+                // preserving all other completed lenses.
+                if (!"complete".equals(camera.optString("codecState")) ||
+                        camera.optJSONArray("codecChecks") == null ||
+                        camera.optLong("codecCheckedAt", 0) <= 0) {
                     JSONArray checks = scanCamera(camera, catalog);
                     camera.put("codecChecks", checks);
                     camera.put("codecState", "complete");
@@ -91,7 +101,10 @@ final class CameraAuditCodecStage {
                 if (Thread.currentThread().isInterrupted()) return;
             }
             passport.put("codecState", completed == ids.length() ? "complete" : "retry");
-            if (completed == ids.length()) passport.remove("codecError");
+            if (completed == ids.length()) {
+                passport.remove("codecError");
+                passport.put("codecIntegrityVersion", INTEGRITY_VERSION);
+            }
             CameraAuditService.persist(context, passport);
         } catch (Exception problem) {
             try {

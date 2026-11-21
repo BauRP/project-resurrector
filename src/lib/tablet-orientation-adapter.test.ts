@@ -6,6 +6,53 @@ import {startDisplayAdaptation} from "./display-topology";
  * Does not create an Android camera session or a second resize observer.
  */
 describe("tablet portrait / landscape / split-window adapter integration",()=>{
+ it("switches out of tablet controls on keyboard-only VisualViewport resize",()=>{
+  const originalW=Object.getOwnPropertyDescriptor(window,"innerWidth");
+  const originalH=Object.getOwnPropertyDescriptor(window,"innerHeight");
+  const originalViewport=Object.getOwnPropertyDescriptor(window,"visualViewport");
+  const handlers=new Map<string,EventListener>();
+  const viewport={
+    height:1200,width:800,offsetLeft:0,offsetTop:0,
+    addEventListener(type:string,listener:EventListenerOrEventListenerObject){
+      if(typeof listener==="function")handlers.set(type,listener);
+    },
+    removeEventListener(type:string){handlers.delete(type);},
+  };
+  const queued:FrameRequestCallback[]=[];
+  const raf=vi.spyOn(window,"requestAnimationFrame").mockImplementation(fn=>{
+    queued.push(fn);return queued.length;
+  });
+  const cancel=vi.spyOn(window,"cancelAnimationFrame").mockImplementation(()=>undefined);
+  let dispose:(()=>void)|undefined;
+  const flush=()=>{
+    expect(queued.length).toBeGreaterThan(0);
+    queued.shift()!(0);
+  };
+  try{
+    Object.defineProperty(window,"innerWidth",{value:800,configurable:true});
+    Object.defineProperty(window,"innerHeight",{value:1200,configurable:true});
+    Object.defineProperty(window,"visualViewport",{value:viewport,configurable:true});
+    dispose=startDisplayAdaptation();
+    expect(document.documentElement.dataset["tabletLayout"]).toBe("portrait");
+    viewport.height=650;
+    handlers.get("resize")!(new Event("resize"));
+    flush();
+    expect(document.documentElement.dataset["tabletLayout"]).toBe("none");
+    viewport.height=1200;
+    handlers.get("resize")!(new Event("resize"));
+    flush();
+    expect(document.documentElement.dataset["tabletLayout"]).toBe("portrait");
+    dispose();dispose=undefined;
+    expect(handlers.size).toBe(0);
+  }finally{
+    dispose?.();
+    if(originalW)Object.defineProperty(window,"innerWidth",originalW);
+    if(originalH)Object.defineProperty(window,"innerHeight",originalH);
+    if(originalViewport)Object.defineProperty(window,"visualViewport",originalViewport);
+    else delete (window as Window & {visualViewport?:VisualViewport}).visualViewport;
+    raf.mockRestore();cancel.mockRestore();
+  }
+ });
  it("switches the same mounted screen on rotation and releases styles on cleanup",()=>{
   const originalWidth=Object.getOwnPropertyDescriptor(window,"innerWidth");
   const originalHeight=Object.getOwnPropertyDescriptor(window,"innerHeight");

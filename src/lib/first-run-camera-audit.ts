@@ -11,6 +11,8 @@ export interface CameraAuditCheckpoint {
   advancedState: "pending";
   /** Encoder compatibility is a separate saved stage, not a real video test. */
   codecState?: "pending" | "running" | "retry" | "complete";
+  /** Versioned integrity of each saved per-camera encoder declaration. */
+  codecIntegrityVersion?: number;
   codecCompleted?: number;
   codecTotal?: number;
   planState?: "pending" | "running" | "retry" | "complete";
@@ -93,7 +95,8 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
   const codecSteps = metadataReady && Number.isSafeInteger(audit.codecCompleted) &&
     audit.codecTotal === total && (audit.codecCompleted ?? 0) >= 0
       ? Math.min(audit.codecCompleted ?? 0, total) : 0;
-  const codecReady = codecDone && metadataReady && audit.codecTotal === total &&
+  const codecReady = codecDone && audit.codecIntegrityVersion === 1 &&
+    metadataReady && audit.codecTotal === total &&
     audit.codecCompleted === total;
   const planSteps = codecReady && audit.planVersion === 2 &&
     audit.planTotal === total && audit.planState !== "pending" &&
@@ -109,15 +112,22 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
  */
 export function cameraAuditPlanComplete(audit:CameraAuditCheckpoint): boolean {
   return cameraAuditPhase(audit) === "done" &&
+    audit.codecIntegrityVersion === 1 &&
     audit.planState === "complete" && audit.planVersion === 2 &&
-    Number.isSafeInteger(audit.planTotal) && audit.planTotal === audit.total &&
-    Number.isSafeInteger(audit.planCompleted) && audit.planCompleted === audit.total;
+    Number.isSafeInteger(audit.planTotal) && audit.planTotal >= 0 &&
+    audit.planTotal === audit.total &&
+    Number.isSafeInteger(audit.planCompleted) && audit.planCompleted >= 0 &&
+    audit.planCompleted === audit.total;
 }
 
 export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "codecs" | "done" {
-  if (audit.state !== "complete" ||
-      audit.completed !== audit.total) return "metadata";
-  return audit.codecState === "complete" &&
+  // A partial or poisoned atomic checkpoint (including -1/-1) must
+  // never be marked completed merely because two corrupt values match.
+  if (!Number.isSafeInteger(audit.total) || audit.total < 0 ||
+      !Number.isSafeInteger(audit.completed) || audit.completed < 0 ||
+      audit.state !== "complete" || audit.completed !== audit.total)
+    return "metadata";
+  return audit.codecState === "complete" && audit.codecIntegrityVersion === 1 &&
       audit.codecTotal === audit.total && audit.codecCompleted === audit.total
         ? "done" : "codecs";
 }

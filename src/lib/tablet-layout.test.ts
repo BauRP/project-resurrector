@@ -28,6 +28,17 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   expect(decide({width:1280,height:800,reportedFoldCount:33})).toBe("none");
   expect(decide({width:1280,height:800,nativeReportValid:false})).toBe("none");
  });
+ it("does not let a soft keyboard or zoom leave unusable camera controls",()=>{
+  expect(decide({width:800,height:1280,visibleHeight:1280})).toBe("portrait");
+  expect(decide({width:800,height:1280,visibleHeight:790})).toBe("none");
+  expect(decide({width:1280,height:800,visibleHeight:540})).toBe("none");
+  expect(decide({width:1280,height:800,visibleHeight:754})).toBe("landscape");
+  expect(decide({width:1280,height:800,visibleWidth:650})).toBe("none");
+  expect(decide({width:1280,height:800,visibleWidth:1240})).toBe("landscape");
+  // A zero-size VisualViewport mid-rotation is not evidence of a keyboard.
+  expect(decide({width:800,height:1280,visibleHeight:0})).toBe("portrait");
+  expect(decide({width:800,height:1280,visibleHeight:NaN})).toBe("portrait");
+ });
  it("retains a large single-screen layout but falls back on Android multi-window shrink",()=>{
   expect(decide({width:1280,height:800})).toBe("landscape");
   expect(decide({width:640,height:800})).toBe("portrait");
@@ -38,6 +49,7 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   const code=readFileSync("src/lib/display-topology.ts","utf8");
   expect(code).toContain('root.dataset["tabletLayout"] = tabletMode');
   expect(code).toContain('tabletLayoutForWindow({');
+  expect(code).toContain('visibleHeight: viewport?.height, visibleWidth: viewport?.width');
   expect(code).toContain('lastNative?.foldingFeatures.filter(f => f?.separating === true).length');
   expect(code).toContain('"tabletLayout"');
   expect(code).not.toContain('window.screen.orientation.lock(');

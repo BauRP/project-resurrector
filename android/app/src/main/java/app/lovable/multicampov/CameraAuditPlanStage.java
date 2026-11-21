@@ -21,7 +21,9 @@ final class CameraAuditPlanStage {
     static void run(Context context) {
         JSONObject passport = CameraAuditService.read(context);
         if (!"complete".equals(passport.optString("state")) ||
-                !"complete".equals(passport.optString("codecState"))) return;
+                !"complete".equals(passport.optString("codecState")) ||
+                passport.optInt("codecIntegrityVersion", 0) !=
+                    CameraAuditCodecStage.INTEGRITY_VERSION) return;
         if ("complete".equals(passport.optString("planState")) &&
                 passport.optInt("planVersion", 0) == PLAN_VERSION &&
                 passport.optInt("planCompleted", -1) == passport.optInt("planTotal", -2) &&
@@ -47,7 +49,9 @@ final class CameraAuditPlanStage {
                 }
                 String cameraId = ids.optString(i,"");
                 JSONObject camera = cameras.optJSONObject(cameraId);
-                if (camera == null || !"complete".equals(camera.optString("codecState"))) {
+                if (camera == null || !"complete".equals(camera.optString("codecState")) ||
+                        camera.optJSONArray("codecChecks") == null ||
+                        camera.optLong("codecCheckedAt", 0) <= 0) {
                     passport.put("planState","retry");
                     passport.put("planError","incomplete-camera-declarations");
                     CameraAuditService.persist(context,passport);

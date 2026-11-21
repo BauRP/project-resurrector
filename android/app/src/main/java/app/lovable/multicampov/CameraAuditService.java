@@ -44,7 +44,8 @@ public final class CameraAuditService extends Service {
     // atomic sidecar contains only counters, errors and progress metadata.
     private static final String[] STATUS_KEYS = {
             "schema", "state", "completed", "total", "codecState",
-            "codecCompleted", "codecTotal", "camera2EnumeratedIdCount",
+            "codecCompleted", "codecTotal", "codecIntegrityVersion",
+            "camera2EnumeratedIdCount",
             "physicalIdsDisclosed", "advancedState", "updatedAt", "error", "codecError",
             "planState", "planTotal", "planCompleted", "planCandidateCount", "planError",
             "planVersion"
@@ -180,6 +181,7 @@ public final class CameraAuditService extends Service {
                 "complete".equals(saved.optString("state")) &&
                 saved.optInt("completed", -1) == total &&
                 "complete".equals(saved.optString("codecState")) &&
+                saved.optInt("codecIntegrityVersion", 0) == CameraAuditCodecStage.INTEGRITY_VERSION &&
                 saved.optInt("codecTotal", -1) == total &&
                 saved.optInt("codecCompleted", -1) == total &&
                 "complete".equals(saved.optString("planState")) &&
