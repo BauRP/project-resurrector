@@ -114,9 +114,9 @@ export function cameraAuditPlanComplete(audit:CameraAuditCheckpoint): boolean {
   return cameraAuditPhase(audit) === "done" &&
     audit.codecIntegrityVersion === 1 &&
     audit.planState === "complete" && audit.planVersion === 2 &&
-    Number.isSafeInteger(audit.planTotal) && audit.planTotal >= 0 &&
+    Number.isSafeInteger(audit.planTotal) && (audit.planTotal ?? -1) >= 0 &&
     audit.planTotal === audit.total &&
-    Number.isSafeInteger(audit.planCompleted) && audit.planCompleted >= 0 &&
+    Number.isSafeInteger(audit.planCompleted) && (audit.planCompleted ?? -1) >= 0 &&
     audit.planCompleted === audit.total;
 }
 

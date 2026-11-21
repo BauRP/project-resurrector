@@ -49,7 +49,7 @@ describe("tablet portrait / landscape / split-window adapter integration",()=>{
     if(originalW)Object.defineProperty(window,"innerWidth",originalW);
     if(originalH)Object.defineProperty(window,"innerHeight",originalH);
     if(originalViewport)Object.defineProperty(window,"visualViewport",originalViewport);
-    else delete (window as Window & {visualViewport?:VisualViewport}).visualViewport;
+    else Reflect.deleteProperty(window,"visualViewport");
     raf.mockRestore();cancel.mockRestore();
   }
  });
