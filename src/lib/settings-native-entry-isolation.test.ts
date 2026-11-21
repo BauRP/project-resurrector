@@ -54,7 +54,11 @@ describe("Settings first-paint transition on slow native WebViews", () => {
     expect(folds).toContain('window.addEventListener("multicam-tab-rendered", onTabRendered)');
     expect(folds).toContain('window.removeEventListener("multicam-tab-rendered", onTabRendered)');
     expect(folds).toContain("syncContentObservation()");
-    expect(folds).toContain("if (needed) mutations.observe(content");
+    // A fold observer must attach to the current scroll root after a tab
+    // remount, not remain attached to a detached Settings/Editor subtree.
+    expect(folds).toContain('if (observedContent) mutations.observe(observedContent');
+    expect(folds).toContain('currentContent === observedContent');
+    expect(folds).toContain('syncContentObservation();\n    scheduleMeasure();');
     expect(app).toContain('window.dispatchEvent(new Event("multicam-tab-rendered"))');
     expect(folds).toContain("NativeDisplay.startObserving({ ownerId })");
   });
