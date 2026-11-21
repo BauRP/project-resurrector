@@ -62,7 +62,7 @@
 | C-42 | Отчёт и источники | 1.0 | `src/lib/diagnostic-export.test.ts` |
 | C-43 | Этапы диагностики | 1.0 | `src/lib/camera-test-queue.test.ts` |
 
-### Раскладушки — теперь 28/36 = 77,78% (база 27,5/36 = 76,39%)
+### Раскладушки — теперь 28,5/36 = 79,17% (база 27,5/36 = 76,39%)
 Подтверждено: 19; частично: 17; без конкретных проверок: 0.
 
 | ID | Сценарий | Балл | Кодовая проверка |
@@ -84,7 +84,7 @@
 | F-15 | Flip полуоткрыт | 1.0 | `src/lib/display-topology.test.ts` |
 | F-16 | Flip cover | 0.5 | `src/lib/display-topology.test.ts` |
 | F-17 | Круглый экран | 0.5 | `src/lib/fold-fullscreen-overlays.test.ts` |
-| F-18 | Outward fold | 0.5 | `src/lib/display-topology.test.ts` |
+| F-18 | Outward fold | **1.0** | `src/lib/display-topology.test.ts` (separating+occlusion NONE, две смежные панели без gap, non-separating — один viewport) |
 | F-19 | Два экрана | 1.0 | `src/lib/display-topology.test.ts` |
 | F-20 | Поворот | **1.0** | `src/lib/display-topology.test.ts` (90° Book→Tabletop; геометрия, безопасный 85%-пересекающий hinge) |
 | F-21 | Resize | 1.0 | `src/lib/display-topology.test.ts` |
@@ -104,8 +104,8 @@
 | F-35 | Редактор курсор | 1.0 | `src/lib/fold-ui-recovery.test.ts`, `src/components/multicam/EditorPro.tsx` |
 | F-36 | Activity recreation | 1.0 | `src/lib/fold-ui-recovery.test.ts` |
 
-### Общий индекс — теперь 86,08% (база 84,81%)
-Формула: (40 + 28) / 79 × 100% = 86,08%. Это взвешенное значение, учитывающее разное количество требований.
+### Общий индекс — теперь 86,71% (база 84,81%)
+Формула: (40 + 28,5) / 79 × 100% = 86,71%. Это взвешенное значение, учитывающее разное количество требований.
 
 Приоритет следующего аудита: C-21/C-22, C-05, F-17/F-23/F-24, C-20 и F-05/F-26. Редактировать баллы по исходным сценариям только с конкретной ссылкой на код/тест и успешной сборкой; при обнаружении нового дефекта снижать оценку, а не имитировать рост.
 
@@ -197,3 +197,8 @@
 - C-05: 0,5→1,0 за прямую проверку трёх согласованных кадров и точного CaptureResult EIS/OIS; F-20: 0,5→1,0 за Book→Tabletop поворот с измеренными панелями. Реальная видеозапись и OEM остаются отдельно и не засчитываются как работа агента.
 - **[GitHub Actions #44881241651](https://github.com/BauRP/project-resurrector/actions/runs/44881241651)**: SUCCESS, 1080 unit-тестов, TypeScript, release APK/AAB. Подтверждённый SHA `9fc3551c6eddfda0e19d8a56fd5936c98c8b6815`.
 - Камеры **91,86%→93,02%** (🟩 +1,16 п.п.), раскладушки **76,39%→77,78%** (🟩 +1,39 п.п.), вместе **84,81%→86,08%** (🟩 +1,27 п.п.). Индекс является подтверждённым автоматическим покрытием логики, а не доказательством практической OEM-записи.
+
+### Обновление F-18, 21 ноября 2026
+
+- Прямой исполняемый сценарий outward fold: при `occlusion=NONE` и `separating=true` две панели разделяются без выдуманного чёрного зазора; при `separating=false` остаётся один viewport. `F-18` повышен 0,5→1,0 за программную геометрию. Не доказывает аппаратную поддержку Huawei/XTs.
+- [GitHub Actions #44902806897](https://github.com/BauRP/project-resurrector/actions/runs/44902806897) **SUCCESS**, 1087 unit-тестов, TypeScript, release APK/AAB. F=28,5/36=79,17%, общий индекс C+F=68,5/79=86,71%.
