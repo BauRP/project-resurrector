@@ -3,7 +3,8 @@ import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, 
 import type { ModeEvidence } from "./camera-passport";
 
 const base = { width:1920, height:1080, fps:30 };
-const proof: ModeEvidence = { api:"webview",cameraId:"rear",requested:base,checkedAt:12,state:"verified" };
+const proof: ModeEvidence = { api:"webview",cameraId:"rear",requested:base,checkedAt:12,state:"verified",
+ file:{width:1920,height:1080,bytes:2048,mimeType:"video/mp4"} };
 describe("per-lens resumable diagnostic queue", () => {
   it("respects per-camera quick candidates, including an explicitly empty hardware plan",()=>{
     const hd={width:1280,height:720,fps:30};
@@ -76,6 +77,22 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(tasks).toHaveLength(4);
     expect(tasks.filter(t=>t.status==="verified").map(t=>t.key)).toEqual([cameraTaskKey("rear",base)]);
     expect(queueSummary(tasks,["rear","front"])).toEqual({total:4,verified:1,recorded:0,pending:3,failed:0,deferred:0});
+  });
+  it("never treats a fileless or wrong-size legacy status as proven recording",()=>{
+    const candidates:ModeEvidence[]=[
+      {...proof,file:undefined},
+      {...proof,file:{width:640,height:480,bytes:2048,mimeType:"video/mp4"}},
+      {...proof,file:{width:1920,height:1080,bytes:2048,mimeType:"image/png"}},
+    ];
+    for (const old of candidates) {
+      const tasks=prepareCameraTestQueue(["rear"],[base],[],[old]);
+      expect(tasks[0]?.status).toBe("pending");
+      const recorded=prepareCameraTestQueue(["rear"],[base],[],[{...old,state:"recorded"}]);
+      expect(recorded[0]?.status).toBe("pending");
+      const historical=prepareCameraTestQueue(["rear"],[base],[],[proof]);
+      expect(preserveUnavailableCameraHistory([],historical,new Set(["rear"]),[old])[0]?.status)
+        .toBe("retry");
+    }
   });
   it("rejects corrupted legacy evidence instead of inventing a successful test", () => {
     const corrupted = [{api:"webview", cameraId:"rear",state:"verified",checkedAt:12}] as unknown as ModeEvidence[];

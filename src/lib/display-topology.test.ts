@@ -68,6 +68,31 @@ describe("multi-hinge topology", () => {
     }})).toBe(true);
   });
 
+  it("moves from a narrow closed-cover viewport to a real opened book without fake hinges",()=>{
+    // Android cover displays are often just one small active WindowManager
+    // rectangle. Never invent a dividing crease based on device branding.
+    const cover:DisplayTopology={...topology([]),
+      widthPx:440,heightPx:920,widthDp:440,heightDp:920,source:"android-windowmanager",
+      webViewBoundsPx:{left:0,top:0,right:440,bottom:920},revision:1};
+    const closed=calculateDisplayRegions(cover,440,920);
+    expect(closed.split).toBe("none");
+    expect(closed.hinges).toHaveLength(0);
+    expect(closed.regions).toEqual([{left:0,top:0,width:440,height:920}]);
+    expect(hasPlausibleSeparatingHinge(cover)).toBe(false);
+    const open:DisplayTopology={...topology([hinge(590,610)]),
+      source:"android-windowmanager",revision:2,
+      webViewBoundsPx:{left:0,top:0,right:1200,bottom:900}};
+    const opened=calculateDisplayRegions(open,600,450);
+    expect(opened.split).toBe("vertical");
+    expect(opened.regions).toEqual([
+      {left:0,top:0,width:295,height:450},
+      {left:305,top:0,width:295,height:450},
+    ]);
+    expect(opened.occluded).toBe(true);
+    expect(foldEventDetails(open,600,450).hingeCount).toBe(1);
+    // Return to the real cover window without retaining an invented gap.
+    expect(calculateDisplayRegions({...cover,revision:3},440,920)).toEqual(closed);
+  });
   it("preserves no fold when Android reports no fold", () => {
     expect(calculateDisplayRegions(topology([]), 600, 450).regions).toHaveLength(1);
   });

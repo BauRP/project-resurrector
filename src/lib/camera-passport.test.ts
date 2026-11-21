@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { cameraPassportContext, isModeEvidence, loadModeEvidence, recordModeEvidence, type ModeEvidence } from "./camera-passport";
 const KEY = "multicam-mode-evidence-v1";
-const evidence: ModeEvidence = {api:"webview",cameraId:"rear",requested:{width:1920,height:1080,fps:30},state:"verified",checkedAt:12};
+const evidence: ModeEvidence = {api:"webview",cameraId:"rear",requested:{width:1920,height:1080,fps:30},state:"verified",checkedAt:12,
+file:{width:1920,height:1080,bytes:2048,mimeType:"video/webm"}};
 beforeEach(()=>localStorage.clear());
 describe("persisted camera passport validation",()=>{
   it("rejects malformed or invented evidence",()=>{
@@ -43,6 +44,29 @@ describe("persisted camera passport validation",()=>{
   });
 });
 
+describe("legacy recorded/verified statuses cannot bypass decoded-file proof",()=>{
+ it("downgrades a historical verified label with no file, while preserving the entry",()=>{
+   recordModeEvidence({...evidence,file:undefined});
+   const loaded=loadModeEvidence();
+   expect(loaded).toHaveLength(1);
+   expect(loaded[0]?.state).toBe("unknown");
+   expect(loaded[0]?.message).toContain("декодированного файла");
+ });
+ it("rejects a mismatched video frame or malformed MIME instead of trusting a label",()=>{
+   for (const file of [
+     {width:640,height:480,bytes:2048,mimeType:"video/mp4"},
+     {width:1920,height:1080,bytes:2048,mimeType:"image/png"},
+   ]) {
+     localStorage.clear();
+     recordModeEvidence({...evidence,state:"recorded",file});
+     expect(loadModeEvidence()[0]?.state).toBe("unknown");
+   }
+ });
+ it("keeps a real rotated decoded first frame as recording evidence, not a fake FPS measurement",()=>{
+   recordModeEvidence({...evidence,state:"recorded",file:{width:1080,height:1920,bytes:4096,mimeType:"video/mp4"}});
+   expect(loadModeEvidence()[0]?.state).toBe("recorded");
+ });
+});
 describe("separate actual encoded media metadata", () => {
   it("retains valid first-frame evidence without claiming actual coded FPS", () => {
     const proof = {...evidence, file:{width:1920,height:1080,bytes:2048,mimeType:"video/webm"}};

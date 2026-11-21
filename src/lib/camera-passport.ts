@@ -45,6 +45,20 @@ export function isModeEvidence(value: unknown): value is ModeEvidence {
       Number.isSafeInteger(e.file.bytes) && e.file.bytes >= 1024 &&
       typeof e.file.mimeType === "string" && e.file.mimeType.length < 256));
 }
+/** Only a decoded, matching video frame can justify RECORDED status.
+ * Legacy records may have state=verified without a real file: keep their
+ * historical text, but NEVER use that status to skip a camera retest.
+ * A first-frame decode still does not independently prove encoded FPS.
+ */
+export function hasDecodedModeFileEvidence(row: ModeEvidence): boolean {
+  const f=row.file, r=row.requested;
+  return !!f && Number.isSafeInteger(f.bytes) && f.bytes>=1024 &&
+    Number.isSafeInteger(f.width) && Number.isSafeInteger(f.height) &&
+    f.width>0 && f.height>0 &&
+    typeof f.mimeType==="string" && /^video\/[a-z0-9.+-]+(?:;.*)?$/i.test(f.mimeType) &&
+    ((f.width===r.width && f.height===r.height) ||
+     (f.width===r.height && f.height===r.width));
+}
 const identity = (row: ModeEvidence) =>
   [row.api, row.cameraId, row.requested.width, row.requested.height, row.requested.fps].join("|");
 /** Previously stored data may be malformed after a partial write or app upgrade. */
@@ -64,6 +78,12 @@ export function loadModeEvidence(): ModeEvidence[] {
     const context = cameraPassportContext();
     const marker = localStorage.getItem(CONTEXT_KEY);
     return readStoredModeEvidence().map(row => {
+      if ((row.state === "recorded" || row.state === "verified") &&
+          !hasDecodedModeFileEvidence(row)) return {
+        ...row, state:"unknown" as const,
+        message:"Нет подтверждения декодированного файла выбранного режима. Нужна повторная проверка. " +
+          (row.message ?? ""),
+      };
       if (marker === context && row.context === context) return row;
       return {
         ...row,

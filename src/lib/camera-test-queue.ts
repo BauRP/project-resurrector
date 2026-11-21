@@ -1,4 +1,4 @@
-import { isModeEvidence, type ModeEvidence } from "./camera-passport";
+import { hasDecodedModeFileEvidence, isModeEvidence, type ModeEvidence } from "./camera-passport";
 import type { TestMode } from "./mode-verification";
 
 export type CameraQueueStatus = "pending" | "running" | "verified" | "recorded" | "retry" | "deferred" | "error";
@@ -60,13 +60,15 @@ export function prepareCameraTestQueue(
   const tasks = new Map(previous.filter(isTask).filter(task => activeIds.has(task.cameraId))
     .map(task => [task.key, task]));
   const verifiedKeys = new Set(evidence.filter(isModeEvidence)
-    .filter(row => row.api === "webview" && row.state === "verified")
+    .filter(row => row.api === "webview" && row.state === "verified" &&
+      hasDecodedModeFileEvidence(row))
     .map(row => cameraTaskKey(row.cameraId, row.requested)));
   // A real file or decoder attempt is meaningful evidence, but its encoded
   // FPS is not yet verified. Do not silently re-run a heavy test every time
   // the quick diagnostic panel opens.
   const recordedKeys = new Set(evidence.filter(isModeEvidence)
-    .filter(row => row.api === "webview" && row.state === "recorded")
+    .filter(row => row.api === "webview" && row.state === "recorded" &&
+      hasDecodedModeFileEvidence(row))
     .map(row => cameraTaskKey(row.cameraId, row.requested)));
   for (const cameraId of activeIds) {
     for (const mode of modes) {
@@ -154,7 +156,8 @@ export function preserveUnavailableCameraHistory(
   // A stored queue label is not proof. Offline lenses keep their history,
   // but only their current passport can certify an exact recording mode.
   const keys=(state:"verified"|"recorded")=>new Set(evidence.filter(isModeEvidence)
-    .filter(row=>row.api==="webview"&&row.state===state)
+    .filter(row=>row.api==="webview"&&row.state===state&&
+      hasDecodedModeFileEvidence(row))
     .map(row=>cameraTaskKey(row.cameraId,row.requested)));
   const verified=keys("verified"),recorded=keys("recorded");
   const retained=previous.filter(task=>unavailable.has(task.cameraId)&&!seen.has(task.key))
