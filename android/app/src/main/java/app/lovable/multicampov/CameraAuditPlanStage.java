@@ -5,6 +5,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.ArrayList;
 
 /**
  * A resumable declaration-only plan for later functional camera tests.
@@ -86,11 +87,18 @@ final class CameraAuditPlanStage {
         JSONArray plan = new JSONArray();
         if (declarations == null) return plan;
         Set<String> seen = new HashSet<>();
-        for (int fps : PREFERRED_FPS) {
-            for (int i=0;i<declarations.length();i++) {
-                JSONObject check = declarations.optJSONObject(i);
-                if (check == null || check.optInt("fpsRequested") != fps ||
-                        !"declared-compatible".equals(check.optString("status"))) continue;
+        // Camera2 vendor ordering must not fill the entire eight-entry plan
+        // with obscure resolutions at 30fps, starving declared 60fps modes.
+        ArrayList<JSONObject> ranked = new ArrayList<>();
+        for (int i=0;i<declarations.length();i++) {
+            JSONObject check = declarations.optJSONObject(i);
+            if (check != null && "declared-compatible".equals(check.optString("status")))
+                ranked.add(check);
+        }
+        ranked.sort((a,b) -> Integer.compare(candidatePriority(a),candidatePriority(b)));
+        for (JSONObject check : ranked) {
+                int fps = check.optInt("fpsRequested");
+                if (fpsRank(fps) >= PREFERRED_FPS.length) continue;
                 int width = check.optInt("width"),height = check.optInt("height");
                 if (width<1 || height<1) continue;
                 JSONArray encoders = check.optJSONArray("encoders");
@@ -112,8 +120,26 @@ final class CameraAuditPlanStage {
                 item.put("verifiedRecording",false);
                 plan.put(item);
                 if (plan.length()>=MAX_PLANS_PER_CAMERA) return plan;
-            }
         }
         return plan;
+    }
+
+    private static int fpsRank(int fps) {
+        for (int i=0;i<PREFERRED_FPS.length;i++) if (PREFERRED_FPS[i] == fps) return i;
+        return PREFERRED_FPS.length;
+    }
+    private static int resolutionRank(JSONObject mode) {
+        int width=mode.optInt("width"),height=mode.optInt("height");
+        int a=Math.min(width,height),b=Math.max(width,height);
+        if (a==1080 && b==1920) return 0;
+        if (a==2160 && b==3840) return 1;
+        if (a==720 && b==1280) return 2;
+        return 3;
+    }
+    private static int candidatePriority(JSONObject mode) {
+        int rank=resolutionRank(mode),fps=fpsRank(mode.optInt("fpsRequested"));
+        // Try 1080p/4K/720p at 30/60/24/120 before less common modes,
+        // all taken only from actual Camera2 and MediaCodec declarations.
+        return rank < 3 ? fps*3+rank : 20+fps;
     }
 }

@@ -97,7 +97,8 @@ export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "cod
 /** Human-readable pause reason; never translate OEM unknown into unsupported. */
 export function cameraAuditPauseReason(audit: CameraAuditCheckpoint): string | null {
   const reason = audit.state === "retry" ? audit.error :
-    audit.codecState === "retry" ? audit.codecError : undefined;
+    audit.codecState === "retry" ? audit.codecError :
+    audit.planState === "retry" ? audit.planError : undefined;
   switch (reason) {
     case "thermal-severe":
       return "Сильный нагрев. Проверка приостановлена, результаты сохранены.";

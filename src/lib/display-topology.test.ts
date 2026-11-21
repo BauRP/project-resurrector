@@ -38,6 +38,11 @@ describe("multi-hinge topology", () => {
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),rightPx:2000}]))).toBe(false);
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),separating:false}]))).toBe(false);
     expect(hasPlausibleSeparatingHinge(topology([{...hinge(590,610),topPx:120,bottomPx:180}]))).toBe(false);
+    // A real 89%-spanning hinge must still trigger fold layout observation:
+    // the pane splitter itself accepts spans >= 85%.
+    const crossing=topology([{...hinge(590,610),topPx:50,bottomPx:850}]);
+    expect(hasPlausibleSeparatingHinge(crossing)).toBe(true);
+    expect(calculateDisplayRegions(crossing,600,450).regions).toHaveLength(2);
     expect(hasPlausibleSeparatingHinge({...topology([hinge(590,610)]), webViewBoundsPx:{
       left:0,top:0,right:550,bottom:900,
     }})).toBe(false);
@@ -108,6 +113,36 @@ describe("multi-hinge topology", () => {
     expect(duplicated.regions).toEqual(one.regions);
     expect(duplicated.hinges).toHaveLength(1);
     expect(foldEventDetails(topology([fold,{...fold}]),600,450).hingeCount).toBe(1);
+  });
+  it("preserves real book-pane positions across a 90-degree rotation",()=>{
+    const book=topology([hinge(590,610)]);
+    expect(hasPlausibleSeparatingHinge(book)).toBe(true);
+    const before=calculateDisplayRegions(book,600,450);
+    expect(before.split).toBe("vertical");
+    expect(before.regions).toEqual([
+      {left:0,top:0,width:295,height:450},
+      {left:305,top:0,width:295,height:450},
+    ]);
+    // Android's window dimensions and a physical hinge change together.
+    // Only computed WebView pixels determine usable panes; no model preset.
+    const rotated: DisplayTopology={
+      ...topology([{
+        leftPx:0,rightPx:900,topPx:590,bottomPx:610,
+        orientation:"HORIZONTAL",state:"FLAT",occlusion:"FULL",separating:true,
+      }]),
+      widthPx:900,heightPx:1200,widthDp:450,heightDp:600,revision:2,
+      webViewBoundsPx:{left:0,top:0,right:900,bottom:1200},
+    };
+    expect(hasPlausibleSeparatingHinge(rotated)).toBe(true);
+    const after=calculateDisplayRegions(rotated,450,600);
+    expect(after.split).toBe("horizontal");
+    expect(after.regions).toEqual([
+      {left:0,top:0,width:450,height:295},
+      {left:0,top:305,width:450,height:295},
+    ]);
+    expect(after.hinges).toHaveLength(1);
+    expect(foldEventDetails(rotated,450,600).regionGeometry).toBe(
+      "0,0,450,295;0,305,450,295");
   });
   it("supports two actual Android hinge bounds for tri-fold devices", () => {
     const result = calculateDisplayRegions(topology([hinge(390,410), hinge(790,810)]),600,450);

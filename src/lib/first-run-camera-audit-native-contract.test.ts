@@ -35,10 +35,16 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(plugin).toContain('summary.put("planCandidateCount"');
     expect(plan).toContain("CameraAuditResourceGuard.pauseReason(context)");
     expect(plan).toContain("CameraAuditService.persist(context, passport)");
-    expect(plan).toContain('item.put("status", "not-run")');
-    expect(plan).toContain('item.put("verifiedRecording", false)');
+    expect(plan).toMatch(/item\.put\("status",\s*"not-run"\)/);
+    expect(plan).toMatch(/item\.put\("verifiedRecording",\s*false\)/);
     expect(plan).not.toContain("openCamera(");
     expect(plan).not.toContain("new MediaRecorder(");
+  });
+  it("plans declared common capture resolutions across several frame rates",()=>{
+    expect(plan).toContain("ranked.sort((a,b) -> Integer.compare(candidatePriority(a),candidatePriority(b)))");
+    expect(plan).toContain("return rank < 3 ? fps*3+rank : 20+fps");
+    expect(plan).toContain("MAX_PLANS_PER_CAMERA");
+    expect(plan).toContain('"declared-compatible".equals(check.optString("status"))');
   });
   it("captures additional declared focus and sensor evidence",()=>{
     for(const key of ["afMaxRegionsDeclared","aeMaxRegionsDeclared","awbMaxRegionsDeclared",

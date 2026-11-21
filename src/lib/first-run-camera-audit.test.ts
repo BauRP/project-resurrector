@@ -107,6 +107,11 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditPauseReason(lowMemory)).toContain("памяти");
     expect(cameraAuditProgress(lowMemory)).toBe(75);
     expect(cameraAuditPauseReason({...lowMemory, codecState: "complete"})).toBeNull();
+    const planning = checkpoint("complete",2,2);
+    planning.codecState = "complete";
+    planning.planState = "retry";
+    planning.planError = "thermal-severe";
+    expect(cameraAuditPauseReason(planning)).toContain("нагрев");
   });
   it("rejects corrupt negative or missing totals and impossible overflows", () => {
     expect(cameraAuditProgress(checkpoint("running",-1,4))).toBe(0);

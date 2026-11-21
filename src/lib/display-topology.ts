@@ -66,12 +66,14 @@ export function hasPlausibleSeparatingHinge(topology: DisplayTopology | null): b
     // Partial creases and hinges outside the active app window do not
     // require costly subtree observation: they do not split its usable panes.
     (/vertical/i.test(feature.orientation)
-      ? feature.topPx <= (bounds?.top ?? 0) &&
-        feature.bottomPx >= (bounds?.bottom ?? topology.heightPx) &&
+      ? Math.max(0, Math.min(feature.bottomPx, bounds?.bottom ?? topology.heightPx) -
+          Math.max(feature.topPx, bounds?.top ?? 0)) >=
+          ((bounds?.bottom ?? topology.heightPx) - (bounds?.top ?? 0)) * 0.85 &&
         feature.leftPx > (bounds?.left ?? 0) &&
         feature.rightPx < (bounds?.right ?? topology.widthPx)
-      : feature.leftPx <= (bounds?.left ?? 0) &&
-        feature.rightPx >= (bounds?.right ?? topology.widthPx) &&
+      : Math.max(0, Math.min(feature.rightPx, bounds?.right ?? topology.widthPx) -
+          Math.max(feature.leftPx, bounds?.left ?? 0)) >=
+          ((bounds?.right ?? topology.widthPx) - (bounds?.left ?? 0)) * 0.85 &&
         feature.topPx > (bounds?.top ?? 0) &&
         feature.bottomPx < (bounds?.bottom ?? topology.heightPx)));
 }

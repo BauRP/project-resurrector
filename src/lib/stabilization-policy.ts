@@ -30,17 +30,20 @@ export function decideStabilizationForRecordedMode(
       probe.width !== mode.width || probe.height !== mode.height ||
       probe.fpsRequested !== mode.fps) return unknown();
   if (probe.state==="capture-result-confirmed" &&
-      (probe.framesObserved!==undefined &&
-       (!Number.isSafeInteger(probe.framesObserved)||probe.framesObserved<=0) ||
-       probe.confirmations!==undefined &&
-       (!Number.isSafeInteger(probe.confirmations)||probe.confirmations<=0)))
-    return unknown("Системная стабилизация: нулевые или недостоверные кадры Camera2. Режим не подтверждён.");
+      (!Number.isSafeInteger(probe.framesObserved) || (probe.framesObserved ?? 0) < 3 ||
+       !Number.isSafeInteger(probe.confirmations) || (probe.confirmations ?? 0) < 3 ||
+       (probe.confirmations ?? 0) > (probe.framesObserved ?? 0)))
+    return unknown("Системная стабилизация: отсутствуют три достоверных подтверждённых кадра Camera2.");
   if (probe.state === "capture-result-confirmed") {
-    if (probe.selected === "eis" || probe.selected === "preview-stabilization")
+    if ((probe.selected === "eis" && probe.eisDeclared &&
+         probe.captureResultEis === 1) ||
+        (probe.selected === "preview-stabilization" && probe.previewDeclared &&
+         probe.captureResultEis === 2))
       return {recommendation:"prefer-eis",systemState:"test-confirmed",
         disableAdditionalProcessing:true,
         message:"EIS подтверждена только в тестовой Camera2-сессии. Для реальной WebView-записи режим ещё не проверен; дополнительную стабилизацию одновременно не включать."};
-    if (probe.selected === "ois")
+    if (probe.selected === "ois" && probe.oisDeclared &&
+        probe.captureResultOis === 1)
       return {recommendation:"prefer-ois",systemState:"test-confirmed",
         disableAdditionalProcessing:true,
         message:"OIS подтверждена в тестовой Camera2-сессии. Файл WebView-записи пока не подтверждает её работу; дополнительную обработку по умолчанию не включать."};
