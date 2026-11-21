@@ -33,6 +33,7 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(service).toContain('"complete".equals(saved.optString("planState"))');
     expect(service).toContain('saved.put("planState", "pending")');
     expect(plugin).toContain('summary.put("planCandidateCount"');
+    expect(plugin).toContain('summary.put("planVersion", full.optInt("planVersion", 0))');
     expect(plan).toContain("CameraAuditResourceGuard.pauseReason(context)");
     expect(plan).toContain("CameraAuditService.persist(context, passport)");
     expect(plan).toMatch(/item\.put\("status",\s*"not-run"\)/);
