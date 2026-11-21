@@ -82,19 +82,25 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
       !Number.isSafeInteger(completed) || completed < 0) return 0;
   const metadataDone = audit.state === "complete";
   const codecDone = audit.codecState === "complete";
-  // Old valid passports are upgraded to codec checks without losing
-  // already collected Camera2 metadata. Zero-camera phones are supported.
-  if (metadataDone && codecDone && completed === total &&
-      audit.codecTotal === total && audit.codecCompleted === total) return 100;
+  // All THREE persisted declaration stages belong to this progress bar:
+  // Camera2 metadata, declared encoder compatibility, and candidate plan.
+  // A plan under construction must never display "100%" just because the
+  // first two phases completed. Advanced real recordings remain separate.
+  if (cameraAuditPlanComplete(audit)) return 100;
   if (total === 0) return 0;
   const metadataSteps = Math.min(completed, total);
-  const codecSteps = metadataDone && Number.isSafeInteger(audit.codecCompleted) &&
-    Number.isSafeInteger(audit.codecTotal) && (audit.codecTotal ?? 0) > 0
-      ? Math.min(Math.max(0, audit.codecCompleted ?? 0), audit.codecTotal ?? 0) : 0;
-  const codecTotal = metadataDone && Number.isSafeInteger(audit.codecTotal) &&
-    (audit.codecTotal ?? 0) > 0 ? audit.codecTotal! : total;
-  return Math.max(0, Math.min(99, Math.floor(100 * (metadataSteps + codecSteps) /
-    (total + codecTotal))));
+  const metadataReady = metadataDone && completed === total;
+  const codecSteps = metadataReady && Number.isSafeInteger(audit.codecCompleted) &&
+    audit.codecTotal === total && (audit.codecCompleted ?? 0) >= 0
+      ? Math.min(audit.codecCompleted ?? 0, total) : 0;
+  const codecReady = codecDone && metadataReady && audit.codecTotal === total &&
+    audit.codecCompleted === total;
+  const planSteps = codecReady && audit.planVersion === 2 &&
+    audit.planTotal === total && audit.planState !== "pending" &&
+    Number.isSafeInteger(audit.planCompleted) && (audit.planCompleted ?? 0) >= 0
+      ? Math.min(audit.planCompleted ?? 0, total) : 0;
+  return Math.max(0, Math.min(99, Math.floor(100 *
+    (metadataSteps + codecSteps + planSteps) / (3 * total))));
 }
 
 /** Declared functional trial plan is an extra saved stage, never proof

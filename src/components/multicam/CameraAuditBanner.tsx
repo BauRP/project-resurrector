@@ -28,7 +28,6 @@ export function CameraAuditBanner() {
           response.audit.planCompleted,
           response.audit.planTotal, response.audit.planCandidateCount,
           response.audit.error, response.audit.codecError, response.audit.planError,
-          response.audit.updatedAt,
         ].join("|");
         if (checkpoint !== lastCheckpoint) {
           lastCheckpoint = checkpoint;
@@ -99,7 +98,7 @@ export function CameraAuditBanner() {
   const phase = audit ? cameraAuditPhase(audit) : "metadata";
   const complete = audit !== null && cameraAuditPlanComplete(audit);
   if (!isNative() || (complete && !showCompleted)) return null;
-  // This percent is the metadata/codec baseline, not functional recording.
+  // This is a count of three saved declaration stages, not functional recording.
   const percent = audit ? cameraAuditProgress(audit) : 0;
   const line = problem || (audit && cameraAuditPauseReason(audit)) || (complete
     ? "Проверка заявленных характеристик завершена. Испытания реальной записи ещё не проводились."

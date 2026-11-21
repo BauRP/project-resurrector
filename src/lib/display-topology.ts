@@ -395,7 +395,9 @@ export function startDisplayAdaptation(): () => void {
     // Never add a second ResizeObserver, a UI subscription or a camera lease.
     const tabletMode = tabletLayoutForWindow({
       width: currentWidth, height: currentHeight,
-      reportedFoldCount: lastNative?.foldingFeatures.length,
+      // Only actual separating features preempt the tablet layout.
+      // A flat non-separating fold is one unobstructed usable window.
+      reportedFoldCount: lastNative?.foldingFeatures.filter(f => f?.separating === true).length,
       nativeReportValid: lastNative?.source !== "android-windowmanager-feature-overflow",
     });
     if (root.dataset["tabletLayout"] !== tabletMode)

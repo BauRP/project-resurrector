@@ -1785,3 +1785,14 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 :root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-confirm-card {
   max-width: min(100%, 32rem);
 }
+
+/* A 600–759 CSS-pixel portrait tablet is still tablet-sized, but two
+ * Settings columns would only be 290px each. Preserve form controls and
+ * dynamic font scaling in one full-width column. Wider tablet windows
+ * retain the existing two-column workspace. */
+@media (max-width: 759px) {
+  :root[data-tablet-layout="portrait"]:not([data-separating-fold="true"])
+    .settings-fold-workspace > main {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

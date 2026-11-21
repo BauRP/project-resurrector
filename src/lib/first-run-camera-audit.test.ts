@@ -8,13 +8,13 @@ const checkpoint = (state:CameraAuditCheckpoint["state"], completed:number, tota
 describe("first-install Camera2 inventory progress", () => {
   it("starts at zero and counts only stored completed camera entries", () => {
     expect(cameraAuditProgress(checkpoint("not-started",0,0))).toBe(0);
-    expect(cameraAuditProgress(checkpoint("running",1,4))).toBe(12);
-    expect(cameraAuditProgress(checkpoint("running",2,4))).toBe(25);
+    expect(cameraAuditProgress(checkpoint("running",1,4))).toBe(8);
+    expect(cameraAuditProgress(checkpoint("running",2,4))).toBe(16);
   });
   it("does not claim completion before the atomic final checkpoint", () => {
-    expect(cameraAuditProgress(checkpoint("running",4,4))).toBe(50);
-    expect(cameraAuditProgress(checkpoint("retry",2,4))).toBe(25);
-    expect(cameraAuditProgress(checkpoint("complete",4,4))).toBe(50);
+    expect(cameraAuditProgress(checkpoint("running",4,4))).toBe(33);
+    expect(cameraAuditProgress(checkpoint("retry",2,4))).toBe(16);
+    expect(cameraAuditProgress(checkpoint("complete",4,4))).toBe(33);
     expect(cameraAuditProgress(checkpoint("complete",0,0))).toBe(0);
   });
   it("does not confuse declared video modes with verified user recordings", () => {
@@ -36,7 +36,7 @@ describe("first-install Camera2 inventory progress", () => {
     state.codecState = "complete";
     state.codecCompleted = 1;
     state.codecTotal = 1;
-    expect(cameraAuditProgress(state)).toBe(100);
+    expect(cameraAuditProgress(state)).toBe(66);
     expect(state.cameras["rear"]?.verifiedRecording).toBe(false);
     expect(state.cameras["rear"]?.videoModeCandidatesDeclared?.[0]?.verifiedVideoRecording).toBe(false);
     expect(state.advancedState).toBe("pending");
@@ -47,11 +47,11 @@ describe("first-install Camera2 inventory progress", () => {
     saved.codecTotal = 4;
     saved.codecCompleted = 2;
     expect(cameraAuditPhase(saved)).toBe("codecs");
-    expect(cameraAuditProgress(saved)).toBe(75);
+    expect(cameraAuditProgress(saved)).toBe(50);
     const interrupted = {...saved, codecState: "retry" as const};
-    expect(cameraAuditProgress(interrupted)).toBe(75);
+    expect(cameraAuditProgress(interrupted)).toBe(50);
     const finished = {...saved, codecState: "complete" as const,codecCompleted:4};
-    expect(cameraAuditProgress(finished)).toBe(100);
+    expect(cameraAuditProgress(finished)).toBe(66);
     expect(cameraAuditPhase(finished)).toBe("done");
   });
   it("does not report completed for contradictory or missing atomic counters",()=>{
@@ -93,14 +93,35 @@ describe("first-install Camera2 inventory progress", () => {
     noCameras.planState="complete";noCameras.planVersion=2;noCameras.planTotal=0;noCameras.planCompleted=0;
     expect(cameraAuditPlanComplete(noCameras)).toBe(true);
   });
+  it("reports three saved stages without premature 100% or fictitious recordings",()=>{
+    const state=checkpoint("complete",4,4);
+    state.codecState="complete";state.codecTotal=4;state.codecCompleted=4;
+    // Two out of three stages complete is only ~66%, not 100%.
+    expect(cameraAuditProgress(state)).toBe(66);
+    state.planVersion=2;state.planState="running";state.planTotal=4;state.planCompleted=1;
+    expect(cameraAuditProgress(state)).toBe(75);
+    state.planCompleted=3;
+    expect(cameraAuditProgress(state)).toBe(91);
+    state.planCompleted=4;
+    expect(cameraAuditProgress(state)).toBe(99);
+    state.planState="complete";
+    expect(cameraAuditProgress(state)).toBe(100);
+    expect(state.recordingValidated).not.toBe(true);
+    state.planVersion=1;
+    expect(cameraAuditProgress(state)).toBe(66);
+    state.planVersion=2;state.planTotal=3;
+    expect(cameraAuditProgress(state)).toBe(66);
+    state.planTotal=4;state.planState="retry";
+    expect(cameraAuditProgress(state)).toBe(99);
+  });
   it("caps progress below 100 when codec evidence is incomplete", () => {
     const state = checkpoint("complete",3,3);
     state.codecState = "running";
     state.codecTotal = 3;
     state.codecCompleted = 3;
-    expect(cameraAuditProgress(state)).toBe(99);
+    expect(cameraAuditProgress(state)).toBe(66);
     state.codecState = "retry";
-    expect(cameraAuditProgress(state)).toBe(99);
+    expect(cameraAuditProgress(state)).toBe(66);
     expect(cameraAuditPhase(state)).toBe("codecs");
   });
   it("keeps saved encoder declarations separate from actual video evidence", () => {
@@ -121,7 +142,7 @@ describe("first-install Camera2 inventory progress", () => {
         encoders: [{name:"vendor.encoder",mime:"video/avc",declaredOnly:true}],
       }],
     };
-    expect(cameraAuditProgress(state)).toBe(100);
+    expect(cameraAuditProgress(state)).toBe(66);
     expect(state.cameras["0"]!.codecChecks![0]!.recordedAndVerified).toBe(false);
     expect(state.cameras["0"]!.verifiedRecording).toBe(false);
   });
@@ -133,7 +154,7 @@ describe("first-install Camera2 inventory progress", () => {
     completed.recordingValidated = false;
     completed.camera2InventoryOnly = true;
     expect(cameraAuditPhase(completed)).toBe("done");
-    expect(cameraAuditProgress(completed)).toBe(100);
+    expect(cameraAuditProgress(completed)).toBe(66);
     expect(completed.recordingValidated).toBe(false);
     expect(completed.camera2InventoryOnly).toBe(true);
   });
@@ -141,14 +162,14 @@ describe("first-install Camera2 inventory progress", () => {
     const heat = checkpoint("retry", 1, 2);
     heat.error = "thermal-severe";
     expect(cameraAuditPauseReason(heat)).toContain("нагрев");
-    expect(cameraAuditProgress(heat)).toBe(25);
+    expect(cameraAuditProgress(heat)).toBe(16);
     const lowMemory = checkpoint("complete",2,2);
     lowMemory.codecState = "retry";
     lowMemory.codecTotal = 2;
     lowMemory.codecCompleted = 1;
     lowMemory.codecError = "low-memory";
     expect(cameraAuditPauseReason(lowMemory)).toContain("памяти");
-    expect(cameraAuditProgress(lowMemory)).toBe(75);
+    expect(cameraAuditProgress(lowMemory)).toBe(50);
     expect(cameraAuditPauseReason({...lowMemory, codecState: "complete"})).toBeNull();
     const planning = checkpoint("complete",2,2);
     planning.codecState = "complete";
@@ -158,7 +179,7 @@ describe("first-install Camera2 inventory progress", () => {
   });
   it("rejects corrupt negative or missing totals and impossible overflows", () => {
     expect(cameraAuditProgress(checkpoint("running",-1,4))).toBe(0);
-    expect(cameraAuditProgress(checkpoint("running",10,4))).toBe(50);
+    expect(cameraAuditProgress(checkpoint("running",10,4))).toBe(33);
     expect(cameraAuditProgress(checkpoint("running",2,-1))).toBe(0);
   });
 });

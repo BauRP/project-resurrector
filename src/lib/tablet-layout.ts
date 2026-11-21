@@ -23,8 +23,10 @@ export function tabletLayoutForWindow(input: TabletWindow): TabletLayout {
       (!Number.isSafeInteger(reportedFoldCount) || reportedFoldCount<0 ||
         reportedFoldCount>0))) return "none";
   // Use logical CSS pixels of the APP, never physical panel resolution.
-  // 600x900 is a plausible portrait tablet window; 1000x650 landscape.
+  // A 600x800 app window can rotate to 800x600 without losing tablet UI.
+  // 800 wide x 600 tall still leaves a usable 550px preview beside the
+  // 250px recording rail. Do not classify a 780x360 landscape phone.
   if (height>width && width>=600 && height>=740) return "portrait";
-  if (width>height && width>=960 && height>=600) return "landscape";
+  if (width>height && width>=800 && height>=600) return "landscape";
   return "none";
 }

@@ -10,6 +10,9 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   expect(decide({width:1920,height:1200,reportedFoldCount:0})).toBe("landscape");
   expect(decide({width:600,height:900})).toBe("portrait");
   expect(decide({width:1000,height:600})).toBe("landscape");
+  expect(decide({width:600,height:800})).toBe("portrait");
+  expect(decide({width:800,height:600})).toBe("landscape");
+  expect(decide({width:900,height:650})).toBe("landscape");
  });
  it("never manufactures tablet or hinge layout from a phone, mini-window, keyboard or broken sizes",()=>{
   for(const [width,height] of [[360,780],[780,360],[540,900],[900,540],
@@ -19,6 +22,9 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   }
   expect(decide({width:800,height:1280,reportedFoldCount:1})).toBe("none");
   expect(decide({width:1280,height:800,reportedFoldCount:2})).toBe("none");
+  // A fully unfolded, NON-separating crease is still one usable window.
+  // Actual WindowManager separating panes retain their own fold layout.
+  expect(decide({width:800,height:600,reportedFoldCount:0})).toBe("landscape");
   expect(decide({width:1280,height:800,reportedFoldCount:33})).toBe("none");
   expect(decide({width:1280,height:800,nativeReportValid:false})).toBe("none");
  });
@@ -32,6 +38,7 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   const code=readFileSync("src/lib/display-topology.ts","utf8");
   expect(code).toContain('root.dataset["tabletLayout"] = tabletMode');
   expect(code).toContain('tabletLayoutForWindow({');
+  expect(code).toContain('lastNative?.foldingFeatures.filter(f => f?.separating === true).length');
   expect(code).toContain('"tabletLayout"');
   expect(code).not.toContain('window.screen.orientation.lock(');
   const manifest=readFileSync("android/app/src/main/AndroidManifest.xml","utf8");
@@ -50,5 +57,7 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   expect(styles).toContain('not([data-separating-fold="true"])');
   expect(styles).not.toContain('screen.orientation.lock');
   expect(styles).toContain('env(safe-area-inset-bottom)');
+  expect(styles).toContain('@media (max-width: 759px)');
+  expect(styles).toContain('grid-template-columns: minmax(0, 1fr);');
  });
 });

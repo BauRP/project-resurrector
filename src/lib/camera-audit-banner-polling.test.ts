@@ -6,6 +6,9 @@ describe("Android camera audit polling", () => {
     const step=banner.slice(banner.indexOf("const checkpoint = ["),banner.indexOf("// A vendor CameraService"));
     expect(step).toContain("if (checkpoint !== lastCheckpoint)");
     expect(step).toContain("setAudit(response.audit)");
+    // Native may update its timestamp without saving an additional camera.
+    // Such a heartbeat must not prolong polling forever.
+    expect(step).not.toContain("response.audit.updatedAt");
     expect(step.indexOf("setAudit(response.audit)")).toBeGreaterThan(step.indexOf("if (checkpoint !== lastCheckpoint)"));
   });
   it("resumes planning on previous metadata-only installs",()=>{
