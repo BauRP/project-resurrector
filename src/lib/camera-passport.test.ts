@@ -46,7 +46,8 @@ describe("persisted camera passport validation",()=>{
 
 describe("legacy recorded/verified statuses cannot bypass decoded-file proof",()=>{
  it("downgrades a historical verified label with no file, while preserving the entry",()=>{
-   recordModeEvidence({...evidence,file:undefined});
+   const {file:_absentFile,...fileless}=evidence;
+   recordModeEvidence(fileless);
    const loaded=loadModeEvidence();
    expect(loaded).toHaveLength(1);
    expect(loaded[0]?.state).toBe("unknown");

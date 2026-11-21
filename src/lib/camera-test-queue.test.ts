@@ -79,8 +79,9 @@ describe("per-lens resumable diagnostic queue", () => {
     expect(queueSummary(tasks,["rear","front"])).toEqual({total:4,verified:1,recorded:0,pending:3,failed:0,deferred:0});
   });
   it("never treats a fileless or wrong-size legacy status as proven recording",()=>{
+    const {file:_absentFile,...fileless}=proof;
     const candidates:ModeEvidence[]=[
-      {...proof,file:undefined},
+      fileless,
       {...proof,file:{width:640,height:480,bytes:2048,mimeType:"video/mp4"}},
       {...proof,file:{width:1920,height:1080,bytes:2048,mimeType:"image/png"}},
     ];
