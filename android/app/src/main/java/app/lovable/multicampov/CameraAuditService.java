@@ -46,7 +46,8 @@ public final class CameraAuditService extends Service {
             "schema", "state", "completed", "total", "codecState",
             "codecCompleted", "codecTotal", "camera2EnumeratedIdCount",
             "physicalIdsDisclosed", "advancedState", "updatedAt", "error", "codecError",
-            "planState", "planTotal", "planCompleted", "planCandidateCount", "planError"
+            "planState", "planTotal", "planCompleted", "planCandidateCount", "planError",
+            "planVersion"
     };
     private static final int SCHEMA = 2;
     private static final int MAX_MODES_PER_CAMERA = 96;
@@ -182,6 +183,7 @@ public final class CameraAuditService extends Service {
                 saved.optInt("codecTotal", -1) == total &&
                 saved.optInt("codecCompleted", -1) == total &&
                 "complete".equals(saved.optString("planState")) &&
+                saved.optInt("planVersion", 0) == CameraAuditPlanStage.VERSION &&
                 saved.optInt("planTotal", -1) == total &&
                 saved.optInt("planCompleted", -1) == total;
     }

@@ -75,7 +75,7 @@ describe("first-install Camera2 inventory progress", () => {
   it("only completes the saved candidate plan when all three stage counters match",()=>{
     const state=checkpoint("complete",3,3);
     state.codecState="complete";state.codecTotal=3;state.codecCompleted=3;
-    state.planState="complete";state.planTotal=3;state.planCompleted=1;
+    state.planState="complete";state.planVersion=2;state.planTotal=3;state.planCompleted=1;
     expect(cameraAuditPhase(state)).toBe("done");
     expect(cameraAuditPlanComplete(state)).toBe(false);
     state.planCompleted=3;
@@ -84,9 +84,13 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditPlanComplete(state)).toBe(false);
     state.planTotal=3;state.state="retry";
     expect(cameraAuditPlanComplete(state)).toBe(false);
+    state.state="complete";state.planVersion=1;
+    expect(cameraAuditPlanComplete(state)).toBe(false);
+    state.planVersion=2;
+    expect(cameraAuditPlanComplete(state)).toBe(true);
     const noCameras=checkpoint("complete",0,0);
     noCameras.codecState="complete";noCameras.codecTotal=0;noCameras.codecCompleted=0;
-    noCameras.planState="complete";noCameras.planTotal=0;noCameras.planCompleted=0;
+    noCameras.planState="complete";noCameras.planVersion=2;noCameras.planTotal=0;noCameras.planCompleted=0;
     expect(cameraAuditPlanComplete(noCameras)).toBe(true);
   });
   it("caps progress below 100 when codec evidence is incomplete", () => {

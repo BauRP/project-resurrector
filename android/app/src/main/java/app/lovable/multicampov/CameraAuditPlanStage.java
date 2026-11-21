@@ -13,7 +13,8 @@ import java.util.ArrayList;
  */
 final class CameraAuditPlanStage {
     private static final int MAX_PLANS_PER_CAMERA = 8;
-    private static final int PLAN_VERSION = 2;
+    static final int VERSION = 2;
+    private static final int PLAN_VERSION = VERSION;
     private static final int[] PREFERRED_FPS = {30,60,24,120};
     private CameraAuditPlanStage() { }
 
@@ -22,6 +23,7 @@ final class CameraAuditPlanStage {
         if (!"complete".equals(passport.optString("state")) ||
                 !"complete".equals(passport.optString("codecState"))) return;
         if ("complete".equals(passport.optString("planState")) &&
+                passport.optInt("planVersion", 0) == PLAN_VERSION &&
                 passport.optInt("planCompleted", -1) == passport.optInt("planTotal", -2) &&
                 passport.optInt("planTotal", -1) == passport.optInt("total", -2)) return;
         try {
@@ -89,6 +91,7 @@ final class CameraAuditPlanStage {
                 if (Thread.currentThread().isInterrupted()) return;
             }
             passport.put("planState","complete");
+            passport.put("planVersion", PLAN_VERSION);
             passport.put("planCompleted",completed);
             passport.remove("planError");
             passport.put("updatedAt",System.currentTimeMillis());

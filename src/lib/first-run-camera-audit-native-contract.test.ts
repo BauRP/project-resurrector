@@ -47,7 +47,12 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(plan).toContain('"declared-compatible".equals(check.optString("status"))');
   });
   it("regenerates stale per-camera candidates after codec evidence changes",()=>{
-    expect(plan).toContain("PLAN_VERSION = 2");
+    expect(plan).toContain("VERSION = 2");
+    expect(plan).toContain("PLAN_VERSION = VERSION");
+    expect(plan).toContain('passport.optInt("planVersion", 0) == PLAN_VERSION');
+    expect(plan).toContain('passport.put("planVersion", PLAN_VERSION)');
+    expect(service).toContain('saved.optInt("planVersion", 0) == CameraAuditPlanStage.VERSION');
+    expect(service).toContain('"planVersion"');
     expect(plan).toContain('camera.optLong("planCodecCheckedAt",-1) !=');
     expect(plan).toContain('camera.optLong("codecCheckedAt",-2)');
     expect(plan).toContain('camera.put("planCodecCheckedAt",camera.optLong("codecCheckedAt",-2))');

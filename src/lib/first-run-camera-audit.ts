@@ -14,6 +14,7 @@ export interface CameraAuditCheckpoint {
   codecCompleted?: number;
   codecTotal?: number;
   planState?: "pending" | "running" | "retry" | "complete";
+  planVersion?: number;
   planCompleted?: number;
   planTotal?: number;
   planCandidateCount?: number;
@@ -102,7 +103,7 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
  */
 export function cameraAuditPlanComplete(audit:CameraAuditCheckpoint): boolean {
   return cameraAuditPhase(audit) === "done" &&
-    audit.planState === "complete" &&
+    audit.planState === "complete" && audit.planVersion === 2 &&
     Number.isSafeInteger(audit.planTotal) && audit.planTotal === audit.total &&
     Number.isSafeInteger(audit.planCompleted) && audit.planCompleted === audit.total;
 }
