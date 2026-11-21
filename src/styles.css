@@ -1745,7 +1745,10 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
  */
 :root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .editor-fold-workspace .studio-monitor,
 :root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .editor-fold-workspace .studio-monitor {
-  max-width: min(100%, 980px, calc((var(--app-viewport-height, 100vh) - 14rem) * 1.7778));
+  /* Avoid CSS Values 4 multiplication inside calc(): older Android
+     WebViews may ignore that entire declaration. The monitor keeps its
+     16:9 aspect through the existing EditorPro inline aspect-ratio. */
+  max-width: min(100%, 980px, 90vh);
   margin-inline: auto;
 }
 :root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .editor-fold-workspace .timeline-scroll,

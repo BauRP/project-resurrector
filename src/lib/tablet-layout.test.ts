@@ -14,7 +14,7 @@ describe("sixth direction: Android tablets in both rotations",()=>{
  it("never manufactures tablet or hinge layout from a phone, mini-window, keyboard or broken sizes",()=>{
   for(const [width,height] of [[360,780],[780,360],[540,900],[900,540],
    [720,420],[900,580],[0,1000],[-1,900],[NaN,1000],[Infinity,900],
-   [15000,700]]){
+   [15000,700]] as const){
     expect(decide({width,height})).toBe("none");
   }
   expect(decide({width:800,height:1280,reportedFoldCount:1})).toBe("none");
