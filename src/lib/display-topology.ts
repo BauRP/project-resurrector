@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { FOLD_EVENT, rememberActiveFoldSnapshot, forgetActiveFoldSnapshot } from "./fold-recording-evidence";
+import { tabletLayoutForWindow } from "./tablet-layout";
 export interface FoldFeature {
   leftPx: number; topPx: number; rightPx: number; bottomPx: number;
   orientation: string; state: string; occlusion: string; separating: boolean;
@@ -390,6 +391,15 @@ export function startDisplayAdaptation(): () => void {
     lastGoodWidth = currentWidth; lastGoodHeight = currentHeight;
     if (root.dataset["windowClass"] !== (windowClass(currentWidth))) root.dataset["windowClass"] = windowClass(currentWidth);
     if (root.dataset["windowHeight"] !== (currentHeight < 480 ? "short" : "regular")) root.dataset["windowHeight"] = currentHeight < 480 ? "short" : "regular";
+    // One existing RAF measurement drives both tablets and foldables.
+    // Never add a second ResizeObserver, a UI subscription or a camera lease.
+    const tabletMode = tabletLayoutForWindow({
+      width: currentWidth, height: currentHeight,
+      reportedFoldCount: lastNative?.foldingFeatures.length,
+      nativeReportValid: lastNative?.source !== "android-windowmanager-feature-overflow",
+    });
+    if (root.dataset["tabletLayout"] !== tabletMode)
+      root.dataset["tabletLayout"] = tabletMode;
     writeCss("--app-viewport-height", currentHeight + "px");
     // Native folding bounds are stable in their own coordinate system, but
     // the CSS viewport and camera region can change independently.
@@ -402,6 +412,7 @@ export function startDisplayAdaptation(): () => void {
     // Fail closed: an invalid new window measurement must not leave the old
     // book/tabletop pane coordinates available for an Android TextureView.
     forgetActiveFoldSnapshot(token);
+    if (root.dataset["tabletLayout"] !== "none") root.dataset["tabletLayout"] = "none";
     lastFoldSignature="untrusted";lastFoldRevision=-1;
     // Always clear stale CSS geometry, even after repeated invalid native
     // callbacks. A previous interrupted reset must not preserve pane offsets.
@@ -754,7 +765,7 @@ export function startDisplayAdaptation(): () => void {
     if (Capacitor.isNativePlatform()) void NativeDisplay.stopObserving({ ownerId }).catch(() => {});
     if (activeAdaptation === token) {
       activeAdaptation = null;
-      ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","foldSurface","cameraSplit","cameraTabletop","windowClass","windowHeight"].forEach(key => { delete root.dataset[key]; });
+      ["foldInfo","foldCount","foldSplit","separatingFold","occludingFold","foldRegions","foldWorkspace","foldSurface","cameraSplit","cameraTabletop","windowClass","windowHeight","tabletLayout"].forEach(key => { delete root.dataset[key]; });
       ["--app-viewport-height","--fold-work-left","--fold-work-width","--fold-work-height","--fold-work-top","--fold-work-y-offset","--camera-left-pane-width","--camera-right-pane-left","--camera-right-pane-width","--camera-control-pane-left","--camera-control-pane-width","--camera-upper-height","--camera-lower-top","--camera-quad-preview-left","--camera-quad-preview-top","--camera-quad-preview-width","--camera-quad-preview-height","--camera-quad-hud-left","--camera-quad-hud-top","--camera-quad-hud-width","--camera-quad-hud-height","--camera-quad-settings-left","--camera-quad-settings-top","--camera-quad-settings-width","--camera-quad-settings-height","--camera-quad-controls-left","--camera-quad-controls-top","--camera-quad-controls-width","--camera-quad-controls-height"].forEach(key => clearCss(key));
     }
   };

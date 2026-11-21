@@ -1644,3 +1644,141 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 .settings-fold-workspace .settings-tool-trigger { display:flex; align-items:center; width:100%; min-width:0; min-height:3.1rem; gap:.65rem; padding:.65rem .85rem; text-align:start; }
 .settings-fold-workspace .settings-tool-trigger > span { min-width:0; flex:1 1 auto; white-space:normal; overflow-wrap:anywhere; line-height:1.25; }
 .settings-fold-workspace .settings-tool-trigger > svg { flex:none; width:1.1rem; height:1.1rem; }
+
+
+/* Android TABLETS · direction 6 (2026-11-21).
+ * Only the measured usable WebView window activates this layout. There is
+ * no model blacklist, fake hinge, forced sensor orientation or extra observer.
+ * Fold panes, compact multi-window Activities and the clean full-frame mode
+ * retain their previously tested placement. Colors/theme remain unchanged.
+ */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .app-shell,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .app-shell {
+  width: 100%;
+  max-width: 100%;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .bottom-nav,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .bottom-nav {
+  width: min(100%, 840px);
+  max-width: 100%;
+  left: 0;
+  right: 0;
+  margin-inline: auto;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .bottom-nav button,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .bottom-nav button {
+  min-height: 3.5rem;
+  min-width: 0;
+}
+/* In portrait the Camera screen remains a single, full-height viewfinder.
+ * Keep capture within the reachable centre instead of spreading controls
+ * over the full width of a 12-inch tablet.
+ */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-record-dock > div {
+  width: min(100%, 840px);
+  margin-inline: auto;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-hud-controls {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+/* In wide landscape the actual camera source stays in a wide preview.
+ * The shutter/tools occupy a separate side rail. CSS changes rectangles,
+ * not the recorder/capture session, so rotation never starts/stops recording.
+ */
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) {
+  --tablet-camera-rail-width: clamp(250px, 26vw, 360px);
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-live-view {
+  right: var(--tablet-camera-rail-width) !important;
+  width: auto !important;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-hud {
+  right: calc(var(--tablet-camera-rail-width) + .5rem) !important;
+  min-width: 0;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-hud-controls {
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-width: 0;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-record-dock {
+  left: auto !important;
+  right: 0 !important;
+  top: 0;
+  bottom: max(.35rem, env(safe-area-inset-bottom));
+  width: var(--tablet-camera-rail-width) !important;
+  padding-inline: max(.6rem, env(safe-area-inset-right));
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-record-dock > div {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+  justify-items: center;
+  gap: .5rem;
+  width: 100%;
+  max-width: 360px;
+  min-width: 0;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-record-dock > div > div {
+  min-width: 0;
+  max-width: 100%;
+  margin-bottom: 0;
+  justify-content: center;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-settings-sheet {
+  left: auto !important;
+  right: 0 !important;
+  width: var(--tablet-camera-rail-width) !important;
+  max-width: 100%;
+  top: .25rem;
+  bottom: .25rem;
+}
+/* Editor: 16:9 monitor remains proportional but doesn't consume the whole
+ * landscape height and push the timeline/navigation offscreen. Timeline
+ * remains independently horizontally scrollable, without changing zoom.
+ */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .editor-fold-workspace .studio-monitor,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .editor-fold-workspace .studio-monitor {
+  max-width: min(100%, 980px, calc((var(--app-viewport-height, 100vh) - 14rem) * 1.7778));
+  margin-inline: auto;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .editor-fold-workspace .timeline-scroll,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .editor-fold-workspace .timeline-scroll {
+  min-width: 0;
+  max-width: 100%;
+  overscroll-behavior-x: contain;
+}
+/* Two-column Settings only when the app's own window is tablet-sized.
+ * Phone landscape / keyboard / Android split-screen keep one column.
+ * Scroll remains one document so saved Settings position is untouched.
+ */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-fold-workspace > main,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-fold-workspace > main {
+  max-width: min(100%, 1120px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  align-items: start;
+  gap: .75rem 1rem;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-fold-workspace > main > *,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-fold-workspace > main > * {
+  min-width: 0;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-item,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-item {
+  min-height: 2.75rem;
+  overflow-wrap: anywhere;
+}
+/* Keep dialogs and header actions within usable single-window boundaries.
+ * Folded devices have a separate measured-pane overlay implementation.
+ */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-confirm-card,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-confirm-card {
+  max-width: min(100%, 32rem);
+}
