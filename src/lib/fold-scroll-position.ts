@@ -182,7 +182,12 @@ export class FoldScrollRestorer {
     }
     this.programmaticTop = null;
     if (!validTop(port.scrollTop)) return;
-    // An actual user scroll cancels a pending automatic restoration.
+    // An actual user scroll cancels a pending automatic restoration. That
+    // first real gesture must also overwrite the old deferred stored top
+    // immediately: otherwise readFoldScrollTop still reports the old value
+    // until the 240ms save timer fires, and an Activity recreation may revive
+    // the stale position.
+    const cancelledRestore = this.desired !== null;
     this.desired = null;
     this.lastStableTop = port.scrollTop;
     this.lastContentHeight = port.scrollHeight;
@@ -190,7 +195,8 @@ export class FoldScrollRestorer {
     // The first gesture is saved immediately, subsequent rapid scroll
     // events are coalesced. Pagehide/tab changes synchronously flush the
     // latest exact position so no user scroll is lost.
-    if (performance.now() - this.lastSaveAt >= 240) this.persistLatest();
+    if (cancelledRestore || performance.now() - this.lastSaveAt >= 240)
+      this.persistLatest();
     else if (this.saveTimer === null) {
       this.saveTimer = setTimeout(() => this.persistLatest(),
         Math.max(1, 240 - (performance.now() - this.lastSaveAt)));

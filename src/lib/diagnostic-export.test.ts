@@ -19,10 +19,9 @@ describe("anonymous offline diagnostic passport",()=>{
     expect(result.lastNativeMp4?.audioTrackCount).toBe(1);
   });
   it("keeps high-speed declaration candidates honest and anonymous",()=>{
-    const cam={cameraId:"SECRET-CAMERA",facing:"back",physicalCameraIds:[],
+    const cam:NativeCameraProfile={cameraId:"SECRET-CAMERA",facing:"back",physicalCameraIds:[],
       highSpeed:[{size:"1920x1080",fps:[120,240,240,NaN]},{size:"not-video",fps:[120]}],
-      sizes:[],fpsRanges:[],profiles:[],isoRange:null,manualSensor:false,toneCurve:false}
-      as NativeCameraProfile;
+      sizes:[],fpsRanges:[],profiles:[],isoRange:null,manualSensor:false,toneCurve:false};
     const report=buildAnonymousCameraReport({nativeCameras:[cam],modes:[],mp4:null,checkedAt:"2026-11-22"});
     expect(report.camera2[0]?.highSpeedDeclared).toEqual([
       {size:"1920x1080",fps:120,evidence:"camera2-declared-only"},
