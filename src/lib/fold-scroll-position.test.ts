@@ -114,6 +114,33 @@ describe("fold/editor vertical scroll restoration", () => {
     restorer.retry("editor",el);
     expect(el.scrollTop).toBe(25);
   });
+  it("restores editor scroll after tablet rotation expands height but not content",()=>{
+    const el=port(0,1500,300), restorer=new FoldScrollRestorer();
+    restorer.activate("editor",el);restorer.enter("editor",el);
+    el.scrollTop=1100;restorer.onScroll("editor",el);
+    expect(readFoldScrollTop("editor")).toBe(1100);
+    el.clientHeight=650;el.scrollTop=850;
+    restorer.onScroll("editor",el); // browser auto-clamp before ResizeObserver
+    expect(restorer.pending("editor")).toBe(true);
+    expect(readFoldScrollTop("editor")).toBe(1100);
+    restorer.onViewportReflow("editor",el);
+    el.clientHeight=300;restorer.onViewportReflow("editor",el);
+    expect(el.scrollTop).toBe(1100);
+    expect(restorer.pending("editor")).toBe(false);
+  });
+  it("allows a real Settings scroll gesture to replace a pending rotation restore",()=>{
+    const el=port(0,1600,300),restorer=new FoldScrollRestorer();
+    restorer.activate("settings",el);restorer.enter("settings",el);
+    el.scrollTop=1200;restorer.onScroll("settings",el);
+    el.clientHeight=700;el.scrollTop=900;
+    restorer.onViewportReflow("settings",el);
+    expect(restorer.pending("settings")).toBe(true);
+    el.scrollTop=320;restorer.onScroll("settings",el);
+    expect(restorer.pending("settings")).toBe(false);
+    expect(readFoldScrollTop("settings")).toBe(320);
+    el.clientHeight=300;restorer.onViewportReflow("settings",el);
+    expect(el.scrollTop).toBe(320);
+  });
   it("preserves the editor position when fold reflow temporarily collapses scroll height", () => {
     const el=port(0,1800,300);
     const restorer=new FoldScrollRestorer();

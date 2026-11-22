@@ -75,6 +75,23 @@ export class FoldScrollRestorer {
   private programmaticTop: number | null = null;
   private lastStableTop: number | null = null;
   private lastContentHeight: number | null = null;
+  private lastClientHeight: number | null = null;
+  /** An orientation change may increase viewport height and clamp scrollTop,
+   * even though the document height has not changed. Preserve the user's
+   * position ONLY when the browser has clamped to the exact new end.
+   */
+  private autoClampedByReflow(port: ScrollPort): boolean {
+    if (this.desired !== null || this.lastStableTop === null ||
+        this.lastContentHeight === null || this.lastClientHeight === null ||
+        ![port.scrollTop,port.scrollHeight,port.clientHeight].every(Number.isFinite) ||
+        port.scrollHeight <= 0 || port.clientHeight <= 0) return false;
+    const maxScroll = Math.max(0, port.scrollHeight-port.clientHeight);
+    return this.lastStableTop > maxScroll+2 &&
+      port.scrollTop+2 < this.lastStableTop &&
+      Math.abs(port.scrollTop-maxScroll)<=2 &&
+      (port.scrollHeight+2 < this.lastContentHeight ||
+       port.clientHeight > this.lastClientHeight+2);
+  }
   private lastSaveAt = -Infinity;
   private savedTop: number | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -102,6 +119,7 @@ export class FoldScrollRestorer {
     // Measuring scrollHeight here would force a full synchronous layout in
     // the same transition; the first enter/reflow reads it after painting.
     this.lastContentHeight = null;
+    this.lastClientHeight = null;
     this.entered = false;
     this.programmaticTop = 0;
     if (Math.abs(port.scrollTop) >= 1) port.scrollTop = 0;
@@ -126,6 +144,7 @@ export class FoldScrollRestorer {
       this.desired = null;
     }
     this.lastContentHeight = port.scrollHeight;
+    this.lastClientHeight = port.clientHeight;
   }
 
   /** A fold can shrink the document before React has finished remounting the
@@ -134,21 +153,24 @@ export class FoldScrollRestorer {
   onViewportReflow(tab: ScrollTab, port: ScrollPort): void {
     if (tab !== this.tab || !this.entered || !scrollable(tab)) return;
     if (this.desired === null && this.lastStableTop !== null &&
-        this.lastContentHeight !== null &&
-        port.scrollHeight + 2 < this.lastContentHeight &&
-        port.scrollTop + 2 < this.lastStableTop) {
+        ((this.lastContentHeight !== null &&
+          port.scrollHeight + 2 < this.lastContentHeight &&
+          port.scrollTop + 2 < this.lastStableTop) ||
+         this.autoClampedByReflow(port))) {
       this.desired = this.lastStableTop;
     }
     this.retry(tab, port);
     this.lastContentHeight = port.scrollHeight;
+    this.lastClientHeight = port.clientHeight;
   }
 
   onScroll(tab: ScrollTab, port: ScrollPort): void {
     if (tab !== this.tab || !this.entered || !scrollable(tab)) return;
     if (this.desired === null && this.lastStableTop !== null &&
-        this.lastContentHeight !== null &&
-        port.scrollHeight + 2 < this.lastContentHeight &&
-        port.scrollTop + 2 < this.lastStableTop) {
+        ((this.lastContentHeight !== null &&
+          port.scrollHeight + 2 < this.lastContentHeight &&
+          port.scrollTop + 2 < this.lastStableTop) ||
+         this.autoClampedByReflow(port))) {
       this.desired = this.lastStableTop;
       this.retry(tab, port);
       return;
@@ -164,6 +186,7 @@ export class FoldScrollRestorer {
     this.desired = null;
     this.lastStableTop = port.scrollTop;
     this.lastContentHeight = port.scrollHeight;
+    this.lastClientHeight = port.clientHeight;
     // The first gesture is saved immediately, subsequent rapid scroll
     // events are coalesced. Pagehide/tab changes synchronously flush the
     // latest exact position so no user scroll is lost.
