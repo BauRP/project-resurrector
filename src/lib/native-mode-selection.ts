@@ -45,3 +45,30 @@ export function declaredAvcRecordingSupport(
  if(avc.some(item=>item.declaredSizeRate===true))return "declared";
  return avc.every(item=>item.declaredSizeRate===false)?"unsupported":"unknown";
 }
+
+/** High-speed Camera2 sessions use a separate constrained capture path.
+ * This is a declaration-only, bounded list, not a supported recording
+ * claim. Never merge it into normal 24/30/60-fps selections.
+ */
+export function declaredHighSpeedCandidates(
+  camera: Pick<NativeCameraProfile,"highSpeed"> | null | undefined,
+): {size:string;fps:number;evidence:"camera2-declared-only"}[] {
+  const result:{size:string;fps:number;evidence:"camera2-declared-only"}[]=[];
+  const seen=new Set<string>();
+  const groups=Array.isArray(camera?.highSpeed)?camera.highSpeed.slice(0,128):[];
+  for(const group of groups){
+    if(!group || typeof group.size!=="string" || !Array.isArray(group.fps))continue;
+    const m=/^(\d{2,5})x(\d{2,5})$/.exec(group.size);
+    if(!m)continue;
+    const width=Number(m[1]),height=Number(m[2]);
+    if(width<80||width>8192||height<80||height>8192)continue;
+    for(const fps of group.fps.slice(0,32)){
+      if(!Number.isSafeInteger(fps)||fps<60||fps>960)continue;
+      const key=group.size+"|"+fps;
+      if(seen.has(key))continue;
+      seen.add(key);result.push({size:group.size,fps,evidence:"camera2-declared-only"});
+      if(result.length>=32)return result;
+    }
+  }
+  return result;
+}

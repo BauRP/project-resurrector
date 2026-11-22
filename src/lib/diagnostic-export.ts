@@ -5,6 +5,7 @@
  */
 import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
+import { declaredHighSpeedCandidates } from "./native-mode-selection";
 
 export interface DiagnosticExportInput {
   nativeCameras: readonly NativeCameraProfile[];
@@ -43,11 +44,9 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
       oisDeclared: !!cam.oisDeclared,
       hdrRecordedAndVerified: false,
       rawDeclared: !!cam.raw,
-      highSpeedDeclared: cam.highSpeed.map(m => ({
-        // Formats contain numeric resolution only, no paths/identifiers.
-        size: /^\d{1,5}x\d{1,5}$/.test(m.size) ? m.size : "unknown",
-        fps: m.fps.filter(n => Number.isFinite(n) && n > 0 && n <= 960),
-      })),
+      // Native constrained high-speed declarations do not prove the
+      // creation of a capture session, a codec, or an actual MP4 recording.
+      highSpeedDeclared: declaredHighSpeedCandidates(cam),
     })),
     webviewModes: input.modes.map(test => ({
       camera: webview(test.cameraId),

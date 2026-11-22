@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {nativeFpsCandidates,validNativeSelection,declaredAvcRecordingSupport} from "./native-mode-selection";
+import {nativeFpsCandidates,validNativeSelection,declaredAvcRecordingSupport,declaredHighSpeedCandidates} from "./native-mode-selection";
 const camera={sizes:["1280x720","1920x1080"],fpsRanges:["15-30","30-60"],
  videoOutputSizes:[{width:1280,height:720,theoreticalMaxFps:60},{width:1920,height:1080,theoreticalMaxFps:30}]};
 describe("native per-lens candidate selection",()=>{
@@ -38,5 +38,38 @@ describe("declared H264 recorder compatibility",()=>{
   expect(declaredAvcRecordingSupport([{mime:"video/avc",declaredSizeRate:false},
    {mime:"video/avc",declaredSizeRate:true}])).toBe("declared");
   expect(declaredAvcRecordingSupport(null)).toBe("unknown");
+ });
+});
+
+describe("constrained high-speed is declaration-only",()=>{
+ it("separates 120/240fps high-speed from ordinary native recording modes",()=>{
+   const profile={...camera,highSpeed:[{size:"1920x1080",fps:[120,240]},{size:"1280x720",fps:[60,120]}]};
+   expect(nativeFpsCandidates(profile,"1920x1080")).toEqual([24,25,30]);
+   expect(declaredHighSpeedCandidates(profile)).toEqual([
+     {size:"1920x1080",fps:120,evidence:"camera2-declared-only"},
+     {size:"1920x1080",fps:240,evidence:"camera2-declared-only"},
+     {size:"1280x720",fps:60,evidence:"camera2-declared-only"},
+     {size:"1280x720",fps:120,evidence:"camera2-declared-only"},
+   ]);
+ });
+ it("rejects invalid vendor dimensions, phantom frame rates and duplicates",()=>{
+   const input={highSpeed:[
+     {size:"1920x1080",fps:[120,120,-1,NaN,Infinity,961,119.5]},
+     {size:"bad",fps:[240]}, {size:"100x200",fps:[240]},
+     {size:"1920x1080",fps:[120,240]},
+     {size:"10000x9000",fps:[120]},
+   ]};
+   expect(declaredHighSpeedCandidates(input)).toEqual([
+     {size:"1920x1080",fps:120,evidence:"camera2-declared-only"},
+     {size:"100x200",fps:240,evidence:"camera2-declared-only"},
+     {size:"1920x1080",fps:240,evidence:"camera2-declared-only"},
+   ]);
+   expect(declaredHighSpeedCandidates(null)).toEqual([]);
+ });
+ it("bounds malformed OEM mode catalogs and never claims video was recorded",()=>{
+   const groups=Array.from({length:500},(_,i)=>({size:(1280+i)+"x720",fps:[120,240,480]}));
+   const modes=declaredHighSpeedCandidates({highSpeed:groups});
+   expect(modes).toHaveLength(32);
+   expect(modes.every(x=>x.evidence==="camera2-declared-only")).toBe(true);
  });
 });
