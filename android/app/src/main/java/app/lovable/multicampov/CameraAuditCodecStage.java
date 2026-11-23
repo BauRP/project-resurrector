@@ -36,7 +36,8 @@ final class CameraAuditCodecStage {
         if ("complete".equals(passport.optString("codecState")) &&
                 passport.optInt("codecCompleted", -1) == passport.optInt("codecTotal", -2) &&
                 passport.optInt("codecTotal", -1) == passport.optInt("total", -2) &&
-                passport.optInt("codecIntegrityVersion", 0) == INTEGRITY_VERSION) return;
+                passport.optInt("codecIntegrityVersion", 0) == INTEGRITY_VERSION &&
+                CameraAuditService.completeCodecRows(passport)) return;
         try {
             JSONObject cameras = passport.optJSONObject("cameras");
             JSONArray ids = passport.optJSONArray("activeCameraIds");

@@ -3,7 +3,7 @@ import { cameraAuditProgress, cameraAuditPhase, cameraAuditPauseReason, cameraAu
 
 const checkpoint = (state:CameraAuditCheckpoint["state"], completed:number, total:number):CameraAuditCheckpoint => ({
   schema:2,state,completed,total,advancedState:"pending",
-  codecIntegrityVersion:1,cameras:{},
+  codecIntegrityVersion:1,codecRowsValid:true,planRowsValid:true,cameras:{},
 });
 
 describe("first-install Camera2 inventory progress", () => {
@@ -89,6 +89,22 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditProgress(stale)).toBeLessThan(100);
     stale.codecIntegrityVersion=1;
     expect(cameraAuditPlanComplete(stale)).toBe(true);
+  });
+  it("rejects a global complete counter if one lens is missing a codec or plan checkpoint",()=>{
+    const state=checkpoint("complete",2,2);
+    state.codecState="complete";state.codecCompleted=2;state.codecTotal=2;
+    state.planState="complete";state.planCompleted=2;state.planTotal=2;state.planVersion=2;
+    expect(cameraAuditPlanComplete(state)).toBe(true);
+    state.codecRowsValid=false;
+    expect(cameraAuditPhase(state)).toBe("codecs");
+    expect(cameraAuditPlanComplete(state)).toBe(false);
+    expect(cameraAuditProgress(state)).toBeLessThan(100);
+    state.codecRowsValid=true;state.planRowsValid=false;
+    expect(cameraAuditPhase(state)).toBe("done");
+    expect(cameraAuditPlanComplete(state)).toBe(false);
+    expect(cameraAuditProgress(state)).toBe(99);
+    state.planRowsValid=true;
+    expect(cameraAuditPlanComplete(state)).toBe(true);
   });
   it("only completes the saved candidate plan when all three stage counters match",()=>{
     const state=checkpoint("complete",3,3);

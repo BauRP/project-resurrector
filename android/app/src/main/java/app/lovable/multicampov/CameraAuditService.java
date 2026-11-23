@@ -103,12 +103,83 @@ public final class CameraAuditService extends Service {
                     cached.optLong("passportBytes", -1) != passport.length()) {
                 return statusOnly(read(context));
             }
+            // A saved pre-upgrade sidecar may say "complete" without
+            // per-camera integrity flags. Upgrade it once using the canonical
+            // JSON instead of reparsing the large file on every UI poll.
+            if (!cached.has("codecRowsValid") || !cached.has("planRowsValid")) {
+                JSONObject canonicalValue = read(context);
+                try { persistStatus(context, canonicalValue, passport); }
+                catch (Exception ignored) { }
+                return statusOnly(canonicalValue);
+            }
             cached.remove("passportModifiedMs");
             cached.remove("passportBytes");
             return cached;
         } catch (Exception ignored) {
             return statusOnly(read(context));
         }
+    }
+
+    /** A global "complete" counter is not evidence that every lens has a
+     * durable encoder entry. Check only the existing JSON: no CameraManager
+     * calls, codec instantiation, or device access. A corrupt single lens
+     * invalidates the headline so the next start can repair just that lens.
+     */
+    static boolean completeCodecRows(JSONObject passport) {
+        JSONArray ids = passport.optJSONArray("activeCameraIds");
+        JSONObject cameras = passport.optJSONObject("cameras");
+        if (ids == null || cameras == null || ids.length() > MAX_CAMERAS) return false;
+        for (int i = 0; i < ids.length(); i++) {
+            String cameraId = ids.optString(i, "");
+            if (cameraId.isEmpty()) return false;
+            JSONObject camera = cameras.optJSONObject(cameraId);
+            if (camera == null ||
+                    !"metadata-collected".equals(camera.optString("state")) ||
+                    !"complete".equals(camera.optString("codecState")) ||
+                    camera.optJSONArray("codecChecks") == null ||
+                    camera.optLong("codecCheckedAt", 0) <= 0) return false;
+        }
+        return true;
+    }
+
+    /** Check freshness of every candidate against that camera's encoder
+     * snapshot. No declaration-only candidate is allowed to become a
+     * "recorded" or "verified" result merely through JSON corruption.
+     */
+    static boolean completePlanRow(JSONObject camera) {
+        if (camera == null || !"complete".equals(camera.optString("planState")) ||
+                camera.optInt("planVersion", 0) != CameraAuditPlanStage.VERSION ||
+                camera.optLong("codecCheckedAt", 0) <= 0 ||
+                camera.optLong("planCodecCheckedAt", -1) !=
+                    camera.optLong("codecCheckedAt", -2)) return false;
+        JSONArray candidates = camera.optJSONArray("functionalPlan");
+        JSONObject chain = camera.optJSONObject("functionalPipeline");
+        if (candidates == null || chain == null ||
+                !"metadata-only".equals(chain.optString("sensor")) ||
+                !"not-run".equals(chain.optString("preview")) ||
+                !"not-run".equals(chain.optString("file")) ||
+                !"not-run".equals(chain.optString("editor")) ||
+                !"not-run".equals(chain.optString("export"))) return false;
+        for (int i = 0; i < candidates.length(); i++) {
+            JSONObject candidate = candidates.optJSONObject(i);
+            if (candidate == null || !"not-run".equals(candidate.optString("status")) ||
+                    candidate.optBoolean("verifiedRecording", true)) return false;
+        }
+        return true;
+    }
+
+    static boolean completePlanRows(JSONObject passport) {
+        if (!completeCodecRows(passport)) return false;
+        JSONArray ids = passport.optJSONArray("activeCameraIds");
+        JSONObject cameras = passport.optJSONObject("cameras");
+        if (ids == null || cameras == null) return false;
+        int count = 0;
+        for (int i = 0; i < ids.length(); i++) {
+            JSONObject camera = cameras.optJSONObject(ids.optString(i, ""));
+            if (!completePlanRow(camera)) return false;
+            count += camera.optJSONArray("functionalPlan").length();
+        }
+        return count == passport.optInt("planCandidateCount", -1);
     }
 
     private static JSONObject statusOnly(JSONObject passport) {
@@ -119,6 +190,12 @@ public final class CameraAuditService extends Service {
                 catch (Exception ignored) { }
             }
         }
+        try {
+            // This runs once per atomic persist, not on each bridge poll.
+            // The status sidecar remains small even on a 64-lens device.
+            status.put("codecRowsValid", completeCodecRows(passport));
+            status.put("planRowsValid", completePlanRows(passport));
+        } catch (Exception ignored) { }
         return status;
     }
 
@@ -184,10 +261,12 @@ public final class CameraAuditService extends Service {
                 saved.optInt("codecIntegrityVersion", 0) == CameraAuditCodecStage.INTEGRITY_VERSION &&
                 saved.optInt("codecTotal", -1) == total &&
                 saved.optInt("codecCompleted", -1) == total &&
+                saved.optBoolean("codecRowsValid", false) &&
                 "complete".equals(saved.optString("planState")) &&
                 saved.optInt("planVersion", 0) == CameraAuditPlanStage.VERSION &&
                 saved.optInt("planTotal", -1) == total &&
-                saved.optInt("planCompleted", -1) == total;
+                saved.optInt("planCompleted", -1) == total &&
+                saved.optBoolean("planRowsValid", false);
     }
 
     @Override public int onStartCommand(Intent intent, int flags, int startId) {

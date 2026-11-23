@@ -27,7 +27,8 @@ final class CameraAuditPlanStage {
         if ("complete".equals(passport.optString("planState")) &&
                 passport.optInt("planVersion", 0) == PLAN_VERSION &&
                 passport.optInt("planCompleted", -1) == passport.optInt("planTotal", -2) &&
-                passport.optInt("planTotal", -1) == passport.optInt("total", -2)) return;
+                passport.optInt("planTotal", -1) == passport.optInt("total", -2) &&
+                CameraAuditService.completePlanRows(passport)) return;
         try {
             JSONObject cameras = passport.optJSONObject("cameras");
             JSONArray ids = passport.optJSONArray("activeCameraIds");
@@ -64,7 +65,7 @@ final class CameraAuditPlanStage {
                         camera.optInt("planVersion",0) != PLAN_VERSION ||
                         camera.optLong("planCodecCheckedAt",-1) !=
                             camera.optLong("codecCheckedAt",-2) ||
-                        camera.optJSONArray("functionalPlan") == null) {
+                        !CameraAuditService.completePlanRow(camera)) {
                     JSONArray planned = buildPlan(cameraId,camera.optJSONArray("codecChecks"));
                     camera.put("functionalPlan",planned);
                     camera.put("planCodecCheckedAt",camera.optLong("codecCheckedAt",-2));

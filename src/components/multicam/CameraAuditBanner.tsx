@@ -23,6 +23,7 @@ export function CameraAuditBanner() {
         const checkpoint = [
           response.audit.state, response.audit.codecState,
           response.audit.codecIntegrityVersion,
+          response.audit.codecRowsValid, response.audit.planRowsValid,
           response.audit.completed, response.audit.total,
           response.audit.codecCompleted, response.audit.codecTotal,
           response.audit.planState, response.audit.planVersion,

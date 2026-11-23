@@ -13,6 +13,9 @@ export interface CameraAuditCheckpoint {
   codecState?: "pending" | "running" | "retry" | "complete";
   /** Versioned integrity of each saved per-camera encoder declaration. */
   codecIntegrityVersion?: number;
+  /** Derived by Android from every durable per-camera JSON record. */
+  codecRowsValid?: boolean;
+  planRowsValid?: boolean;
   codecCompleted?: number;
   codecTotal?: number;
   planState?: "pending" | "running" | "retry" | "complete";
@@ -96,6 +99,7 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
     audit.codecTotal === total && (audit.codecCompleted ?? 0) >= 0
       ? Math.min(audit.codecCompleted ?? 0, total) : 0;
   const codecReady = codecDone && audit.codecIntegrityVersion === 1 &&
+    audit.codecRowsValid === true &&
     metadataReady && audit.codecTotal === total &&
     audit.codecCompleted === total;
   const planSteps = codecReady && audit.planVersion === 2 &&
@@ -113,6 +117,7 @@ export function cameraAuditProgress(audit:CameraAuditCheckpoint): number {
 export function cameraAuditPlanComplete(audit:CameraAuditCheckpoint): boolean {
   return cameraAuditPhase(audit) === "done" &&
     audit.codecIntegrityVersion === 1 &&
+    audit.codecRowsValid === true && audit.planRowsValid === true &&
     audit.planState === "complete" && audit.planVersion === 2 &&
     Number.isSafeInteger(audit.planTotal) && (audit.planTotal ?? -1) >= 0 &&
     audit.planTotal === audit.total &&
@@ -128,6 +133,7 @@ export function cameraAuditPhase(audit:CameraAuditCheckpoint): "metadata" | "cod
       audit.state !== "complete" || audit.completed !== audit.total)
     return "metadata";
   return audit.codecState === "complete" && audit.codecIntegrityVersion === 1 &&
+      audit.codecRowsValid === true &&
       audit.codecTotal === audit.total && audit.codecCompleted === audit.total
         ? "done" : "codecs";
 }

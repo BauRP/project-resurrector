@@ -79,6 +79,21 @@ describe("first-run native camera audit cost and evidence",()=>{
       "pixelArraySizeDeclared","sensorPhysicalSizeMmDeclared","capabilitiesDeclared"])
       expect(service).toContain('item.put("'+key+'"');
   });
+  it("does not trust completed counters when an individual camera record is missing",()=>{
+    for(const helper of ["completeCodecRows(JSONObject passport)",
+      "completePlanRow(JSONObject camera)","completePlanRows(JSONObject passport)"])
+      expect(service).toContain(helper);
+    expect(service).toContain('status.put("codecRowsValid", completeCodecRows(passport))');
+    expect(service).toContain('status.put("planRowsValid", completePlanRows(passport))');
+    expect(service).toContain('saved.optBoolean("codecRowsValid", false)');
+    expect(service).toContain('saved.optBoolean("planRowsValid", false)');
+    expect(service).toContain('!cached.has("codecRowsValid") || !cached.has("planRowsValid")');
+    expect(codec).toContain('CameraAuditService.completeCodecRows(passport)');
+    expect(plan).toContain('CameraAuditService.completePlanRows(passport)');
+    expect(plan).toContain('!CameraAuditService.completePlanRow(camera)');
+    expect(plugin).toContain('summary.put("codecRowsValid", full.optBoolean("codecRowsValid", false))');
+    expect(plugin).toContain('summary.put("planRowsValid", full.optBoolean("planRowsValid", false))');
+  });
   it("heals inconsistent native finished counters and preserves each lens checkpoint",()=>{
     expect(service).toContain('saved.optInt("completed", -1) == total');
     expect(service).toContain('saved.optInt("codecCompleted", -1) == total');
