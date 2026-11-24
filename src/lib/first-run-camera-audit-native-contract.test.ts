@@ -83,16 +83,31 @@ describe("first-run native camera audit cost and evidence",()=>{
     for(const helper of ["completeCodecRows(JSONObject passport)",
       "completePlanRow(JSONObject camera)","completePlanRows(JSONObject passport)"])
       expect(service).toContain(helper);
+    expect(service).toContain('status.put("metadataRowsValid", completeMetadataRows(passport))');
     expect(service).toContain('status.put("codecRowsValid", completeCodecRows(passport))');
     expect(service).toContain('status.put("planRowsValid", completePlanRows(passport))');
+    expect(service).toContain('saved.optBoolean("metadataRowsValid", false)');
     expect(service).toContain('saved.optBoolean("codecRowsValid", false)');
     expect(service).toContain('saved.optBoolean("planRowsValid", false)');
+    expect(service).toContain('!cached.has("metadataRowsValid")');
     expect(service).toContain('!cached.has("codecRowsValid") || !cached.has("planRowsValid")');
     expect(codec).toContain('CameraAuditService.completeCodecRows(passport)');
     expect(plan).toContain('CameraAuditService.completePlanRows(passport)');
     expect(plan).toContain('!CameraAuditService.completePlanRow(camera)');
+    expect(plugin).toContain('summary.put("metadataRowsValid", full.optBoolean("metadataRowsValid", false))');
     expect(plugin).toContain('summary.put("codecRowsValid", full.optBoolean("codecRowsValid", false))');
     expect(plugin).toContain('summary.put("planRowsValid", full.optBoolean("planRowsValid", false))');
+  });
+  it("repairs incomplete metadata for only one camera and then refreshes its codec proof",()=>{
+    expect(service).toContain("completeMetadataRow(JSONObject camera, String cameraId)");
+    expect(service).toContain("completeMetadataRows(JSONObject passport)");
+    expect(service).toContain("if (completeMetadataRows(saved)) return");
+    expect(service).toContain("if (!completeMetadataRow(previous, id))");
+    expect(service).toContain("if (completeMetadataRow(current, id))");
+    expect(service).toContain('camera.optJSONArray("videoModeCandidatesDeclared") != null');
+    expect(service).toContain('camera.optJSONArray("sensorFpsRangesDeclared") != null');
+    expect(service).toContain('!seen.add(id)');
+    expect(service).toContain('if (!completeMetadataRows(passport)) return false');
   });
   it("heals inconsistent native finished counters and preserves each lens checkpoint",()=>{
     expect(service).toContain('saved.optInt("completed", -1) == total');

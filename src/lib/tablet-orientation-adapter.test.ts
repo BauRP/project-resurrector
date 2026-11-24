@@ -83,6 +83,12 @@ describe("tablet portrait / landscape / split-window adapter integration",()=>{
     expect(document.documentElement.dataset["tabletLayout"]).toBe("landscape");
     rotate(1280,800);
     expect(document.documentElement.dataset["tabletLayout"]).toBe("landscape");
+    rotate(800,800);
+    expect(document.documentElement.dataset["tabletLayout"]).toBe("portrait");
+    rotate(831,800);
+    expect(document.documentElement.dataset["tabletLayout"]).toBe("portrait");
+    rotate(864,800);
+    expect(document.documentElement.dataset["tabletLayout"]).toBe("landscape");
     rotate(800,1280);
     expect(document.documentElement.dataset["tabletLayout"]).toBe("portrait");
     // Android resized to a split-screen 450px pane: no fake tablet rail.

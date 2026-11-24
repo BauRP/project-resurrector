@@ -13,6 +13,11 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   expect(decide({width:600,height:800})).toBe("portrait");
   expect(decide({width:800,height:600})).toBe("landscape");
   expect(decide({width:900,height:650})).toBe("landscape");
+  expect(decide({width:800,height:800})).toBe("portrait");
+  expect(decide({width:831,height:800})).toBe("portrait");
+  expect(decide({width:864,height:800})).toBe("landscape");
+  expect(decide({width:740,height:740})).toBe("portrait");
+  expect(decide({width:600,height:600})).toBe("none");
  });
  it("never manufactures tablet or hinge layout from a phone, mini-window, keyboard or broken sizes",()=>{
   for(const [width,height] of [[360,780],[780,360],[540,900],[900,540],
@@ -22,6 +27,7 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   }
   expect(decide({width:800,height:1280,reportedFoldCount:1})).toBe("none");
   expect(decide({width:1280,height:800,reportedFoldCount:2})).toBe("none");
+  expect(decide({width:800,height:800,reportedFoldCount:1})).toBe("none");
   // A fully unfolded, NON-separating crease is still one usable window.
   // Actual WindowManager separating panes retain their own fold layout.
   expect(decide({width:800,height:600,reportedFoldCount:0})).toBe("landscape");

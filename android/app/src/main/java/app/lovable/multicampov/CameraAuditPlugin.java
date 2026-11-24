@@ -42,6 +42,7 @@ public final class CameraAuditPlugin extends Plugin {
             summary.put("total", full.optInt("total", 0));
             summary.put("codecState", full.optString("codecState", "pending"));
             summary.put("codecIntegrityVersion", full.optInt("codecIntegrityVersion", 0));
+            summary.put("metadataRowsValid", full.optBoolean("metadataRowsValid", false));
             summary.put("codecRowsValid", full.optBoolean("codecRowsValid", false));
             summary.put("planRowsValid", full.optBoolean("planRowsValid", false));
             summary.put("codecCompleted", full.optInt("codecCompleted", 0));

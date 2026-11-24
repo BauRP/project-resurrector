@@ -40,6 +40,9 @@ export function tabletLayoutForWindow(input: TabletWindow): TabletLayout {
   // A 600x800 app window can rotate to 800x600 without losing tablet UI.
   // 800 wide x 600 tall still leaves a usable 550px preview beside the
   // 250px recording rail. Do not classify a 780x360 landscape phone.
+  // Nearly square freeform windows and square tablets must not bounce
+  // between portrait/landscape rails for a 1px insets/rotation jitter.
+  if (width>=740 && height>=740 && Math.abs(width-height)<64) return "portrait";
   if (height>width && width>=600 && height>=740) return "portrait";
   if (width>height && width>=800 && height>=600) return "landscape";
   return "none";

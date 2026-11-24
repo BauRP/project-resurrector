@@ -3,7 +3,8 @@ import { cameraAuditProgress, cameraAuditPhase, cameraAuditPauseReason, cameraAu
 
 const checkpoint = (state:CameraAuditCheckpoint["state"], completed:number, total:number):CameraAuditCheckpoint => ({
   schema:2,state,completed,total,advancedState:"pending",
-  codecIntegrityVersion:1,codecRowsValid:true,planRowsValid:true,cameras:{},
+  codecIntegrityVersion:1,metadataRowsValid:true,
+  codecRowsValid:true,planRowsValid:true,cameras:{},
 });
 
 describe("first-install Camera2 inventory progress", () => {
@@ -89,6 +90,18 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditProgress(stale)).toBeLessThan(100);
     stale.codecIntegrityVersion=1;
     expect(cameraAuditPlanComplete(stale)).toBe(true);
+  });
+  it("does not accept global completed metadata with a missing per-lens record",()=>{
+    const saved=checkpoint("complete",2,2);
+    saved.codecState="complete";saved.codecCompleted=2;saved.codecTotal=2;
+    saved.planState="complete";saved.planVersion=2;saved.planTotal=2;saved.planCompleted=2;
+    expect(cameraAuditPlanComplete(saved)).toBe(true);
+    saved.metadataRowsValid=false; // Native discovered corrupt or old camera.
+    expect(cameraAuditPhase(saved)).toBe("metadata");
+    expect(cameraAuditPlanComplete(saved)).toBe(false);
+    expect(cameraAuditProgress(saved)).toBeLessThan(100);
+    saved.metadataRowsValid=true;
+    expect(cameraAuditPlanComplete(saved)).toBe(true);
   });
   it("rejects a global complete counter if one lens is missing a codec or plan checkpoint",()=>{
     const state=checkpoint("complete",2,2);

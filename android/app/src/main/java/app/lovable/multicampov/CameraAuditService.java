@@ -106,7 +106,8 @@ public final class CameraAuditService extends Service {
             // A saved pre-upgrade sidecar may say "complete" without
             // per-camera integrity flags. Upgrade it once using the canonical
             // JSON instead of reparsing the large file on every UI poll.
-            if (!cached.has("codecRowsValid") || !cached.has("planRowsValid")) {
+            if (!cached.has("metadataRowsValid") ||
+                    !cached.has("codecRowsValid") || !cached.has("planRowsValid")) {
                 JSONObject canonicalValue = read(context);
                 try { persistStatus(context, canonicalValue, passport); }
                 catch (Exception ignored) { }
@@ -120,12 +121,48 @@ public final class CameraAuditService extends Service {
         }
     }
 
+    /** The inventory must be complete PER LENS, not merely by counters.
+     * A partially migrated passport or a corrupted camera JSON needs only
+     * the missing Camera2 metadata collected again. No CameraManager access
+     * is required merely to compute this integrity flag.
+     */
+    static boolean completeMetadataRow(JSONObject camera, String cameraId) {
+        return camera != null && cameraId.equals(camera.optString("cameraId", "")) &&
+                "metadata-collected".equals(camera.optString("state")) &&
+                "android-camera2-metadata".equals(camera.optString("source")) &&
+                camera.optBoolean("metadataOnly", false) &&
+                !camera.optBoolean("verifiedRecording", true) &&
+                camera.optLong("timestamp", 0) > 0 &&
+                camera.optJSONArray("sensorFpsRangesDeclared") != null &&
+                camera.optJSONArray("physicalCameraIds") != null &&
+                camera.optJSONArray("stillPhotoSizesDeclared") != null &&
+                camera.optJSONArray("videoModeCandidatesDeclared") != null;
+    }
+
+    static boolean completeMetadataRows(JSONObject passport) {
+        JSONArray ids = passport.optJSONArray("activeCameraIds");
+        JSONObject cameras = passport.optJSONObject("cameras");
+        int total = passport.optInt("total", -1);
+        if (!"complete".equals(passport.optString("state")) ||
+                ids == null || cameras == null || total < 0 ||
+                total > MAX_CAMERAS || ids.length() != total ||
+                passport.optInt("completed", -1) != total) return false;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < ids.length(); i++) {
+            String id = ids.optString(i, "");
+            if (id.isEmpty() || !seen.add(id) ||
+                    !completeMetadataRow(cameras.optJSONObject(id), id)) return false;
+        }
+        return true;
+    }
+
     /** A global "complete" counter is not evidence that every lens has a
      * durable encoder entry. Check only the existing JSON: no CameraManager
      * calls, codec instantiation, or device access. A corrupt single lens
      * invalidates the headline so the next start can repair just that lens.
      */
     static boolean completeCodecRows(JSONObject passport) {
+        if (!completeMetadataRows(passport)) return false;
         JSONArray ids = passport.optJSONArray("activeCameraIds");
         JSONObject cameras = passport.optJSONObject("cameras");
         if (ids == null || cameras == null || ids.length() > MAX_CAMERAS) return false;
@@ -193,6 +230,7 @@ public final class CameraAuditService extends Service {
         try {
             // This runs once per atomic persist, not on each bridge poll.
             // The status sidecar remains small even on a 64-lens device.
+            status.put("metadataRowsValid", completeMetadataRows(passport));
             status.put("codecRowsValid", completeCodecRows(passport));
             status.put("planRowsValid", completePlanRows(passport));
         } catch (Exception ignored) { }
@@ -257,6 +295,7 @@ public final class CameraAuditService extends Service {
         return total >= 0 &&
                 "complete".equals(saved.optString("state")) &&
                 saved.optInt("completed", -1) == total &&
+                saved.optBoolean("metadataRowsValid", false) &&
                 "complete".equals(saved.optString("codecState")) &&
                 saved.optInt("codecIntegrityVersion", 0) == CameraAuditCodecStage.INTEGRITY_VERSION &&
                 saved.optInt("codecTotal", -1) == total &&
@@ -295,8 +334,7 @@ public final class CameraAuditService extends Service {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
                 != PackageManager.PERMISSION_GRANTED) return;
         JSONObject saved = read(this);
-        if ("complete".equals(saved.optString("state")) &&
-                saved.optInt("completed", -1) == saved.optInt("total", -2)) return;
+        if (completeMetadataRows(saved)) return;
         try {
             CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
             if (manager == null) throw new IllegalStateException("CameraManager unavailable");
@@ -341,7 +379,11 @@ public final class CameraAuditService extends Service {
                     return;
                 }
                 JSONObject previous = cameraResults.optJSONObject(id);
-                if (previous == null || !"metadata-collected".equals(previous.optString("state"))) {
+                // A damaged/legacy metadata row must be read again even when
+                // its previous state label says "metadata-collected".
+                // The new item replaces only this camera's stale subrecord;
+                // its old codec/plan snapshot cannot certify the new sensor.
+                if (!completeMetadataRow(previous, id)) {
                     JSONObject item = new JSONObject();
                     item.put("cameraId", id);
                     item.put("source", "android-camera2-metadata");
@@ -511,7 +553,7 @@ public final class CameraAuditService extends Service {
                     cameraResults.put(id, item);
                 }
                 JSONObject current = cameraResults.getJSONObject(id);
-                if ("metadata-collected".equals(current.optString("state"))) {
+                if (completeMetadataRow(current, id)) {
                     completed++;
                     JSONArray physical = current.optJSONArray("physicalCameraIds");
                     if (physical != null) {
