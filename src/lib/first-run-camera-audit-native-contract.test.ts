@@ -79,6 +79,19 @@ describe("first-run native camera audit cost and evidence",()=>{
       "pixelArraySizeDeclared","sensorPhysicalSizeMmDeclared","capabilitiesDeclared"])
       expect(service).toContain('item.put("'+key+'"');
   });
+  it("refuses a corrupted codec/plan item instead of skipping the lens scan",()=>{
+    expect(service).toContain("completeCodecRow(JSONObject camera)");
+    expect(service).toContain("plannedCandidateHasCodecEvidence(");
+    expect(service).toContain("checks.length() > 24");
+    expect(service).toContain("encoder.optBoolean(\"declaredOnly\", false)");
+    expect(service).toContain("!keys.add(candidate.optString(\"key\"))");
+    expect(service).toContain("CameraAuditPlanStage.MAX_PLANS_PER_CAMERA");
+    expect(service).toContain('!"declared-compatible-only".equals(camera.optString("planEvidence"))');
+    expect(service).toContain('!"not-run".equals(candidate.optString("status"))');
+    expect(codec).toContain("if (!CameraAuditService.completeCodecRow(camera))");
+    expect(plan).toContain("static final int MAX_PLANS_PER_CAMERA = 8");
+    expect(plan).toContain("!CameraAuditService.completePlanRow(camera)");
+  });
   it("does not trust completed counters when an individual camera record is missing",()=>{
     for(const helper of ["completeCodecRows(JSONObject passport)",
       "completePlanRow(JSONObject camera)","completePlanRows(JSONObject passport)"])

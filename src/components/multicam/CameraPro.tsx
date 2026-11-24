@@ -7,6 +7,7 @@ import { HelpDot } from "./Help";
 import { cameraController, checkAppliedCameraSetting } from "@/lib/camera-controller";
 import { clipCurve } from "@/lib/audio-limiter";
 import { createPhotoFrameStack } from "@/lib/photo-stacking";
+import { isUsableEncodedPhoto } from "@/lib/photo-persistence-validation";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { responsiveHiddenFrameGuard } from "@/lib/raf-visibility";
 
@@ -36,6 +37,10 @@ export const kelvinFilter = (k: number | null) => k === null ? "" : k < 5600 ? `
 
 /* ---------- Photo storage ---------- */
 export function savePhoto(blob: Blob, meta: Record<string, unknown>): Promise<void> {
+  // A late or failed toBlob() may return an unusable encoded photo.
+  // Never write zero bytes and then tell the user the image was saved.
+  if (!isUsableEncodedPhoto(blob))
+    return Promise.reject(new Error("Фотография не закодирована. Повторите снимок."));
   // A stalled emulator/Android storage callback must not keep photoBusy true
   // forever. A timed-out write may have committed: NEVER retry it silently.
   return new Promise((resolve, reject) => {

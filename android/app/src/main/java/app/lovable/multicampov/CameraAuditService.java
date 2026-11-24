@@ -161,6 +161,47 @@ public final class CameraAuditService extends Service {
      * calls, codec instantiation, or device access. A corrupt single lens
      * invalidates the headline so the next start can repair just that lens.
      */
+    /** The encoder evidence must be internally consistent, bounded and
+     * strictly DECLARED. Broken vendor/legacy rows are repaired per-camera
+     * by CameraAuditCodecStage, never trusted as actual recording tests.
+     */
+    static boolean completeCodecRow(JSONObject camera) {
+        if (camera == null || !"metadata-collected".equals(camera.optString("state")) ||
+                !"complete".equals(camera.optString("codecState")) ||
+                camera.optLong("codecCheckedAt", 0) <= 0 ||
+                !"encoder-declarations-only".equals(camera.optString("codecEvidence"))) return false;
+        JSONArray checks = camera.optJSONArray("codecChecks");
+        // Six resolutions x four ordinary FPS declarations. Reject a
+        // corrupted unbounded array before iterating, avoiding UI/IO stalls.
+        if (checks == null || checks.length() > 24) return false;
+        java.util.Set<String> seen = new java.util.HashSet<>();
+        for (int i = 0; i < checks.length(); i++) {
+            JSONObject check = checks.optJSONObject(i);
+            if (check == null) return false;
+            int w = check.optInt("width"), h = check.optInt("height");
+            int fps = check.optInt("fpsRequested");
+            String status = check.optString("status");
+            if (w < 1 || w > 8192 || h < 1 || h > 8192 ||
+                    (fps != 24 && fps != 30 && fps != 60 && fps != 120) ||
+                    check.optBoolean("recordedAndVerified", true) ||
+                    !seen.add(w + "|" + h + "|" + fps)) return false;
+            boolean compatible = "declared-compatible".equals(status);
+            if (!compatible && !"unknown".equals(status) &&
+                    !"not-declared-by-camera".equals(status) &&
+                    !"not-declared-by-encoder".equals(status)) return false;
+            JSONArray encoders = check.optJSONArray("encoders");
+            if (encoders == null || encoders.length() > 4 ||
+                    compatible != (encoders.length() > 0)) return false;
+            for (int j = 0; j < encoders.length(); j++) {
+                JSONObject encoder = encoders.optJSONObject(j);
+                if (encoder == null || !encoder.optBoolean("declaredOnly", false) ||
+                        encoder.optString("name").isEmpty() ||
+                        !encoder.optString("mime").startsWith("video/")) return false;
+            }
+        }
+        return true;
+    }
+
     static boolean completeCodecRows(JSONObject passport) {
         if (!completeMetadataRows(passport)) return false;
         JSONArray ids = passport.optJSONArray("activeCameraIds");
@@ -170,11 +211,7 @@ public final class CameraAuditService extends Service {
             String cameraId = ids.optString(i, "");
             if (cameraId.isEmpty()) return false;
             JSONObject camera = cameras.optJSONObject(cameraId);
-            if (camera == null ||
-                    !"metadata-collected".equals(camera.optString("state")) ||
-                    !"complete".equals(camera.optString("codecState")) ||
-                    camera.optJSONArray("codecChecks") == null ||
-                    camera.optLong("codecCheckedAt", 0) <= 0) return false;
+            if (!completeCodecRow(camera)) return false;
         }
         return true;
     }
@@ -183,6 +220,45 @@ public final class CameraAuditService extends Service {
      * snapshot. No declaration-only candidate is allowed to become a
      * "recorded" or "verified" result merely through JSON corruption.
      */
+    /** Each plan item must correspond to an actual declared-compatible
+     * encoder check for the very same camera, size and FPS. A saved label
+     * "complete" is never enough to authorize skipping this stage.
+     */
+    private static boolean plannedCandidateHasCodecEvidence(
+            JSONObject camera, JSONObject candidate) {
+        int w = candidate.optInt("width"), h = candidate.optInt("height");
+        int fps = candidate.optInt("fps");
+        String cameraId = camera.optString("cameraId", "");
+        String key = cameraId + "|" + w + "|" + h + "|" + fps;
+        if (cameraId.isEmpty() || !cameraId.equals(candidate.optString("cameraId")) ||
+                !key.equals(candidate.optString("key")) ||
+                w < 1 || w > 8192 || h < 1 || h > 8192 ||
+                (fps != 24 && fps != 30 && fps != 60 && fps != 120) ||
+                candidate.optString("encoderName").isEmpty() ||
+                !candidate.optString("encoderMime").startsWith("video/") ||
+                !"declared-compatible-only".equals(candidate.optString("evidence")))
+            return false;
+        JSONArray checks = camera.optJSONArray("codecChecks");
+        if (checks == null || checks.length() > 24) return false;
+        for (int i = 0; i < checks.length(); i++) {
+            JSONObject check = checks.optJSONObject(i);
+            if (check == null || check.optInt("width") != w ||
+                    check.optInt("height") != h ||
+                    check.optInt("fpsRequested") != fps ||
+                    !"declared-compatible".equals(check.optString("status"))) continue;
+            JSONArray encoders = check.optJSONArray("encoders");
+            if (encoders == null || encoders.length() > 4) return false;
+            for (int j = 0; j < encoders.length(); j++) {
+                JSONObject encoder = encoders.optJSONObject(j);
+                if (encoder != null && encoder.optBoolean("declaredOnly", false) &&
+                        candidate.optString("encoderName").equals(encoder.optString("name")) &&
+                        candidate.optString("encoderMime").equals(encoder.optString("mime")))
+                    return true;
+            }
+        }
+        return false;
+    }
+
     static boolean completePlanRow(JSONObject camera) {
         if (camera == null || !"complete".equals(camera.optString("planState")) ||
                 camera.optInt("planVersion", 0) != CameraAuditPlanStage.VERSION ||
@@ -191,16 +267,24 @@ public final class CameraAuditService extends Service {
                     camera.optLong("codecCheckedAt", -2)) return false;
         JSONArray candidates = camera.optJSONArray("functionalPlan");
         JSONObject chain = camera.optJSONObject("functionalPipeline");
-        if (candidates == null || chain == null ||
+        if (candidates == null || candidates.length() > CameraAuditPlanStage.MAX_PLANS_PER_CAMERA ||
+                chain == null || !completeCodecRow(camera) ||
+                !"declared-compatible-only".equals(camera.optString("planEvidence")) ||
+                camera.optLong("planCheckedAt", 0) <= 0 ||
                 !"metadata-only".equals(chain.optString("sensor")) ||
                 !"not-run".equals(chain.optString("preview")) ||
                 !"not-run".equals(chain.optString("file")) ||
                 !"not-run".equals(chain.optString("editor")) ||
-                !"not-run".equals(chain.optString("export"))) return false;
+                !"not-run".equals(chain.optString("export")) ||
+                !(candidates.length() > 0 ? "candidate-only" : "unknown")
+                    .equals(chain.optString("encoder"))) return false;
+        java.util.Set<String> keys = new java.util.HashSet<>();
         for (int i = 0; i < candidates.length(); i++) {
             JSONObject candidate = candidates.optJSONObject(i);
             if (candidate == null || !"not-run".equals(candidate.optString("status")) ||
-                    candidate.optBoolean("verifiedRecording", true)) return false;
+                    candidate.optBoolean("verifiedRecording", true) ||
+                    !plannedCandidateHasCodecEvidence(camera, candidate) ||
+                    !keys.add(candidate.optString("key"))) return false;
         }
         return true;
     }

@@ -77,5 +77,9 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   expect(styles).toContain('env(safe-area-inset-bottom)');
   expect(styles).toContain('@media (max-width: 759px)');
   expect(styles).toContain('grid-template-columns: minmax(0, 1fr);');
+  expect(styles).toContain('.settings-fold-workspace > main > * + *');
+  expect(styles).toContain('margin-block-start: 0;');
+  expect(styles).toContain('align-content: start;');
+  expect(styles).toContain('min-height: 2.75rem;');
  });
 });

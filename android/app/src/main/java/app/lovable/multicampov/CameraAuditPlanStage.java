@@ -12,7 +12,7 @@ import java.util.ArrayList;
  * Does not open cameras, codecs, microphones or recording sessions.
  */
 final class CameraAuditPlanStage {
-    private static final int MAX_PLANS_PER_CAMERA = 8;
+    static final int MAX_PLANS_PER_CAMERA = 8;
     static final int VERSION = 2;
     private static final int PLAN_VERSION = VERSION;
     private static final int[] PREFERRED_FPS = {30,60,24,120};

@@ -93,9 +93,7 @@ final class CameraAuditCodecStage {
                 // A camera marked complete without actual encoded-mode
                 // declarations is not a valid checkpoint. Repair ONLY it,
                 // preserving all other completed lenses.
-                if (!"complete".equals(camera.optString("codecState")) ||
-                        camera.optJSONArray("codecChecks") == null ||
-                        camera.optLong("codecCheckedAt", 0) <= 0) {
+                if (!CameraAuditService.completeCodecRow(camera)) {
                     JSONArray checks = scanCamera(camera, catalog);
                     camera.put("codecChecks", checks);
                     camera.put("codecState", "complete");

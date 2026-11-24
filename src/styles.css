@@ -1796,3 +1796,23 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+
+/* Tablet refinements: Tailwind space-y applies margins between grid cells.
+ * Reset only within the tablet two-column Settings grid so the rows align
+ * naturally without extra vertical drift or horizontal clipping. Normal
+ * phones and actual separating fold panes retain their old layout. */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-fold-workspace > main > * + *,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-fold-workspace > main > * + * {
+  margin-block-start: 0;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-fold-workspace > main,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-fold-workspace > main {
+  min-width: 0;
+  align-content: start;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .camera-record-dock button,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-record-dock button {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
