@@ -12,7 +12,7 @@ describe("emulator and WebView photo callback recovery", () => {
     vi.useFakeTimers();
     const open = vi.fn(() => ({}));
     vi.stubGlobal("indexedDB", { open });
-    const operation = savePhoto(new Blob(["frame"]), { mode: "single" });
+    const operation = savePhoto(new Blob([new Uint8Array(2048)], {type:"image/jpeg"}), { mode: "single" });
     const rejected = expect(operation).rejects.toThrow("Проверьте медиатеку");
     await vi.advanceTimersByTimeAsync(10000);
     await rejected;
@@ -27,7 +27,7 @@ describe("emulator and WebView photo callback recovery", () => {
     const listener = vi.fn();
     window.addEventListener("multicam-photos-changed", listener);
     try {
-      const operation = savePhoto(new Blob(["frame"]), { mode: "single" });
+      const operation = savePhoto(new Blob([new Uint8Array(2048)], {type:"image/jpeg"}), { mode: "single" });
       req['onsuccess']();
       expect(db.close).not.toHaveBeenCalled();
       tx['oncomplete']();
@@ -41,7 +41,7 @@ describe("emulator and WebView photo callback recovery", () => {
     const db = { close: vi.fn() };
     const req: Record<string, any> = { result: db };
     vi.stubGlobal("indexedDB", { open: () => req });
-    const pending = savePhoto(new Blob(["frame"]), {});
+    const pending = savePhoto(new Blob([new Uint8Array(2048)], {type:"image/jpeg"}), {});
     const rejected = expect(pending).rejects.toThrow("Проверьте медиатеку");
     await vi.advanceTimersByTimeAsync(10000);
     await rejected;
