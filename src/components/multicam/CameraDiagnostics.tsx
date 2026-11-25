@@ -1,6 +1,7 @@
 import { recordModeEvidence } from "@/lib/camera-passport";
 import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
+import { loadStabilizationEvidence, saveStabilizationEvidence } from "@/lib/stabilization-evidence-store";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
@@ -49,7 +50,7 @@ export function CameraDiagnostics() {
   const [rawBusy, setRawBusy] = useState(false);
   const [rawMessage, setRawMessage] = useState("");
   const [stabilizationBusy, setStabilizationBusy] = useState(false);
-  const [stabilizationResults, setStabilizationResults] = useState<StabilizationProbeResult[]>([]);
+  const [stabilizationResults, setStabilizationResults] = useState<StabilizationProbeResult[]>(() => loadStabilizationEvidence());
   const [stabilizationMessage, setStabilizationMessage] = useState("");
   const job = useRef<AbortController | null>(null);
   const dualJob = useRef<AbortController | null>(null);
@@ -161,7 +162,12 @@ export function CameraDiagnostics() {
           quickCameraCandidatePlans(queueIds,cameraModePlans,TEST_MODES),
           loadCameraTestQueue(),loadModeEvidence());
     const persist = (next: CameraTestTask[]) => {
-      queue = next; persistCameraTestQueue(queue);
+      queue = next;
+      if (!persistCameraTestQueue(queue)) {
+        current.abort();
+        if (mounted.current) setError("Не удалось сохранить очередь испытаний. Проверка остановлена, чтобы не потерять прогресс.");
+        return;
+      }
       if (mounted.current) setTestQueue(queue);
     };
     if(!full || resume)persist(queue);
@@ -222,6 +228,7 @@ export function CameraDiagnostics() {
         setProgress("Испытание " + (++count) + "/" + eligible.length + " · " + name + " · " +
           task.mode.width + "×" + task.mode.height + " " + task.mode.fps + " FPS");
         persist(updateCameraTestTask(queue, task.key, "running", "Идёт реальная видеопроба"));
+        if (current.signal.aborted) return;
         const evidence = await verifyMode(task.cameraId, task.mode, current.signal);
         if (current.signal.aborted) {
           persist(updateCameraTestTask(queue, task.key, "deferred", "Прервано пользователем"));
@@ -365,9 +372,13 @@ export function CameraDiagnostics() {
         return;
       }
       const result = await probeStabilization(cameraId, 1280, 720, 30);
+      const saved = result.cameraId === cameraId && result.width === 1280 &&
+        result.height === 720 && result.fpsRequested === 30 &&
+        saveStabilizationEvidence(result);
       if (mounted.current) {
-        setStabilizationResults(previous => [...previous.filter(p => p.cameraId !== cameraId), result]);
-        setStabilizationMessage("CAM " + cameraId + ": " + result.message);
+        if (saved) setStabilizationResults(loadStabilizationEvidence());
+        setStabilizationMessage("CAM " + cameraId + ": " + result.message +
+          (saved ? " Результат сохранён в паспорте." : " Новое подтверждение не сохранено; предыдущие результаты не удалены."));
       }
     } catch (e) {
       if (mounted.current) setStabilizationMessage("Camera2 стабилизация не подтверждена: " + String(e));
@@ -419,7 +430,7 @@ export function CameraDiagnostics() {
       if (!mounted.current) return;
       const report = buildAnonymousCameraReport({
         checkedAt: new Date().toISOString(),
-        nativeCameras, modes: loadModeEvidence(), mp4: lastMp4Inspection, firstRun,
+        nativeCameras, modes: loadModeEvidence(), mp4: lastMp4Inspection, firstRun, stabilization: loadStabilizationEvidence(),
       });
       const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
       const a = document.createElement("a");
@@ -494,7 +505,7 @@ export function CameraDiagnostics() {
           <Button size="sm" variant="outline" disabled={stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void checkStabilization(c.cameraId)}>Проверить OIS/EIS · CAM {c.cameraId}</Button>
         </div>
         {stabilizationResults.filter(x => x.cameraId === c.cameraId).map(x =>
-          <p key={x.cameraId} className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:1280,height:720,fps:30}).message}</p>
+          <p key={x.cameraId+"|"+x.width+"|"+x.height+"|"+x.fpsRequested} className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · сохранённая проба {x.width}×{x.height}/{x.fpsRequested} FPS · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:x.width,height:x.height,fps:x.fpsRequested}).message}</p>
         )}
       </div>)}
       {stabilizationMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{stabilizationMessage}</p>}

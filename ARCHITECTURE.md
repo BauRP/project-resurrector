@@ -662,3 +662,7 @@ routes/index.tsx ─► MulticamApp ─► MulticamStoreProvider (context)
 
 ### 2026-11-25: saved diagnostic trials and anonymous passport
 The existing CameraDiagnostics screen offers continuation of durable WebView trial tasks using the same exclusive diagnostic lease, resource guard and real verifyMode path. Resume never repeats the full capability-discovery scan and never equates Camera2 IDs with WebView IDs. Explicit download reads the initial Camera2 passport once, exports allowlisted numerical declarations and not-run candidates with anonymous aliases; it does not trigger a capture. Diagnostic controls wrap inside narrow panes and the landscape tablet dock reserves bottom inset space.
+
+
+### 2026-11-25: practical stabilization evidence and explicit audit resume
+Validated real Camera2 CaptureResult probes survive screen/app recreation in a bounded local journal keyed by camera and exact mode, with context invalidation and no recorded-file claim. The anonymous export shares the Camera2 alias space and includes measured-frame counts; unknown probes do not replace previous valid results. The camera-only progress banner permits explicit resume after a pause or stalled status, using the original service checkpoints. No automatic capture is introduced. Diagnostics stop on inability to persist the queue. The banner scrolls internally on small fold/tablet windows.

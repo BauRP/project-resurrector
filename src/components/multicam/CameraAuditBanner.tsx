@@ -9,9 +9,14 @@ export function CameraAuditBanner() {
   const [problem, setProblem] = useState("");
   const startedHere = useRef(false);
   const [showCompleted, setShowCompleted] = useState(false);
+  const [attempt, setAttempt] = useState(0);
+  const [paused, setPaused] = useState(false);
   useEffect(() => {
     if (!isNative()) return;
     let alive = true;
+    startedHere.current = false;
+    setPaused(false);
+    setProblem("");
     let timer = 0;
     let lastCheckpoint = "";
     let lastChangedAt = Date.now();
@@ -47,13 +52,15 @@ export function CameraAuditBanner() {
             response.audit.planState === "retry") {
           if (startedHere.current && Date.now() - lastChangedAt < 8000)
             timer = window.setTimeout(() => { if (alive) void read(); }, 1800);
+          else setPaused(true);
           return;
         }
         // A vendor CameraService can hang without returning another callback.
         // Stop polling an unchanged checkpoint instead of waking WebView
         // indefinitely. The saved service checkpoint remains authoritative.
         if (Date.now() - lastChangedAt >= MAX_STALE_MS) {
-          setProblem("Проверка не продвигается. Результаты сохранены; продолжим при следующем запуске.");
+          setProblem("Проверка не продвигается. Сохранённые результаты можно продолжить.");
+          setPaused(true);
           return;
         }
         const stagesComplete = cameraAuditPlanComplete(response.audit);
@@ -65,7 +72,7 @@ export function CameraAuditBanner() {
         if (!stagesComplete)
           timer = window.setTimeout(() => { if (alive) void read(); }, 1800);
       } catch {
-        if (alive) setProblem("Паспорт временно недоступен. Проверка возобновится при следующем запуске.");
+        if (alive) { setProblem("Паспорт временно недоступен."); setPaused(true); }
       }
     };
     // Permission and Binder work only after the camera screen is responsive.
@@ -81,20 +88,22 @@ export function CameraAuditBanner() {
           if (result.started) startedHere.current = true;
           if (!result.started && result.reason === "camera-permission-denied") {
             setProblem("Для проверки камер требуется разрешение Android.");
+            setPaused(true);
             return;
           }
           if (!result.started && result.reason && result.reason !== "already-complete") {
             setProblem("Проверка временно отложена: " + result.reason);
+            setPaused(true);
             return;
           }
         }
         await read();
       }).catch(() => {
-        if (alive) setProblem("Проверка временно недоступна. Повторим при следующем запуске.");
+        if (alive) { setProblem("Проверка временно недоступна."); setPaused(true); }
       });
     }, { stableFrames: 5, maxFrameGapMs: 350, backgroundFallbackMs: 1800, visibleOnly: true });
     return () => { alive = false; cancel(); if (timer) window.clearTimeout(timer); };
-  }, []);
+  }, [attempt]);
 
   // The saved baseline is not a repeated startup progress screen.
   // Full functional diagnosis has its own future completion state.
@@ -112,16 +121,17 @@ export function CameraAuditBanner() {
         : phase === "codecs"
           ? "Сверяем заявленные видеорежимы с возможностями кодировщиков. Вы можете пользоваться приложением."
           : "Определяем объективы и сохраняем паспорт. Камера и другие разделы доступны.");
-  return <section aria-label="Диагностика камер" className="mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3 text-foreground shadow-sm">
+  return <section aria-label="Диагностика камер" className="camera-audit-banner mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3 text-foreground shadow-sm">
     <div className="mb-1 flex items-center justify-between gap-2 text-xs font-semibold">
       <span>{complete ? "Проверка характеристик завершена" : "Диагностика камер"}</span>
-      <span className="tabular-nums">{percent}% характеристик</span>
+      <span className="shrink-0 tabular-nums">{percent}% характеристик</span>
     </div>
     <div className="h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar"
       aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-label="Обнаружение камер">
       <div className="h-full rounded-full bg-primary transition-[width]" style={{width: percent + "%"}} />
     </div>
     <p role="status" className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">{line}</p>
+    {paused && !complete && <button type="button" className="mt-1 min-h-11 max-w-full whitespace-normal rounded-md border border-border px-3 text-xs" onClick={() => { setPaused(false); setAttempt(n=>n+1); }}>Продолжить проверку</button>}
     {audit && audit.total > 0 && <p className="mt-1 text-[10px] text-muted-foreground">
       Доступные ID Camera2: {audit.camera2EnumeratedIdCount ?? audit.total}. Раскрытые физические сенсоры: {audit.physicalIdsDisclosed ?? 0} (не суммируются).
       <span className="block">Характеристики: {audit.completed}/{audit.total}. Кодеки: {audit.codecCompleted ?? 0}/{audit.codecTotal ?? audit.total}. План: {audit.planCompleted ?? 0}/{audit.planTotal ?? audit.total}, кандидатов: {audit.planCandidateCount ?? 0}. Практическая запись не проверена.</span>

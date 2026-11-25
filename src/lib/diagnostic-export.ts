@@ -5,6 +5,8 @@
  */
 import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
+import type { StabilizationProbeResult } from "./stabilization-probe";
+import { decideStabilizationForRecordedMode } from "./stabilization-policy";
 import type { CameraAuditCheckpoint } from "./first-run-camera-audit";
 import { declaredHighSpeedCandidates } from "./native-mode-selection";
 
@@ -14,6 +16,7 @@ export interface DiagnosticExportInput {
   mp4: NativeMp4Inspection | null;
   checkedAt: string;
   firstRun?: CameraAuditCheckpoint | null;
+  stabilization?: readonly StabilizationProbeResult[];
 }
 
 export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
@@ -71,6 +74,14 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
         })),
       })),
     } : null,
+    stabilizationTests: (input.stabilization ?? []).slice(0,64).flatMap(probe=>{
+      const decision = decideStabilizationForRecordedMode(probe,{cameraId:probe.cameraId,width:probe.width,height:probe.height,fps:probe.fpsRequested});
+      if (decision.systemState === "unknown") return [];
+      return [{camera:camera2(probe.cameraId),width:safeNumber(probe.width),height:safeNumber(probe.height),
+        fpsRequested:safeNumber(probe.fpsRequested),selected:probe.selected,state:decision.systemState,
+        framesObserved:safeNumber(probe.framesObserved),confirmations:safeNumber(probe.confirmations),
+        source:"camera2-capture-result",recordedFileVerified:false}];
+    }),
     webviewModes: input.modes.map(test => ({
       camera: test.api === "camera2" ? camera2(test.cameraId) : webview(test.cameraId),
       api: test.api === "camera2" ? "camera2" : "webview",

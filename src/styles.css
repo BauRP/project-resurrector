@@ -1838,3 +1838,20 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   flex-shrink: 0;
   margin-top: auto;
 }
+
+/* A resumed diagnostic must not consume the entire preview on a small
+ * unfolded pane, landscape tablet, or large accessibility font. */
+.camera-audit-banner {
+  min-width: 0;
+  max-height: 35%;
+  overflow-y: auto;
+  overflow-wrap: anywhere;
+  overscroll-behavior: contain;
+}
+.camera-audit-banner > div:first-child {
+  flex-wrap: wrap;
+}
+.camera-audit-banner button {
+  min-height: 44px;
+  overflow-wrap: anywhere;
+}
