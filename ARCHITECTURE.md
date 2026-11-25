@@ -670,3 +670,7 @@ Validated real Camera2 CaptureResult probes survive screen/app recreation in a b
 
 ### 2026-11-25: use real finalized native recordings in initial diagnostic evidence
 The native capture history persists versioned MP4 timestamp/tail fields. On explicit passport export, the first-run candidate list is matched against actual finalized native recordings by Camera2 ID and exact dimensions/FPS request, without starting a camera. Historical or interrupted evidence remains unknown, and ordinary recordings do not certify the candidate encoder or full Sensor→Preview→Encoder→File→Editor→Export chain. The separate anonymous native/fold report retains tail and PTS fields. The native panel stops hidden status requests and refreshes on visibility restoration; service recording is untouched.
+
+
+### 2026-11-25: prepare a saved native trial and reachable recording controls
+The native panel can prepare the next exact AVC recording candidate from the durable first-run plan and skip modes with prior recorded evidence. It rechecks native ownership and current selection before applying settings, does not start capture, and never substitutes a high-speed/HEVC-only mode. Existing recording controls are adjacent to the preview and become a side rail on landscape tablet windows. Direct native surfaces are hidden when outside the current VisualViewport or pinch-zoomed; recording is not interrupted. The audit bridge coalesces actual unsettled native calls across remounts.

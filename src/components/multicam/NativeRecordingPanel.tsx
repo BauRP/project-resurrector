@@ -1,10 +1,12 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
-import { nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, foldPreviewTopologySignature, type PreviewRect } from "@/lib/native-preview-placement";
+import { nativePreviewInsideVisibleViewport, nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, foldPreviewTopologySignature, type PreviewRect } from "@/lib/native-preview-placement";
 import { nativePreviewAckIsCurrent } from "@/lib/native-preview-epoch";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
+import { cameraAudit } from "@/lib/first-run-camera-audit";
+import { nextInitialAuditRecordingMode } from "@/lib/initial-audit-recording-evidence";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
 import { recordModeEvidence } from "@/lib/camera-passport";
 import { nativeAnonymizedAuditReport } from "@/lib/native-audit-report";
@@ -62,6 +64,15 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  },[status]);
  const [error,setError]=useState("");
  const [busy,setBusy]=useState(false);
+ const [planBusy,setPlanBusy]=useState(false);
+ const [planNotice,setPlanNotice]=useState("");
+ const planRequest=useRef(false);
+ const currentSelection=useRef({camera,resolution,fps});
+ currentSelection.current={camera,resolution,fps};
+ const currentStatus=useRef(status);
+ currentStatus.current=status;
+ const mounted=useRef(true);
+ useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
  const [auditHistory,setAuditHistory]=useState<{entries:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}|null>(null);
  const [auditError,setAuditError]=useState("");
  const readAudit=async()=>{
@@ -115,10 +126,11 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      // Unknown measured fold topology forbids reusing the old pane for a
      // TextureView, even if its CSS rectangle still appears unchanged.
      if(document.documentElement.dataset["foldWorkspace"]==="unknown")return null;
-     return nativePreviewSnapshot(
+     const snapshot=nativePreviewSnapshot(
        directTarget.current?.getBoundingClientRect(),
        {width:document.documentElement.clientWidth,height:window.innerHeight},
        getActiveFoldBaseline()?.regionGeometry);
+     return nativePreviewInsideVisibleViewport(snapshot?.placement??null,window.visualViewport)?snapshot:null;
    };
    const syncOnce=async()=>{
      if(!live)return;
@@ -216,6 +228,9 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      if(next!==foldSignature){foldSignature=next;foldEpoch++;recoveringEpoch=-1;failedFoldEpoch=-1;}
      void sync();
    };
+   const visual=window.visualViewport;
+   visual?.addEventListener("resize",resized);
+   visual?.addEventListener("scroll",scrolling);
    window.addEventListener("resize",resized);
    window.addEventListener("scroll",scrolling,true);
    window.addEventListener("multicam-fold-topology",folding);
@@ -223,6 +238,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    document.addEventListener("visibilitychange",visibility);
    void sync();
    return ()=>{live=false;observer?.disconnect();if(invalidationHandle)void invalidationHandle.remove();window.removeEventListener("resize",resized);
+     visual?.removeEventListener("resize",resized);
+     visual?.removeEventListener("scroll",scrolling);
      window.removeEventListener("scroll",scrolling,true);
      window.removeEventListener("multicam-fold-topology",folding);
      window.removeEventListener("multicam-native-preview-ready",resized);
@@ -421,6 +438,24 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  // The restored UI mode may belong to an old lens. Offer the real
  // compatible fallback explicitly, never silently change capture settings.
  // All hooks must execute unconditionally, including in WebView-only builds.
+ const prepareNextDiagnosticMode=async()=>{
+   if(busy||planRequest.current||nativeRecorderOwnsCamera(status?.state??""))return;
+   planRequest.current=true;setPlanBusy(true);setPlanNotice("");
+   const selection={...currentSelection.current};
+   try{
+     const [passport,history]=await Promise.all([cameraAudit.getPassport(),bridge.auditHistory()]);
+     if(!mounted.current)return;
+     const latest=await bridge.status();
+     if(!mounted.current||nativeRecorderOwnsCamera(latest.state)||nativeRecorderOwnsCamera(currentStatus.current?.state??"")||
+       !["idle","saved","saved_interrupted","stopped","interrupted","error"].includes(latest.state)||
+       selection.camera!==currentSelection.current.camera||selection.resolution!==currentSelection.current.resolution||selection.fps!==currentSelection.current.fps)return;
+     const candidate=nextInitialAuditRecordingMode(passport.audit,history,cameras,selection.camera);
+     if(!candidate){setPlanNotice("В сохранённом плане нет следующего подтверждённого декларациями AVC-кандидата. Полная диагностика ещё может быть незавершена.");return;}
+     setCamera(candidate.cameraId);setResolution(candidate.size);setFps(candidate.fps);
+     setPlanNotice("Подготовлен режим "+candidate.size+" / "+candidate.fps+" FPS. Запись начнётся только после вашего нажатия.");
+   }catch{if(mounted.current)setPlanNotice("Сохранённый план временно недоступен. Настройки записи не изменены.");}
+   finally{planRequest.current=false;if(mounted.current)setPlanBusy(false);}
+ };
  const canRestoreMode=!!mode.size && (mode.size!==resolution||mode.fps!==fps);
  const applyCompatibleMode=()=>{
    if(busy||nativeRecorderOwnsCamera(status?.state??""))return;
@@ -428,7 +463,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    setFps(mode.fps);
  };
  const openPreview=async()=>{
-  if(busy || !camera)return;
+  if(busy || planRequest.current || !camera)return;
   setBusy(true);setError("");
   try{
    const permission=await bridge.requestPermissions({permissions:["camera"]});
@@ -437,7 +472,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
   }catch(e){setError(String(e));}finally{setBusy(false);}
  };
  const start=async()=>{
-  if(busy)return;setBusy(true);setError("");
+  if(busy||planRequest.current)return;setBusy(true);setError("");
   try{
    const result=await bridge.requestPermissions({permissions:audio?["camera","microphone"]:["camera"]});
    if(result["camera"]!=="granted")
@@ -493,13 +528,14 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  const directSurfaceVisible=directEnabled&&status?.state==="previewing"&&
    status.directPreviewActive===true;
  if(!isNative())return null;
- return <section className="mt-4 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
+ return <section className="native-recording-panel mt-4 min-w-0 space-y-2 rounded-lg border border-border bg-card p-3 text-xs">
    <h3 className="font-semibold">Отдельная нативная запись Camera2</h3>
    <p role="status">H.264-кодировщик: {encoderSupport==="declared"
      ?"комбинация разрешения/FPS заявлена (требуется пробная запись)"
      :encoderSupport==="unsupported"
      ?"выбранная комбинация явно не поддерживается"
      :"поддержка не подтверждена; окончательная проверка при старте записи"}.</p>
+   <div className="native-recording-primary">
    <div ref={directTarget} onClick={e=>void tapDirect(e)} className="relative mx-auto flex aspect-video w-full max-w-[740px] items-center justify-center overflow-hidden rounded-xl bg-black" role="img" aria-label="Предпросмотр нативной камеры">
     {directSurfaceVisible
       ? <p className="px-3 text-center text-white/80">Прямой Android-предпросмотр работает поверх этой области. Если кадр не появился, проверьте состояние Camera2.</p>
@@ -513,6 +549,13 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
         ? "Ожидается настоящий кадр Camera2. Если устройство не выдаёт ImageReader-кадры, контрольный предпросмотр недоступен."
         : "Нажмите «Открыть видоискатель». Запись MP4 начнётся только после отдельного нажатия кнопки записи."}</p>}
     {["recording","paused"].includes(status?.state??"")&&<span className="absolute left-3 top-3 rounded bg-red-700 px-2 py-1 text-xs font-medium text-white">{status?.state==="paused"?"ПАУЗА":"REC"}</span>}
+   </div>
+   <div className="native-recording-actions flex flex-wrap gap-2">
+    <Button variant="outline" disabled={busy||planBusy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
+    <Button disabled={busy||planBusy||!camera||!mode.size||!mode.choices.includes(fps)||(active && status?.state!=="previewing")} onClick={()=>void start()}>Начать нативную запись</Button>
+    <Button disabled={busy||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
+    <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>{status?.state==="previewing"?"Закрыть камеру":"Остановить"}</Button>
+   </div>
    </div>
    <label className="flex items-center gap-2"><input type="checkbox" checked={directEnabled}
      disabled={busy||["recording","paused","starting","stopping"].includes(status?.state??"")}
@@ -558,6 +601,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
     <label className="flex items-center gap-2"><input type="checkbox" checked={audio} disabled={active}
      onChange={e=>setAudio(e.target.checked)}/>Записать звук</label>
    </div>
+   <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode()}>{planBusy?"Читаю сохранённый план…":"Подготовить следующий режим диагностики"}</Button>
+   {planNotice&&<p role="status" className="break-words">{planNotice}</p>}
    {canRestoreMode&&<div role="status" className="rounded-md border border-border bg-secondary p-2">
      После смены камеры или пересоздания экрана прежний режим не подтверждён.
      {mode.choices.length>0 ? <Button type="button" size="sm" variant="outline" className="ml-2"
@@ -711,11 +756,6 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      </div>}
    </div>
    {error&&<p role="alert" className="text-destructive">{error}</p>}
-   <div className="flex flex-wrap gap-2">
-    <Button variant="outline" disabled={busy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
-    <Button disabled={busy||!camera||!mode.size||!mode.choices.includes(fps)||(active && status?.state!=="previewing")} onClick={()=>void start()}>Начать нативную запись</Button>
-    <Button disabled={busy||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
-    <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>{status?.state==="previewing"?"Закрыть камеру":"Остановить"}</Button>
-   </div>
+
  </section>;
 }

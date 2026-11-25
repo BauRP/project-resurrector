@@ -1,5 +1,6 @@
 import { registerPlugin } from "@capacitor/core";
 import { bounded } from "./async";
+import { createSingleFlight } from "./single-flight";
 
 /** Camera2 metadata inventory is not a functional recording test. */
 export interface CameraAuditCheckpoint {
@@ -160,8 +161,11 @@ export function cameraAuditPauseReason(audit: CameraAuditCheckpoint): string | n
   }
 }
 
+const pendingStatus = createSingleFlight(() => plugin.getStatus());
+const pendingPassport = createSingleFlight(() => plugin.getPassport());
+const pendingStart = createSingleFlight(() => plugin.startIfNeeded());
 export const cameraAudit = {
-  getStatus: () => bounded(plugin.getStatus(), 2500, "Camera audit status"),
-  getPassport: () => bounded(plugin.getPassport(), 5000, "Camera audit passport"),
-  startIfNeeded: () => plugin.startIfNeeded(),
+  getStatus: () => bounded(pendingStatus(), 2500, "Camera audit status"),
+  getPassport: () => bounded(pendingPassport(), 5000, "Camera audit passport"),
+  startIfNeeded: () => pendingStart(),
 };

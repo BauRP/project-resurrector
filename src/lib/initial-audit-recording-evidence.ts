@@ -2,6 +2,8 @@ import type { CameraAuditCheckpoint } from "./first-run-camera-audit";
 import type { NativeCaptureStatus } from "./native-capture";
 import { nativeRecordedModeEvidence } from "./native-recorded-mode-evidence";
 import type { NativeAuditHistory } from "./native-audit-report";
+import type { NativeCameraProfile } from "./native";
+import { nativeFpsCandidates } from "./native-mode-selection";
 
 export interface InitialAuditRecordingObservation {
   cameraId:string; width:number; height:number; fps:number;
@@ -56,4 +58,43 @@ export function matchInitialAuditRecordings(
       source:"native-finalized-recording",exactEncoderVerified:false,fullPipelineVerified:false});
   }
   return [...result.values()];
+}
+
+/** Bridge the saved plan to the existing real AVC recording controls.
+ * Never change the active recording, never run a second camera, never
+ * treat a planned HEVC/high-speed mode as an ordinary AVC candidate. */
+export function nextInitialAuditRecordingMode(
+  passport:CameraAuditCheckpoint|null|undefined,
+  history:NativeAuditHistory,
+  profiles:readonly NativeCameraProfile[],
+  preferredCameraId:string,
+):{cameraId:string;size:string;fps:number}|null {
+  if(!passport||passport.schema!==2||!Array.isArray(passport.activeCameraIds))return null;
+  const confirmed=new Set(matchInitialAuditRecordings(passport,history)
+    .filter(row=>row.state==="recorded").map(row=>key(row.cameraId,row.width,row.height,row.fps)));
+  const ids=[preferredCameraId,...passport.activeCameraIds].filter((id,i,all)=>
+    typeof id==="string"&&!!id&&passport.activeCameraIds!.includes(id)&&all.indexOf(id)===i).slice(0,64);
+  for(const id of ids){
+    const profile=profiles.find(c=>c.cameraId===id);
+    const camera=passport.cameras?.[id];
+    if(!profile||!camera||camera.cameraId!==id||camera.state!=="metadata-collected"||
+      camera.planState!=="complete"||camera.planVersion!==2||
+      !positiveInt(camera.codecCheckedAt)||camera.planCodecCheckedAt!==camera.codecCheckedAt||
+      !Array.isArray(camera.functionalPlan)||!Array.isArray(camera.codecChecks))continue;
+    for(const mode of camera.functionalPlan.slice(0,8)){
+      if(!mode||mode.cameraId!==id||mode.status!=="not-run"||mode.verifiedRecording!==false||
+        mode.evidence!=="declared-compatible-only"||!positiveInt(mode.width)||!positiveInt(mode.height)||
+        ![24,25,30,60].includes(mode.fps)||confirmed.has(key(id,mode.width,mode.height,mode.fps)))continue;
+      const size=mode.width+"x"+mode.height;
+      if(!nativeFpsCandidates(profile,size).includes(mode.fps))continue;
+      // The normal recorder uses AVC even if the plan ranked a HEVC
+      // encoder first. Demand an explicit matching AVC declaration.
+      const avc=camera.codecChecks.some(check=>check&&check.width===mode.width&&
+        check.height===mode.height&&check.fpsRequested===mode.fps&&
+        check.status==="declared-compatible"&&Array.isArray(check.encoders)&&
+        check.encoders.some(encoder=>encoder&&encoder.mime==="video/avc"&&encoder.declaredOnly===true));
+      if(avc)return {cameraId:id,size,fps:mode.fps};
+    }
+  }
+  return null;
 }

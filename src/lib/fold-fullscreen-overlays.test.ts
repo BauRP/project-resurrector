@@ -97,3 +97,13 @@ describe("legacy WebView viewport fallback on fold and phone displays", () => {
     expect(fallback).toContain(".privacy-fold-overlay");
   });
 });
+
+describe("native recorder primary controls on fold and tablet",()=>{
+ it("places stop/pause before long recording history and uses a measured landscape-only rail",()=>{
+  const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
+  const css=readFileSync("src/styles.css","utf8");
+  expect(panel.indexOf('className="native-recording-actions')).toBeLessThan(panel.indexOf("Показать историю нативных записей"));
+  expect(panel).toContain("nativePreviewInsideVisibleViewport");
+  expect(css).toContain('[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .native-recording-primary');
+ });
+});

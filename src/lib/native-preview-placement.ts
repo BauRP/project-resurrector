@@ -84,6 +84,22 @@ export function nativePreviewSnapshot(
  return placement ? {placement,viewport:{width:viewport.width,height:viewport.height}} : null;
 }
 
+/** A native overlay is not clipped by the keyboard or VisualViewport.
+ * Keep layout coordinates for Android scaling; hide rather than resize a
+ * partially obscured surface, then restore on the next visible resize. */
+export function nativePreviewInsideVisibleViewport(
+  placement:PreviewRect|null, visible:{offsetLeft:number;offsetTop:number;width:number;height:number;scale:number}|null|undefined,
+):boolean {
+  if(!placement)return false;
+  if(!visible)return true;
+  const {offsetLeft,offsetTop,width,height,scale}=visible;
+  if(![offsetLeft,offsetTop,width,height,scale].every(Number.isFinite)||
+    width<=0||height<=0||Math.abs(scale-1)>.01)return false;
+  return placement.left>=offsetLeft-.5&&placement.top>=offsetTop-.5&&
+    placement.left+placement.width<=offsetLeft+width+.5&&
+    placement.top+placement.height<=offsetTop+height+.5;
+}
+
 /** TextureView safety is invalidated by a REAL change in observed posture or
  * pane geometry, not by every duplicate WindowManager revision. Android may
  * have detached the native surface even when its CSS rectangle is unchanged.

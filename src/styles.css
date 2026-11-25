@@ -1855,3 +1855,32 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   min-height: 44px;
   overflow-wrap: anywhere;
 }
+
+/* Native Camera2 must have reachable stop/pause controls before the long
+ * technical history. Only genuine measured tablet windows get a side rail. */
+.native-recording-panel button {
+  min-height: 44px;
+  height: auto;
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.native-recording-primary {
+  display: grid;
+  min-width: 0;
+  gap: .5rem;
+  grid-template-columns: minmax(0,1fr);
+}
+.native-recording-actions {
+  min-width: 0;
+  align-content: start;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .native-recording-primary {
+  grid-template-columns: minmax(0,1fr) minmax(180px,28%);
+  align-items: start;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .native-recording-actions {
+  display: grid;
+  grid-template-columns: minmax(0,1fr);
+}

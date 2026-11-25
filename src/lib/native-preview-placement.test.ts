@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {nativePreviewPlacement,samePreviewPlacement,nativePreviewSnapshot,foldPreviewTopologySignature} from "./native-preview-placement";
+import {nativePreviewInsideVisibleViewport,nativePreviewPlacement,samePreviewPlacement,nativePreviewSnapshot,foldPreviewTopologySignature} from "./native-preview-placement";
 const screen={width:400,height:800};
 describe("foldable native preview overlay boundaries",()=>{
  it("accepts a fully visible preview",()=>expect(nativePreviewPlacement({left:10,top:70,width:380,height:240},screen)).toEqual({left:10,top:70,width:380,height:240}));
@@ -90,5 +90,17 @@ describe("native preview after small-window clipping", () => {
       {left:100,top:-0.5,width:100,height:80},
       {left:100,top:720.5,width:100,height:80}
    ]) expect(nativePreviewPlacement(rect,screen)).toBeNull();
+ });
+});
+
+describe("native surface on tablet or fold with keyboard and pinch",()=>{
+ const rect={left:10,top:100,width:300,height:240};
+ const full={offsetLeft:0,offsetTop:0,width:400,height:800,scale:1};
+ it("hides an obscured or zoomed surface without changing layout coordinates",()=>{
+  expect(nativePreviewInsideVisibleViewport(rect,full)).toBe(true);
+  expect(nativePreviewInsideVisibleViewport(rect,{...full,height:300})).toBe(false);
+  expect(nativePreviewInsideVisibleViewport(rect,{...full,offsetLeft:20})).toBe(false);
+  expect(nativePreviewInsideVisibleViewport(rect,{...full,scale:1.5})).toBe(false);
+  expect(nativePreviewInsideVisibleViewport(rect,full)).toBe(true);
  });
 });

@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {matchInitialAuditRecordings} from "./initial-audit-recording-evidence";
+import {nextInitialAuditRecordingMode,matchInitialAuditRecordings} from "./initial-audit-recording-evidence";
 import type {CameraAuditCheckpoint} from "./first-run-camera-audit";
 const passport:CameraAuditCheckpoint={schema:2,state:"complete",completed:1,total:1,advancedState:"pending",cameras:{
  rear:{cameraId:"rear",source:"android-camera2-metadata",state:"metadata-collected",verifiedRecording:false,codecCheckedAt:10,planCodecCheckedAt:10,planState:"complete",planVersion:2,
@@ -21,5 +21,25 @@ describe("reuse ordinary native recording evidence without another capture",()=>
  it("does not match a stale candidate plan after a codec inventory change",()=>{
   const stale={...passport,cameras:{rear:{...passport.cameras.rear!,codecCheckedAt:11}}};
   expect(matchInitialAuditRecordings(stale,{entries:[row],maxEntries:24,omittedEarlier:0})).toEqual([]);
+ });
+});
+
+describe("prepare the next real native diagnostic recording",()=>{
+ const profile={cameraId:"rear",sizes:["1920x1080","1280x720"],fpsRanges:["24-60"],videoOutputSizes:[
+ {width:1920,height:1080,theoreticalMaxFps:30},{width:1280,height:720,theoreticalMaxFps:60}]} as import("./native").NativeCameraProfile;
+ const c=passport.cameras.rear!;
+ const plan={...passport,activeCameraIds:["rear"],cameras:{rear:{...c,
+   functionalPlan:[...c.functionalPlan!,{...c.functionalPlan![0]!,width:1280,height:720,fps:60}],
+   codecChecks:[{width:1920,height:1080,fpsRequested:30,status:"declared-compatible" as const,recordedAndVerified:false as const,encoders:[{name:"avc",mime:"video/avc",declaredOnly:true as const}]},
+   {width:1280,height:720,fpsRequested:60,status:"declared-compatible" as const,recordedAndVerified:false as const,encoders:[{name:"avc",mime:"video/avc",declaredOnly:true as const}]}]}}};
+ it("uses the saved first mode, then skips an already confirmed sample",()=>{
+  expect(nextInitialAuditRecordingMode(plan,{entries:[],omittedEarlier:0,maxEntries:24},[profile],"rear")).toEqual({cameraId:"rear",size:"1920x1080",fps:30});
+  expect(nextInitialAuditRecordingMode(plan,{entries:[row],omittedEarlier:0,maxEntries:24},[profile],"rear")).toEqual({cameraId:"rear",size:"1280x720",fps:60});
+ });
+ it("refuses stale, disconnected or non-AVC candidates",()=>{
+  const h={entries:[],omittedEarlier:0,maxEntries:24};
+  expect(nextInitialAuditRecordingMode(plan,h,[],"rear")).toBeNull();
+  expect(nextInitialAuditRecordingMode({...plan,activeCameraIds:[]},h,[profile],"rear")).toBeNull();
+  expect(nextInitialAuditRecordingMode({...plan,cameras:{rear:{...plan.cameras.rear,codecChecks:[]}}},h,[profile],"rear")).toBeNull();
  });
 });
