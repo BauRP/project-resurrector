@@ -85,7 +85,8 @@ describe("short diagnostic recording on the actual Camera2 service",()=>{
   const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
   const action=panel.slice(panel.indexOf("const prepareNextDiagnosticMode="),panel.indexOf("const canRestoreMode="));
   expect(action).toContain("window.confirm(");
-  expect(action).toContain("checkDiagnosticSafety(false)");
+  expect(action).toContain("checkDiagnosticSafety(pending.length>3)");
+  expect(action).toContain("Math.min(8,Math.max(1,requestedCount))");
   expect(action).toContain("waitForDiagnosticClip(");
   expect(action).toContain("current.captureServiceActive!==false");
   expect(action).toContain("nativeDiagnosticAvailability(current.state)!==\"free\"");

@@ -706,3 +706,7 @@ The native panel optionally runs up to three explicit, sequential four-second di
 
 ### 2026-11-26: restore practical camera coverage in the Camera-only banner
 After declaration stages finish, the top Camera banner reads bounded saved candidate and finalized recording evidence and shows ordinary AVC-mode coverage. It updates on visible entry and durable recording completion events, not a new polling loop. The action opens the existing Camera2 interface, never records without consent. Untried modes precede unsuccessful observations on the next invocation. All diagnostic ownership checks and explicit return to WebView reject a still-active native service, even with a terminal-looking state. Previous CI #45690605086 passed 1159 tests and published v1.0.1875.
+
+
+### 2026-11-26: Android resource-backed practical sweep
+The diagnostic resource snapshot reads sticky battery level/power and StatFs for the actual app files volume on the existing camera query worker, with one in-flight request and bounded WebView wait. Native diagnostics never substitute the browser storage quota. The approved short-video sequence permits up to eight clips with extended storage threshold, and stops after one when resource data is unknown. Production preview uses the same atomic visible-viewport snapshot tested for folds and tablets. Corrected four outdated ownership test fixtures from CI #45692535178 and added explicit terminal-but-active handoff coverage; no safety checks weakened.

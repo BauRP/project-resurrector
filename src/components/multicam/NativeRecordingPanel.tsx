@@ -1,5 +1,5 @@
 import { previewTapPoint } from "@/lib/native-preview-coordinate";
-import { nativePreviewInsideVisibleViewport, nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, foldPreviewTopologySignature, type PreviewRect } from "@/lib/native-preview-placement";
+import { nativePreviewPlacement, nativePreviewSnapshot, samePreviewPlacement, foldPreviewTopologySignature, type PreviewRect } from "@/lib/native-preview-placement";
 import { nativePreviewAckIsCurrent } from "@/lib/native-preview-epoch";
 import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
@@ -149,8 +149,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      const snapshot=nativePreviewSnapshot(
        directTarget.current?.getBoundingClientRect(),
        {width:document.documentElement.clientWidth,height:window.innerHeight},
-       getActiveFoldBaseline()?.regionGeometry);
-     return nativePreviewInsideVisibleViewport(snapshot?.placement??null,window.visualViewport)?snapshot:null;
+       getActiveFoldBaseline()?.regionGeometry,window.visualViewport);
+     return snapshot;
    };
    const syncOnce=async()=>{
      if(!live)return;
@@ -478,7 +478,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      if(!candidate){setPlanNotice("В сохранённом плане нет следующего подтверждённого декларациями AVC-кандидата. Полная диагностика ещё может быть незавершена.");return;}
      if(recordTrial){
        if(!selectionCurrent()||!lease?.isCurrent())return;
-       const limit=Math.min(3,Math.max(1,requestedCount));
+       const limit=Math.min(8,Math.max(1,requestedCount));
        const pending=modes.filter(m=>!m.recorded&&validDiagnosticMode(m)).slice(0,limit);
        if(!pending.length){setPlanNotice("Нет допустимых незавершённых режимов для штатного кодировщика.");return;}
        if(!window.confirm("Записать до "+pending.length+" диагностических MP4 примерно по 4 секунды без звука? Файлы сохраняются как обычные записи. Можно остановить последовательность; при выходе из камеры новые пробы не начнутся."))return;
@@ -492,10 +492,12 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
        let observedHistory=history;
        for(const trial of pending){
          if(!canContinue())break;
-         const safety=await checkDiagnosticSafety(false);
+         const safety=await checkDiagnosticSafety(pending.length>3);
          if(!canContinue())break;
          if(!safety.proceed){setPlanNotice(safety.reason);return;}
-         if(recorded>0&&[safety.thermal,safety.battery,safety.storage].includes("unknown"))break;
+         if(recorded>0&&[safety.thermal,safety.battery,safety.storage].includes("unknown")){
+           setPlanNotice("Подтверждено "+recorded+" видеопроб. Остальные отложены: часть показателей ресурсов неизвестна.");return;
+         }
          // Device availability can change during the previous recording.
          const available=initialAuditRecordingModes(passport.audit,observedHistory,latestProfiles.current,trial.cameraId)
            .some(m=>m.cameraId===trial.cameraId&&m.size===trial.size&&m.fps===trial.fps&&!m.recorded);
@@ -674,7 +676,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    </div>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode()}>{planBusy?"Читаю сохранённый план…":"Подготовить следующий режим диагностики"}</Button>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true)}>Записать следующую диагностическую пробу (4 с)</Button>
-   <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,3)}>Продолжить до трёх видеопроб</Button>
+   <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,8)}>Продолжить до восьми видеопроб</Button>
    {planBusy&&<Button type="button" variant="outline" onClick={()=>{planStop.current=true;setPlanNotice("Последовательность остановлена; текущая короткая запись завершится автоматически.");}}>Остановить последовательность</Button>}
    {status?.diagnosticClip===true&&active&&<p role="status" className="break-words">Диагностическая запись без звука. Android завершит её автоматически, либо нажмите «Остановить».</p>}
    {planNotice&&<p role="status" className="break-words">{planNotice}</p>}

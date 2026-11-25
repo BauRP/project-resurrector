@@ -103,7 +103,7 @@ describe("native recorder primary controls on fold and tablet",()=>{
   const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
   const css=readFileSync("src/styles.css","utf8");
   expect(panel.indexOf('className="native-recording-actions')).toBeLessThan(panel.indexOf("Показать историю нативных записей"));
-  expect(panel).toContain("nativePreviewInsideVisibleViewport");
+  expect(panel).toContain("getActiveFoldBaseline()?.regionGeometry,window.visualViewport");
   expect(css).toContain('[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .native-recording-primary');
  });
 });

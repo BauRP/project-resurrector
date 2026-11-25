@@ -1,5 +1,6 @@
 import { Capacitor, registerPlugin, type PluginListenerHandle } from "@capacitor/core";
 import { bounded } from "./async";
+import { createSingleFlight } from "./single-flight";
 
 export interface NativeCameraProfile { previewYuvSizes?: string[]; dynamicRangeApiAvailable?: boolean; tenBitOutputDeclared?: boolean; hdrRecordedAndVerified?: false; dynamicRangeProfiles?: { id: number; name: string; extraLatencyDeclared: boolean; compatibleProfiles: string[] }[];  videoOutputSizes?: { width: number; height: number; minFrameDurationNs?: number; theoreticalMaxFps?: number }[]; sensorOrientation?: number; sensorSizeMm?: [number, number]; focalLengthsMm?: number[]; eisModes?: number[]; oisModes?: number[]; eisDeclared?: boolean; oisDeclared?: boolean; exposureTimeNs?: [number, number];  physicalCameraIds?: string[]; focusDistanceRange?: [number, number] | null; hardwareLevel?: number; cameraId: string; facing: "back" | "front" | "external"; sizes: string[]; fpsRanges: string[]; highSpeed: { size: string; fps: number[] }[]; profiles: string[]; isoRange: [number, number] | null; manualSensor: boolean; toneCurve: boolean; raw?: boolean }
 export interface NativeCapabilities { cameras: NativeCameraProfile[]; codecs: string[]; concurrentCameraGroups?: string[][] }
@@ -44,6 +45,7 @@ export interface NativeEncoderSupport {
   }[];
 }
 
+export interface NativeDiagnosticResources { batteryLevel:number|null; charging:boolean|null; freeBytes:number|null }
 interface MultiCamNativePlugin {
   getCapabilities(): Promise<NativeCapabilities>;
   inspectVideoFile(options: { path: string }): Promise<NativeMp4Inspection>;
@@ -52,6 +54,7 @@ interface MultiCamNativePlugin {
   stopCameraAvailability(options:{ownerId:string}): Promise<void>;
   addListener(eventName: "cameraAvailabilityChanged", listener: (event: { cameraId: string; available: boolean }) => void): Promise<PluginListenerHandle>;
   getThermalStatus(): Promise<NativeThermal>;
+  getDiagnosticResources(): Promise<NativeDiagnosticResources>;
   listAudioInputs(): Promise<{ inputs: NativeAudioInput[] }>;
   setPreferredAudioInput(options: { id: string }): Promise<{ ok: boolean }>;
   startHighSpeedRecording(options: { cameraId: string; width: number; height: number; fps: number }): Promise<{ path: string }>;
@@ -72,6 +75,7 @@ const rawMultiCamNative = registerPlugin<MultiCamNativePlugin>("MultiCamNative")
  * A native late reply is ignored; the real camera/service owns its state. */
 const nativeDeadline = <T>(promise: Promise<T>, ms: number, name: string, late?: (result:T)=>void): Promise<T> =>
   bounded(promise, ms, `MultiCamNative ${name}: Android не подтвердил операцию`, late);
+const diagnosticResourcesPending=createSingleFlight(()=>rawMultiCamNative.getDiagnosticResources());
 export const MultiCamNative: MultiCamNativePlugin = {
   getCapabilities: () => nativeDeadline(rawMultiCamNative.getCapabilities(), 12000, "getCapabilities"),
   inspectVideoFile: options => nativeDeadline(rawMultiCamNative.inspectVideoFile(options), 30000, "inspectVideoFile"),
@@ -84,6 +88,7 @@ export const MultiCamNative: MultiCamNativePlugin = {
       : rawMultiCamNative.addListener("highSpeedStateChanged", listener as (event: {state:string;message:string}) => void),
     8000, "addListener", late => { void late.remove().catch(() => undefined); }),
   getThermalStatus: () => nativeDeadline(rawMultiCamNative.getThermalStatus(), 7000, "getThermalStatus"),
+  getDiagnosticResources: () => nativeDeadline(diagnosticResourcesPending(), 2500, "getDiagnosticResources"),
   listAudioInputs: () => nativeDeadline(rawMultiCamNative.listAudioInputs(), 7000, "listAudioInputs"),
   setPreferredAudioInput: options => nativeDeadline(rawMultiCamNative.setPreferredAudioInput(options), 9000, "setPreferredAudioInput"),
   startHighSpeedRecording: options => nativeDeadline(rawMultiCamNative.startHighSpeedRecording(options), 30000, "startHighSpeedRecording"),

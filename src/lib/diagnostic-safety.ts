@@ -86,6 +86,15 @@ export async function checkDiagnosticSafety(extended: boolean): Promise<Diagnost
     } catch { /* unknown, not safe */ }
   }
   let battery: BatterySnapshot | null = null;
+  let freeBytes: number | null = null;
+  if(isNative()){
+    try {
+      const r=await MultiCamNative.getDiagnosticResources();
+      if(typeof r.batteryLevel==="number"&&typeof r.charging==="boolean")battery={level:r.batteryLevel,charging:r.charging};
+      if(typeof r.freeBytes==="number")freeBytes=r.freeBytes;
+    }catch{ /* native disk/battery unknown; never substitute WebView quota */ }
+    return evaluateDiagnosticSafety({thermalStatus,battery,freeBytes,extended});
+  }
   try {
     const navigatorWithBattery = navigator as Navigator & {
       getBattery?: () => Promise<{ level: number; charging: boolean }>;
@@ -95,7 +104,6 @@ export async function checkDiagnosticSafety(extended: boolean): Promise<Diagnost
       if (Number.isFinite(value.level)) battery = { level: value.level, charging: value.charging };
     }
   } catch { /* not supported by this WebView */ }
-  let freeBytes: number | null = null;
   try {
     const estimatePromise = navigator.storage?.estimate?.();
     const estimate = estimatePromise ? await bounded(estimatePromise, 750, "Diagnostic storage safety") : undefined;

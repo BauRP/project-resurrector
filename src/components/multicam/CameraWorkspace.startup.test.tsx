@@ -4,7 +4,7 @@ import { MulticamStoreProvider } from "@/lib/multicam-store";
 import { CameraWorkspace } from "./CameraWorkspace";
 
 const mocks = vi.hoisted(() => ({
-  status: vi.fn<() => Promise<{ state: string }>>(),
+  status: vi.fn<() => Promise<{ state: string;captureServiceActive?:boolean }>>(),
 }));
 vi.mock("@/lib/native", () => ({ isNative: () => true }));
 vi.mock("@/lib/native-capture", () => ({
@@ -22,7 +22,7 @@ vi.mock("./NativeRecordingPanel", () => ({
 
 beforeEach(() => {
   localStorage.clear();
-  mocks.status.mockReset().mockResolvedValue({state:"idle"});
+  mocks.status.mockReset().mockResolvedValue({state:"idle",captureServiceActive:false});
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
@@ -49,7 +49,7 @@ describe("native bridge must not freeze the initial camera screen", () => {
     fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Native Camera2 HAL unavailable");
     expect(screen.getByText("Нативная панель")).toBeInTheDocument();
-    mocks.status.mockResolvedValueOnce({ state: "idle" });
+    mocks.status.mockResolvedValueOnce({ state: "idle",captureServiceActive:false });
     fireEvent.click(screen.getByRole("button", { name: "Обычная" }));
     expect(await screen.findByText("Камера пока выключена")).toBeInTheDocument();
     expect(mocks.status).toHaveBeenCalledTimes(3);
@@ -65,4 +65,17 @@ describe("native bridge must not freeze the initial camera screen", () => {
     await waitFor(() => expect(mocks.status).toHaveBeenCalledTimes(2));
     expect(await screen.findByText("Камера пока выключена", {}, { timeout: 4000 })).toBeInTheDocument();
   });
+});
+
+it("keeps the native panel during terminal-state finalization, then allows return when released",async()=>{
+ mocks.status.mockResolvedValueOnce({state:"recording",captureServiceActive:true});
+ render(<MulticamStoreProvider><CameraWorkspace /></MulticamStoreProvider>);
+ await screen.findByText("Нативная панель");
+ mocks.status.mockResolvedValueOnce({state:"saved",captureServiceActive:true});
+ fireEvent.click(screen.getByRole("button",{name:"Обычная"}));
+ expect(await screen.findByRole("alert")).toHaveTextContent("освобождает ресурсы");
+ expect(screen.getByText("Нативная панель")).toBeInTheDocument();
+ mocks.status.mockResolvedValueOnce({state:"saved",captureServiceActive:false});
+ fireEvent.click(screen.getByRole("button",{name:"Обычная"}));
+ expect(await screen.findByText("Камера пока выключена")).toBeInTheDocument();
 });

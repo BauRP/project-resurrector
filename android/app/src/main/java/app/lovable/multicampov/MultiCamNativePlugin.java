@@ -457,6 +457,54 @@ public class MultiCamNativePlugin extends Plugin {
         }
     }
 
+    private final java.util.concurrent.atomic.AtomicBoolean resourceSnapshotPending =
+        new java.util.concurrent.atomic.AtomicBoolean(false);
+
+    /** The app's actual recording volume and Android sticky battery state,
+     * not the WebView's unrelated IndexedDB quota. No camera acquisition. */
+    @PluginMethod
+    public void getDiagnosticResources(PluginCall call) {
+        if (!resourceSnapshotPending.compareAndSet(false, true)) {
+            call.reject("Снимок ресурсов уже выполняется"); return;
+        }
+        final Context context = getContext().getApplicationContext();
+        try {
+            cameraQueryWorker.execute(() -> {
+                try {
+                    JSObject out = new JSObject();
+                    out.put("batteryLevel", JSObject.NULL);
+                    out.put("charging", JSObject.NULL);
+                    out.put("freeBytes", JSObject.NULL);
+                    try {
+                        android.content.Intent battery = context.registerReceiver(null,
+                            new android.content.IntentFilter(android.content.Intent.ACTION_BATTERY_CHANGED));
+                        if (battery != null) {
+                            int level = battery.getIntExtra(android.os.BatteryManager.EXTRA_LEVEL, -1);
+                            int scale = battery.getIntExtra(android.os.BatteryManager.EXTRA_SCALE, -1);
+                            int status = battery.getIntExtra(android.os.BatteryManager.EXTRA_STATUS, -1);
+                            int plugged = battery.getIntExtra(android.os.BatteryManager.EXTRA_PLUGGED, -1);
+                            if (level >= 0 && scale > 0 && level <= scale)
+                                out.put("batteryLevel", (double) level / scale);
+                            if (plugged >= 0 && status != android.os.BatteryManager.BATTERY_STATUS_UNKNOWN)
+                                out.put("charging", plugged > 0);
+                        }
+                    } catch (RuntimeException ignored) { /* unknown */ }
+                    try {
+                        File volume = context.getFilesDir();
+                        if (volume != null && volume.isDirectory()) {
+                            long free = new android.os.StatFs(volume.getAbsolutePath()).getAvailableBytes();
+                            if (free >= 0) out.put("freeBytes", free);
+                        }
+                    } catch (RuntimeException ignored) { /* unknown */ }
+                    call.resolve(out);
+                } finally { resourceSnapshotPending.set(false); }
+            });
+        } catch (java.util.concurrent.RejectedExecutionException error) {
+            resourceSnapshotPending.set(false);
+            call.reject("Android закрывает службу диагностики");
+        }
+    }
+
     @PluginMethod
     public void getThermalStatus(PluginCall call) {
         JSObject res = new JSObject();
