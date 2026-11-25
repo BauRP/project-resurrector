@@ -151,6 +151,8 @@ export function cameraAuditPauseReason(audit: CameraAuditCheckpoint): string | n
       return "Сильный нагрев. Проверка приостановлена, результаты сохранены.";
     case "low-memory":
       return "Мало свободной оперативной памяти. Проверка продолжится позднее.";
+    case "low-battery":
+      return "Заряд ниже 15%, телефон не подключён к питанию. Проверка приостановлена, результаты сохранены.";
     case "camera-metadata-temporarily-unavailable":
       return "Android временно не предоставил характеристики всех камер.";
     default:

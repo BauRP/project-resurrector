@@ -354,3 +354,16 @@ describe("first-run camera audit resume contracts (source-level)",()=>{
    expect(codec).toContain("if (completed < ids.length())");
  });
 });
+
+describe("native audit power and plan progress contracts (source-level)",()=>{
+ const guard=readFileSync(nativeDir+"CameraAuditResourceGuard.java","utf8");
+ const plan=readFileSync(nativeDir+"CameraAuditPlanStage.java","utf8");
+ it("pauses at confirmed low unplugged battery and publishes plan version before persisting progress",()=>{
+   expect(guard).toContain("Intent.ACTION_BATTERY_CHANGED");
+   expect(guard).toContain('100L * level < 15L * scale) return "low-battery"');
+   const start=plan.indexOf('passport.put("planState", "running")');
+   const version=plan.indexOf('passport.put("planVersion", PLAN_VERSION)',start);
+   expect(version).toBeGreaterThan(start);
+   expect(version).toBeLessThan(plan.indexOf("CameraAuditService.persist(context, passport)",start));
+ });
+});

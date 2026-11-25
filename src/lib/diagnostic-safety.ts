@@ -20,11 +20,15 @@ export function evaluateDiagnosticSafety(input: {
   thermalStatus: number | null; battery: BatterySnapshot | null;
   freeBytes: number | null; extended: boolean;
 }): DiagnosticSafety {
-  const thermal = input.thermalStatus === null || input.thermalStatus < 0 ? "unknown" :
+  const thermal = input.thermalStatus === null || !Number.isInteger(input.thermalStatus) ||
+    input.thermalStatus < 0 || input.thermalStatus > 6 ? "unknown" :
     input.thermalStatus >= 3 ? "danger" : "safe";
-  const battery = !input.battery ? "unknown" :
+  const battery = !input.battery || !Number.isFinite(input.battery.level) ||
+    input.battery.level < 0 || input.battery.level > 1 ||
+    typeof input.battery.charging !== "boolean" ? "unknown" :
     !input.battery.charging && input.battery.level < .15 ? "low" : "safe";
-  const storage = input.freeBytes === null ? "unknown" :
+  const storage = input.freeBytes === null || !Number.isFinite(input.freeBytes) ||
+    input.freeBytes < 0 ? "unknown" :
     input.freeBytes < (input.extended ? 250 : 80) * 1024 * 1024 ? "low" : "safe";
   const reasons: string[] = [];
   if (thermal === "danger") reasons.push("Android сообщает о сильном нагреве");

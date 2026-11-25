@@ -232,3 +232,11 @@ describe("baseline-preserving fold journal under repeated folding",()=>{
     forgetActiveFoldSnapshot(current);
   });
 });
+
+describe("strict native fold evidence",()=>{
+  it("does not coerce arrays or objects into a reported hinge layout",()=>{
+    expect(normalizeFoldTransition({...sample,layout:["vertical"]},100)).toBeNull();
+    expect(normalizeFoldTransition({...sample,layout:{toString:()=>"vertical"}},100)).toBeNull();
+    expect(normalizeFoldTransition(sample,100)?.layout).toBe("vertical");
+  });
+});

@@ -206,6 +206,14 @@ export class FoldScrollRestorer {
   capture(port: ScrollPort): void {
     if (this.tab && this.entered && this.desired === null &&
         validTop(port.scrollTop)) {
+      // pagehide or tab departure can precede the resize/scroll observer.
+      // If a shrinking scroll extent already clamped the browser, retain
+      // the prior user position instead of saving the transient endpoint.
+      if (this.lastStableTop !== null && port.scrollTop + 2 < this.lastStableTop &&
+          this.autoClampedByReflow(port)) {
+        this.desired = this.lastStableTop;
+        return;
+      }
       this.lastStableTop = port.scrollTop;
       this.persistLatest();
     }

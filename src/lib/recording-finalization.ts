@@ -83,8 +83,10 @@ export function createRecordingStopGuard(
       timer = setTimeout(() => {
         timer = null;
         if (finished) return;
-        onTimeout();
-        finish();
+        // Failure to publish a timeout message must not prevent the
+        // recorder's salvage/finalization path from releasing resources.
+        try { onTimeout(); }
+        finally { finish(); }
       }, timeoutMs);
     },
     finish,

@@ -230,3 +230,17 @@ describe("first-install Camera2 inventory progress", () => {
     expect(cameraAuditProgress(checkpoint("running",2,-1))).toBe(0);
   });
 });
+
+describe("saved initial diagnosis and power pauses", () => {
+  it("reports low battery independently at each phase and retains the completed count", () => {
+    const metadata = {...checkpoint("retry",1,2),error:"low-battery"};
+    expect(cameraAuditPauseReason(metadata)).toContain("15%");
+    expect(cameraAuditProgress(metadata)).toBe(16);
+    const codec = {...checkpoint("complete",2,2),codecState:"retry" as const,codecTotal:2,codecCompleted:1,codecError:"low-battery"};
+    expect(cameraAuditPauseReason(codec)).toContain("15%");
+    expect(cameraAuditProgress(codec)).toBe(50);
+    const plan = {...codec,codecState:"complete" as const,codecCompleted:2,planState:"retry" as const,planVersion:2,planTotal:2,planCompleted:1,planError:"low-battery"};
+    expect(cameraAuditPauseReason(plan)).toContain("15%");
+    expect(cameraAuditProgress(plan)).toBe(83);
+  });
+});

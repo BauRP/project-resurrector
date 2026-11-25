@@ -37,3 +37,15 @@ describe("Camera2 ownership fence for diagnostics",()=>{
       expect(nativeDiagnosticAvailability(state)).toBe("free");
   });
 });
+
+describe("invalid device resource telemetry",()=>{
+  it("never labels malformed temperature, battery or storage signals as healthy",()=>{
+    for(const thermalStatus of [NaN,Infinity,1.5,7]){
+      const safety=evaluateDiagnosticSafety({thermalStatus,battery:{level:NaN,charging:false},freeBytes:Infinity,extended:true});
+      expect(safety).toMatchObject({thermal:"unknown",battery:"unknown",storage:"unknown"});
+      expect(diagnosticProbeLimit(safety,20)).toBe(1);
+    }
+    const safety=evaluateDiagnosticSafety({thermalStatus:0,battery:{level:1.1,charging:true},freeBytes:-1,extended:true});
+    expect(safety).toMatchObject({thermal:"safe",battery:"unknown",storage:"unknown"});
+  });
+});

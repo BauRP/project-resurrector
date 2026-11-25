@@ -47,6 +47,7 @@ final class CameraAuditPlanStage {
                 }
             }
             passport.put("planState", "running");
+            passport.put("planVersion", PLAN_VERSION);
             passport.put("planTotal", ids.length());
             passport.put("planCompleted", completed);
             passport.put("planCandidateCount", candidates);

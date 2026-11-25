@@ -120,3 +120,17 @@ describe("lost media input during capture", () => {
     expect(recordingInputLostReason("video",true)).toContain("Видеовход");
   });
 });
+
+describe("recorder timeout notification failure",()=>{
+  it("still finalizes exactly once when reporting the encoder timeout throws",()=>{
+    vi.useFakeTimers();
+    try {
+      const finalize=vi.fn();
+      const guard=createRecordingStopGuard(finalize,()=>{throw Error("status callback failed");},20);
+      guard.waitForStop();
+      expect(()=>vi.advanceTimersByTime(20)).toThrow("status callback failed");
+      guard.finish();
+      expect(finalize).toHaveBeenCalledTimes(1);
+    } finally { vi.useRealTimers(); }
+  });
+});

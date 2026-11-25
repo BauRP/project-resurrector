@@ -240,3 +240,18 @@ describe("fold/editor vertical scroll restoration", () => {
     expect(code).toContain('window.addEventListener("pagehide", onPageHide)');
   });
 });
+
+describe("rotation followed by immediate tab departure",()=>{
+  it("does not persist the browser-clamped endpoint before resize observers run",()=>{
+    const el=port(0,1500,300),restorer=new FoldScrollRestorer();
+    restorer.activate("editor",el);restorer.enter("editor",el);
+    el.scrollTop=1100;restorer.onScroll("editor",el);
+    el.clientHeight=650;el.scrollTop=850;
+    restorer.capture(el); // navigation/pagehide before observer notification
+    flushFoldScrollWrites();
+    expect(readFoldScrollTop("editor")).toBe(1100);
+    expect(restorer.pending("editor")).toBe(true);
+    el.clientHeight=300;restorer.onViewportReflow("editor",el);
+    expect(el.scrollTop).toBe(1100);
+  });
+});
