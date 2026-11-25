@@ -33,7 +33,7 @@ describe("Camera2 ownership fence for diagnostics",()=>{
     expect(nativeDiagnosticAvailability("unrecognized-oem-state")).toBe("unknown");
   });
   it("permits a new diagnostic only after the native service is terminal",()=>{
-    for (const state of ["idle","error","interrupted","stopped","completed"])
+    for (const state of ["idle","error","interrupted","stopped","completed","saved","saved_interrupted"])
       expect(nativeDiagnosticAvailability(state)).toBe("free");
   });
 });

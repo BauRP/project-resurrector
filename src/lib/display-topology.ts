@@ -537,7 +537,7 @@ export function startDisplayAdaptation(): () => void {
     // --fold-work-y-offset is relative to scroll content and is NOT suitable
     // for fixed dialogs. A horizontal hinge may otherwise hide the close/QR.
     writeCss("--fold-work-top",Math.max(0,workspace?.top??contentBounds.top)+"px");
-    const target=document.querySelector(".editor-fold-workspace, .settings-fold-workspace");
+    const target=document.querySelector(".editor-fold-workspace, .settings-fold-workspace, .native-camera-fold-workspace");
     if(target!==workspaceTarget){workspaceTarget=target;workspaceYOffset=0;}
     // position:relative top offsets can be measured without accumulating
     // drift through ResizeObserver or repeated fold callbacks.

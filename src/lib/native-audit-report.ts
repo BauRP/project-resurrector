@@ -4,6 +4,7 @@
  */
 export interface NativeAuditHistory {
   entries: Array<Record<string,unknown>>;
+  modeEntries?: Array<Record<string,unknown>>;
   omittedEarlier: number;
   maxEntries: number;
 }

@@ -6,7 +6,7 @@ import { createSerializedAsyncActions } from "@/lib/serialized-preview-operation
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
 import { cameraAudit } from "@/lib/first-run-camera-audit";
-import { nextInitialAuditRecordingMode } from "@/lib/initial-audit-recording-evidence";
+import { initialAuditRecordingModes, type InitialAuditMode } from "@/lib/initial-audit-recording-evidence";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
 import { recordModeEvidence } from "@/lib/camera-passport";
 import { nativeAnonymizedAuditReport } from "@/lib/native-audit-report";
@@ -66,6 +66,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  const [busy,setBusy]=useState(false);
  const [planBusy,setPlanBusy]=useState(false);
  const [planNotice,setPlanNotice]=useState("");
+ const [planModes,setPlanModes]=useState<InitialAuditMode[]|null>(null);
  const planRequest=useRef(false);
  const currentSelection=useRef({camera,resolution,fps});
  currentSelection.current={camera,resolution,fps};
@@ -449,7 +450,9 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      if(!mounted.current||nativeRecorderOwnsCamera(latest.state)||nativeRecorderOwnsCamera(currentStatus.current?.state??"")||
        !["idle","saved","saved_interrupted","stopped","interrupted","error"].includes(latest.state)||
        selection.camera!==currentSelection.current.camera||selection.resolution!==currentSelection.current.resolution||selection.fps!==currentSelection.current.fps)return;
-     const candidate=nextInitialAuditRecordingMode(passport.audit,history,cameras,selection.camera);
+     const modes=initialAuditRecordingModes(passport.audit,history,cameras,selection.camera);
+     setPlanModes(modes);
+     const candidate=modes.find(m=>!m.recorded);
      if(!candidate){setPlanNotice("В сохранённом плане нет следующего подтверждённого декларациями AVC-кандидата. Полная диагностика ещё может быть незавершена.");return;}
      setCamera(candidate.cameraId);setResolution(candidate.size);setFps(candidate.fps);
      setPlanNotice("Подготовлен режим "+candidate.size+" / "+candidate.fps+" FPS. Запись начнётся только после вашего нажатия.");
@@ -603,6 +606,10 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    </div>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode()}>{planBusy?"Читаю сохранённый план…":"Подготовить следующий режим диагностики"}</Button>
    {planNotice&&<p role="status" className="break-words">{planNotice}</p>}
+   {planModes!==null&&<details className="rounded border border-border p-2">
+     <summary className="cursor-pointer break-words">Последняя сверка: сохранённые видеозаписи {planModes.filter(m=>m.recorded).length}/{planModes.length} обычных AVC-режимов (не вся проверка камеры)</summary>
+     {planModes.map(m=><p key={JSON.stringify([m.cameraId,m.size,m.fps])} className="mt-1 break-words">CAM {m.cameraId} · {m.size} · {m.fps} FPS: {m.recorded?"записано, полная цепочка не проверена":"ожидает видеопробы"}</p>)}
+   </details>}
    {canRestoreMode&&<div role="status" className="rounded-md border border-border bg-secondary p-2">
      После смены камеры или пересоздания экрана прежний режим не подтверждён.
      {mode.choices.length>0 ? <Button type="button" size="sm" variant="outline" className="ml-2"

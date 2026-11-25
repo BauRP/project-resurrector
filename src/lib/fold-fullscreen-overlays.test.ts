@@ -107,3 +107,12 @@ describe("native recorder primary controls on fold and tablet",()=>{
   expect(css).toContain('[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .native-recording-primary');
  });
 });
+
+it("uses the observed single safe pane for the separate native recorder",()=>{
+ const camera=readFileSync("src/components/multicam/CameraWorkspace.tsx","utf8");
+ const topology=readFileSync("src/lib/display-topology.ts","utf8");
+ const css=readFileSync("src/styles.css","utf8");
+ expect(camera).toContain('mode==="native"?"native-camera-fold-workspace');
+ expect(topology).toContain(".editor-fold-workspace, .settings-fold-workspace, .native-camera-fold-workspace");
+ expect(css).toContain('[data-fold-workspace="pane"] .native-camera-fold-workspace');
+});

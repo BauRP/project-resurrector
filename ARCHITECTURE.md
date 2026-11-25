@@ -674,3 +674,7 @@ The native capture history persists versioned MP4 timestamp/tail fields. On expl
 
 ### 2026-11-25: prepare a saved native trial and reachable recording controls
 The native panel can prepare the next exact AVC recording candidate from the durable first-run plan and skip modes with prior recorded evidence. It rechecks native ownership and current selection before applying settings, does not start capture, and never substitutes a high-speed/HEVC-only mode. Existing recording controls are adjacent to the preview and become a side rail on landscape tablet windows. Direct native surfaces are hidden when outside the current VisualViewport or pinch-zoomed; recording is not interrupted. The audit bridge coalesces actual unsettled native calls across remounts.
+
+
+### 2026-11-25: durable per-mode evidence and native fold workspace
+Keep a separate bounded archive of up to 128 native finalized recording observations, without file paths or error messages, in the same atomic SharedPreferences commit as the existing recent history. The WebView still validates all evidence before classifying a mode as recorded. The next-mode action displays the last reconciled list and counts, not full-pipeline certification. Saved terminal native states allow the next diagnostic operation. Unsettled frame/history queries share the native promise. The native Camera2 workspace uses the observed safe fold region and retains internal scrolling, without changing the WebView camera layout.

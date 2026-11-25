@@ -1884,3 +1884,27 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   display: grid;
   grid-template-columns: minmax(0,1fr);
 }
+
+/* Native recorder has its own scroll surface, not the split WebView HUD.
+ * Keep banner, controls and diagnostics together within a measured fold pane. */
+[data-fold-workspace="pane"] .native-camera-fold-workspace {
+  position: relative;
+  margin-inline-start: var(--fold-work-left, 0px);
+  width: min(var(--fold-work-width, 100%), 100%);
+  max-width: 100%;
+  min-width: 0;
+  top: var(--fold-work-y-offset, 0px);
+  max-height: var(--fold-work-height, 100%);
+  overflow: hidden;
+}
+.native-camera-fold-workspace select,
+.native-camera-fold-workspace label {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.native-camera-fold-workspace .camera-mode-switch button {
+  min-height: 44px;
+  height: auto;
+  white-space: normal;
+}

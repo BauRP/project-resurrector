@@ -16,8 +16,50 @@ public final class NativeCaptureAuditStore {
     private static final String ENTRIES="entries";
     private static final String OMITTED="omitted";
     private static final int MAX_ENTRIES=24;
+    private static final String MODE_ENTRIES="mode_entries_v2";
+    private static final int MAX_MODE_ENTRIES=128;
     private static final Object LOCK=new Object();
     private NativeCaptureAuditStore(){}
+
+    // Independent mode evidence survives rotation of the 24-session history.
+    private static boolean sameMode(JSONObject a,JSONObject b) {
+        return a.optString("cameraId","").equals(b.optString("cameraId","")) &&
+            a.optInt("width",-1)==b.optInt("width",-2) &&
+            a.optInt("height",-1)==b.optInt("height",-2) &&
+            a.optInt("fps",-1)==b.optInt("fps",-2);
+    }
+    private static boolean eligibleMode(JSONObject item) {
+        return item!=null && item.optInt("evidenceVersion",0)==2 &&
+            "saved".equals(item.optString("state")) && !item.optString("cameraId","").isEmpty() &&
+            item.optInt("width",0)>0 && item.optInt("height",0)>0 && item.optInt("fps",0)>0 &&
+            item.optLong("savedBytes",0)>=1024 && item.optBoolean("mp4TracksInspected") &&
+            item.optBoolean("mp4HasVideoTrack") && item.optBoolean("mp4FirstFrameDecodable");
+    }
+    private static JSONArray updateModeEntries(SharedPreferences p,JSONArray recent,JSONObject item) {
+        JSONArray old;
+        try{old=new JSONArray(p.getString(MODE_ENTRIES,"[]"));}
+        catch(Exception ignored){old=new JSONArray();}
+        if(!p.contains(MODE_ENTRIES))old=recent;
+        JSONArray rows=new JSONArray();
+        try {
+            for(int i=0;i<old.length();i++){
+                JSONObject prior=old.optJSONObject(i);
+                if(!eligibleMode(prior)||(eligibleMode(item)&&sameMode(prior,item)))continue;
+                JSONObject clean=new JSONObject(prior.toString());
+                clean.remove("message");clean.remove("savedUri");
+                rows.put(clean);
+            }
+            if(eligibleMode(item)){
+                JSONObject clean=new JSONObject(item.toString());
+                clean.remove("message");clean.remove("savedUri");
+                rows.put(clean);
+            }
+        }catch(Exception ignored){return old;}
+        JSONArray result=new JSONArray();
+        for(int i=Math.max(0,rows.length()-MAX_MODE_ENTRIES);i<rows.length();i++)
+            result.put(rows.optJSONObject(i));
+        return result;
+    }
 
     public static void append(Context context, JSObject status) {
         if(context==null||status==null)return;
@@ -91,7 +133,9 @@ public final class NativeCaptureAuditStore {
             for(int i=skip;i<rows.length();i++)retained.put(rows.optJSONObject(i));
             // Synchronous commit prevents a process killed directly after
             // finalization from losing this metadata (the MP4 stays separate).
+            JSONArray modeEntries=updateModeEntries(p,old,item);
             p.edit().putString(ENTRIES,retained.toString())
+                .putString(MODE_ENTRIES,modeEntries.toString())
                 .putInt(OMITTED,omitted+skip).commit();
         }
     }
@@ -101,6 +145,8 @@ public final class NativeCaptureAuditStore {
             JSObject result=new JSObject();
             try{result.put("entries",new JSONArray(p.getString(ENTRIES,"[]")));}
             catch(Exception ignored){result.put("entries",new JSONArray());}
+            try{result.put("modeEntries",new JSONArray(p.getString(MODE_ENTRIES,"[]")));}
+            catch(Exception ignored){result.put("modeEntries",new JSONArray());}
             result.put("omittedEarlier",p.getInt(OMITTED,0));
             result.put("maxEntries",MAX_ENTRIES);
             return result;

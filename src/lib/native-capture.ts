@@ -45,7 +45,7 @@ export interface NativeCaptureBridge {
  pause():Promise<NativeCaptureStatus>;
  resume():Promise<NativeCaptureStatus>;
  status():Promise<NativeCaptureStatus>;
- auditHistory():Promise<{entries:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}>;
+ auditHistory():Promise<{entries:Array<Record<string,unknown>>;modeEntries?:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}>;
  retryGalleryPublication():Promise<NativeCaptureStatus>;
  previewFrame():Promise<{jpeg:string;frameAt?:number}>;
  setDirectPreview(options:{ownerId:string;visible:boolean;left?:number;top?:number;width?:number;height?:number;viewportWidth?:number;viewportHeight?:number}):Promise<{visible:boolean}>;
@@ -61,6 +61,8 @@ const rawNativeCapture = registerPlugin<NativeCaptureBridge>("NativeCapture");
 // Coalesce all status polls until Android actually settles, avoiding an
 // unbounded queue from startup, camera and diagnostics after a slow OEM reply.
 const pendingCamera2Status = createSingleFlight(() => rawNativeCapture.status());
+const pendingCamera2Frame = createSingleFlight(() => rawNativeCapture.previewFrame());
+const pendingCamera2History = createSingleFlight(() => rawNativeCapture.auditHistory());
 /** A missing emulator Camera2/Capacitor callback must release the React
  * controls. A timed-out operation is UNKNOWN, never an implicit success,
  * stop, retry, or permission grant. The service remains the source of truth.
@@ -77,9 +79,9 @@ export const nativeCapture: NativeCaptureBridge = {
   pause: () => guard(rawNativeCapture.pause(), 12000, "pause"),
   resume: () => guard(rawNativeCapture.resume(), 12000, "resume"),
   status: () => guard(pendingCamera2Status(), 6000, "status"),
-  auditHistory: () => guard(rawNativeCapture.auditHistory(), 15000, "auditHistory"),
+  auditHistory: () => guard(pendingCamera2History(), 15000, "auditHistory"),
   retryGalleryPublication: () => guard(rawNativeCapture.retryGalleryPublication(), 30000, "retryGalleryPublication"),
-  previewFrame: () => guard(rawNativeCapture.previewFrame(), 5000, "previewFrame"),
+  previewFrame: () => guard(pendingCamera2Frame(), 5000, "previewFrame"),
   setDirectPreview: options => guard(rawNativeCapture.setDirectPreview(options), 8000, "setDirectPreview"),
   setControls: options => guard(rawNativeCapture.setControls(options), 9000, "setControls"),
   setTorch: options => guard(rawNativeCapture.setTorch(options), 9000, "setTorch"),

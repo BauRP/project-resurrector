@@ -43,3 +43,10 @@ describe("prepare the next real native diagnostic recording",()=>{
   expect(nextInitialAuditRecordingMode({...plan,cameras:{rear:{...plan.cameras.rear,codecChecks:[]}}},h,[profile],"rear")).toBeNull();
  });
 });
+
+describe("durable practical diagnostic progress",()=>{
+ it("uses archived mode evidence even after the recent capture history rotates",()=>{
+  expect(matchInitialAuditRecordings(passport,{entries:[],modeEntries:[row],maxEntries:24,omittedEarlier:80})[0]?.state).toBe("recorded");
+  expect(matchInitialAuditRecordings(passport,{entries:[],modeEntries:[{...row,state:"error"}],maxEntries:24,omittedEarlier:80})[0]?.state).toBe("interrupted-or-unconfirmed");
+ });
+});

@@ -36,7 +36,8 @@ export function matchInitialAuditRecordings(
   const result=new Map<string,InitialAuditRecordingObservation>();
   // The journal is chronological. Prefer a genuine earlier recording to a
   // subsequent failed attempt, but retain the latest successful observation.
-  for(const row of history.entries.slice(-24)){
+  const archived=Array.isArray(history.modeEntries)?history.modeEntries.slice(-128):[];
+  for(const row of [...archived,...history.entries.slice(-24)]){
     if(!row||typeof row!=="object"||Array.isArray(row)||
        typeof row.cameraId!=="string"||!positiveInt(row.width)||
        !positiveInt(row.height)||!positiveInt(row.fps)||
@@ -63,13 +64,18 @@ export function matchInitialAuditRecordings(
 /** Bridge the saved plan to the existing real AVC recording controls.
  * Never change the active recording, never run a second camera, never
  * treat a planned HEVC/high-speed mode as an ordinary AVC candidate. */
-export function nextInitialAuditRecordingMode(
+export interface InitialAuditMode {
+  cameraId:string;size:string;fps:number;recorded:boolean;
+}
+export function initialAuditRecordingModes(
   passport:CameraAuditCheckpoint|null|undefined,
   history:NativeAuditHistory,
   profiles:readonly NativeCameraProfile[],
   preferredCameraId:string,
-):{cameraId:string;size:string;fps:number}|null {
-  if(!passport||passport.schema!==2||!Array.isArray(passport.activeCameraIds))return null;
+):InitialAuditMode[] {
+  if(!passport||passport.schema!==2||!Array.isArray(passport.activeCameraIds))return [];
+  const result:InitialAuditMode[]=[];
+  const seen=new Set<string>();
   const confirmed=new Set(matchInitialAuditRecordings(passport,history)
     .filter(row=>row.state==="recorded").map(row=>key(row.cameraId,row.width,row.height,row.fps)));
   const ids=[preferredCameraId,...passport.activeCameraIds].filter((id,i,all)=>
@@ -84,7 +90,7 @@ export function nextInitialAuditRecordingMode(
     for(const mode of camera.functionalPlan.slice(0,8)){
       if(!mode||mode.cameraId!==id||mode.status!=="not-run"||mode.verifiedRecording!==false||
         mode.evidence!=="declared-compatible-only"||!positiveInt(mode.width)||!positiveInt(mode.height)||
-        ![24,25,30,60].includes(mode.fps)||confirmed.has(key(id,mode.width,mode.height,mode.fps)))continue;
+        ![24,25,30,60].includes(mode.fps))continue;
       const size=mode.width+"x"+mode.height;
       if(!nativeFpsCandidates(profile,size).includes(mode.fps))continue;
       // The normal recorder uses AVC even if the plan ranked a HEVC
@@ -93,8 +99,20 @@ export function nextInitialAuditRecordingMode(
         check.height===mode.height&&check.fpsRequested===mode.fps&&
         check.status==="declared-compatible"&&Array.isArray(check.encoders)&&
         check.encoders.some(encoder=>encoder&&encoder.mime==="video/avc"&&encoder.declaredOnly===true));
-      if(avc)return {cameraId:id,size,fps:mode.fps};
+      const modeKey=key(id,mode.width,mode.height,mode.fps);
+      if(avc&&!seen.has(modeKey)){
+        seen.add(modeKey);
+        result.push({cameraId:id,size,fps:mode.fps,recorded:confirmed.has(modeKey)});
+      }
     }
   }
-  return null;
+  return result;
+}
+
+export function nextInitialAuditRecordingMode(
+  passport:CameraAuditCheckpoint|null|undefined,history:NativeAuditHistory,
+  profiles:readonly NativeCameraProfile[],preferredCameraId:string,
+):{cameraId:string;size:string;fps:number}|null {
+  const next=initialAuditRecordingModes(passport,history,profiles,preferredCameraId).find(m=>!m.recorded);
+  return next?{cameraId:next.cameraId,size:next.size,fps:next.fps}:null;
 }

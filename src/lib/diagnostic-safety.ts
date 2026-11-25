@@ -14,7 +14,7 @@ interface BatterySnapshot { level: number; charging: boolean }
 export function nativeDiagnosticAvailability(state: string | null): "free" | "busy" | "unknown" {
   if (state === null) return "unknown";
   if (nativeRecorderOwnsCamera(state) || ["saving","finalizing"].includes(state)) return "busy";
-  return ["idle","stopped","error","completed","interrupted"].includes(state) ? "free" : "unknown";
+  return ["idle","stopped","error","completed","interrupted","saved","saved_interrupted"].includes(state) ? "free" : "unknown";
 }
 export function evaluateDiagnosticSafety(input: {
   thermalStatus: number | null; battery: BatterySnapshot | null;
