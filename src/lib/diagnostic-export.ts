@@ -6,7 +6,7 @@
 import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
 import type { StabilizationProbeResult } from "./stabilization-probe";
-import { previewSensorObservation } from "./preview-sensor-observation";
+import { previewSensorObservation, previewSensorSampleFps } from "./preview-sensor-observation";
 import { decideStabilizationForRecordedMode } from "./stabilization-policy";
 import { matchInitialAuditRecordings } from "./initial-audit-recording-evidence";
 import type { NativeAuditHistory } from "./native-audit-report";
@@ -90,6 +90,7 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
         fpsRequested:safeNumber(probe.fpsRequested),fpsRangeApplied:probe.fpsRangeApplied===true,fpsRangeMin:safeNumber(probe.fpsRangeMin),fpsRangeMax:safeNumber(probe.fpsRangeMax),selected:probe.selected,state:decision.systemState,
         framesObserved:safeNumber(probe.framesObserved),confirmations:safeNumber(probe.confirmations),
         sensorObservation:previewSensorObservation(probe)??null,
+        sensorSampleFps:previewSensorSampleFps(probe),encodedFileFpsVerified:false,
         source:"camera2-capture-result",recordedFileVerified:false}];
     }),
     webviewModes: input.modes.map(test => ({

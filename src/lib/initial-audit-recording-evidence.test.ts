@@ -19,7 +19,7 @@ describe("reuse ordinary native recording evidence without another capture",()=>
   expect(match([{...row,mp4VideoTimestampDuplicates:2}])[0]?.state).toBe("interrupted-or-unconfirmed");
  });
  it("does not match a stale candidate plan after a codec inventory change",()=>{
-  const stale={...passport,cameras:{rear:{...passport.cameras.rear!,codecCheckedAt:11}}};
+  const stale={...passport,cameras:{rear:{...passport.cameras["rear"]!,codecCheckedAt:11}}};
   expect(matchInitialAuditRecordings(stale,{entries:[row],maxEntries:24,omittedEarlier:0})).toEqual([]);
  });
 });
@@ -27,7 +27,7 @@ describe("reuse ordinary native recording evidence without another capture",()=>
 describe("prepare the next real native diagnostic recording",()=>{
  const profile={cameraId:"rear",sizes:["1920x1080","1280x720"],fpsRanges:["24-60"],videoOutputSizes:[
  {width:1920,height:1080,theoreticalMaxFps:30},{width:1280,height:720,theoreticalMaxFps:60}]} as import("./native").NativeCameraProfile;
- const c=passport.cameras.rear!;
+ const c=passport.cameras["rear"]!;
  const plan={...passport,activeCameraIds:["rear"],cameras:{rear:{...c,
    functionalPlan:[...c.functionalPlan!,{...c.functionalPlan![0]!,width:1280,height:720,fps:60}],
    codecChecks:[{width:1920,height:1080,fpsRequested:30,status:"declared-compatible" as const,recordedAndVerified:false as const,encoders:[{name:"avc",mime:"video/avc",declaredOnly:true as const}]},

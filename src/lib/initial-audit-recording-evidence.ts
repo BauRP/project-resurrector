@@ -39,23 +39,23 @@ export function matchInitialAuditRecordings(
   const archived=Array.isArray(history.modeEntries)?history.modeEntries.slice(-128):[];
   for(const row of [...archived,...history.entries.slice(-24)]){
     if(!row||typeof row!=="object"||Array.isArray(row)||
-       typeof row.cameraId!=="string"||!positiveInt(row.width)||
-       !positiveInt(row.height)||!positiveInt(row.fps)||
-       !positiveInt(row.captureId)||!positiveInt(row.savedAt))continue;
-    const id=key(row.cameraId,row.width,row.height,row.fps);
+       typeof row["cameraId"]!=="string"||!positiveInt(row["width"])||
+       !positiveInt(row["height"])||!positiveInt(row["fps"])||
+       !positiveInt(row["captureId"])||!positiveInt(row["savedAt"]))continue;
+    const id=key(row["cameraId"],row["width"],row["height"],row["fps"]);
     if(!candidates.has(id))continue;
-    if(!["saved","saved_interrupted","interrupted","error"].includes(typeof row.state==="string"?row.state:""))continue;
+    if(!["saved","saved_interrupted","interrupted","error"].includes(typeof row["state"]==="string"?row["state"]:""))continue;
     // Older history lacks complete timing fields; it cannot silently be
     // reclassified as a new, valid recording. No additional camera is opened.
-    const complete=row.evidenceVersion===2&&row.mp4TracksInspected===true&&
-      typeof row.audioRequested==="boolean"&&typeof row.mp4TailNearEnd==="boolean"&&
-      typeof row.mp4VideoTimestampRollbacks==="number"&&typeof row.mp4VideoTimestampDuplicates==="number"&&
-      typeof row.mp4SampledFps==="number"&&typeof row.mp4TailSampledFps==="number";
-    const evidence=complete?nativeRecordedModeEvidence(row as unknown as NativeCaptureStatus,row.savedAt):null;
+    const complete=row["evidenceVersion"]===2&&row["mp4TracksInspected"]===true&&
+      typeof row["audioRequested"]==="boolean"&&typeof row["mp4TailNearEnd"]==="boolean"&&
+      typeof row["mp4VideoTimestampRollbacks"]==="number"&&typeof row["mp4VideoTimestampDuplicates"]==="number"&&
+      typeof row["mp4SampledFps"]==="number"&&typeof row["mp4TailSampledFps"]==="number";
+    const evidence=complete?nativeRecordedModeEvidence(row as unknown as NativeCaptureStatus,row["savedAt"]):null;
     const recorded=evidence?.state==="recorded";
     if(!recorded&&result.get(id)?.state==="recorded")continue;
-    result.set(id,{cameraId:row.cameraId,width:row.width,height:row.height,fps:row.fps,
-      state:recorded?"recorded":"interrupted-or-unconfirmed",bytes:positiveInt(row.savedBytes)?row.savedBytes:null,
+    result.set(id,{cameraId:row["cameraId"],width:row["width"],height:row["height"],fps:row["fps"],
+      state:recorded?"recorded":"interrupted-or-unconfirmed",bytes:positiveInt(row["savedBytes"])?row["savedBytes"]:null,
       source:"native-finalized-recording",exactEncoderVerified:false,fullPipelineVerified:false});
   }
   return [...result.values()];

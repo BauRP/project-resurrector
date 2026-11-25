@@ -1926,3 +1926,10 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 [data-fold-workspace="pane"] .native-camera-fold-workspace .native-camera-scroll {
   max-width: 100%;
 }
+
+/* Keep status text and mode buttons inside the measured native fold/tablet
+ * area at large font sizes, without changing ordinary WebView camera layout. */
+.native-camera-fold-workspace .camera-mode-switch { flex-wrap: wrap; min-width: 0; }
+.native-camera-fold-workspace > [role="status"],
+.native-camera-fold-workspace > [role="alert"] { overflow-wrap: anywhere; max-height: 25%; overflow-y: auto; }
+.native-camera-fold-workspace .native-recording-primary > * { min-width: 0; }

@@ -15,5 +15,16 @@ export function previewSensorObservation(result:StabilizationProbeResult):NonNul
  if(integer(s.afState,0,6))out.afState=s.afState;
  if(integer(s.aeState,0,5))out.aeState=s.aeState;
  if(integer(s.awbState,0,3))out.awbState=s.awbState;
+ if(integer(s.frameDurationNs,1,60000000000))out.frameDurationNs=s.frameDurationNs;
+ if(integer(s.sensorIntervals,2,11)&&integer(s.sensorSpanNs,1,22000000000)&&s.sensorIntervals*1000000000/s.sensorSpanNs<=1000){
+  out.sensorIntervals=s.sensorIntervals;out.sensorSpanNs=s.sensorSpanNs;
+ }
  return Object.keys(out).length?out:undefined;
+}
+
+/** Sensor timestamp cadence, not encoded-file FPS or a full duration test. */
+export function previewSensorSampleFps(result:StabilizationProbeResult):number|null {
+ const s=previewSensorObservation(result);
+ return s?.sensorIntervals!==undefined&&s.sensorSpanNs!==undefined
+  ? Math.round(s.sensorIntervals*10000000000/s.sensorSpanNs)/10 : null;
 }

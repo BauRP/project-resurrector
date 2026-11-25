@@ -182,7 +182,10 @@ public class StabilizationProbePlugin extends Plugin {
         int lastOis = -1;
         boolean hasResults = false;
         Integer measuredIso, measuredAfState, measuredAeState, measuredAwbState;
-        Long measuredExposureNs;
+        Long measuredExposureNs, measuredFrameDurationNs;
+        long previousSensorNs = -1, previousFrameNumber = -1, sensorSpanNs = 0;
+        int sensorIntervals = 0;
+        boolean sensorTimingValid = true;
         Float measuredFocusDiopters;
 
         Probe(PluginCall call, CameraManager manager, String id, int width, int height, int fps,
@@ -250,6 +253,19 @@ public class StabilizationProbePlugin extends Plugin {
                                                     // Missing vendor keys stay null; never fill from characteristics.
                                                     measuredIso = result.get(CaptureResult.SENSOR_SENSITIVITY);
                                                     measuredExposureNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+                                                    measuredFrameDurationNs = result.get(CaptureResult.SENSOR_FRAME_DURATION);
+                                                    Long timestamp = result.get(CaptureResult.SENSOR_TIMESTAMP);
+                                                    long frameNumber = result.getFrameNumber();
+                                                    if (timestamp == null || timestamp <= 0) {
+                                                        sensorTimingValid = false;
+                                                    } else if (previousSensorNs > 0) {
+                                                        long delta = timestamp - previousSensorNs;
+                                                        if (frameNumber != previousFrameNumber + 1 || delta <= 0 || delta > 2000000000L)
+                                                            sensorTimingValid = false;
+                                                        else { sensorSpanNs += delta; sensorIntervals++; }
+                                                    }
+                                                    previousSensorNs = timestamp == null ? -1 : timestamp;
+                                                    previousFrameNumber = frameNumber;
                                                     measuredFocusDiopters = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
                                                     measuredAfState = result.get(CaptureResult.CONTROL_AF_STATE);
                                                     measuredAeState = result.get(CaptureResult.CONTROL_AE_STATE);
@@ -298,6 +314,12 @@ public class StabilizationProbePlugin extends Plugin {
                 JSObject observation = new JSObject();
                 if (measuredIso != null && measuredIso > 0) observation.put("iso", measuredIso);
                 if (measuredExposureNs != null && measuredExposureNs > 0) observation.put("exposureNs", measuredExposureNs);
+                if (measuredFrameDurationNs != null && measuredFrameDurationNs > 0)
+                    observation.put("frameDurationNs", measuredFrameDurationNs);
+                if (sensorTimingValid && sensorIntervals >= 2 && sensorSpanNs > 0) {
+                    observation.put("sensorIntervals", sensorIntervals);
+                    observation.put("sensorSpanNs", sensorSpanNs);
+                }
                 if (measuredFocusDiopters != null && Float.isFinite(measuredFocusDiopters) && measuredFocusDiopters >= 0)
                     observation.put("focusDiopters", measuredFocusDiopters);
                 if (measuredAfState != null) observation.put("afState", measuredAfState);

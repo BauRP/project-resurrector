@@ -686,3 +686,7 @@ The Camera2 preview probe now sets an advertised AE target range and requires ma
 
 ### 2026-11-25: actual preview sensor observations and release test repair
 The matching Camera2 stabilization CaptureResult also contributes available ISO, exposure time, focus distance and AF/AE/AWB states. These are one frame's measured metadata, not a manual-control capability test. The allowlisted snapshot is saved with the exact-mode evidence, shown in CameraDiagnostics and exported anonymously. Four obsolete static regression assertions from CI run 45665643267 were updated to verify the stricter replacement behavior rather than the old source spelling. No existing test removed. Native scrolling reserves the bottom navigation inset.
+
+
+### 2026-11-25: repair strict typing and measure preview cadence
+CI run 45671153907 passed all 1149 tests, then rejected index-signature dot access and explicitly undefined optional evidence fields. Use bracket access and omit absent optional properties; do not relax TypeScript flags. Matching consecutive sensor frame timestamps now contribute a bounded sensor cadence observation plus reported frame duration to the existing Camera2 snapshot. Invalid, missing or discontinuous timestamps are not turned into FPS evidence. No new capture session, no encoded-file FPS claim. Mode switch and status text wrap inside the native fold/tablet workspace.
