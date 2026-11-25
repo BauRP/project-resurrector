@@ -5,6 +5,7 @@ import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
+import { runDiagnosticPipeline } from "@/lib/native-diagnostic-pipeline";
 import { diagnosticExportCandidate } from "@/lib/native-diagnostic-export";
 import { eligibleDiagnosticEditorClip } from "@/lib/native-diagnostic-editor";
 import { AUDIT_EVIDENCE_CHANGED } from "@/lib/initial-audit-coverage";
@@ -462,7 +463,24 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  // The restored UI mode may belong to an old lens. Offer the real
  // compatible fallback explicitly, never silently change capture settings.
  // All hooks must execute unconditionally, including in WebView-only builds.
- const prepareNextDiagnosticMode=async(recordTrial=false,requestedCount=1)=>{
+ const finishDiagnosticPipeline=async(final:Status,controller:AbortController,allowed:()=>boolean)=>{
+   const signal=controller.signal;
+   const [{importDiagnosticEditorClip},{runDiagnosticExport}]=await Promise.all([
+     import("@/lib/native-diagnostic-editor"),import("@/lib/native-diagnostic-export")]);
+   await runDiagnosticPipeline(final,signal,(stage,n)=>{
+     if(mounted.current)setEditorTrialNotice((stage==="editor"?"Медиатека редактора":"Реальный WebM-экспорт")+": "+n+"%");
+   },{
+     importClip:importDiagnosticEditorClip,render:runDiagnosticExport,
+     canContinue:async()=>{
+       if(!allowed()||signal.aborted)return false;
+       const safety=await checkDiagnosticSafety(true);
+       if(!allowed()||signal.aborted||!safety.proceed)return false;
+       const current=await bridge.status();
+       return allowed()&&!signal.aborted&&current.captureId===final.captureId&&current.state==="saved"&&current.captureServiceActive===false;
+     }
+   });
+ };
+ const prepareNextDiagnosticMode=async(recordTrial=false,requestedCount=1,fullPipeline=false)=>{
    if(busy||planRequest.current||nativeRecorderOwnsCamera(status?.state??""))return;
    planRequest.current=true;planStop.current=false;setPlanBusy(true);setPlanNotice("");
    const selection={...currentSelection.current};
@@ -485,7 +503,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
        const limit=Math.min(8,Math.max(1,requestedCount));
        const pending=modes.filter(m=>!m.recorded&&validDiagnosticMode(m)).slice(0,limit);
        if(!pending.length){setPlanNotice("Нет допустимых незавершённых режимов для штатного кодировщика.");return;}
-       if(!window.confirm("Записать до "+pending.length+" диагностических MP4 примерно по 4 секунды без звука? Файлы сохраняются как обычные записи. Можно остановить последовательность; при выходе из камеры новые пробы не начнутся."))return;
+       if(!window.confirm(fullPipeline?"Записать одну короткую пробу без звука, проверить её в медиатеке редактора и выполнить реальный WebM-экспорт до 2 секунд? Оригинал и результат сохранятся отдельно.":"Записать до "+pending.length+" диагностических MP4 примерно по 4 секунды без звука? Файлы сохраняются как обычные записи. Можно остановить последовательность; при выходе из камеры новые пробы не начнутся."))return;
        const permissions=await bridge.requestPermissions({permissions:["camera"]});
        if(permissions["camera"]!=="granted")throw Error("Нет разрешения на камеру");
        // Permission UI may briefly hide the Activity. Do not implicitly
@@ -513,10 +531,11 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
          if(!Number.isSafeInteger(previousId)||previousId<0)return;
          setPlanNotice("Видеопроба "+(recorded+1)+"/"+pending.length+": "+trial.size+" / "+trial.fps+" FPS");
          const response=await bridge.start({cameraId:trial.cameraId,width,height,fps:trial.fps,audio:false,diagnosticClip:true});
+         let finalized:Status=response;
          const outcome=await waitForDiagnosticClip({previousId,mode:trial,initial:response,
            status:()=>bridge.status(),history:async()=>{observedHistory=await bridge.auditHistory();return observedHistory;},
            sleep:()=>new Promise<void>(resolve=>window.setTimeout(resolve,1000)),
-           now:()=>performance.now(),continue:canContinue,onStatus:x=>{if(mounted.current)setStatus(x);}});
+           now:()=>performance.now(),continue:canContinue,onStatus:x=>{finalized=x;if(mounted.current)setStatus(x);}});
          if(!canContinue())break;
          if(outcome!=="recorded"){
            setPlanNotice("Последовательность остановлена: новая видеопроба не подтверждена. Сохранённые результаты не удалены.");return;
@@ -524,6 +543,15 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
          recorded++;
          setPlanModes(initialAuditRecordingModes(passport.audit,observedHistory,latestProfiles.current,trial.cameraId));
          window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));
+         if(fullPipeline){
+           const controller=new AbortController();editorTrial.current=controller;
+           const timer=window.setTimeout(()=>controller.abort(),75000);
+           try{
+             await finishDiagnosticPipeline(finalized,controller,canContinue);
+             if(mounted.current)setEditorTrialNotice("Запись, медиатека и короткий экспорт подтверждены по выборочным кадрам. Проверка всех кадров и Downloads не выполнена.");
+           }catch{if(mounted.current)setEditorTrialNotice("Запись сохранена, последующие этапы не подтверждены. Продолжите проверку сохранённой записи без повторной съёмки.");}
+           finally{window.clearTimeout(timer);editorTrial.current=null;window.dispatchEvent(new Event("multicam-clips-changed"));window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));}
+         }
        }
        if(mounted.current)setPlanNotice("В этой последовательности подтверждено "+recorded+" видеопроб. Остальные можно продолжить позже.");
        return;
@@ -577,14 +605,20 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
   finally{setBusy(false);}
  };
  const stop=async()=>{planStop.current=true;setBusy(true);try{setStatus(await bridge.stop());}catch(e){setError(String(e));}finally{setBusy(false);}};
- const testEditorImport=async()=>{
+ const testEditorImport=async(fullPipeline=false)=>{
    if(busy||planRequest.current||editorTrial.current||!status||!eligibleDiagnosticEditorClip(status))return;
+   if(fullPipeline&&!window.confirm("Проверить сохранённый MP4 в редакторе и выполнить короткий WebM-экспорт? Новая запись не начнётся."))return;
    const lease=diagnosticCaptureGate.acquire("mode-scan");
    if(!lease)return;
    const controller=new AbortController();
    editorTrial.current=controller;setBusy(true);setEditorTrialNotice("Читаем сохранённый MP4…");
-   const timer=window.setTimeout(()=>controller.abort(),30000);
+   const timer=window.setTimeout(()=>controller.abort(),fullPipeline?75000:30000);
    try{
+     if(fullPipeline){
+       await finishDiagnosticPipeline(status,controller,()=>mounted.current&&!document.hidden&&lease.isCurrent());
+       if(mounted.current)setEditorTrialNotice("Сохранённая запись, медиатека и короткий WebM-экспорт подтверждены по выборочным кадрам.");
+       return;
+     }
      const {importDiagnosticEditorClip}=await import("@/lib/native-diagnostic-editor");
      const result=await importDiagnosticEditorClip(status,controller.signal);
      if(mounted.current)setEditorTrialNotice("Клип в медиатеке редактора, первый кадр декодирован ("+result.decodedWidth+"×"+result.decodedHeight+"). Экспорт ещё не проверен.");
@@ -722,7 +756,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode()}>{planBusy?"Читаю сохранённый план…":"Подготовить следующий режим диагностики"}</Button>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true)}>Записать следующую диагностическую пробу (4 с)</Button>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,8)}>Продолжить до восьми видеопроб</Button>
-   {planBusy&&<Button type="button" variant="outline" onClick={()=>{planStop.current=true;setPlanNotice("Последовательность остановлена; текущая короткая запись завершится автоматически.");}}>Остановить последовательность</Button>}
+   <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,1,true)}>Проверить запись → редактор → экспорт</Button>
+   {planBusy&&<Button type="button" variant="outline" onClick={()=>{planStop.current=true;editorTrial.current?.abort();setPlanNotice("Последовательность остановлена; текущая короткая запись завершится автоматически.");}}>Остановить последовательность</Button>}
    {status?.diagnosticClip===true&&active&&<p role="status" className="break-words">Диагностическая запись без звука. Android завершит её автоматически, либо нажмите «Остановить».</p>}
    {planNotice&&<p role="status" className="break-words">{planNotice}</p>}
    {planModes!==null&&<details className="rounded border border-border p-2">
@@ -743,6 +778,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
        Повторить сохранение готового MP4 в Галерею
      </Button>}
    {eligibleDiagnosticEditorClip(status)&&<Button type="button" variant="outline" disabled={busy||planBusy} onClick={()=>void testEditorImport()}>Проверить запись в редакторе</Button>}
+   {eligibleDiagnosticEditorClip(status)&&<Button type="button" variant="outline" disabled={busy||planBusy} onClick={()=>void testEditorImport(true)}>Продолжить цепочку сохранённой записи</Button>}
    {status?.captureServiceActive===false&&diagnosticExportCandidate(status.captureId)&&<Button type="button" variant="outline" disabled={busy||planBusy} onClick={()=>void testDiagnosticExport()}>Проверить реальный экспорт WebM</Button>}
    {editorTrial.current&&<Button type="button" variant="outline" onClick={()=>editorTrial.current?.abort()}>Отменить проверку редактора / экспорта</Button>}
    {editorTrialNotice&&<p role="status" className="break-words">{editorTrialNotice}</p>}

@@ -19,7 +19,7 @@ import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 import { editorMediaWorkQueue } from "@/lib/editor-media-work-queue";
 import { staleEditorProxyIds, type EditorProxyHandle } from "@/lib/editor-proxy-url-lifecycle";
 import { restoreViewState } from "@/lib/fold-ui-recovery";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { AnimatePresence, motion } from "framer-motion";
 import { Captions, ChevronDown, FilePlus2, ListVideo, ListMusic, Crop, Check, Minus, Pause, Play, Plus, Rewind, Scissors, SkipBack, SkipForward, Trash2, Type, Unlink, Eye, EyeOff, Volume2, VolumeX, X, ScrollText, Pin, PinOff, Blend, RectangleHorizontal } from "lucide-react";
@@ -346,6 +346,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const restoredScroll = useRef(false);
   const scrollSaveTimer = useRef<number | null>(null);
   const lastTimelineView = useRef({ left: 0, zoom: 8 });
+  const appliedTimelineLeft = useRef<number|null>(null);
   // Keep the zoom paired with the actual saved scroll position; changing
   // zoom in render would reinterpret the old pixels as a different time.
   const [proxies, setProxies] = useState<Record<string, string>>({});
@@ -1083,23 +1084,23 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const minZoom = timelineMinZoom(tlW, total);
   const rulerTicks = useMemo(() => visibleRulerTicks(total, zoom, scrollX, tlW, HEAD), [total, zoom, scrollX, tlW]);
   useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
-  useEffect(() => {
-    if (restoredScroll.current || loading || tlW <= 0 || zoom < minZoom) return;
+  useLayoutEffect(() => {
+    if (loading || tlW <= 0 || zoom < minZoom || !items.length) return;
     const timeline = tlRef.current;
     if (!timeline) return;
-    const savedTime = readTimelineAnchor();
-    const frame = requestAnimationFrame(() => {
-      if (!tlRef.current || restoredScroll.current) return;
-      if (savedTime !== null && items.length) {
-        timeline.scrollLeft = scrollForTimelineAnchor(savedTime, zoom, tlW,
-          Math.max(tlW, HEAD + total * zoom + 8));
-        setScrollX(timeline.scrollLeft);
-      }
-      lastTimelineView.current = { left: timeline.scrollLeft, zoom };
-      restoredScroll.current = true;
-    });
-    return () => cancelAnimationFrame(frame);
-  }, [tlW, zoom, minZoom, total, items.length, loading]);
+    const savedTime = restoredScroll.current
+      ? lastTimelineView.current.left / lastTimelineView.current.zoom
+      : readTimelineAnchor();
+    if (savedTime !== null) {
+      timeline.scrollLeft = scrollForTimelineAnchor(savedTime,zoom,timeline.clientWidth,timeline.scrollWidth);
+      // Keep the intended content anchor if a wider viewport clamps the
+      // actual scroll. A genuine user scroll below replaces it.
+      lastTimelineView.current = {left:savedTime*zoom,zoom};
+    } else lastTimelineView.current = {left:timeline.scrollLeft,zoom};
+    appliedTimelineLeft.current=timeline.scrollLeft;
+    setScrollX(timeline.scrollLeft);
+    restoredScroll.current=true;
+  }, [tlW, zoom, minZoom, mediaEnd, items.length, loading]);
   useEffect(() => {
     const flush = () => {
       if (restoredScroll.current)
@@ -1216,6 +1217,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       const left = e.currentTarget.scrollLeft;
       setScrollX(left);
       if (!restoredScroll.current) return;
+      if(appliedTimelineLeft.current!==null&&Math.abs(left-appliedTimelineLeft.current)<.5)return;
+      appliedTimelineLeft.current=null;
       lastTimelineView.current = { left, zoom };
       if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
       scrollSaveTimer.current = window.setTimeout(() => saveTimelineAnchor(left, zoom), 160);

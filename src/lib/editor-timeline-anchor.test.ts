@@ -30,3 +30,11 @@ describe("timeline scroll restoration across fold and orientation", () => {
     } finally { vi.unstubAllGlobals(); }
   });
 });
+
+it("keeps the intended time when a wider tablet temporarily clamps the position",()=>{
+ const anchor=timelineAnchorFromScroll(1600,20);
+ const wide=scrollForTimelineAnchor(anchor,20,1400,1800);
+ expect(wide).toBe(400);
+ expect(scrollForTimelineAnchor(anchor,10,500,1600)).toBe(800);
+ expect(scrollForTimelineAnchor(anchor,20,500,2500)).toBe(1600);
+});

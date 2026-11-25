@@ -718,3 +718,7 @@ An explicit action imports the latest completed diagnostic MP4 (up to 32 MiB) fr
 
 ### 2026-11-26: actual diagnostic export through the existing editor renderer
 An explicit second diagnostic action uses the already verified persisted MP4 and the production one-clip VP8/Opus WebM renderer with a bounded two-second trim, 720p/30 and separate output record. It reopens and compares sampled bytes, verifies the decoded output dimensions/first frame and saves anonymous evidence. No Downloads publication or complete NLE certification is inferred. Cancellation and robust renderer cleanup protect device resources. Timeline restoration waits for media loading and retains the original zoom/scroll pairing. Fixed missing JSObject import from prior CI #45702634397 (1170 tests passed, Javac failed).
+
+
+### 2026-11-26: linked diagnostic media chain
+One explicit action records a single bounded diagnostic MP4, waits for durable completion and service destruction, then imports and decodes the exact capture and invokes the production short WebM render. A separate continuation action works on the latest saved clip without recording again. Each stage is cancellable and rechecks native ownership/resources. The existing individual stages and eight-clip recording-only sweep remain available. Editor timeline geometry changes retain a content-time anchor, including temporary clamping by wider windows. CI #45704529488 passed 1172 tests and published v1.0.1879.

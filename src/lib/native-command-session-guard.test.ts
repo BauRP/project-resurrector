@@ -95,3 +95,12 @@ describe("short diagnostic recording on the actual Camera2 service",()=>{
   expect(service).toContain("if(requestedDiagnosticClip && handoff)return");
  });
 });
+
+it("runs the editor and export stages only after the durable native clip is confirmed",()=>{
+ const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
+ const sequence=panel.slice(panel.indexOf("const prepareNextDiagnosticMode="),panel.indexOf("const canRestoreMode="));
+ expect(sequence.indexOf('if(outcome!=="recorded")')).toBeLessThan(sequence.indexOf("await finishDiagnosticPipeline(finalized"));
+ expect(sequence).toContain("window.confirm(");
+ expect(panel).toContain("editorTrial.current?.abort()");
+ expect(panel).toContain("current.captureId===final.captureId");
+});
