@@ -39,8 +39,8 @@ export function saveStabilizationEvidence(result:StabilizationProbeResult, check
     const key = identity(result);
     if(current.some(p=>p.context===row.context && identity(p.result)===key && p.checkedAt>checkedAt)) return false;
     // Persist only known fields: no vendor text/path or arbitrary bridge payload.
-    const {cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis}=result;
-    const clean:StabilizationProbeResult={cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,recordedFileVerified:false,message:"Сохранён результат тестовой Camera2-сессии; видеофайл не проверен."};
+    const {cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,fpsRangeApplied,fpsRangeMin,fpsRangeMax}=result;
+    const clean:StabilizationProbeResult={cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,fpsRangeApplied,fpsRangeMin,fpsRangeMax,recordedFileVerified:false,message:"Сохранён результат тестовой Camera2-сессии; видеофайл не проверен."};
     localStorage.setItem(KEY,JSON.stringify([...current.filter(p=>p.context!==row.context||identity(p.result)!==key).slice(-(LIMIT-1)),{...row,result:clean}]));
     return true;
   } catch { return false; }

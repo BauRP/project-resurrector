@@ -3,7 +3,7 @@ import { decideStabilizationForRecordedMode } from "./stabilization-policy";
 import type { StabilizationProbeResult } from "./stabilization-probe";
 const mode={cameraId:"0",width:1280,height:720,fps:30};
 const probe:StabilizationProbeResult={cameraId:"0",width:1280,height:720,fpsRequested:30,
-source:"camera2-capture-result",selected:"eis",state:"capture-result-confirmed",eisDeclared:true,
+source:"camera2-capture-result",selected:"eis",state:"capture-result-confirmed",fpsRangeApplied:true,fpsRangeMin:15,fpsRangeMax:30,eisDeclared:true,
 previewDeclared:false,oisDeclared:true,recordedFileVerified:false,message:"sample",
 framesObserved:5,confirmations:3,captureResultEis:1,captureResultOis:0};
 describe("mode-specific stabilization decision",()=>{
@@ -51,4 +51,11 @@ describe("untrusted stabilization bridge data", () => {
     expect(decideStabilizationForRecordedMode(falseFileProof,mode).recommendation).toBe("unknown");
     expect(decideStabilizationForRecordedMode({...probe,state:"declared-unavailable",selected:"eis",eisDeclared:false,oisDeclared:false,previewDeclared:false},mode).recommendation).toBe("unknown");
   });
+});
+
+it("requires a confirmed Camera2 AE range for the requested mode, not a guessed actual FPS",()=>{
+ expect(decideStabilizationForRecordedMode({...probe,fpsRangeApplied:false},mode).recommendation).toBe("unknown");
+ expect(decideStabilizationForRecordedMode({...probe,fpsRangeMax:60},mode).recommendation).toBe("unknown");
+ expect(decideStabilizationForRecordedMode({...probe,fpsRangeMin:0},mode).recommendation).toBe("unknown");
+ expect(decideStabilizationForRecordedMode(probe,mode).recommendation).toBe("prefer-eis");
 });

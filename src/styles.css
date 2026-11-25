@@ -1908,3 +1908,13 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   height: auto;
   white-space: normal;
 }
+
+/* A native tablet rail must remain within the measured pane and preserve
+ * accessible wrapping instead of covering the preview at large font sizes. */
+.native-recording-actions > button { min-width: 0; width: 100%; }
+[data-fold-workspace="pane"] .native-camera-fold-workspace .native-recording-primary {
+  grid-template-columns: minmax(0,1fr);
+}
+@media (max-height: 600px) {
+  .native-recording-primary > [role="img"] { max-height: 46vh; }
+}

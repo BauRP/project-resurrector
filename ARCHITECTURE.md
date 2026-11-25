@@ -678,3 +678,7 @@ The native panel can prepare the next exact AVC recording candidate from the dur
 
 ### 2026-11-25: durable per-mode evidence and native fold workspace
 Keep a separate bounded archive of up to 128 native finalized recording observations, without file paths or error messages, in the same atomic SharedPreferences commit as the existing recent history. The WebView still validates all evidence before classifying a mode as recorded. The next-mode action displays the last reconciled list and counts, not full-pipeline certification. Saved terminal native states allow the next diagnostic operation. Unsettled frame/history queries share the native promise. The native Camera2 workspace uses the observed safe fold region and retains internal scrolling, without changing the WebView camera layout.
+
+
+### 2026-11-25: stabilization trials by actual camera/FPS target
+The Camera2 preview probe now sets an advertised AE target range and requires matching CaptureResult range along with the stabilization observations. The range is not measured frame rate. Old confirmations without this field are not valid exact-mode evidence. The existing diagnostic panel supports a user-authorized sequence of up to four short YUV trials, one when resource telemetry is unknown, skipping saved exact-mode results. Stops on unknown native response, recording, hidden state or user cancellation between trials. No media is recorded. The native workspace emits its existing layout event when switching camera mode and keeps controls inside a single measured fold pane.

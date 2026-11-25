@@ -2,6 +2,7 @@ import { recordModeEvidence } from "@/lib/camera-passport";
 import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { loadStabilizationEvidence, saveStabilizationEvidence } from "@/lib/stabilization-evidence-store";
+import { stabilizationTrialPlan } from "@/lib/stabilization-trial-plan";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
@@ -53,6 +54,7 @@ export function CameraDiagnostics() {
   const [rawBusy, setRawBusy] = useState(false);
   const [rawMessage, setRawMessage] = useState("");
   const [stabilizationBusy, setStabilizationBusy] = useState(false);
+  const stabilizationStop = useRef(false);
   const [stabilizationResults, setStabilizationResults] = useState<StabilizationProbeResult[]>(() => loadStabilizationEvidence());
   const [stabilizationMessage, setStabilizationMessage] = useState("");
   const job = useRef<AbortController | null>(null);
@@ -390,6 +392,38 @@ export function CameraDiagnostics() {
       if (mounted.current) setStabilizationBusy(false);
     }
   };
+  const runStabilizationPlan = async () => {
+    if(stabilizationBusy||rawBusy||recording||running||highSpeedState!=="idle")return;
+    const planned=stabilizationTrialPlan(nativeCameras,loadStabilizationEvidence());
+    if(!planned.length){setStabilizationMessage("Нет новых заявленных режимов для этой проверки.");return;}
+    if(!window.confirm("Продолжить проверку стабилизации доступных режимов Camera2? До четырёх коротких YUV-сессий за запуск, без записи файлов. Готовые результаты пропускаются."))return;
+    const lease=gate.current.acquire("stabilization");
+    if(!lease)return;
+    stabilizationStop.current=false;setStabilizationBusy(true);
+    let attempted=0,savedCount=0;
+    try {
+      for(const trial of planned.slice(0,4)){
+        if(stabilizationStop.current||!mounted.current||document.hidden||latestRecording.current||!lease.isCurrent())break;
+        const safety=await checkDiagnosticSafety(false);
+        if(stabilizationStop.current||!mounted.current||document.hidden||latestRecording.current||!lease.isCurrent())break;
+        if(!safety.proceed){setSafetyNotice(safety.reason);break;}
+        if(attempted>=diagnosticProbeLimit(safety,4))break;
+        attempted++;
+        setStabilizationMessage("CAM "+trial.cameraId+" · "+trial.width+"×"+trial.height+" / "+trial.fps+" FPS");
+        try{
+          const r=await probeStabilization(trial.cameraId,trial.width,trial.height,trial.fps);
+          if(r.cameraId===trial.cameraId&&r.width===trial.width&&r.height===trial.height&&r.fpsRequested===trial.fps&&saveStabilizationEvidence(r)){
+            savedCount++;if(mounted.current)setStabilizationResults(loadStabilizationEvidence());
+          }
+          // An unknown timeout may still own native resources: never open
+          // the next camera merely because the JS callback returned.
+          if(r.state==="unknown")break;
+        }catch{break;}
+        await new Promise<void>(resolve=>window.setTimeout(resolve,150));
+      }
+      if(mounted.current)setStabilizationMessage("Испытано "+attempted+" режимов, сохранено "+savedCount+". Остальные можно продолжить позднее. Видео не записывалось.");
+    }finally{lease.release();if(mounted.current)setStabilizationBusy(false);}
+  };
   const testDual = async () => {
     if (dualBusy || recording || running || rawBusy || stabilizationBusy || highSpeedState !== "idle") return;
     if (!dualFirst || !dualSecond || dualFirst === dualSecond) {
@@ -503,7 +537,8 @@ export function CameraDiagnostics() {
         <span>{d.label || "Камера " + (i + 1)}</span>
         <span className="ms-2 text-muted-foreground">{tests.filter(t => t.api === "webview" && t.cameraId === d.deviceId && t.state === "verified").length} подтверждённых режимов · {tests.filter(t => t.api === "webview" && t.cameraId === d.deviceId && t.state === "recorded").length} файлов без полного подтверждения</span>
       </div>)}
-      <p className="pt-2 text-xs font-semibold">Camera2: {nativeCameras.length} логических камер</p>
+      <p className="pt-2 text-xs font-semibold">Camera2: {nativeCameras.length} доступных ID</p>
+      {isNative()&&<div className="flex flex-wrap gap-2"><Button size="sm" disabled={!nativeCameras.length||stabilizationBusy||recording||running||rawBusy||highSpeedState!=="idle"} onClick={()=>void runStabilizationPlan()}>Продолжить проверку стабилизации режимов</Button><Button size="sm" variant="outline" disabled={!stabilizationBusy} onClick={()=>{stabilizationStop.current=true;}}>Остановить после текущей пробы</Button></div>}
       {nativeCameras.map(c => <div key={c.cameraId} className="rounded-md border border-border p-2 text-xs">
         <p className="font-medium">ID {c.cameraId} · {c.facing} · {availability[c.cameraId] === true ? "сейчас доступна" : availability[c.cameraId] === false ? "сейчас занята или недоступна" : "текущая доступность неизвестна"}</p>
         <p className="text-muted-foreground">Физические ID: {c.physicalCameraIds?.join(", ") || "не раскрыты"}</p>

@@ -32,7 +32,9 @@ export function decideStabilizationForRecordedMode(
       probe.width !== mode.width || probe.height !== mode.height ||
       probe.fpsRequested !== mode.fps) return unknown();
   if (probe.state==="capture-result-confirmed" &&
-      (!Number.isSafeInteger(probe.framesObserved) || (probe.framesObserved ?? 0) < 3 ||
+      (probe.fpsRangeApplied !== true || !Number.isSafeInteger(probe.fpsRangeMin) ||
+       (probe.fpsRangeMin ?? 0) <= 0 || probe.fpsRangeMax !== mode.fps ||
+       (probe.fpsRangeMin ?? 0) > mode.fps || !Number.isSafeInteger(probe.framesObserved) || (probe.framesObserved ?? 0) < 3 ||
        !Number.isSafeInteger(probe.confirmations) || (probe.confirmations ?? 0) < 3 ||
        (probe.confirmations ?? 0) > (probe.framesObserved ?? 0)))
     return unknown("Системная стабилизация: отсутствуют три достоверных подтверждённых кадра Camera2.");

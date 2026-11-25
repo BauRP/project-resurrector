@@ -19,6 +19,7 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.util.Size;
+import android.util.Range;
 
 import com.getcapacitor.JSObject;
 import com.getcapacitor.PermissionState;
@@ -105,9 +106,22 @@ public class StabilizationProbePlugin extends Plugin {
                     "Camera2 не объявляет EIS, PREVIEW_STABILIZATION или OIS для этой камеры");
                 occupied.set(false); call.resolve(result); return;
             }
-            Probe probe = new Probe(call, manager, cameraId, width, height, fps, choice, eis, preview, ois);
+            Range<Integer> target = null;
+            Range<Integer>[] ranges = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
+            if (ranges != null) for (Range<Integer> range : ranges) {
+                if (range != null && range.getUpper() == fps &&
+                    (target == null || range.getLower() > target.getLower())) target = range;
+            }
+            if (target == null) {
+                JSObject result = base(cameraId, width, height, fps, choice, eis, preview, ois);
+                result.put("state", "unknown");
+                result.put("message", "Camera2 не объявляет диапазон AE с выбранной верхней частотой");
+                occupied.set(false); call.resolve(result); return;
+            }
+            Probe probe = new Probe(call, manager, cameraId, width, height, fps, choice, eis, preview, ois, target);
             active = probe;
-            probe.start();
+            try { probe.start(); }
+            catch (Exception error) { probe.fail("Пробная сессия не запущена: " + error.getMessage()); }
         } catch (Exception error) {
             occupied.set(false);
             call.reject("Пробная стабилизация не запущена: " + error.getMessage());
@@ -154,6 +168,7 @@ public class StabilizationProbePlugin extends Plugin {
         final String id;
         final int width, height, fps;
         final String choice;
+        final Range<Integer> targetFps;
         final boolean eis, preview, ois;
         final AtomicBoolean finished = new AtomicBoolean(false);
         HandlerThread worker;
@@ -168,7 +183,8 @@ public class StabilizationProbePlugin extends Plugin {
         boolean hasResults = false;
 
         Probe(PluginCall call, CameraManager manager, String id, int width, int height, int fps,
-              String choice, boolean eis, boolean preview, boolean ois) {
+              String choice, boolean eis, boolean preview, boolean ois, Range<Integer> targetFps) {
+            this.targetFps = targetFps;
             this.call = call; this.manager = manager; this.id = id;
             this.width = width; this.height = height; this.fps = fps;
             this.choice = choice; this.eis = eis; this.preview = preview; this.ois = ois;
@@ -198,6 +214,7 @@ public class StabilizationProbePlugin extends Plugin {
                                     try {
                                         CaptureRequest.Builder request = device.createCaptureRequest(CameraDevice.TEMPLATE_RECORD);
                                         request.addTarget(reader.getSurface());
+                                        request.set(CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE, targetFps);
                                         if ("eis".equals(choice) || "preview-stabilization".equals(choice)) {
                                             request.set(CaptureRequest.CONTROL_VIDEO_STABILIZATION_MODE,
                                                 "eis".equals(choice) ? CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_ON :
@@ -223,7 +240,8 @@ public class StabilizationProbePlugin extends Plugin {
                                                     "preview-stabilization".equals(choice) ?
                                                         actualEis != null && actualEis == CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_PREVIEW_STABILIZATION :
                                                         actualOis != null && actualOis == CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON;
-                                                if (matches) confirmed++;
+                                                Range<Integer> actualRange = result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE);
+                                                if (matches && targetFps.equals(actualRange)) confirmed++;
                                                 if (confirmed >= 3) finish("capture-result-confirmed",
                                                     "Camera2 подтвердил выбранный режим на нескольких кадрах; запись и качество стабилизации не проверены");
                                                 else if (frames >= 12) finish(hasResults ? "not-confirmed" : "unknown",
@@ -258,15 +276,18 @@ public class StabilizationProbePlugin extends Plugin {
             obj.put("state", state); obj.put("message", message);
             obj.put("framesObserved", frames);
             obj.put("confirmations", confirmed);
+            obj.put("fpsRangeApplied", confirmed >= 3);
+            obj.put("fpsRangeMin", targetFps.getLower());
+            obj.put("fpsRangeMax", targetFps.getUpper());
             obj.put("captureResultEis", lastEis < 0 ? JSObject.NULL : lastEis);
             obj.put("captureResultOis", lastOis < 0 ? JSObject.NULL : lastOis);
-            call.resolve(obj);
             cleanup();
+            call.resolve(obj);
         }
         void fail(String message) {
             if (!finished.compareAndSet(false, true)) return;
-            call.reject(message);
             cleanup();
+            call.reject(message);
         }
         void cleanup() {
             try { if (session != null) session.close(); } catch (Exception ignored) { }

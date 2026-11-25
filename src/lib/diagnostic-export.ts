@@ -86,7 +86,7 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
       const decision = decideStabilizationForRecordedMode(probe,{cameraId:probe.cameraId,width:probe.width,height:probe.height,fps:probe.fpsRequested});
       if (decision.systemState === "unknown") return [];
       return [{camera:camera2(probe.cameraId),width:safeNumber(probe.width),height:safeNumber(probe.height),
-        fpsRequested:safeNumber(probe.fpsRequested),selected:probe.selected,state:decision.systemState,
+        fpsRequested:safeNumber(probe.fpsRequested),fpsRangeApplied:probe.fpsRangeApplied===true,fpsRangeMin:safeNumber(probe.fpsRangeMin),fpsRangeMax:safeNumber(probe.fpsRangeMax),selected:probe.selected,state:decision.systemState,
         framesObserved:safeNumber(probe.framesObserved),confirmations:safeNumber(probe.confirmations),
         source:"camera2-capture-result",recordedFileVerified:false}];
     }),

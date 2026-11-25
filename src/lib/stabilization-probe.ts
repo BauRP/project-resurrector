@@ -8,6 +8,7 @@ export interface StabilizationProbeResult {
   state: "capture-result-confirmed" | "not-confirmed" | "unknown" | "declared-unavailable";
   eisDeclared: boolean; previewDeclared: boolean; oisDeclared: boolean;
   framesObserved?: number; confirmations?: number;
+  fpsRangeApplied?: boolean; fpsRangeMin?: number; fpsRangeMax?: number;
   captureResultEis?: number | null;
   captureResultOis?: number | null;
   recordedFileVerified: false;

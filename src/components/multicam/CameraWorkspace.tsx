@@ -41,6 +41,7 @@ export function CameraWorkspace() {
     return () => { mounted.current = false; };
   }, []);
 
+  useEffect(()=>{window.dispatchEvent(new Event("multicam-tab-rendered"));},[mode,nativeUiReady,webUiReady]);
   const manualModeSelection = useRef(false);
   useEffect(() => {
     if (mode !== "web") {
