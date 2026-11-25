@@ -3207,6 +3207,33 @@ public class NativeCaptureService extends Service {
      * accept a filename from WebView: only the saved, bounded app-owned path
      * from SharedPreferences is permitted. Do not start Camera2 or an encoder.
      */
+    /** Expose only the most recent completed short diagnostic MP4, never
+     * an arbitrary path supplied by JS. The native source remains untouched. */
+    public static JSObject diagnosticEditorSource(Context context,long expectedId) throws Exception {
+        final android.content.SharedPreferences prefs=context.getSharedPreferences(STORE,MODE_PRIVATE);
+        if(expectedId<=0||hasActiveInstance()||prefs.getLong("captureId",0L)!=expectedId||
+            !"saved".equals(prefs.getString("state",""))||!prefs.getBoolean("diagnosticClip",false)||
+            !prefs.getBoolean("mp4TracksInspected",false)||!prefs.getBoolean("mp4HasVideoTrack",false)||
+            !prefs.getBoolean("mp4FirstFrameDecodable",false))
+            throw new IllegalStateException("Готовая диагностическая запись недоступна");
+        String path=prefs.getString("path","");
+        if(path.isEmpty())throw new IllegalStateException("MP4 отсутствует");
+        File file=new File(path).getCanonicalFile();
+        File dir=new File(context.getFilesDir(),"native-video").getCanonicalFile();
+        long bytes=file.length();
+        if(!dir.equals(file.getParentFile())||!file.getName().endsWith(".mp4")||
+            !file.isFile()||bytes<1024L||bytes>32L*1024L*1024L)
+            throw new IllegalStateException("Файл отсутствует или превышает предел короткой пробы 32 МБ");
+        if(hasActiveInstance()||prefs.getLong("captureId",0L)!=expectedId||
+            !path.equals(prefs.getString("path","")))
+            throw new IllegalStateException("Запись изменилась");
+        JSObject result=new JSObject();
+        result.put("captureId",expectedId);
+        result.put("path",file.getAbsolutePath());
+        result.put("bytes",bytes);
+        return result;
+    }
+
     public static boolean retryGalleryPublication(Context context){
         final String path;
         final long captureId;

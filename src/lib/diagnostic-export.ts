@@ -3,6 +3,7 @@
  * text, user agent or microphone identifier must NEVER be serialized.
  * Reports contain no photo/video/audio bytes and never contact a server.
  */
+import type { DiagnosticEditorObservation } from "./native-diagnostic-editor";
 import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
 import type { StabilizationProbeResult } from "./stabilization-probe";
@@ -21,6 +22,7 @@ export interface DiagnosticExportInput {
   firstRun?: CameraAuditCheckpoint | null;
   stabilization?: readonly StabilizationProbeResult[];
   nativeHistory?: NativeAuditHistory | null;
+  editorObservations?: readonly DiagnosticEditorObservation[];
 }
 
 export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
@@ -82,6 +84,11 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
       camera:camera2(row.cameraId),width:row.width,height:row.height,fps:row.fps,
       state:row.state,bytes:row.bytes,source:row.source,
       exactEncoderVerified:false,fullPipelineVerified:false,
+    })),
+    editorDiagnosticObservations: (input.editorObservations??[]).slice(-64).map(row=>({
+      camera:camera2(row.cameraId),width:safeNumber(row.width),height:safeNumber(row.height),fps:safeNumber(row.fps),
+      bytes:safeNumber(row.bytes),decodedWidth:safeNumber(row.decodedWidth),decodedHeight:safeNumber(row.decodedHeight),
+      durationSeconds:safeNumber(row.durationSeconds),source:"persisted-editor-clip-first-frame",exportVerified:false,fullPipelineVerified:false,
     })),
     stabilizationTests: (input.stabilization ?? []).slice(0,64).flatMap(probe=>{
       const decision = decideStabilizationForRecordedMode(probe,{cameraId:probe.cameraId,width:probe.width,height:probe.height,fps:probe.fpsRequested});

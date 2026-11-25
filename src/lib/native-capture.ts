@@ -37,6 +37,7 @@ export interface NativeCaptureStatus {
  tapAfSupported?:boolean;tapAeSupported?:boolean;tapX?:number;tapY?:number;tapSubmitted?:boolean;
  manualFocusSupported?:boolean;autoFocusSupported?:boolean;focusMode?:string;focusDiopters?:number;maxFocusDiopters?:number;reportedFocusDiopters?:number;reportedAfState?:number;
 }
+export interface NativeDiagnosticEditorSource {captureId:number;path:string;bytes:number}
 export interface NativeCaptureBridge {
  addListener(eventName:"directPreviewInvalidated",listener:(event:{ownerId:string;reason:string})=>void):Promise<PluginListenerHandle>;
  startPreview(options:{cameraId:string}):Promise<NativeCaptureStatus>;
@@ -45,6 +46,7 @@ export interface NativeCaptureBridge {
  pause():Promise<NativeCaptureStatus>;
  resume():Promise<NativeCaptureStatus>;
  status():Promise<NativeCaptureStatus>;
+ diagnosticEditorSource(options:{captureId:number}):Promise<NativeDiagnosticEditorSource>;
  auditHistory():Promise<{entries:Array<Record<string,unknown>>;modeEntries?:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}>;
  retryGalleryPublication():Promise<NativeCaptureStatus>;
  previewFrame():Promise<{jpeg:string;frameAt?:number}>;
@@ -79,6 +81,7 @@ export const nativeCapture: NativeCaptureBridge = {
   pause: () => guard(rawNativeCapture.pause(), 12000, "pause"),
   resume: () => guard(rawNativeCapture.resume(), 12000, "resume"),
   status: () => guard(pendingCamera2Status(), 6000, "status"),
+  diagnosticEditorSource: options => guard(rawNativeCapture.diagnosticEditorSource(options), 6000, "diagnosticEditorSource"),
   auditHistory: () => guard(pendingCamera2History(), 15000, "auditHistory"),
   retryGalleryPublication: () => guard(rawNativeCapture.retryGalleryPublication(), 30000, "retryGalleryPublication"),
   previewFrame: () => guard(pendingCamera2Frame(), 5000, "previewFrame"),

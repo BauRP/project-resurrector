@@ -443,6 +443,23 @@ public class NativeCapturePlugin extends Plugin {
 
  private final java.util.concurrent.atomic.AtomicBoolean historyPending =
      new java.util.concurrent.atomic.AtomicBoolean(false);
+ private final java.util.concurrent.atomic.AtomicBoolean diagnosticSourcePending =
+     new java.util.concurrent.atomic.AtomicBoolean(false);
+ @PluginMethod public void diagnosticEditorSource(PluginCall call){
+   Long id=call.getLong("captureId");
+   if(id==null||id<=0){call.reject("Не указан ID диагностической записи");return;}
+   if(!diagnosticSourcePending.compareAndSet(false,true)){call.reject("Чтение уже выполняется");return;}
+   final android.content.Context context=getContext().getApplicationContext();
+   try{
+     statusWorker.execute(()->{
+       try{call.resolve(NativeCaptureService.diagnosticEditorSource(context,id));}
+       catch(Exception error){call.reject("Диагностический MP4 недоступен: "+error.getMessage());}
+       finally{diagnosticSourcePending.set(false);}
+     });
+   }catch(java.util.concurrent.RejectedExecutionException error){
+     diagnosticSourcePending.set(false);call.reject("Camera2 Activity закрыта");
+   }
+ }
  @PluginMethod public void auditHistory(PluginCall call){
    if(!historyPending.compareAndSet(false,true)){
      call.reject("Camera2: предыдущая проверка истории ещё выполняется");return;

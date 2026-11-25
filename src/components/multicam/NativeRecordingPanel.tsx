@@ -5,6 +5,7 @@ import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
+import { eligibleDiagnosticEditorClip } from "@/lib/native-diagnostic-editor";
 import { AUDIT_EVIDENCE_CHANGED } from "@/lib/initial-audit-coverage";
 import { validDiagnosticMode, waitForDiagnosticClip } from "@/lib/native-diagnostic-sequence";
 import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
@@ -78,6 +79,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  const [busy,setBusy]=useState(false);
  const [planBusy,setPlanBusy]=useState(false);
  const [planNotice,setPlanNotice]=useState("");
+ const editorTrial=useRef<AbortController|null>(null);
+ const [editorTrialNotice,setEditorTrialNotice]=useState("");
  const [planModes,setPlanModes]=useState<InitialAuditMode[]|null>(null);
  const planRequest=useRef(false);
  const planStop=useRef(false);
@@ -89,9 +92,9 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  currentStatus.current=status;
  const mounted=useRef(true);
  useEffect(()=>{mounted.current=true;
-   const visibility=()=>{if(document.hidden)planStop.current=true;};
+   const visibility=()=>{if(document.hidden){planStop.current=true;editorTrial.current?.abort();}};
    document.addEventListener("visibilitychange",visibility);
-   return()=>{mounted.current=false;planStop.current=true;document.removeEventListener("visibilitychange",visibility);};
+   return()=>{mounted.current=false;planStop.current=true;editorTrial.current?.abort();document.removeEventListener("visibilitychange",visibility);};
  },[]);
  const [auditHistory,setAuditHistory]=useState<{entries:Array<Record<string,unknown>>;omittedEarlier:number;maxEntries:number}|null>(null);
  const [auditError,setAuditError]=useState("");
@@ -573,6 +576,25 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
   finally{setBusy(false);}
  };
  const stop=async()=>{planStop.current=true;setBusy(true);try{setStatus(await bridge.stop());}catch(e){setError(String(e));}finally{setBusy(false);}};
+ const testEditorImport=async()=>{
+   if(busy||planRequest.current||editorTrial.current||!status||!eligibleDiagnosticEditorClip(status))return;
+   const lease=diagnosticCaptureGate.acquire("mode-scan");
+   if(!lease)return;
+   const controller=new AbortController();
+   editorTrial.current=controller;setBusy(true);setEditorTrialNotice("Читаем сохранённый MP4…");
+   const timer=window.setTimeout(()=>controller.abort(),30000);
+   try{
+     const {importDiagnosticEditorClip}=await import("@/lib/native-diagnostic-editor");
+     const result=await importDiagnosticEditorClip(status,controller.signal);
+     if(mounted.current)setEditorTrialNotice("Клип в медиатеке редактора, первый кадр декодирован ("+result.decodedWidth+"×"+result.decodedHeight+"). Экспорт ещё не проверен.");
+   }catch{if(mounted.current)setEditorTrialNotice("Проверка редактора не подтверждена. Исходный MP4 сохранён; проверьте медиатеку перед повтором.");}
+   finally{
+     window.clearTimeout(timer);
+     editorTrial.current=null;lease.release();
+     window.dispatchEvent(new Event("multicam-clips-changed"));
+     if(mounted.current)setBusy(false);
+   }
+ };
  const retryGallery=async()=>{
    if(busy)return;
    setBusy(true);setError("");
@@ -697,6 +719,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      <Button type="button" variant="outline" disabled={busy} onClick={()=>void retryGallery()}>
        Повторить сохранение готового MP4 в Галерею
      </Button>}
+   {eligibleDiagnosticEditorClip(status)&&<Button type="button" variant="outline" disabled={busy||planBusy} onClick={()=>void testEditorImport()}>Проверить запись в редакторе</Button>}
+   {editorTrialNotice&&<p role="status" className="break-words">{editorTrialNotice}</p>}
    {status&&["saved","saved_interrupted"].includes(status.state)&&<p role="status">
      Декодирование MP4: {status.mp4FirstFrameDecodable
        ?"начальный кадр успешно прочитан"

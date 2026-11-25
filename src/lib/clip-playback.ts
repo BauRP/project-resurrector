@@ -47,11 +47,10 @@ export async function verifyDecodedVideoBlob(
       signal?.removeEventListener("abort", aborted);
       video.onloadeddata = null;
       video.onerror = null;
-      video.pause();
-      video.removeAttribute("src");
-      video.load();
-      container.remove();
-      URL.revokeObjectURL(source);
+      try { video.pause(); video.removeAttribute("src"); video.load(); }
+      catch { /* A detached OEM decoder must not strand the result. */ }
+      try { container.remove(); } catch { /* Activity teardown. */ }
+      try { URL.revokeObjectURL(source); } catch { /* URL already released. */ }
       if (error) reject(error);
       else if (evidence) resolve(evidence);
       else reject(new Error("Кадр не декодирован"));

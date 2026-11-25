@@ -710,3 +710,7 @@ After declaration stages finish, the top Camera banner reads bounded saved candi
 
 ### 2026-11-26: Android resource-backed practical sweep
 The diagnostic resource snapshot reads sticky battery level/power and StatFs for the actual app files volume on the existing camera query worker, with one in-flight request and bounded WebView wait. Native diagnostics never substitute the browser storage quota. The approved short-video sequence permits up to eight clips with extended storage threshold, and stops after one when resource data is unknown. Production preview uses the same atomic visible-viewport snapshot tested for folds and tablets. Corrected four outdated ownership test fixtures from CI #45692535178 and added explicit terminal-but-active handoff coverage; no safety checks weakened.
+
+
+### 2026-11-26: native diagnostic clip to real editor media
+An explicit action imports the latest completed diagnostic MP4 (up to 32 MiB) from the service's own canonical private video directory through the local Capacitor file URL, never an arbitrary caller path or base64. The clip uses the existing IndexedDB add/read-back workflow and the actual stored blob's decoded first frame. No original replacement or automatic timeline insertion. A bounded local observation is exported without paths or identifiers; editor decode is not full export proof. Hidden/unmounted UI aborts further work. Previous CI #45699740826 passed 1167 tests and published v1.0.1877; tablet T-15 confirmed.
