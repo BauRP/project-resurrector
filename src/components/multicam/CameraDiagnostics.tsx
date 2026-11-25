@@ -2,6 +2,7 @@ import { recordModeEvidence } from "@/lib/camera-passport";
 import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { loadStabilizationEvidence, saveStabilizationEvidence } from "@/lib/stabilization-evidence-store";
+import { previewSensorObservation } from "@/lib/preview-sensor-observation";
 import { stabilizationTrialPlan } from "@/lib/stabilization-trial-plan";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -369,6 +370,7 @@ export function CameraDiagnostics() {
     if (!window.confirm("Проверить реальную EIS/OIS через Camera2 CaptureResult на " + cameraId + " в тестовой YUV 1280×720 сессии? Файл не записывается, WebView-камера должна быть свободна.")) return;
     const lease = gate.current.acquire("stabilization");
     if (!lease) return;
+    stabilizationStop.current=false;
     setStabilizationBusy(true);
     setStabilizationMessage("Открытие Camera2 для проверки стабилизации…");
     try {
@@ -376,6 +378,7 @@ export function CameraDiagnostics() {
         if (mounted.current) setStabilizationMessage("Проверка EIS/OIS отложена: камера или ресурсы заняты.");
         return;
       }
+      if(stabilizationStop.current)return;
       const result = await probeStabilization(cameraId, 1280, 720, 30);
       const saved = result.cameraId === cameraId && result.width === 1280 &&
         result.height === 720 && result.fpsRequested === 30 &&
@@ -550,9 +553,11 @@ export function CameraDiagnostics() {
           {c.raw && <Button size="sm" variant="outline" disabled={rawBusy || stabilizationBusy || recording || running || highSpeedState !== "idle"} onClick={() => void testRaw(c.cameraId)}>Снять настоящий DNG · CAM {c.cameraId}</Button>}
           <Button size="sm" variant="outline" disabled={stabilizationBusy || rawBusy || recording || running || highSpeedState !== "idle"} onClick={() => void checkStabilization(c.cameraId)}>Проверить OIS/EIS · CAM {c.cameraId}</Button>
         </div>
-        {stabilizationResults.filter(x => x.cameraId === c.cameraId).map(x =>
-          <p key={x.cameraId+"|"+x.width+"|"+x.height+"|"+x.fpsRequested} className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · сохранённая проба {x.width}×{x.height}/{x.fpsRequested} FPS · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:x.width,height:x.height,fps:x.fpsRequested}).message}</p>
-        )}
+        {stabilizationResults.filter(x => x.cameraId === c.cameraId).map(x => {
+          const sensor=previewSensorObservation(x);
+          return <div key={x.cameraId+"|"+x.width+"|"+x.height+"|"+x.fpsRequested} className="min-w-0 break-words"><p className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · сохранённая проба {x.width}×{x.height}/{x.fpsRequested} FPS · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:x.width,height:x.height,fps:x.fpsRequested}).message}</p>
+          {sensor&&<p className="mt-1 text-muted-foreground">Наблюдение сенсора в тестовой сессии: ISO {sensor.iso??"—"}, выдержка {sensor.exposureNs===undefined?"—":(sensor.exposureNs/1000000).toFixed(2)+" мс"}, фокус {sensor.focusDiopters??"—"} дптр. Это фактический снимок параметров, не проверка ручного управления.</p>}</div>;
+        })}
       </div>)}
       {stabilizationMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{stabilizationMessage}</p>}
       {rawMessage && <p role="status" className="break-words rounded-md border border-border p-2 text-xs">{rawMessage}</p>}

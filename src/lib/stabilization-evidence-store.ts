@@ -1,5 +1,6 @@
 import type { StabilizationProbeResult } from "./stabilization-probe";
 import { decideStabilizationForRecordedMode } from "./stabilization-policy";
+import { previewSensorObservation } from "./preview-sensor-observation";
 import { cameraPassportContext } from "./camera-passport";
 
 const KEY = "multicam-stabilization-evidence-v1";
@@ -40,7 +41,7 @@ export function saveStabilizationEvidence(result:StabilizationProbeResult, check
     if(current.some(p=>p.context===row.context && identity(p.result)===key && p.checkedAt>checkedAt)) return false;
     // Persist only known fields: no vendor text/path or arbitrary bridge payload.
     const {cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,fpsRangeApplied,fpsRangeMin,fpsRangeMax}=result;
-    const clean:StabilizationProbeResult={cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,fpsRangeApplied,fpsRangeMin,fpsRangeMax,recordedFileVerified:false,message:"Сохранён результат тестовой Camera2-сессии; видеофайл не проверен."};
+    const clean:StabilizationProbeResult={cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,fpsRangeApplied,fpsRangeMin,fpsRangeMax,sensorObservation:previewSensorObservation(result),recordedFileVerified:false,message:"Сохранён результат тестовой Camera2-сессии; видеофайл не проверен."};
     localStorage.setItem(KEY,JSON.stringify([...current.filter(p=>p.context!==row.context||identity(p.result)!==key).slice(-(LIMIT-1)),{...row,result:clean}]));
     return true;
   } catch { return false; }

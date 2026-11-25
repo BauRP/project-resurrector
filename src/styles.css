@@ -1918,3 +1918,11 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 @media (max-height: 600px) {
   .native-recording-primary > [role="img"] { max-height: 46vh; }
 }
+
+/* Keep the separate native recorder reachable in small measured panes.
+ * Internal scrolling must not push controls beneath the Android navigation. */
+.native-camera-scroll { min-width: 0; padding-bottom: 1rem; }
+.native-camera-scroll { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+[data-fold-workspace="pane"] .native-camera-fold-workspace .native-camera-scroll {
+  max-width: 100%;
+}

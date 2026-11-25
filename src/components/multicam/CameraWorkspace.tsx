@@ -163,7 +163,7 @@ export function CameraWorkspace() {
         <CameraTab onOpenNativeMode={isNative() ? () => { void switchTo("native"); } : undefined} />
       </Suspense> : <p role="status" className="p-3 text-xs text-muted-foreground">Подготовка камеры…</p>}
     </div> :
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+      <div className="native-camera-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
         <p className="text-xs text-muted-foreground">
           В этом режиме Android Camera2 владеет записью вне WebView. Предпросмотр WebView
           отключён, чтобы не захватывать одну камеру дважды. Выберите объектив и начните съёмку.

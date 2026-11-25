@@ -181,6 +181,9 @@ public class StabilizationProbePlugin extends Plugin {
         int lastEis = -1;
         int lastOis = -1;
         boolean hasResults = false;
+        Integer measuredIso, measuredAfState, measuredAeState, measuredAwbState;
+        Long measuredExposureNs;
+        Float measuredFocusDiopters;
 
         Probe(PluginCall call, CameraManager manager, String id, int width, int height, int fps,
               String choice, boolean eis, boolean preview, boolean ois, Range<Integer> targetFps) {
@@ -241,7 +244,17 @@ public class StabilizationProbePlugin extends Plugin {
                                                         actualEis != null && actualEis == CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_PREVIEW_STABILIZATION :
                                                         actualOis != null && actualOis == CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON;
                                                 Range<Integer> actualRange = result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE);
-                                                if (matches && targetFps.equals(actualRange)) confirmed++;
+                                                if (matches && targetFps.equals(actualRange)) {
+                                                    confirmed++;
+                                                    // Actual result values from this matching preview frame.
+                                                    // Missing vendor keys stay null; never fill from characteristics.
+                                                    measuredIso = result.get(CaptureResult.SENSOR_SENSITIVITY);
+                                                    measuredExposureNs = result.get(CaptureResult.SENSOR_EXPOSURE_TIME);
+                                                    measuredFocusDiopters = result.get(CaptureResult.LENS_FOCUS_DISTANCE);
+                                                    measuredAfState = result.get(CaptureResult.CONTROL_AF_STATE);
+                                                    measuredAeState = result.get(CaptureResult.CONTROL_AE_STATE);
+                                                    measuredAwbState = result.get(CaptureResult.CONTROL_AWB_STATE);
+                                                }
                                                 if (confirmed >= 3) finish("capture-result-confirmed",
                                                     "Camera2 подтвердил выбранный режим на нескольких кадрах; запись и качество стабилизации не проверены");
                                                 else if (frames >= 12) finish(hasResults ? "not-confirmed" : "unknown",
@@ -281,6 +294,17 @@ public class StabilizationProbePlugin extends Plugin {
             obj.put("fpsRangeMax", targetFps.getUpper());
             obj.put("captureResultEis", lastEis < 0 ? JSObject.NULL : lastEis);
             obj.put("captureResultOis", lastOis < 0 ? JSObject.NULL : lastOis);
+            if (confirmed >= 3) {
+                JSObject observation = new JSObject();
+                if (measuredIso != null && measuredIso > 0) observation.put("iso", measuredIso);
+                if (measuredExposureNs != null && measuredExposureNs > 0) observation.put("exposureNs", measuredExposureNs);
+                if (measuredFocusDiopters != null && Float.isFinite(measuredFocusDiopters) && measuredFocusDiopters >= 0)
+                    observation.put("focusDiopters", measuredFocusDiopters);
+                if (measuredAfState != null) observation.put("afState", measuredAfState);
+                if (measuredAeState != null) observation.put("aeState", measuredAeState);
+                if (measuredAwbState != null) observation.put("awbState", measuredAwbState);
+                obj.put("sensorObservation", observation);
+            }
             cleanup();
             call.resolve(obj);
         }

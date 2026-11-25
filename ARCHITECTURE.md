@@ -682,3 +682,7 @@ Keep a separate bounded archive of up to 128 native finalized recording observat
 
 ### 2026-11-25: stabilization trials by actual camera/FPS target
 The Camera2 preview probe now sets an advertised AE target range and requires matching CaptureResult range along with the stabilization observations. The range is not measured frame rate. Old confirmations without this field are not valid exact-mode evidence. The existing diagnostic panel supports a user-authorized sequence of up to four short YUV trials, one when resource telemetry is unknown, skipping saved exact-mode results. Stops on unknown native response, recording, hidden state or user cancellation between trials. No media is recorded. The native workspace emits its existing layout event when switching camera mode and keeps controls inside a single measured fold pane.
+
+
+### 2026-11-25: actual preview sensor observations and release test repair
+The matching Camera2 stabilization CaptureResult also contributes available ISO, exposure time, focus distance and AF/AE/AWB states. These are one frame's measured metadata, not a manual-control capability test. The allowlisted snapshot is saved with the exact-mode evidence, shown in CameraDiagnostics and exported anonymously. Four obsolete static regression assertions from CI run 45665643267 were updated to verify the stricter replacement behavior rather than the old source spelling. No existing test removed. Native scrolling reserves the bottom navigation inset.

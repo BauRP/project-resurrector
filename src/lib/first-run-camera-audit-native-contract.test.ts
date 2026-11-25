@@ -15,7 +15,13 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(service).toContain('private static final String STATUS_FILE_NAME');
     expect(service).toContain('cached.optLong("passportModifiedMs", -1) != passport.lastModified()');
     expect(service).toContain('cached.optLong("passportBytes", -1) != passport.length()');
-    expect(service).toContain("return statusOnly(read(context))");
+    expect(service).toContain("return readFallbackStatus(context, passport)");
+    const fallback=service.slice(service.indexOf("private static synchronized JSONObject readFallbackStatus"),service.indexOf("public static JSONObject readStatus"));
+    expect(fallback).toContain("JSONObject status = statusOnly(read(context))");
+    expect(fallback).toContain("modified == fallbackModified");
+    expect(fallback).toContain("bytes == fallbackBytes");
+    expect(fallback).toContain("now - fallbackAt < 30000");
+    expect(fallback).not.toContain("persistStatus(");
     expect(service).toContain("persistStatus(context, value, canonical)");
     expect(plugin).toContain("CameraAuditService.readStatus(getContext())");
     expect(plugin).toContain('result.put("audit", CameraAuditService.read(getContext()))');
@@ -103,8 +109,8 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(service).toContain('saved.optBoolean("metadataRowsValid", false)');
     expect(service).toContain('saved.optBoolean("codecRowsValid", false)');
     expect(service).toContain('saved.optBoolean("planRowsValid", false)');
-    expect(service).toContain('!cached.has("metadataRowsValid")');
-    expect(service).toContain('!cached.has("codecRowsValid") || !cached.has("planRowsValid")');
+    for(const field of ["metadataRowsValid","codecRowsValid","planRowsValid"])
+      expect(service).toContain('!(cached.opt("'+field+'") instanceof Boolean)');
     expect(codec).toContain('CameraAuditService.completeCodecRows(passport)');
     expect(plan).toContain('CameraAuditService.completePlanRows(passport)');
     expect(plan).toContain('!CameraAuditService.completePlanRow(camera)');
@@ -150,7 +156,10 @@ describe("first-run native camera audit cost and evidence",()=>{
     expect(codec).not.toContain('new MediaRecorder(');
   });
   it("caches codec capability queries across all candidates and cameras",()=>{
-    expect(codec).toContain("EncoderCatalog catalog = collectEncoderCapabilities(codecs)");
+    expect(codec).toContain("EncoderCatalog catalog = null");
+    expect(codec).toContain("if (completed < ids.length())");
+    expect(codec.match(/catalog = collectEncoderCapabilities\(codecs\)/g)).toHaveLength(1);
+    expect(codec.indexOf("catalog = collectEncoderCapabilities(codecs)")).toBeLessThan(codec.indexOf("JSONArray checks = scanCamera(camera, catalog)"));
     expect(codec).toContain("JSONArray checks = scanCamera(camera, catalog)");
     expect(codec).toContain("final List<EncoderProfile> profiles = new ArrayList<>()");
     expect(codec).toContain("boolean unknown = catalog.unknown");

@@ -11,6 +11,7 @@ export interface StabilizationProbeResult {
   fpsRangeApplied?: boolean; fpsRangeMin?: number; fpsRangeMax?: number;
   captureResultEis?: number | null;
   captureResultOis?: number | null;
+  sensorObservation?: {iso?:number;exposureNs?:number;focusDiopters?:number;afState?:number;aeState?:number;awbState?:number};
   recordedFileVerified: false;
   message: string;
 }
