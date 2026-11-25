@@ -49,6 +49,7 @@ import android.view.Surface;
 import android.graphics.SurfaceTexture;
 import android.view.WindowManager;
 import androidx.core.app.NotificationCompat;
+import com.getcapacitor.JSObject;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStream;

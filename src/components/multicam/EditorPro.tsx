@@ -346,7 +346,8 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const restoredScroll = useRef(false);
   const scrollSaveTimer = useRef<number | null>(null);
   const lastTimelineView = useRef({ left: 0, zoom: 8 });
-  lastTimelineView.current.zoom = zoom;
+  // Keep the zoom paired with the actual saved scroll position; changing
+  // zoom in render would reinterpret the old pixels as a different time.
   const [proxies, setProxies] = useState<Record<string, string>>({});
   const proxyUrls = useRef(new Set<string>());
   const proxyHandles = useRef(new Map<string, EditorProxyHandle>());
@@ -1083,7 +1084,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
   const rulerTicks = useMemo(() => visibleRulerTicks(total, zoom, scrollX, tlW, HEAD), [total, zoom, scrollX, tlW]);
   useEffect(() => { setZoom((z) => zoomTouched.current ? Math.max(z, minZoom) : minZoom); }, [minZoom]);
   useEffect(() => {
-    if (restoredScroll.current || tlW <= 0 || zoom < minZoom) return;
+    if (restoredScroll.current || loading || tlW <= 0 || zoom < minZoom) return;
     const timeline = tlRef.current;
     if (!timeline) return;
     const savedTime = readTimelineAnchor();
@@ -1098,7 +1099,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       restoredScroll.current = true;
     });
     return () => cancelAnimationFrame(frame);
-  }, [tlW, zoom, minZoom, total, items.length]);
+  }, [tlW, zoom, minZoom, total, items.length, loading]);
   useEffect(() => {
     const flush = () => {
       if (restoredScroll.current)

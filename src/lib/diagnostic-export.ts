@@ -3,6 +3,7 @@
  * text, user agent or microphone identifier must NEVER be serialized.
  * Reports contain no photo/video/audio bytes and never contact a server.
  */
+import type { DiagnosticExportObservation } from "./native-diagnostic-export";
 import type { DiagnosticEditorObservation } from "./native-diagnostic-editor";
 import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
@@ -23,6 +24,7 @@ export interface DiagnosticExportInput {
   stabilization?: readonly StabilizationProbeResult[];
   nativeHistory?: NativeAuditHistory | null;
   editorObservations?: readonly DiagnosticEditorObservation[];
+  exportObservations?: readonly DiagnosticExportObservation[];
 }
 
 export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
@@ -89,6 +91,11 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
       camera:camera2(row.cameraId),width:safeNumber(row.width),height:safeNumber(row.height),fps:safeNumber(row.fps),
       bytes:safeNumber(row.bytes),decodedWidth:safeNumber(row.decodedWidth),decodedHeight:safeNumber(row.decodedHeight),
       durationSeconds:safeNumber(row.durationSeconds),source:"persisted-editor-clip-first-frame",exportVerified:false,fullPipelineVerified:false,
+    })),
+    exportDiagnosticObservations:(input.exportObservations??[]).slice(-64).map(row=>({
+      camera:camera2(row.cameraId),width:safeNumber(row.width),height:safeNumber(row.height),fps:safeNumber(row.fps),
+      outputWidth:safeNumber(row.outputWidth),outputHeight:safeNumber(row.outputHeight),outputBytes:safeNumber(row.outputBytes),durationSeconds:safeNumber(row.durationSeconds),
+      source:"persisted-webm-render-first-frame",downloadsPublicationVerified:false,fullPipelineVerified:false,
     })),
     stabilizationTests: (input.stabilization ?? []).slice(0,64).flatMap(probe=>{
       const decision = decideStabilizationForRecordedMode(probe,{cameraId:probe.cameraId,width:probe.width,height:probe.height,fps:probe.fpsRequested});

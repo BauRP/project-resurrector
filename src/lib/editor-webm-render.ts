@@ -152,6 +152,9 @@ export async function renderSimpleVideoWebm(
         else {const result=new Blob(pieces,{type:"video/webm"});
           result.size>=1024?resolve(result):reject(Error("WebM-кодировщик вернул пустой файл"));}};
     });
+    // MediaRecorder can reject before video.play() settles. Attach a handler
+    // immediately without swallowing the later awaited rejection.
+    void finished.catch(()=>undefined);
     let lastPaintMs=Number.NEGATIVE_INFINITY;
     const progressOnce=makeExportProgressReporter(progress);
     const draw=(nowMs:number)=>{
@@ -239,10 +242,11 @@ export async function renderSimpleVideoWebm(
     window.removeEventListener("pagehide",abort);
     video.onloadedmetadata=null;video.onseeked=null;video.onerror=null;
     try{if(recorder?.state!=="inactive")recorder?.stop();}catch{/* cleanup */}
-    stream?.getTracks().forEach(t=>t.stop());
-    video.pause();video.removeAttribute("src");video.load();video.remove();
-    URL.revokeObjectURL(url);
+    try{stream?.getTracks().forEach(t=>{try{t.stop();}catch{/* detached track */}});}catch{/* detached stream */}
     video.onended=null;
-    if(audio)void audio.close().catch(()=>undefined);
+    try{video.pause();video.removeAttribute("src");video.load();}catch{/* detached decoder */}
+    try{video.remove();}catch{/* Activity teardown */}
+    try{URL.revokeObjectURL(url);}catch{/* released */}
+    if(audio)try{void audio.close().catch(()=>undefined);}catch{/* audio already closed */}
   }
 }

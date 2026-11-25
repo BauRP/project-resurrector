@@ -5,6 +5,7 @@ import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
+import { diagnosticExportCandidate } from "@/lib/native-diagnostic-export";
 import { eligibleDiagnosticEditorClip } from "@/lib/native-diagnostic-editor";
 import { AUDIT_EVIDENCE_CHANGED } from "@/lib/initial-audit-coverage";
 import { validDiagnosticMode, waitForDiagnosticClip } from "@/lib/native-diagnostic-sequence";
@@ -595,6 +596,28 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      if(mounted.current)setBusy(false);
    }
  };
+ const testDiagnosticExport=async()=>{
+   if(busy||planRequest.current||editorTrial.current||status?.captureServiceActive!==false)return;
+   const candidate=diagnosticExportCandidate(status.captureId);
+   if(!candidate||!window.confirm("Выполнить короткий реальный рендер WebM (до 2 секунд) из проверенного клипа? Результат сохранится отдельным видео в медиатеке. Исходник не изменится."))return;
+   const lease=diagnosticCaptureGate.acquire("mode-scan");
+   if(!lease)return;
+   const controller=new AbortController();
+   editorTrial.current=controller;setBusy(true);setEditorTrialNotice("Подготовка экспорта…");
+   const timer=window.setTimeout(()=>controller.abort(),45000);
+   try{
+     const current=await bridge.status();
+     if(controller.signal.aborted||current.captureServiceActive!==false||current.captureId!==candidate.captureId)throw Error("Камера занята или запись изменилась");
+     const {runDiagnosticExport}=await import("@/lib/native-diagnostic-export");
+     await runDiagnosticExport(candidate,controller.signal,n=>{if(mounted.current)setEditorTrialNotice("Проверка экспорта: "+n+"%");});
+     if(mounted.current)setEditorTrialNotice("WebM отрендерен, сохранён в медиатеке и первый кадр прочитан. Публикация в Downloads и полная проверка всех кадров не подтверждены.");
+   }catch{if(mounted.current)setEditorTrialNotice("Экспорт не подтверждён. Исходный MP4 не изменён.");}
+   finally{
+     window.clearTimeout(timer);editorTrial.current=null;lease.release();
+     window.dispatchEvent(new Event("multicam-clips-changed"));
+     if(mounted.current)setBusy(false);
+   }
+ };
  const retryGallery=async()=>{
    if(busy)return;
    setBusy(true);setError("");
@@ -720,6 +743,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
        Повторить сохранение готового MP4 в Галерею
      </Button>}
    {eligibleDiagnosticEditorClip(status)&&<Button type="button" variant="outline" disabled={busy||planBusy} onClick={()=>void testEditorImport()}>Проверить запись в редакторе</Button>}
+   {status?.captureServiceActive===false&&diagnosticExportCandidate(status.captureId)&&<Button type="button" variant="outline" disabled={busy||planBusy} onClick={()=>void testDiagnosticExport()}>Проверить реальный экспорт WebM</Button>}
+   {editorTrial.current&&<Button type="button" variant="outline" onClick={()=>editorTrial.current?.abort()}>Отменить проверку редактора / экспорта</Button>}
    {editorTrialNotice&&<p role="status" className="break-words">{editorTrialNotice}</p>}
    {status&&["saved","saved_interrupted"].includes(status.state)&&<p role="status">
      Декодирование MP4: {status.mp4FirstFrameDecodable

@@ -714,3 +714,7 @@ The diagnostic resource snapshot reads sticky battery level/power and StatFs for
 
 ### 2026-11-26: native diagnostic clip to real editor media
 An explicit action imports the latest completed diagnostic MP4 (up to 32 MiB) from the service's own canonical private video directory through the local Capacitor file URL, never an arbitrary caller path or base64. The clip uses the existing IndexedDB add/read-back workflow and the actual stored blob's decoded first frame. No original replacement or automatic timeline insertion. A bounded local observation is exported without paths or identifiers; editor decode is not full export proof. Hidden/unmounted UI aborts further work. Previous CI #45699740826 passed 1167 tests and published v1.0.1877; tablet T-15 confirmed.
+
+
+### 2026-11-26: actual diagnostic export through the existing editor renderer
+An explicit second diagnostic action uses the already verified persisted MP4 and the production one-clip VP8/Opus WebM renderer with a bounded two-second trim, 720p/30 and separate output record. It reopens and compares sampled bytes, verifies the decoded output dimensions/first frame and saves anonymous evidence. No Downloads publication or complete NLE certification is inferred. Cancellation and robust renderer cleanup protect device resources. Timeline restoration waits for media loading and retains the original zoom/scroll pairing. Fixed missing JSObject import from prior CI #45702634397 (1170 tests passed, Javac failed).

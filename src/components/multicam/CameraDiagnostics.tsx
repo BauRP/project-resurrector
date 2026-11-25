@@ -482,6 +482,7 @@ export function CameraDiagnostics() {
         checkedAt: new Date().toISOString(),
         nativeCameras, modes: loadModeEvidence(), mp4: lastMp4Inspection, firstRun, nativeHistory, stabilization: loadStabilizationEvidence(),
         editorObservations:(await import("@/lib/native-diagnostic-editor")).readDiagnosticEditorObservations(),
+        exportObservations:(await import("@/lib/native-diagnostic-export")).readDiagnosticExportObservations(),
       });
       const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
       const a = document.createElement("a");
