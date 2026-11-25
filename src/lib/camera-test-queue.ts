@@ -226,3 +226,23 @@ export function queueSummary(queue: readonly CameraTestTask[], deviceIds: readon
     deferred: relevant.filter(t => t.status === "deferred").length,
   };
 }
+
+/** Resume the durable WebView trial list without opening all lenses again.
+ * Reconcile each saved mode against current evidence; offline lenses remain
+ * history, not runnable candidates. Camera2 identifiers are never mapped to
+ * WebView identifiers. A recorded sample is not a verified FPS result. */
+export function resumeSavedCameraTasks(
+  saved: readonly CameraTestTask[], activeIds: readonly string[],
+  evidence: readonly ModeEvidence[],
+): CameraTestTask[] {
+  const active = new Set(activeIds.filter(Boolean));
+  const plans: Record<string, TestMode[]> = Object.create(null);
+  const valid = saved.filter(isTask);
+  for (const task of valid) {
+    if (!active.has(task.cameraId)) continue;
+    (plans[task.cameraId] ??= []).push(task.mode);
+  }
+  const current = prepareCameraTestQueueByDevice(plans, valid, evidence);
+  const offline = new Set(valid.filter(t => !active.has(t.cameraId)).map(t => t.cameraId));
+  return preserveUnavailableCameraHistory(current, valid, offline, evidence);
+}

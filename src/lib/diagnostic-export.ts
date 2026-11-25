@@ -5,6 +5,7 @@
  */
 import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
+import type { CameraAuditCheckpoint } from "./first-run-camera-audit";
 import { declaredHighSpeedCandidates } from "./native-mode-selection";
 
 export interface DiagnosticExportInput {
@@ -12,6 +13,7 @@ export interface DiagnosticExportInput {
   modes: readonly ModeEvidence[];
   mp4: NativeMp4Inspection | null;
   checkedAt: string;
+  firstRun?: CameraAuditCheckpoint | null;
 }
 
 export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
@@ -48,8 +50,30 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
       // creation of a capture session, a codec, or an actual MP4 recording.
       highSpeedDeclared: declaredHighSpeedCandidates(cam),
     })),
+    firstRunCamera2: input.firstRun ? {
+      stage: ["not-started","running","retry","complete"].includes(input.firstRun.state) ? input.firstRun.state : "unknown",
+      declaredCameraCount: safeNumber(input.firstRun.total),
+      completedMetadataCount: safeNumber(input.firstRun.completed),
+      completedCodecCount: safeNumber(input.firstRun.codecCompleted),
+      completedPlanCount: safeNumber(input.firstRun.planCompleted),
+      recordingValidated: false,
+      cameras: Object.entries(input.firstRun.cameras ?? {}).slice(0,64).map(([id,cam]) => ({
+        camera: camera2(id),
+        facing: ["front","back","external"].includes(cam.facing ?? "") ? cam.facing : "unknown",
+        codecChecks: (Array.isArray(cam.codecChecks) ? cam.codecChecks : []).slice(0,24).filter(check=>check && typeof check === "object").map(check=>({
+          width: safeNumber(check.width), height: safeNumber(check.height), fps: safeNumber(check.fpsRequested),
+          state: ["declared-compatible","not-declared-by-camera","not-declared-by-encoder"].includes(check.status) ? check.status : "unknown",
+          recordedAndVerified: false,
+        })),
+        plannedModes: (Array.isArray(cam.functionalPlan) ? cam.functionalPlan : []).slice(0,8).filter(mode=>mode && typeof mode === "object").map(mode=>({
+          width: safeNumber(mode.width), height: safeNumber(mode.height), fps: safeNumber(mode.fps),
+          evidence: "declared-compatible-only", status: "not-run", verifiedRecording: false,
+        })),
+      })),
+    } : null,
     webviewModes: input.modes.map(test => ({
-      camera: webview(test.cameraId),
+      camera: test.api === "camera2" ? camera2(test.cameraId) : webview(test.cameraId),
+      api: test.api === "camera2" ? "camera2" : "webview",
       requested: { ...test.requested },
       applied: test.applied ? { ...test.applied } : null,
       result: test.state,

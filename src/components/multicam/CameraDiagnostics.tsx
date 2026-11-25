@@ -2,12 +2,12 @@ import { recordModeEvidence } from "@/lib/camera-passport";
 import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMulticamStore } from "@/lib/multicam-store";
 import { isNative, MultiCamNative, type NativeCameraProfile, type NativeEncoderSupport } from "@/lib/native";
 import { loadModeEvidence, type ModeEvidence } from "@/lib/camera-passport";
 import { verifyMode, TEST_MODES, discoverWebViewModeCandidates, type TestMode } from "@/lib/mode-verification";
-import { prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, preserveUnavailableCameraHistory, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
+import { resumeSavedCameraTasks, prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, preserveUnavailableCameraHistory, loadCameraTestQueue, persistCameraTestQueue, updateCameraTestTask, queueSummary, selectQuickCameraTasks, type CameraTestTask } from "@/lib/camera-test-queue";
 import { Button } from "@/components/ui/button";
 import { captureRealDng } from "@/lib/raw-dng";
 import { probeStabilization, type StabilizationProbeResult } from "@/lib/stabilization-probe";
@@ -15,6 +15,7 @@ import { verifyDualCameraRecording, type DualCameraEvidence } from "@/lib/dual-c
 import { diagnosticProbeLimit, checkDiagnosticSafety } from "@/lib/diagnostic-safety";
 import { diagnosticCaptureGate, type DiagnosticLease } from "@/lib/diagnostic-capture-gate";
 import { CameraDiscoveryEpoch } from "@/lib/camera-discovery-epoch";
+import { cameraAudit, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -26,6 +27,8 @@ export function CameraDiagnostics() {
   // front/tele lens from a different camera's hardware characteristics.
   const [cameraModePlans,setCameraModePlans]=useState<Record<string,TestMode[]>>({});
   const [running, setRunning] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
+  const exportInFlight = useRef(false);
   const [progress, setProgress] = useState("");
   const [safetyNotice, setSafetyNotice] = useState("");
   const [error, setError] = useState("");
@@ -133,23 +136,27 @@ export function CameraDiagnostics() {
       navigator.mediaDevices?.removeEventListener?.("devicechange", deviceChanged);
     };
   }, []);
-  const queueIds = devices.map(d => d.deviceId);
-  const planned = prepareCameraTestQueueByDevice(
+  const queueIds = useMemo(() => devices.map(d => d.deviceId), [devices]);
+  const planned = useMemo(() => prepareCameraTestQueueByDevice(
     Object.fromEntries(queueIds.map(id=>[id,cameraModePlans[id]??TEST_MODES])),
-    testQueue,tests);
-  const summary = queueSummary(planned, queueIds);
-  const run = async (full: boolean) => {
+    testQueue,tests),[queueIds,cameraModePlans,testQueue,tests]);
+  const savedTrials = useMemo(() => resumeSavedCameraTasks(testQueue,queueIds,tests),[testQueue,queueIds,tests]);
+  const summary = queueSummary(savedTrials.some(t=>queueIds.includes(t.cameraId)) ? savedTrials : planned, queueIds);
+  const canResume = savedTrials.some(t=>queueIds.includes(t.cameraId) &&
+    ["pending","retry","deferred","error"].includes(t.status));
+  const run = async (full: boolean, resume = false) => {
     if (job.current || running || recording || dualBusy || rawBusy || stabilizationBusy || highSpeedState !== "idle" || !devices.length) return;
-    if (full && !window.confirm("Продолжить незавершённые испытания всех камер? Возможны нагрев и расход заряда.")) return;
+    if (full && !window.confirm(resume ? "Продолжить сохранённые видеопробы? Возможны нагрев и расход заряда." : "Продолжить незавершённые испытания всех камер? Возможны нагрев и расход заряда.")) return;
     const lease = gate.current.acquire("mode-scan");
     if (!lease) return;
     const current = new AbortController();
     job.current = current;
-    setRunning(true); setError(""); setSafetyNotice("");
+    setRunning(true); setError(""); setSafetyNotice(""); setProgress("");
+    let finished = false;
     // Full discovery must not overwrite the saved queue with generic modes
     // before the actual camera capabilities were read. A cancelled scan
     // leaves the previous diagnostic records untouched.
-    let queue = full ? loadCameraTestQueue()
+    let queue = resume ? resumeSavedCameraTasks(loadCameraTestQueue(),queueIds,loadModeEvidence()) : full ? loadCameraTestQueue()
       : prepareCameraTestQueueByDevice(
           quickCameraCandidatePlans(queueIds,cameraModePlans,TEST_MODES),
           loadCameraTestQueue(),loadModeEvidence());
@@ -157,16 +164,17 @@ export function CameraDiagnostics() {
       queue = next; persistCameraTestQueue(queue);
       if (mounted.current) setTestQueue(queue);
     };
-    if(!full)persist(queue);
+    if(!full || resume)persist(queue);
     try {
       const unavailableIds=new Set<string>();
-      if(full){
+      if(full && !resume){
         const perCamera:Record<string,TestMode[]>={};
         // Full discovery is explicit user action and sequential: never take
         // over a recording camera or probe a Cartesian product blindly.
         for(const id of queueIds){
-          if(current.signal.aborted||document.hidden||recording)return;
+          if(current.signal.aborted||document.hidden||latestRecording.current)return;
           const safe=await checkDiagnosticSafety(true);
+          if(current.signal.aborted||document.hidden||latestRecording.current||!lease.isCurrent())return;
           if(!safe.proceed){setSafetyNotice("Диагностика отложена: "+safe.reason);return;}
           setProgress("Читаю допустимые кандидаты объектива: "+
             (devices.find(d=>d.deviceId===id)?.label||"Камера"));
@@ -188,18 +196,18 @@ export function CameraDiagnostics() {
       const candidates = queue.filter(task => !unavailableIds.has(task.cameraId) &&
         queueIds.includes(task.cameraId) &&
         (["pending","retry","deferred"].includes(task.status) ||
-          (full && ["error","recorded"].includes(task.status))));
+          (full && (task.status === "error" || (!resume && task.status === "recorded")))));
       const eligible = full ? candidates : selectQuickCameraTasks(candidates,2,queue);
       let count = 0;
       for (const task of eligible) {
         if (current.signal.aborted) return;
-        if (document.hidden || recording) {
+        if (document.hidden || latestRecording.current) {
           persist(updateCameraTestTask(queue, task.key, "deferred", "Проверка отложена: запись или приложение в фоне"));
           setProgress("Диагностика приостановлена: приложение неактивно или началась запись");
           return;
         }
         const safe = await checkDiagnosticSafety(full);
-        if (current.signal.aborted) return;
+        if (current.signal.aborted || document.hidden || latestRecording.current || !lease.isCurrent()) return;
         if (!safe.proceed) {
           persist(updateCameraTestTask(queue, task.key, "deferred", safe.reason));
           setSafetyNotice("Диагностика отложена: " + safe.reason);
@@ -225,10 +233,15 @@ export function CameraDiagnostics() {
         persist(updateCameraTestTask(queue, task.key, status, evidence.message || "Проверка завершена"));
         if (mounted.current) setTests(loadModeEvidence());
       }
+      finished = true;
     } catch (error) {
       if (mounted.current) setError("Ошибка очереди диагностики: " + String(error));
     } finally {
-      if (mounted.current) { setRunning(false); setProgress(current.signal.aborted ? "Проверка приостановлена" : "Очередь обработана"); }
+      if (mounted.current) {
+        setRunning(false);
+        if (current.signal.aborted) setProgress("Проверка приостановлена");
+        else if (finished) setProgress("Выбранные видеопробы обработаны");
+      }
       if (job.current === current) job.current = null;
       lease.release();
     }
@@ -393,25 +406,40 @@ export function CameraDiagnostics() {
       lease.release();
     }
   };
-  const download = () => {
-    const report = buildAnonymousCameraReport({
-      checkedAt: new Date().toISOString(),
-      nativeCameras, modes: tests, mp4: lastMp4Inspection,
-    });
-    const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
-    const a = document.createElement("a");
-    a.href = url; a.download = "multicam-camera-passport-anonymous.json"; a.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const download = async () => {
+    if (exportInFlight.current) return;
+    exportInFlight.current = true;
+    setExportBusy(true);
+    try {
+      let firstRun: CameraAuditCheckpoint | null = null;
+      if (isNative()) {
+        try { firstRun = (await cameraAudit.getPassport()).audit; }
+        catch { /* retain the rest of the report if the worker is unavailable */ }
+      }
+      if (!mounted.current) return;
+      const report = buildAnonymousCameraReport({
+        checkedAt: new Date().toISOString(),
+        nativeCameras, modes: loadModeEvidence(), mp4: lastMp4Inspection, firstRun,
+      });
+      const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
+      const a = document.createElement("a");
+      a.href = url; a.download = "multicam-camera-passport-anonymous.json"; a.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } finally {
+      exportInFlight.current = false;
+      if (mounted.current) setExportBusy(false);
+    }
   };
-  return <section className="rounded-lg border border-border bg-card p-4">
+  return <section className="camera-diagnostics-panel min-w-0 rounded-lg border border-border bg-card p-4">
     <h2 className="mb-2 text-sm font-semibold">Диагностика всех доступных камер</h2>
     <p className="mb-3 text-xs text-muted-foreground">Камеры испытываются по очереди. «Записано» означает настоящий непустой видеообразец, но не проверенный FPS готового файла. EIS/OIS показываются как заявленные или неизвестные.</p>
     <p className="mb-2 text-xs text-muted-foreground">Очередь режимов: полностью подтверждено {summary.verified}/{summary.total}, файлы без проверки FPS {summary.recorded}, ожидают {summary.pending}, ошибки {summary.failed}, отложено {summary.deferred}. Успешный запуск интерфейса не равен полной диагностике.</p>
     <div className="flex flex-wrap gap-2">
       <Button size="sm" disabled={running || recording || !devices.length} onClick={() => void run(false)}>Быстрая проверка</Button>
       <Button size="sm" variant="secondary" disabled={running || recording || !devices.length} onClick={() => void run(true)}>Расширенная проверка</Button>
+      <Button size="sm" variant="secondary" disabled={running || recording || !canResume} onClick={() => void run(true,true)}>Продолжить сохранённые испытания</Button>
       <Button size="sm" variant="outline" disabled={!running} onClick={() => job.current?.abort()}>Остановить</Button>
-      <Button size="sm" variant="outline" disabled={!nativeCameras.length && !tests.length && !encoder} onClick={download}>Скачать паспорт</Button>
+      <Button size="sm" variant="outline" disabled={exportBusy || (!isNative() && !nativeCameras.length && !tests.length && !encoder)} onClick={() => void download()}>{exportBusy ? "Подготовка паспорта…" : "Скачать паспорт"}</Button>
       {isNative() && <Button size="sm" variant="secondary" disabled={encoderBusy || running || recording} onClick={() => void checkEncoder()}>{encoderBusy ? "Проверяю…" : "Кодировщики 1080p30"}</Button>}
     </div>
     {isNative() && <div className="mt-3 rounded-md border border-border p-2 text-xs">
@@ -451,7 +479,7 @@ export function CameraDiagnostics() {
       <p className="text-xs font-semibold">WebView: {devices.length} камер</p>
       {devices.map((d, i) => <div key={d.deviceId} className="rounded-md border border-border p-2 text-xs">
         <span>{d.label || "Камера " + (i + 1)}</span>
-        <span className="ms-2 text-muted-foreground">{tests.filter(t => t.cameraId === d.deviceId && t.state === "verified").length} подтверждённых режимов · {tests.filter(t => t.cameraId === d.deviceId && t.state === "recorded").length} файлов без полного подтверждения</span>
+        <span className="ms-2 text-muted-foreground">{tests.filter(t => t.api === "webview" && t.cameraId === d.deviceId && t.state === "verified").length} подтверждённых режимов · {tests.filter(t => t.api === "webview" && t.cameraId === d.deviceId && t.state === "recorded").length} файлов без полного подтверждения</span>
       </div>)}
       <p className="pt-2 text-xs font-semibold">Camera2: {nativeCameras.length} логических камер</p>
       {nativeCameras.map(c => <div key={c.cameraId} className="rounded-md border border-border p-2 text-xs">

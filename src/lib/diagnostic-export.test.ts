@@ -31,3 +31,16 @@ describe("anonymous offline diagnostic passport",()=>{
     expect(report.camera2[0]?.hdrRecordedAndVerified).toBe(false);
   });
 });
+describe("initial audit in the anonymous passport",()=>{
+ it("exports the actual declared candidate plan without disclosing native identifiers or inventing recordings",()=>{
+   const firstRun={schema:2,state:"complete",completed:1,total:1,advancedState:"pending",cameras:{
+    "SECRET-ID":{cameraId:"SECRET-ID",source:"android-camera2-metadata",state:"metadata-collected",verifiedRecording:false,
+    codecChecks:[{width:1920,height:1080,fpsRequested:30,status:"declared-compatible",recordedAndVerified:false,encoders:[{name:"SECRET-ENCODER",mime:"video/avc",declaredOnly:true}]}],
+    functionalPlan:[{key:"SECRET-ID|1920|1080|30",cameraId:"SECRET-ID",width:1920,height:1080,fps:30,encoderName:"SECRET-ENCODER",encoderMime:"video/avc",status:"not-run",verifiedRecording:false,evidence:"declared-compatible-only"}]}
+   }} as const;
+   const report=buildAnonymousCameraReport({nativeCameras:[],modes:[],mp4:null,checkedAt:"2026-11-25",
+    firstRun:firstRun as unknown as import("./first-run-camera-audit").CameraAuditCheckpoint});
+   expect(report.firstRunCamera2?.cameras[0]?.plannedModes).toEqual([{width:1920,height:1080,fps:30,evidence:"declared-compatible-only",status:"not-run",verifiedRecording:false}]);
+   expect(JSON.stringify(report)).not.toContain("SECRET-");
+ });
+});

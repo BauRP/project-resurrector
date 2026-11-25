@@ -658,3 +658,7 @@ routes/index.tsx ─► MulticamApp ─► MulticamStoreProvider (context)
 - `camera2EnumeratedIdCount` и `physicalIdsDisclosed` — разные счётчики, физические ID могут быть частью логической камеры, складывать их нельзя. Полоска прекращает частый опрос WebView после 30 с неизменного состояния; повторное открытие возобновляет сохранённую проверку.
 
 
+
+
+### 2026-11-25: saved diagnostic trials and anonymous passport
+The existing CameraDiagnostics screen offers continuation of durable WebView trial tasks using the same exclusive diagnostic lease, resource guard and real verifyMode path. Resume never repeats the full capability-discovery scan and never equates Camera2 IDs with WebView IDs. Explicit download reads the initial Camera2 passport once, exports allowlisted numerical declarations and not-run candidates with anonymous aliases; it does not trigger a capture. Diagnostic controls wrap inside narrow panes and the landscape tablet dock reserves bottom inset space.

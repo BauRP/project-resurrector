@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, preserveUnavailableCameraHistory, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
+import { resumeSavedCameraTasks, cameraTaskKey, prepareCameraTestQueue, prepareCameraTestQueueByDevice, quickCameraCandidatePlans, preserveUnavailableCameraHistory, selectQuickCameraTasks, updateCameraTestTask, queueSummary } from "./camera-test-queue";
 import type { ModeEvidence } from "./camera-passport";
 
 const base = { width:1920, height:1080, fps:30 };
@@ -178,5 +178,21 @@ describe("per-lens resumable diagnostic queue", () => {
     const next = updateCameraTestTask(start,cameraTaskKey("rear",{...base,fps:60}),"error","кодировщик отказал");
     expect(next.find(t=>t.mode.fps===30)?.status).toBe("verified");
     expect(next.find(t=>t.mode.fps===60)?.status).toBe("error");
+  });
+});
+
+describe("resume real saved video trials without another inventory scan",()=>{
+  it("retains exact plans, current proof and offline history while retrying interrupted tasks",()=>{
+    const modes=[base,{...base,fps:60}];
+    let saved=prepareCameraTestQueue(["rear","front","offline"],modes,[],[proof]);
+    saved=updateCameraTestTask(saved,cameraTaskKey("front",base),"running","interrupted");
+    const result=resumeSavedCameraTasks(saved,["rear","front","new-device"],[proof]);
+    expect(result).toHaveLength(6);
+    expect(result.find(t=>t.key===cameraTaskKey("rear",base))?.status).toBe("verified");
+    expect(result.find(t=>t.key===cameraTaskKey("front",base))?.status).toBe("retry");
+    expect(result.find(t=>t.key===cameraTaskKey("front",base))?.attempts).toBe(1);
+    expect(result.some(t=>t.cameraId==="new-device")).toBe(false);
+    expect(result.filter(t=>t.cameraId==="offline")).toHaveLength(2);
+    expect(resumeSavedCameraTasks(saved,["rear"],[]).find(t=>t.key===cameraTaskKey("rear",base))?.status).toBe("retry");
   });
 });

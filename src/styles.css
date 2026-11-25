@@ -1816,3 +1816,25 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
   min-width: 2.75rem;
   min-height: 2.75rem;
 }
+
+/* Diagnostic controls remain reachable at large text sizes and in narrow
+ * fold panes; do not create a horizontal scroller for long camera labels. */
+.camera-diagnostics-panel button {
+  max-width: 100%;
+  min-height: 2.75rem;
+  height: auto;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+.camera-diagnostics-panel select {
+  max-width: 100%;
+  min-width: 0;
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-record-dock {
+  padding-bottom: max(.35rem, env(safe-area-inset-bottom));
+}
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .camera-screen:not(.clean) .camera-record-dock > div {
+  flex-shrink: 0;
+  margin-top: auto;
+}
