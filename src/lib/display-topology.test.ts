@@ -503,3 +503,21 @@ describe("transient Activity fold resize dimensions",()=>{
     expect(retainedViewportDimension(0,null)).toBe(null);
   });
 });
+
+describe("malformed native topology cannot create fake panes", () => {
+  it("rejects lookalike orientation and occlusion enum values consistently", () => {
+    for (const feature of [
+      {...hinge(590,610), orientation:"NOT_VERTICAL"},
+      {...hinge(590,610), orientation:"HORIZONTAL_VERTICAL"},
+      {...hinge(590,610), occlusion:"NOT_FULL"},
+      {...hinge(590,610), occlusion:"UNKNOWN"},
+    ]) {
+      const state = topology([feature]);
+      expect(hasPlausibleSeparatingHinge(state)).toBe(false);
+      expect(calculateDisplayRegions(state,600,450)).toEqual({
+        regions:[{left:0,top:0,width:600,height:450}],split:"none",occluded:false,hinges:[]
+      });
+    }
+    expect(calculateDisplayRegions(topology([{...hinge(590,610),orientation:"vertical",occlusion:"full"}]),600,450).regions).toHaveLength(2);
+  });
+});

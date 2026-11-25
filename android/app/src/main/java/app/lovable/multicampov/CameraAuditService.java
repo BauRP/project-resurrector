@@ -85,6 +85,40 @@ public final class CameraAuditService extends Service {
      * File length and timestamp prevent a stale sidecar from claiming success
      * after the canonical checkpoint changes or disappears.
      */
+    // The audit process owns the durable sidecar. A reader must not race its
+    // AtomicFile writes when repairing an old/missing sidecar from WebView.
+    // Cache only a compact immutable summary of a stable canonical file.
+    private static String fallbackPath;
+    private static long fallbackModified = -1, fallbackBytes = -1, fallbackAt = -1;
+    private static String fallbackSummary;
+
+    private static synchronized JSONObject readFallbackStatus(Context context, File passport) {
+        String path = passport.getAbsolutePath();
+        long modified = passport.lastModified(), bytes = passport.length();
+        long now = android.os.SystemClock.elapsedRealtime();
+        boolean present = passport.isFile() && bytes > 0;
+        if (present && path.equals(fallbackPath) && modified == fallbackModified &&
+                bytes == fallbackBytes && fallbackSummary != null &&
+                now - fallbackAt < 30000) {
+            try { return new JSONObject(fallbackSummary); }
+            catch (Exception ignored) { fallbackSummary = null; }
+        }
+        JSONObject status = statusOnly(read(context));
+        // A concurrent checkpoint replacement must not be labelled with the
+        // newer file's identity. The next poll will read its actual contents.
+        if (present && passport.isFile() && modified == passport.lastModified() &&
+                bytes == passport.length()) {
+            fallbackPath = path;
+            fallbackModified = modified;
+            fallbackBytes = bytes;
+            fallbackAt = now;
+            fallbackSummary = status.toString();
+            return status;
+        }
+        fallbackSummary = null;
+        return present ? statusOnly(blank()) : status;
+    }
+
     public static JSONObject readStatus(Context context) {
         File passport = new File(context.getFilesDir(), FILE_NAME);
         AtomicFile statusFile = new AtomicFile(new File(context.getFilesDir(), STATUS_FILE_NAME));
@@ -96,28 +130,22 @@ public final class CameraAuditService extends Service {
                 if (count <= 0) break;
                 used += count;
             }
-            if (used == data.length) return statusOnly(read(context));
+            if (used == data.length) return readFallbackStatus(context, passport);
             JSONObject cached = new JSONObject(new String(data, 0, used, StandardCharsets.UTF_8));
             if (!passport.isFile() ||
                     cached.optLong("passportModifiedMs", -1) != passport.lastModified() ||
-                    cached.optLong("passportBytes", -1) != passport.length()) {
-                return statusOnly(read(context));
-            }
-            // A saved pre-upgrade sidecar may say "complete" without
-            // per-camera integrity flags. Upgrade it once using the canonical
-            // JSON instead of reparsing the large file on every UI poll.
-            if (!cached.has("metadataRowsValid") ||
-                    !cached.has("codecRowsValid") || !cached.has("planRowsValid")) {
-                JSONObject canonicalValue = read(context);
-                try { persistStatus(context, canonicalValue, passport); }
-                catch (Exception ignored) { }
-                return statusOnly(canonicalValue);
+                    cached.optLong("passportBytes", -1) != passport.length() ||
+                    cached.optInt("schema", -1) != SCHEMA ||
+                    !(cached.opt("metadataRowsValid") instanceof Boolean) ||
+                    !(cached.opt("codecRowsValid") instanceof Boolean) ||
+                    !(cached.opt("planRowsValid") instanceof Boolean)) {
+                return readFallbackStatus(context, passport);
             }
             cached.remove("passportModifiedMs");
             cached.remove("passportBytes");
             return cached;
         } catch (Exception ignored) {
-            return statusOnly(read(context));
+            return readFallbackStatus(context, passport);
         }
     }
 

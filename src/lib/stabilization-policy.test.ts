@@ -42,3 +42,13 @@ describe("mode-specific stabilization decision",()=>{
    expect(decideStabilizationForRecordedMode({...probe,state:"not-confirmed",selected:"none"},mode).recommendation).toBe("unknown");
  });
 });
+
+describe("untrusted stabilization bridge data", () => {
+  it("does not promote malformed or contradictory declarations to verified evidence", () => {
+    const invalidBoolean = {...probe,eisDeclared:"false"} as unknown as StabilizationProbeResult;
+    const falseFileProof = {...probe,recordedFileVerified:true} as unknown as StabilizationProbeResult;
+    expect(decideStabilizationForRecordedMode(invalidBoolean,mode).recommendation).toBe("unknown");
+    expect(decideStabilizationForRecordedMode(falseFileProof,mode).recommendation).toBe("unknown");
+    expect(decideStabilizationForRecordedMode({...probe,state:"declared-unavailable",selected:"eis",eisDeclared:false,oisDeclared:false,previewDeclared:false},mode).recommendation).toBe("unknown");
+  });
+});

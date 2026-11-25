@@ -31,10 +31,10 @@ export function tabletLayoutForWindow(input: TabletWindow): TabletLayout {
   // when a keyboard/pinch leaves too little actual visible space.
   // Ignore transient 0/NaN viewport reports during Activity rotation.
   if (typeof visibleHeight === "number" && Number.isFinite(visibleHeight) &&
-      visibleHeight > 0 && height - visibleHeight >= Math.max(180,height * .24))
+      visibleHeight > 0 && (visibleHeight < 480 || height - visibleHeight >= Math.max(180,height * .24)))
     return "none";
   if (typeof visibleWidth === "number" && Number.isFinite(visibleWidth) &&
-      visibleWidth > 0 && width - visibleWidth >= Math.max(160,width * .35))
+      visibleWidth > 0 && (visibleWidth < 480 || width - visibleWidth >= Math.max(160,width * .35)))
     return "none";
   // Use logical CSS pixels of the APP, never physical panel resolution.
   // A 600x800 app window can rotate to 800x600 without losing tablet UI.

@@ -26,6 +26,8 @@ export function decideStabilizationForRecordedMode(
       !Number.isFinite(mode.width)||mode.width<=0 ||
       !Number.isFinite(mode.height)||mode.height<=0 ||
       !Number.isFinite(mode.fps)||mode.fps<=0 ||
+      typeof probe.eisDeclared !== "boolean" || typeof probe.oisDeclared !== "boolean" ||
+      typeof probe.previewDeclared !== "boolean" || probe.recordedFileVerified !== false ||
       probe.cameraId !== mode.cameraId ||
       probe.width !== mode.width || probe.height !== mode.height ||
       probe.fpsRequested !== mode.fps) return unknown();
@@ -51,7 +53,7 @@ export function decideStabilizationForRecordedMode(
   // "not-confirmed" may merely mean no usable CaptureResult or camera busy.
   // Absence of declarations is NOT enough unless the native probe explicitly
   // classified them as unavailable on this exact tested lens/mode.
-  if (probe.state === "declared-unavailable" &&
+  if (probe.state === "declared-unavailable" && probe.selected === "none" &&
       !probe.eisDeclared && !probe.previewDeclared && !probe.oisDeclared)
     return {recommendation:"evaluate-software",systemState:"explicitly-unavailable",
       disableAdditionalProcessing:false,

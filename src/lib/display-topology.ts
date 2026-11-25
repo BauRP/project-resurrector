@@ -59,7 +59,8 @@ export function hasPlausibleSeparatingHinge(topology: DisplayTopology | null): b
     bounds.right <= bounds.left || bounds.bottom <= bounds.top)) return false;
   return topology.foldingFeatures.some(feature => feature && feature.separating &&
     typeof feature.orientation === "string" &&
-    /vertical|horizontal/i.test(feature.orientation) &&
+    typeof feature.occlusion === "string" && /^(full|none)$/i.test(feature.occlusion) &&
+    /^(vertical|horizontal)$/i.test(feature.orientation) &&
     [feature.leftPx, feature.topPx, feature.rightPx, feature.bottomPx].every(Number.isFinite) &&
     feature.leftPx >= 0 && feature.topPx >= 0 &&
     feature.rightPx >= feature.leftPx && feature.bottomPx >= feature.topPx &&
@@ -126,8 +127,8 @@ export function calculateDisplayRegions(topology: DisplayTopology, cssWidth: num
   const seenFoldGeometry = new Set<string>();
   const hinges = topology.foldingFeatures.filter(f => f && typeof f === "object" && f.separating &&
     typeof f.orientation === "string" &&
-    (f.orientation.toUpperCase().includes("VERTICAL") || f.orientation.toUpperCase().includes("HORIZONTAL")) &&
-    typeof f.occlusion === "string" &&
+    /^(vertical|horizontal)$/i.test(f.orientation) &&
+    typeof f.occlusion === "string" && /^(full|none)$/i.test(f.occlusion) &&
     [f.leftPx, f.rightPx, f.topPx, f.bottomPx].every(Number.isFinite) &&
     f.rightPx >= f.leftPx && f.bottomPx >= f.topPx &&
     f.leftPx >= 0 && f.topPx >= 0 &&

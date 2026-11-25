@@ -83,3 +83,13 @@ describe("sixth direction: Android tablets in both rotations",()=>{
   expect(styles).toContain('min-height: 2.75rem;');
  });
 });
+
+describe("minimum visible tablet workspace", () => {
+  it("falls back when a small landscape tablet loses usable control space", () => {
+    expect(decide({width:800,height:600,visibleHeight:450})).toBe("none");
+    expect(decide({width:800,height:600,visibleHeight:550})).toBe("landscape");
+    expect(decide({width:800,height:600,visibleHeight:600})).toBe("landscape");
+    expect(decide({width:600,height:800,visibleWidth:470})).toBe("none");
+    expect(decide({width:600,height:800,visibleWidth:600})).toBe("portrait");
+  });
+});
