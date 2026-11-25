@@ -86,6 +86,8 @@ describe("short diagnostic recording on the actual Camera2 service",()=>{
   const action=panel.slice(panel.indexOf("const prepareNextDiagnosticMode="),panel.indexOf("const canRestoreMode="));
   expect(action).toContain("window.confirm(");
   expect(action).toContain("checkDiagnosticSafety(false)");
+  expect(action).toContain("waitForDiagnosticClip(");
+  expect(action).toContain("current.captureServiceActive!==false");
   expect(action).toContain("nativeDiagnosticAvailability(current.state)!==\"free\"");
   expect(action).toContain("audio:false,diagnosticClip:true");
   expect(panel).toContain("onClick={()=>void prepareNextDiagnosticMode(true)}");

@@ -1109,6 +1109,10 @@ public class NativeCaptureService extends Service {
         return runningInstance != null && "previewing".equals(state);
     }
 
+    public static boolean hasActiveInstance() {
+        synchronized(STATE_LOCK){return runningInstance!=null;}
+    }
+
     public static boolean isRunning() {
         synchronized (STATE_LOCK) {
             return runningInstance != null &&
@@ -1174,6 +1178,7 @@ public class NativeCaptureService extends Service {
             out.put("startedAt", started);
             out.put("captureId",runningInstance==null
                 ? context.getSharedPreferences(STORE,MODE_PRIVATE).getLong("captureId",0L):currentCaptureId);
+            out.put("captureServiceActive",runningInstance!=null);
             out.put("diagnosticClip",runningInstance==null
                 ? context.getSharedPreferences(STORE,MODE_PRIVATE).getBoolean("diagnosticClip",false)
                 : runningInstance.diagnosticClip);

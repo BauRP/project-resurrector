@@ -516,7 +516,8 @@ public class NativeCapturePlugin extends Plugin {
    call.reject("Разрешите камеру и, если нужен звук, микрофон в Android.");return;
   }
   String currentState=NativeCaptureService.status(getContext()).getString("state");
-  if(NativeCaptureService.isRunning() && (diagnosticClip || !"previewing".equals(currentState))){
+  if((diagnosticClip && NativeCaptureService.hasActiveInstance()) ||
+      (NativeCaptureService.isRunning() && !"previewing".equals(currentState))){
    call.reject("Нативная запись уже работает");return;
   }
   String id=call.getString("cameraId");

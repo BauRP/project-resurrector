@@ -3,7 +3,7 @@ import { bounded } from "./async";
 import { createSingleFlight } from "./single-flight";
 export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;captureId?:number;stabilization:string;directPreviewActive?:boolean;
- cameraSensorFrames?:number;cameraSensorFps?:number;diagnosticClip?:boolean;
+ cameraSensorFrames?:number;cameraSensorFps?:number;diagnosticClip?:boolean;captureServiceActive?:boolean;
  stabilizationCaptureResultObserved:boolean;savedBytes:number;
  recordingEisFrames?:number;recordingOisFrames?:number;
  recordingStabilizationOffFrames?:number;recordingStabilizationUnknownFrames?:number;

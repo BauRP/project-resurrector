@@ -1937,3 +1937,6 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 /* Long diagnostic actions remain within the native fold or tablet pane. */
 .native-recording-panel > button { max-width:100%; min-width:0; white-space:normal; overflow-wrap:anywhere; }
 .native-recording-panel details > summary { min-height:44px; overflow-wrap:anywhere; }
+
+.native-recording-panel > [role="status"] { overflow-wrap:anywhere; min-width:0; }
+.native-recording-panel > button:focus-visible { outline-offset:2px; }
