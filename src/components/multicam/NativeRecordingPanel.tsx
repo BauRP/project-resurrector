@@ -282,8 +282,10 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
   // One in-flight request per visible panel prevents an unbounded Android
   // bridge queue without pausing or disabling the 1700ms status feature.
   let statusPending=false;
+  let firstStatus=true;
   const refresh=()=>{
-    if (!live || statusPending) return;
+    if (!live || statusPending || (document.hidden && !firstStatus)) return;
+    firstStatus=false;
     statusPending=true;
     void bridge.status().then(x=>{
       if(live){
@@ -296,8 +298,10 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
       }
     }).catch(()=>undefined).finally(()=>{statusPending=false;});
   };
+  const onVisible=()=>{if(!document.hidden)refresh();};
+  document.addEventListener("visibilitychange",onVisible);
   refresh();const timer=window.setInterval(refresh,1700);
-  return ()=>{live=false;window.clearInterval(timer);};
+  return ()=>{live=false;window.clearInterval(timer);document.removeEventListener("visibilitychange",onVisible);};
  },[]);
  useEffect(()=>{
   if(!isNative())return;

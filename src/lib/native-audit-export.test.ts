@@ -24,3 +24,9 @@ describe("anonymous camera/fold diagnostic export",()=>{
   expect(json.omittedEarlier).toBe(46);
  });
 });
+it("retains actual late video timing evidence without exposing capture identity",()=>{
+ const history={entries:[{state:"saved",cameraId:"secret",mp4VideoTimestampRollbacks:2,mp4VideoTimestampDuplicates:1,mp4TailVideoSamples:30,mp4TailNearEnd:true}],omittedEarlier:0,maxEntries:24};
+ const report=JSON.parse(nativeAnonymizedAuditReport(history));
+ expect(report.entries[0].media).toMatchObject({videoTimestampRollbacks:2,videoTimestampDuplicates:1,tailVideoSamples:30,tailVideoNearEnd:true});
+ expect(JSON.stringify(report)).not.toContain("secret");
+});

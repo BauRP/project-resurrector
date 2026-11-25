@@ -666,3 +666,7 @@ The existing CameraDiagnostics screen offers continuation of durable WebView tri
 
 ### 2026-11-25: practical stabilization evidence and explicit audit resume
 Validated real Camera2 CaptureResult probes survive screen/app recreation in a bounded local journal keyed by camera and exact mode, with context invalidation and no recorded-file claim. The anonymous export shares the Camera2 alias space and includes measured-frame counts; unknown probes do not replace previous valid results. The camera-only progress banner permits explicit resume after a pause or stalled status, using the original service checkpoints. No automatic capture is introduced. Diagnostics stop on inability to persist the queue. The banner scrolls internally on small fold/tablet windows.
+
+
+### 2026-11-25: use real finalized native recordings in initial diagnostic evidence
+The native capture history persists versioned MP4 timestamp/tail fields. On explicit passport export, the first-run candidate list is matched against actual finalized native recordings by Camera2 ID and exact dimensions/FPS request, without starting a camera. Historical or interrupted evidence remains unknown, and ordinary recordings do not certify the candidate encoder or full Sensor→Preview→Encoder→File→Editor→Export chain. The separate anonymous native/fold report retains tail and PTS fields. The native panel stops hidden status requests and refreshes on visibility restoration; service recording is untouched.

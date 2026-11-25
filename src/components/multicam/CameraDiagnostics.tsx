@@ -17,6 +17,8 @@ import { diagnosticProbeLimit, checkDiagnosticSafety } from "@/lib/diagnostic-sa
 import { diagnosticCaptureGate, type DiagnosticLease } from "@/lib/diagnostic-capture-gate";
 import { CameraDiscoveryEpoch } from "@/lib/camera-discovery-epoch";
 import { cameraAudit, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
+import { nativeCapture } from "@/lib/native-capture";
+import { matchInitialAuditRecordings, type InitialAuditRecordingObservation } from "@/lib/initial-audit-recording-evidence";
 
 export function CameraDiagnostics() {
   const recording = useMulticamStore(s => s.recording);
@@ -29,6 +31,7 @@ export function CameraDiagnostics() {
   const [cameraModePlans,setCameraModePlans]=useState<Record<string,TestMode[]>>({});
   const [running, setRunning] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [observedModes,setObservedModes] = useState<InitialAuditRecordingObservation[] | null>(null);
   const exportInFlight = useRef(false);
   const [progress, setProgress] = useState("");
   const [safetyNotice, setSafetyNotice] = useState("");
@@ -423,14 +426,21 @@ export function CameraDiagnostics() {
     setExportBusy(true);
     try {
       let firstRun: CameraAuditCheckpoint | null = null;
+      let nativeHistory: Awaited<ReturnType<typeof nativeCapture.auditHistory>> | null = null;
       if (isNative()) {
-        try { firstRun = (await cameraAudit.getPassport()).audit; }
-        catch { /* retain the rest of the report if the worker is unavailable */ }
+        // Fetch the already durable history, not another camera/codec probe.
+        const [passport,history] = await Promise.all([
+          cameraAudit.getPassport().catch(()=>null),
+          nativeCapture.auditHistory().catch(()=>null),
+        ]);
+        firstRun = passport?.audit ?? null;
+        nativeHistory = history;
+        if(mounted.current) setObservedModes(firstRun && nativeHistory ? matchInitialAuditRecordings(firstRun,nativeHistory) : null);
       }
       if (!mounted.current) return;
       const report = buildAnonymousCameraReport({
         checkedAt: new Date().toISOString(),
-        nativeCameras, modes: loadModeEvidence(), mp4: lastMp4Inspection, firstRun, stabilization: loadStabilizationEvidence(),
+        nativeCameras, modes: loadModeEvidence(), mp4: lastMp4Inspection, firstRun, nativeHistory, stabilization: loadStabilizationEvidence(),
       });
       const url = URL.createObjectURL(new Blob([JSON.stringify(report, null, 2)], { type: "application/json" }));
       const a = document.createElement("a");
@@ -453,6 +463,7 @@ export function CameraDiagnostics() {
       <Button size="sm" variant="outline" disabled={exportBusy || (!isNative() && !nativeCameras.length && !tests.length && !encoder)} onClick={() => void download()}>{exportBusy ? "Подготовка паспорта…" : "Скачать паспорт"}</Button>
       {isNative() && <Button size="sm" variant="secondary" disabled={encoderBusy || running || recording} onClick={() => void checkEncoder()}>{encoderBusy ? "Проверяю…" : "Кодировщики 1080p30"}</Button>}
     </div>
+    {observedModes !== null && <p role="status" className="mt-2 break-words text-xs text-muted-foreground">Сохранённые записи Camera2: {observedModes.filter(x=>x.state==="recorded").length} режимов с подтверждённым видеофайлом; {observedModes.filter(x=>x.state!=="recorded").length} неполных. Конкретный кодировщик и вся цепочка не подтверждены.</p>}
     {isNative() && <div className="mt-3 rounded-md border border-border p-2 text-xs">
       <p className="font-semibold">Нативная Camera2 Slow-mo · реальные FPS</p>
       <p className="mt-1 text-muted-foreground">Доступны только заявленные постоянные высокоскоростные режимы. Проверка запускает настоящий MediaRecorder Camera2. Аудио и предпросмотр могут быть недоступны; результат записывается во внутреннюю папку приложения.</p>

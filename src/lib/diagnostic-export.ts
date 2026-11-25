@@ -7,6 +7,8 @@ import type { ModeEvidence } from "./camera-passport";
 import type { NativeCameraProfile, NativeMp4Inspection } from "./native";
 import type { StabilizationProbeResult } from "./stabilization-probe";
 import { decideStabilizationForRecordedMode } from "./stabilization-policy";
+import { matchInitialAuditRecordings } from "./initial-audit-recording-evidence";
+import type { NativeAuditHistory } from "./native-audit-report";
 import type { CameraAuditCheckpoint } from "./first-run-camera-audit";
 import { declaredHighSpeedCandidates } from "./native-mode-selection";
 
@@ -17,6 +19,7 @@ export interface DiagnosticExportInput {
   checkedAt: string;
   firstRun?: CameraAuditCheckpoint | null;
   stabilization?: readonly StabilizationProbeResult[];
+  nativeHistory?: NativeAuditHistory | null;
 }
 
 export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
@@ -74,6 +77,11 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
         })),
       })),
     } : null,
+    observedInitialAuditRecordings: matchInitialAuditRecordings(input.firstRun,input.nativeHistory).map(row=>({
+      camera:camera2(row.cameraId),width:row.width,height:row.height,fps:row.fps,
+      state:row.state,bytes:row.bytes,source:row.source,
+      exactEncoderVerified:false,fullPipelineVerified:false,
+    })),
     stabilizationTests: (input.stabilization ?? []).slice(0,64).flatMap(probe=>{
       const decision = decideStabilizationForRecordedMode(probe,{cameraId:probe.cameraId,width:probe.width,height:probe.height,fps:probe.fpsRequested});
       if (decision.systemState === "unknown") return [];
@@ -85,8 +93,8 @@ export function buildAnonymousCameraReport(input: DiagnosticExportInput) {
     webviewModes: input.modes.map(test => ({
       camera: test.api === "camera2" ? camera2(test.cameraId) : webview(test.cameraId),
       api: test.api === "camera2" ? "camera2" : "webview",
-      requested: { ...test.requested },
-      applied: test.applied ? { ...test.applied } : null,
+      requested: { width:safeNumber(test.requested.width),height:safeNumber(test.requested.height),fps:safeNumber(test.requested.fps) },
+      applied: test.applied ? { width:safeNumber(test.applied.width),height:safeNumber(test.applied.height),fps:safeNumber(test.applied.fps) } : null,
       result: test.state,
       checkedAt: safeNumber(test.checkedAt),
       file: test.file ? {

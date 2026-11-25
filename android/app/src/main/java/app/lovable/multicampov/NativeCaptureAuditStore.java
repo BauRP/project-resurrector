@@ -51,7 +51,7 @@ public final class NativeCaptureAuditStore {
                     "maxCameraCallbackSilenceMs"};
                 for(String k:longs)item.put(k,status.optLong(k,0L));
                 String[] integers={"width","height","fps","mp4VideoWidth","mp4VideoHeight",
-                    "mp4VideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4AudioPtsAnomalies","mp4MiddleProbes","mp4MiddleMatched",
+                    "mp4VideoSamples","mp4VideoTimestampRollbacks","mp4VideoTimestampDuplicates","mp4TailVideoSamples","mp4AudioSamples","mp4TailAudioSamples","mp4AudioPtsAnomalies","mp4MiddleProbes","mp4MiddleMatched",
                     "mp4FoldProbes","mp4FoldMatched","mp4FoldPointsSkipped",
                     "foldObservations","foldPostureChanges","foldGeometryOnlyChanges",
                     "foldCheckpointsOmitted","foldChangesWhilePaused",
@@ -68,7 +68,7 @@ public final class NativeCaptureAuditStore {
                     "mp4AudioTimelineLargeGaps"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
                 String[] booleans={"audioRequested","mp4TracksInspected","mp4HasVideoTrack",
-                    "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable",
+                    "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable","mp4TailNearEnd","mp4VideoSampleLimitReached",
                     "mp4CheckpointAuditCompleted","foldObserverGap",
                     "mp4TailAudioNearEnd","mp4AvTailOffsetMeasured",
                     "mp4TimelineCompleted","mp4AudioTimelineCompleted",
@@ -76,6 +76,13 @@ public final class NativeCaptureAuditStore {
                 for(String k:booleans)item.put(k,status.optBoolean(k,false));
                 double measuredFps=status.optDouble("mp4TimelineSampledFps",-1d);
                 item.put("mp4TimelineSampledFps",Double.isFinite(measuredFps) && measuredFps>0d && measuredFps<=240d ? measuredFps:-1d);
+                // Preserve measured timing from the actual finalized capture.
+                // Unknown numeric values remain -1, never a guessed FPS.
+                for(String k:new String[]{"mp4SampledFps","mp4TailSampledFps"}) {
+                    double value=status.optDouble(k,-1d);
+                    item.put(k,Double.isFinite(value)&&value>0d&&value<=240d?value:-1d);
+                }
+                item.put("evidenceVersion",2);
                 item.put("savedAt",System.currentTimeMillis());
             }catch(Exception ignored){return;}
             rows.put(item);
