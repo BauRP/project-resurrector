@@ -109,7 +109,7 @@ public final class NativeCaptureAuditStore {
                     "mp4AudioTimelineRollbacks","mp4AudioTimelineDuplicates",
                     "mp4AudioTimelineLargeGaps"};
                 for(String k:integers)item.put(k,status.optInt(k,0));
-                String[] booleans={"audioRequested","mp4TracksInspected","mp4HasVideoTrack",
+                String[] booleans={"diagnosticClip","audioRequested","mp4TracksInspected","mp4HasVideoTrack",
                     "mp4HasAudioTrack","mp4FirstFrameDecodable","mp4TailFrameDecodable","mp4TailNearEnd","mp4VideoSampleLimitReached",
                     "mp4CheckpointAuditCompleted","foldObserverGap",
                     "mp4TailAudioNearEnd","mp4AvTailOffsetMeasured",

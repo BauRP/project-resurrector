@@ -67,3 +67,28 @@ describe("Camera2 queued controls and fold preview lifecycle",()=>{
   expect(plugin).toContain("!owner.equals(directOwner))return true;");
  });
 });
+
+describe("short diagnostic recording on the actual Camera2 service",()=>{
+ it("arms native automatic finalization only for a user-authorized diagnostic capture and both recording paths",()=>{
+  expect(plugin).toContain('intent.putExtra("diagnosticClip",diagnosticClip)');
+  expect(plugin).toContain('boolean audio= !diagnosticClip');
+  expect(service).toContain("DIAGNOSTIC_CLIP_MS=4000L");
+  expect(service.match(/armDiagnosticClipStop\(session\);/g)).toHaveLength(2);
+  const timer=service.slice(service.indexOf("private void armDiagnosticClipStop("),service.indexOf("private void armStorageMonitor("));
+  expect(timer).toContain("if(!diagnosticClip||worker==null)return");
+  expect(timer).toContain("session!=generation||captureId!=currentCaptureId");
+  expect(timer).toContain("stopRequested=true;");
+  expect(timer).toContain("finish();");
+  expect(service).toContain("worker.removeCallbacks(diagnosticClipStop)");
+ });
+ it("uses the existing native recording workflow, no auto-start on mounting a UI",()=>{
+  const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
+  const action=panel.slice(panel.indexOf("const prepareNextDiagnosticMode="),panel.indexOf("const canRestoreMode="));
+  expect(action).toContain("window.confirm(");
+  expect(action).toContain("checkDiagnosticSafety(false)");
+  expect(action).toContain("nativeDiagnosticAvailability(current.state)!==\"free\"");
+  expect(action).toContain("audio:false,diagnosticClip:true");
+  expect(panel).toContain("onClick={()=>void prepareNextDiagnosticMode(true)}");
+  expect(service).toContain("if(requestedDiagnosticClip && handoff)return");
+ });
+});

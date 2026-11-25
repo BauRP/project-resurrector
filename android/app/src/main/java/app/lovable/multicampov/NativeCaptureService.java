@@ -636,6 +636,9 @@ public class NativeCaptureService extends Service {
     private boolean interruptedByCamera;
     // Preview-only Camera2 sessions cannot become MP4 capture attempts.
     private boolean recordingAttemptStarted;
+    private volatile boolean diagnosticClip;
+    private static final long DIAGNOSTIC_CLIP_MS=4000L;
+    private Runnable diagnosticClipStop;
     private volatile int generation = 0;
     private volatile Runnable openingTimeout;
     private Runnable storageMonitor;
@@ -1171,6 +1174,9 @@ public class NativeCaptureService extends Service {
             out.put("startedAt", started);
             out.put("captureId",runningInstance==null
                 ? context.getSharedPreferences(STORE,MODE_PRIVATE).getLong("captureId",0L):currentCaptureId);
+            out.put("diagnosticClip",runningInstance==null
+                ? context.getSharedPreferences(STORE,MODE_PRIVATE).getBoolean("diagnosticClip",false)
+                : runningInstance.diagnosticClip);
             out.put("cameraId", chosenCamera);
             out.put("width", width);
             out.put("height", height);
@@ -1386,6 +1392,7 @@ public class NativeCaptureService extends Service {
                 .putInt("recordingStabilizationUnknownFrames",recordingStabilizationUnknownFrames)
                 .putLong("captureId",currentCaptureId)
                 .putBoolean("recordingAttemptStarted",recordingAttemptStarted)
+                .putBoolean("diagnosticClip",diagnosticClip)
                 .putLong("started", recordingStartedAt)
                 .putString("cameraId", selectedCameraId)
                 .putInt("width", selectedWidth)
@@ -1538,13 +1545,13 @@ public class NativeCaptureService extends Service {
         return new NotificationCompat.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.presence_video_online)
             .setContentTitle("MULTI-CAM POV · нативная запись")
-            .setContentText("Съёмка выполняется Android Camera2")
+            .setContentText(diagnosticClip ? "Короткая диагностическая видеопроба без звука" : "Съёмка выполняется Android Camera2")
             .setOngoing(true)
             .addAction(android.R.drawable.ic_media_pause, "Завершить запись", stopPending)
             .build();
     }
     private void pauseRecording() {
-        if (!encoderStarted || encoderPaused || stopRequested || !"recording".equals(state)) return;
+        if (diagnosticClip || !encoderStarted || encoderPaused || stopRequested || !"recording".equals(state)) return;
         try {
             encoder.pause();
             encoderPaused = true;
@@ -1631,8 +1638,11 @@ public class NativeCaptureService extends Service {
         if ((!handoff && camera != null) || encoder != null || "starting".equals(state) ||
             "recording".equals(state) || "paused".equals(state) ||
             "stopping".equals(state)) return START_NOT_STICKY;
+        final boolean requestedDiagnosticClip=intent.getBooleanExtra("diagnosticClip",false);
+        if(requestedDiagnosticClip && handoff)return START_NOT_STICKY;
         recordingAttemptStarted=true;
-        wantAudio = intent.getBooleanExtra("audio", false);
+        diagnosticClip=requestedDiagnosticClip;
+        wantAudio = !diagnosticClip && intent.getBooleanExtra("audio", false);
         int type = ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
         if (wantAudio) type |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
         try {
@@ -1745,6 +1755,7 @@ public class NativeCaptureService extends Service {
         // Mark this operation as preview-only BEFORE permission/foreground
         // failures can publish state. This must never reuse an earlier MP4.
         recordingAttemptStarted=false;
+        diagnosticClip=false;
         selectedWidth=0;selectedHeight=0;selectedFps=0;
         selectedCameraId=id==null?"":id;
         if (id == null || id.isEmpty() ||
@@ -1951,6 +1962,21 @@ public class NativeCaptureService extends Service {
     /** Periodic free-space and critical-thermal checks on Camera2 worker.
      * They must never block Activity UI or create another camera owner.
      */
+    /** A user-authorized short trial owns its own generation. Android, not
+     * the Activity timer, finalizes it normally even across a fold/remount.
+     * Never arm this timer for an ordinary user recording. */
+    private void armDiagnosticClipStop(final int session){
+        if(!diagnosticClip||worker==null)return;
+        final long captureId=currentCaptureId;
+        if(diagnosticClipStop!=null)worker.removeCallbacks(diagnosticClipStop);
+        diagnosticClipStop=()->{
+            if(session!=generation||captureId!=currentCaptureId||!diagnosticClip||
+                !encoderStarted||stopRequested||finalizationStarted.get())return;
+            stopRequested=true;
+            finish();
+        };
+        worker.postDelayed(diagnosticClipStop,DIAGNOSTIC_CLIP_MS);
+    }
     private void armStorageMonitor(final int session){
         if(worker==null)return;
         if(storageMonitor!=null)worker.removeCallbacks(storageMonitor);
@@ -2244,6 +2270,7 @@ public class NativeCaptureService extends Service {
                                         publish("recording",
                                             "Нативная Camera2 запись запущена. Контроль через уведомление.");
                                         armStorageMonitor(session);
+                                        armDiagnosticClipStop(session);
                                     } catch(Exception error) { fail(error); }
                                 }
                                 @Override public void onConfigureFailed(CameraCaptureSession sessionHandle) {
@@ -2300,6 +2327,7 @@ public class NativeCaptureService extends Service {
                                                         publish("recording",
                                                             "MP4 записывается; параллельный предпросмотр камерой не поддержан");
                                                         armStorageMonitor(session);
+                                                        armDiagnosticClipStop(session);
                                                     } catch(Exception error){fail(error);}
                                                 }
                                                 @Override public void onConfigureFailed(CameraCaptureSession broken) {
@@ -2788,6 +2816,10 @@ public class NativeCaptureService extends Service {
     }
     private void finish() {
         if(!finalizationStarted.compareAndSet(false,true))return;
+        if(worker!=null && diagnosticClipStop!=null){
+            worker.removeCallbacks(diagnosticClipStop);
+            diagnosticClipStop=null;
+        }
         if(worker!=null && storageMonitor!=null){
             worker.removeCallbacks(storageMonitor);
             storageMonitor=null;

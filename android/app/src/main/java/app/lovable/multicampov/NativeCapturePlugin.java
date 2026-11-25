@@ -509,13 +509,14 @@ public class NativeCapturePlugin extends Plugin {
  }
  @PluginMethod public void start(PluginCall call){
   dispatchCameraCommand(call, () -> {
-  boolean audio=Boolean.TRUE.equals(call.getBoolean("audio",false));
+  boolean diagnosticClip=Boolean.TRUE.equals(call.getBoolean("diagnosticClip",false));
+  boolean audio= !diagnosticClip && Boolean.TRUE.equals(call.getBoolean("audio",false));
   if(getPermissionState("camera")!=com.getcapacitor.PermissionState.GRANTED ||
     (audio && getPermissionState("microphone")!=com.getcapacitor.PermissionState.GRANTED)){
    call.reject("Разрешите камеру и, если нужен звук, микрофон в Android.");return;
   }
   String currentState=NativeCaptureService.status(getContext()).getString("state");
-  if(NativeCaptureService.isRunning() && !"previewing".equals(currentState)){
+  if(NativeCaptureService.isRunning() && (diagnosticClip || !"previewing".equals(currentState))){
    call.reject("Нативная запись уже работает");return;
   }
   String id=call.getString("cameraId");
@@ -527,6 +528,7 @@ public class NativeCapturePlugin extends Plugin {
   intent.setAction(NativeCaptureService.ACTION_START);
   intent.putExtra("cameraId",id);intent.putExtra("width",width);
   intent.putExtra("height",height);intent.putExtra("fps",fps);intent.putExtra("audio",audio);
+  intent.putExtra("diagnosticClip",diagnosticClip);
   try{
    ContextCompat.startForegroundService(getContext(),intent);
    resolveStatusAsync(call);

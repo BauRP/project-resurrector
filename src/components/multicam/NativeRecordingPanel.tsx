@@ -5,6 +5,8 @@ import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
+import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
+import { checkDiagnosticSafety, nativeDiagnosticAvailability } from "@/lib/diagnostic-safety";
 import { cameraAudit } from "@/lib/first-run-camera-audit";
 import { initialAuditRecordingModes, type InitialAuditMode } from "@/lib/initial-audit-recording-evidence";
 import { nativeRecordedModeEvidence } from "@/lib/native-recorded-mode-evidence";
@@ -439,10 +441,13 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  // The restored UI mode may belong to an old lens. Offer the real
  // compatible fallback explicitly, never silently change capture settings.
  // All hooks must execute unconditionally, including in WebView-only builds.
- const prepareNextDiagnosticMode=async()=>{
+ const prepareNextDiagnosticMode=async(recordTrial=false)=>{
    if(busy||planRequest.current||nativeRecorderOwnsCamera(status?.state??""))return;
    planRequest.current=true;setPlanBusy(true);setPlanNotice("");
    const selection={...currentSelection.current};
+   const lease=recordTrial?diagnosticCaptureGate.acquire("mode-scan"):null;
+   if(recordTrial&&!lease){planRequest.current=false;setPlanBusy(false);setPlanNotice("Камера занята другой диагностикой.");return;}
+   const selectionCurrent=()=>mounted.current&&!document.hidden&&selection.camera===currentSelection.current.camera&&selection.resolution===currentSelection.current.resolution&&selection.fps===currentSelection.current.fps;
    try{
      const [passport,history]=await Promise.all([cameraAudit.getPassport(),bridge.auditHistory()]);
      if(!mounted.current)return;
@@ -454,10 +459,32 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      setPlanModes(modes);
      const candidate=modes.find(m=>!m.recorded);
      if(!candidate){setPlanNotice("В сохранённом плане нет следующего подтверждённого декларациями AVC-кандидата. Полная диагностика ещё может быть незавершена.");return;}
+     if(recordTrial){
+       if(!selectionCurrent()||!lease?.isCurrent())return;
+       const [width=0,height=0]=candidate.size.split("x").map(Number);
+       if(width<160||height<120||width>3840||height>2160||candidate.fps<15||candidate.fps>60){
+         setPlanNotice("Режим выходит за допустимые пределы штатного кодировщика.");return;
+       }
+       if(!window.confirm("Записать диагностический MP4 около 4 секунд без звука? CAM "+candidate.cameraId+", "+candidate.size+" / "+candidate.fps+" FPS. Android автоматически завершит запись; файл сохранится в обычном месте видеозаписей."))return;
+       const permissions=await bridge.requestPermissions({permissions:["camera"]});
+       if(permissions["camera"]!=="granted")throw Error("Нет разрешения на камеру");
+       if(!selectionCurrent()||!lease.isCurrent())return;
+       const safety=await checkDiagnosticSafety(false);
+       if(!selectionCurrent()||!lease.isCurrent())return;
+       if(!safety.proceed){setPlanNotice(safety.reason);return;}
+       const current=await bridge.status();
+       if(!selectionCurrent()||!lease.isCurrent()||nativeDiagnosticAvailability(current.state)!=="free")return;
+       const response=await bridge.start({cameraId:candidate.cameraId,width,height,fps:candidate.fps,audio:false,diagnosticClip:true});
+       if(mounted.current){
+         setStatus(response);setCamera(candidate.cameraId);setResolution(candidate.size);setFps(candidate.fps);
+         setPlanNotice("Команда видеопробы отправлена. Результат появится после завершения и проверки MP4; успешная запись пока не подтверждена.");
+       }
+       return;
+     }
      setCamera(candidate.cameraId);setResolution(candidate.size);setFps(candidate.fps);
      setPlanNotice("Подготовлен режим "+candidate.size+" / "+candidate.fps+" FPS. Запись начнётся только после вашего нажатия.");
-   }catch{if(mounted.current)setPlanNotice("Сохранённый план временно недоступен. Настройки записи не изменены.");}
-   finally{planRequest.current=false;if(mounted.current)setPlanBusy(false);}
+   }catch{if(mounted.current)setPlanNotice(recordTrial?"Видеопроба не подтверждена. Проверьте состояние записи перед повтором.":"Сохранённый план временно недоступен. Настройки записи не изменены.");}
+   finally{lease?.release();planRequest.current=false;if(mounted.current)setPlanBusy(false);}
  };
  const canRestoreMode=!!mode.size && (mode.size!==resolution||mode.fps!==fps);
  const applyCompatibleMode=()=>{
@@ -556,7 +583,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    <div className="native-recording-actions flex flex-wrap gap-2">
     <Button variant="outline" disabled={busy||planBusy||active||!camera} onClick={()=>void openPreview()}>Открыть видоискатель</Button>
     <Button disabled={busy||planBusy||!camera||!mode.size||!mode.choices.includes(fps)||(active && status?.state!=="previewing")} onClick={()=>void start()}>Начать нативную запись</Button>
-    <Button disabled={busy||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
+    <Button disabled={busy||status?.diagnosticClip===true||!["recording","paused"].includes(status?.state??"")} variant="outline" onClick={()=>void changePause()}>{status?.state==="paused"?"Продолжить":"Пауза"}</Button>
     <Button disabled={busy||!active} variant="outline" onClick={()=>void stop()}>{status?.state==="previewing"?"Закрыть камеру":"Остановить"}</Button>
    </div>
    </div>
@@ -605,6 +632,8 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      onChange={e=>setAudio(e.target.checked)}/>Записать звук</label>
    </div>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode()}>{planBusy?"Читаю сохранённый план…":"Подготовить следующий режим диагностики"}</Button>
+   <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true)}>Записать следующую диагностическую пробу (4 с)</Button>
+   {status?.diagnosticClip===true&&active&&<p role="status" className="break-words">Диагностическая запись без звука. Android завершит её автоматически, либо нажмите «Остановить».</p>}
    {planNotice&&<p role="status" className="break-words">{planNotice}</p>}
    {planModes!==null&&<details className="rounded border border-border p-2">
      <summary className="cursor-pointer break-words">Последняя сверка: сохранённые видеозаписи {planModes.filter(m=>m.recorded).length}/{planModes.length} обычных AVC-режимов (не вся проверка камеры)</summary>

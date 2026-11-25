@@ -31,6 +31,7 @@ function entrySummary(item:Record<string,unknown>) {
   const validFold=fold!==null&&foldOk!==null&&foldOk<=fold;
   return {
     result:modeState(item["state"]),
+    diagnosticClip:flag(item["diagnosticClip"]),
     mode:{width,height,fps},
     media:{
       bytes:count(item["savedBytes"],100000000000),

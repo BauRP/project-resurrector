@@ -1933,3 +1933,7 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 .native-camera-fold-workspace > [role="status"],
 .native-camera-fold-workspace > [role="alert"] { overflow-wrap: anywhere; max-height: 25%; overflow-y: auto; }
 .native-camera-fold-workspace .native-recording-primary > * { min-width: 0; }
+
+/* Long diagnostic actions remain within the native fold or tablet pane. */
+.native-recording-panel > button { max-width:100%; min-width:0; white-space:normal; overflow-wrap:anywhere; }
+.native-recording-panel details > summary { min-height:44px; overflow-wrap:anywhere; }

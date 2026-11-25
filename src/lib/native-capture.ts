@@ -3,7 +3,7 @@ import { bounded } from "./async";
 import { createSingleFlight } from "./single-flight";
 export interface NativeCaptureStatus {
  state:string;message:string;startedAt:number;captureId?:number;stabilization:string;directPreviewActive?:boolean;
- cameraSensorFrames?:number;cameraSensorFps?:number;
+ cameraSensorFrames?:number;cameraSensorFps?:number;diagnosticClip?:boolean;
  stabilizationCaptureResultObserved:boolean;savedBytes:number;
  recordingEisFrames?:number;recordingOisFrames?:number;
  recordingStabilizationOffFrames?:number;recordingStabilizationUnknownFrames?:number;
@@ -40,7 +40,7 @@ export interface NativeCaptureStatus {
 export interface NativeCaptureBridge {
  addListener(eventName:"directPreviewInvalidated",listener:(event:{ownerId:string;reason:string})=>void):Promise<PluginListenerHandle>;
  startPreview(options:{cameraId:string}):Promise<NativeCaptureStatus>;
- start(options:{cameraId:string;width:number;height:number;fps:number;audio:boolean}):Promise<NativeCaptureStatus>;
+ start(options:{cameraId:string;width:number;height:number;fps:number;audio:boolean;diagnosticClip?:boolean}):Promise<NativeCaptureStatus>;
  stop():Promise<NativeCaptureStatus>;
  pause():Promise<NativeCaptureStatus>;
  resume():Promise<NativeCaptureStatus>;
