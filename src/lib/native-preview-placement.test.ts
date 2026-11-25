@@ -104,3 +104,15 @@ describe("native surface on tablet or fold with keyboard and pinch",()=>{
   expect(nativePreviewInsideVisibleViewport(rect,full)).toBe(true);
  });
 });
+
+it("produces an atomic safe submission across tablet rotation, keyboard and real fold pane changes",()=>{
+ const rect={left:420,top:80,width:280,height:200};
+ const wide={width:800,height:600};
+ const visible={offsetLeft:0,offsetTop:0,width:800,height:600,scale:1};
+ expect(nativePreviewSnapshot(rect,wide,undefined,visible)?.placement).toEqual(rect);
+ expect(nativePreviewSnapshot(rect,wide,undefined,{...visible,height:240})).toBeNull();
+ expect(nativePreviewSnapshot(rect,{width:600,height:800},undefined,{...visible,width:600,height:800})).toBeNull();
+ expect(nativePreviewSnapshot(rect,wide,"0,0,390,600;410,0,390,600",visible)?.placement).toEqual(rect);
+ expect(nativePreviewSnapshot({...rect,left:380},wide,"0,0,390,600;410,0,390,600",visible)).toBeNull();
+ expect(nativePreviewSnapshot(rect,wide,undefined,visible)?.viewport).toEqual(wide);
+});

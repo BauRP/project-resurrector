@@ -2,7 +2,7 @@ import { recordModeEvidence } from "@/lib/camera-passport";
 import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { loadStabilizationEvidence, saveStabilizationEvidence } from "@/lib/stabilization-evidence-store";
-import { previewSensorObservation, previewSensorSampleFps } from "@/lib/preview-sensor-observation";
+import { previewSensorObservation, previewSensorSampleFps, previewFramesConfirmed } from "@/lib/preview-sensor-observation";
 import { stabilizationTrialPlan } from "@/lib/stabilization-trial-plan";
 import { decideStabilizationForRecordedMode } from "@/lib/stabilization-policy";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -98,6 +98,7 @@ export function CameraDiagnostics() {
       // and an in-progress scan must not finish for a disconnected lens.
       job.current?.abort();
       dualJob.current?.abort();
+      stabilizationStop.current=true;
       if (mounted.current) {
         // The old UI must not offer a lens that was just unplugged while
         // Android/WebView enumerateDevices is still pending.
@@ -125,7 +126,7 @@ export function CameraDiagnostics() {
       }).catch(() => { if (mounted.current) setError("События доступности Camera2 недоступны"); });
     }
     return () => {
-      mounted.current = false; discovery.invalidate();
+      mounted.current = false; discovery.invalidate(); stabilizationStop.current=true;
       job.current?.abort(); dualJob.current?.abort();
       // If a stop is already in flight, its own finally must release the
       // lease. Clearing it here would leak the shared gate indefinitely.
@@ -395,6 +396,8 @@ export function CameraDiagnostics() {
       if (mounted.current) setStabilizationBusy(false);
     }
   };
+  const previewTrialTotal=useMemo(()=>stabilizationTrialPlan(nativeCameras,[]).length,[nativeCameras]);
+  const previewTrialRemaining=useMemo(()=>stabilizationTrialPlan(nativeCameras,stabilizationResults).length,[nativeCameras,stabilizationResults]);
   const runStabilizationPlan = async () => {
     if(stabilizationBusy||rawBusy||recording||running||highSpeedState!=="idle")return;
     const planned=stabilizationTrialPlan(nativeCameras,loadStabilizationEvidence());
@@ -420,7 +423,7 @@ export function CameraDiagnostics() {
           }
           // An unknown timeout may still own native resources: never open
           // the next camera merely because the JS callback returned.
-          if(r.state==="unknown")break;
+          if(r.state==="unknown"&&r.preflightUnavailable!==true)break;
         }catch{break;}
         await new Promise<void>(resolve=>window.setTimeout(resolve,150));
       }
@@ -542,6 +545,7 @@ export function CameraDiagnostics() {
       </div>)}
       <p className="pt-2 text-xs font-semibold">Camera2: {nativeCameras.length} доступных ID</p>
       {isNative()&&<div className="flex flex-wrap gap-2"><Button size="sm" disabled={!nativeCameras.length||stabilizationBusy||recording||running||rawBusy||highSpeedState!=="idle"} onClick={()=>void runStabilizationPlan()}>Продолжить проверку стабилизации режимов</Button><Button size="sm" variant="outline" disabled={!stabilizationBusy} onClick={()=>{stabilizationStop.current=true;}}>Остановить после текущей пробы</Button></div>}
+      {previewTrialTotal>0&&<p role="status" className="text-xs break-words">Практический предпросмотр: {previewTrialTotal-previewTrialRemaining}/{previewTrialTotal} режимов с полученными кадрами. Это не проверка готовых видеофайлов.</p>}
       {nativeCameras.map(c => <div key={c.cameraId} className="rounded-md border border-border p-2 text-xs">
         <p className="font-medium">ID {c.cameraId} · {c.facing} · {availability[c.cameraId] === true ? "сейчас доступна" : availability[c.cameraId] === false ? "сейчас занята или недоступна" : "текущая доступность неизвестна"}</p>
         <p className="text-muted-foreground">Физические ID: {c.physicalCameraIds?.join(", ") || "не раскрыты"}</p>
@@ -556,7 +560,7 @@ export function CameraDiagnostics() {
         {stabilizationResults.filter(x => x.cameraId === c.cameraId).map(x => {
           const sensor=previewSensorObservation(x);
           const sampleFps=previewSensorSampleFps(x);
-          return <div key={x.cameraId+"|"+x.width+"|"+x.height+"|"+x.fpsRequested} className="min-w-0 break-words"><p className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? "не объявлено Camera2" : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · сохранённая проба {x.width}×{x.height}/{x.fpsRequested} FPS · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:x.width,height:x.height,fps:x.fpsRequested}).message}</p>
+          return <div key={x.cameraId+"|"+x.width+"|"+x.height+"|"+x.fpsRequested} className="min-w-0 break-words"><p className="mt-1 text-muted-foreground">{x.selected}: {x.state === "capture-result-confirmed" ? "подтверждено CaptureResult тестовой сессии" : x.state === "declared-unavailable" ? (previewFramesConfirmed(x) ? "стабилизация не объявлена; кадры сенсора получены" : "не объявлено Camera2") : "состояние неизвестно / не подтверждено"} · {x.framesObserved ?? 0} кадров · сохранённая проба {x.width}×{x.height}/{x.fpsRequested} FPS · файл не проверялся. {decideStabilizationForRecordedMode(x,{cameraId:c.cameraId,width:x.width,height:x.height,fps:x.fpsRequested}).message}</p>
           {sensor&&<p className="mt-1 text-muted-foreground">Наблюдение сенсора в тестовой сессии: ISO {sensor.iso??"—"}, выдержка {sensor.exposureNs===undefined?"—":(sensor.exposureNs/1000000).toFixed(2)+" мс"}, фокус {sensor.focusDiopters??"—"} дптр. {sampleFps!==null&&<> Измеренный темп сенсора: {sampleFps} FPS ({sensor.sensorIntervals} интервалов).</>} Это фактический снимок параметров, не проверка ручного управления или FPS видеофайла.</p>}</div>;
         })}
       </div>)}

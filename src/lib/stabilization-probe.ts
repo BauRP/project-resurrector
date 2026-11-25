@@ -8,6 +8,8 @@ export interface StabilizationProbeResult {
   state: "capture-result-confirmed" | "not-confirmed" | "unknown" | "declared-unavailable";
   eisDeclared: boolean; previewDeclared: boolean; oisDeclared: boolean;
   framesObserved?: number; confirmations?: number;
+  /** Explicit preflight rejection occurs before any camera/session is opened. */
+  preflightUnavailable?: boolean;
   fpsRangeApplied?: boolean; fpsRangeMin?: number; fpsRangeMax?: number;
   captureResultEis?: number | null;
   captureResultOis?: number | null;

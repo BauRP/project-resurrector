@@ -1,6 +1,6 @@
 import type { StabilizationProbeResult } from "./stabilization-probe";
 import { decideStabilizationForRecordedMode } from "./stabilization-policy";
-import { previewSensorObservation } from "./preview-sensor-observation";
+import { previewSensorObservation, previewFramesConfirmed } from "./preview-sensor-observation";
 import { cameraPassportContext } from "./camera-passport";
 
 const KEY = "multicam-stabilization-evidence-v1";
@@ -38,7 +38,8 @@ export function saveStabilizationEvidence(result:StabilizationProbeResult, check
   try {
     const current = read();
     const key = identity(result);
-    if(current.some(p=>p.context===row.context && identity(p.result)===key && p.checkedAt>checkedAt)) return false;
+    if(current.some(p=>p.context===row.context && identity(p.result)===key &&
+      (p.checkedAt>checkedAt || (previewFramesConfirmed(p.result)&&!previewFramesConfirmed(result))))) return false;
     // Persist only known fields: no vendor text/path or arbitrary bridge payload.
     const {cameraId,width,height,fpsRequested,source,selected,state,eisDeclared,previewDeclared,oisDeclared,framesObserved,confirmations,captureResultEis,captureResultOis,fpsRangeApplied,fpsRangeMin,fpsRangeMax}=result;
     const sensorObservation=previewSensorObservation(result);

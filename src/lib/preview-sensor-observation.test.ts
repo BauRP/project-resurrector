@@ -21,3 +21,10 @@ it("calculates sampled sensor FPS only from valid consecutive-frame timing",()=>
  expect(previewSensorSampleFps({...timing,sensorObservation:{sensorIntervals:2,sensorSpanNs:1}})).toBeNull();
  expect(previewSensorSampleFps({...timing,fpsRangeApplied:false})).toBeNull();
 });
+
+it("allows observed sensor values when system stabilization is explicitly unavailable, not on metadata alone",()=>{
+ const baseline:StabilizationProbeResult={...proof,selected:"none",state:"declared-unavailable",eisDeclared:false,oisDeclared:false,previewDeclared:false};
+ expect(previewSensorObservation(baseline)).toEqual(proof.sensorObservation);
+ expect(previewSensorObservation({...baseline,fpsRangeApplied:false})).toBeUndefined();
+ expect(previewSensorObservation({...baseline,confirmations:0})).toBeUndefined();
+});

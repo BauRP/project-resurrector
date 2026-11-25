@@ -3,8 +3,20 @@ import { decideStabilizationForRecordedMode } from "./stabilization-policy";
 
 /** Snapshot of one actual matching CaptureResult. Not a manual-control range,
  * autofocus speed, recording, or successful exposure adjustment. */
+export function previewFramesConfirmed(result:StabilizationProbeResult):boolean {
+ const decision=decideStabilizationForRecordedMode(result,{cameraId:result.cameraId,width:result.width,height:result.height,fps:result.fpsRequested});
+ if(decision.systemState==="test-confirmed")return true;
+ // A baseline session without declared stabilization can still prove that
+ // preview frames arrived. Legacy declaration-only results cannot.
+ return decision.systemState==="explicitly-unavailable" &&
+   result.fpsRangeApplied===true && Number.isSafeInteger(result.fpsRangeMin) &&
+   (result.fpsRangeMin??0)>0 && (result.fpsRangeMin??0)<=result.fpsRequested &&
+   result.fpsRangeMax===result.fpsRequested &&
+   Number.isSafeInteger(result.framesObserved) && Number.isSafeInteger(result.confirmations) &&
+   (result.confirmations??0)>=3 && (result.framesObserved??0)>=(result.confirmations??0);
+}
 export function previewSensorObservation(result:StabilizationProbeResult):NonNullable<StabilizationProbeResult["sensorObservation"]>|undefined {
- if(decideStabilizationForRecordedMode(result,{cameraId:result.cameraId,width:result.width,height:result.height,fps:result.fpsRequested}).systemState!=="test-confirmed")return undefined;
+ if(!previewFramesConfirmed(result))return undefined;
  const s=result.sensorObservation;
  if(!s||typeof s!=="object"||Array.isArray(s))return undefined;
  const out:NonNullable<StabilizationProbeResult["sensorObservation"]>={};

@@ -690,3 +690,7 @@ The matching Camera2 stabilization CaptureResult also contributes available ISO,
 
 ### 2026-11-25: repair strict typing and measure preview cadence
 CI run 45671153907 passed all 1149 tests, then rejected index-signature dot access and explicitly undefined optional evidence fields. Use bracket access and omit absent optional properties; do not relax TypeScript flags. Matching consecutive sensor frame timestamps now contribute a bounded sensor cadence observation plus reported frame duration to the existing Camera2 snapshot. Invalid, missing or discontinuous timestamps are not turned into FPS evidence. No new capture session, no encoded-file FPS claim. Mode switch and status text wrap inside the native fold/tablet workspace.
+
+
+### 2026-11-25: complete preview observation on non-stabilized lenses
+Camera2 exposes actual bounded YUV sizes independently of MediaRecorder. Preview trials can select a real small stream and advertised FPS range if HD is unavailable. When stabilization is not declared, the same bounded session observes actual matching frames without claiming system stabilization. Old declaration-only rows do not count as preview evidence. The diagnostic screen reports exact-mode preview coverage; explicit preflight rejection does not block the next camera, unknown runtime response still stops the sweep. Native preview snapshots support atomic visible-viewport validation. Prior release v1.0.1872 passed all 1150 tests and APK/AAB build.

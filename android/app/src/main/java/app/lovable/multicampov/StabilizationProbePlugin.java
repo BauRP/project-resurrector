@@ -99,11 +99,11 @@ public class StabilizationProbePlugin extends Plugin {
                 contains(eisModes, CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_PREVIEW_STABILIZATION);
             boolean ois = contains(oisModes, CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON);
             final String choice = eis ? "eis" : preview ? "preview-stabilization" : ois ? "ois" : "none";
-            if (!yuvSize || "none".equals(choice)) {
+            if (!yuvSize) {
                 JSObject result = base(cameraId, width, height, fps, choice, eis, preview, ois);
-                result.put("state", !yuvSize ? "unknown" : "declared-unavailable");
-                result.put("message", !yuvSize ? "YUV поток такого размера не раскрыт; видеорежим не проверен" :
-                    "Camera2 не объявляет EIS, PREVIEW_STABILIZATION или OIS для этой камеры");
+                result.put("state", "unknown");
+                result.put("preflightUnavailable", true);
+                result.put("message", "YUV поток такого размера не раскрыт; видеорежим не проверен");
                 occupied.set(false); call.resolve(result); return;
             }
             Range<Integer> target = null;
@@ -115,6 +115,7 @@ public class StabilizationProbePlugin extends Plugin {
             if (target == null) {
                 JSObject result = base(cameraId, width, height, fps, choice, eis, preview, ois);
                 result.put("state", "unknown");
+                result.put("preflightUnavailable", true);
                 result.put("message", "Camera2 не объявляет диапазон AE с выбранной верхней частотой");
                 occupied.set(false); call.resolve(result); return;
             }
@@ -245,7 +246,11 @@ public class StabilizationProbePlugin extends Plugin {
                                                     actualEis != null && actualEis == CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_ON :
                                                     "preview-stabilization".equals(choice) ?
                                                         actualEis != null && actualEis == CameraMetadata.CONTROL_VIDEO_STABILIZATION_MODE_PREVIEW_STABILIZATION :
-                                                        actualOis != null && actualOis == CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON;
+                                                        "ois".equals(choice) ?
+                                                            actualOis != null && actualOis == CameraMetadata.LENS_OPTICAL_STABILIZATION_MODE_ON :
+                                                            "none".equals(choice) &&
+                                                            (actualEis == null || actualEis == 0) &&
+                                                            (actualOis == null || actualOis == 0);
                                                 Range<Integer> actualRange = result.get(CaptureResult.CONTROL_AE_TARGET_FPS_RANGE);
                                                 if (matches && targetFps.equals(actualRange)) {
                                                     confirmed++;
@@ -271,7 +276,9 @@ public class StabilizationProbePlugin extends Plugin {
                                                     measuredAeState = result.get(CaptureResult.CONTROL_AE_STATE);
                                                     measuredAwbState = result.get(CaptureResult.CONTROL_AWB_STATE);
                                                 }
-                                                if (confirmed >= 3) finish("capture-result-confirmed",
+                                                if (confirmed >= 3) finish("none".equals(choice) ? "declared-unavailable" : "capture-result-confirmed",
+                                                    "none".equals(choice) ?
+                                                    "Получены кадры сенсора; системная стабилизация не объявлена. Видео не записывалось." :
                                                     "Camera2 подтвердил выбранный режим на нескольких кадрах; запись и качество стабилизации не проверены");
                                                 else if (frames >= 12) finish(hasResults ? "not-confirmed" : "unknown",
                                                     "Режим не подтверждён текущим CaptureResult; функция не объявляется отсутствующей");

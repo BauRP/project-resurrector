@@ -13,3 +13,15 @@ describe("resumable stabilization trials",()=>{
   expect(stabilizationTrialPlan([c],[{...saved,fpsRangeApplied:false}])).toHaveLength(3);
  });
 });
+
+it("uses disclosed YUV sizes even on a lens without recording-sized HD streams",()=>{
+ const small={...c,cameraId:"secondary",sizes:[],previewYuvSizes:["640x480"],fpsRanges:["15-30"]};
+ expect(stabilizationTrialPlan([small],[])).toEqual([{cameraId:"secondary",width:640,height:480,fps:30}]);
+ expect(stabilizationTrialPlan([{...small,previewYuvSizes:[]}],[])).toEqual([]);
+});
+it("retries a legacy declaration-only result but skips a measured baseline session",()=>{
+ const small={...c,sizes:[],previewYuvSizes:["640x480"]};
+ const declaration:StabilizationProbeResult={...saved,width:640,height:480,state:"declared-unavailable",selected:"none",eisDeclared:false,previewDeclared:false,oisDeclared:false,fpsRangeApplied:false};
+ expect(stabilizationTrialPlan([small],[declaration])).toHaveLength(1);
+ expect(stabilizationTrialPlan([small],[{...declaration,fpsRangeApplied:true}])).toEqual([]);
+});

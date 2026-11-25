@@ -340,11 +340,11 @@ public class MultiCamNativePlugin extends Plugin {
                 } else cam.put("exposureTimeNs", JSObject.NULL);
                 cam.put("facing", facing != null && facing == CameraMetadata.LENS_FACING_FRONT ? "front" : facing != null && facing == CameraMetadata.LENS_FACING_BACK ? "back" : "external");
                 JSArray sizes = new JSArray();
-                if (map != null) for (Size s : map.getOutputSizes(MediaRecorder.class)) sizes.put(s.getWidth() + "x" + s.getHeight());
+                Size[] recordingSizes = map == null ? null : map.getOutputSizes(MediaRecorder.class);
+                if (recordingSizes != null) for (Size s : recordingSizes) sizes.put(s.getWidth() + "x" + s.getHeight());
                 cam.put("sizes", sizes);
                 JSArray timedOutputs = new JSArray();
                 if (map != null) {
-                    Size[] recordingSizes = map.getOutputSizes(MediaRecorder.class);
                     if (recordingSizes != null) for (Size size : recordingSizes) {
                         JSObject mode = new JSObject();
                         mode.put("width", size.getWidth()); mode.put("height", size.getHeight());
@@ -357,6 +357,18 @@ public class MultiCamNativePlugin extends Plugin {
                     }
                 }
                 cam.put("videoOutputSizes", timedOutputs);
+                // Diagnostic YUV preview is a different output class from
+                // MediaRecorder. Include real bounded sizes, not inferred ones.
+                JSArray yuvSizes = new JSArray();
+                if (map != null) {
+                    Size[] supported = map.getOutputSizes(android.graphics.ImageFormat.YUV_420_888);
+                    if (supported != null) for (Size size : supported) {
+                        if (size.getWidth() >= 160 && size.getHeight() >= 120 &&
+                            size.getWidth() <= 1920 && size.getHeight() <= 1080)
+                            yuvSizes.put(size.getWidth()+"x"+size.getHeight());
+                    }
+                }
+                cam.put("previewYuvSizes", yuvSizes);
                 JSArray fps = new JSArray();
                 Range<Integer>[] ranges = ch.get(CameraCharacteristics.CONTROL_AE_AVAILABLE_TARGET_FPS_RANGES);
                 if (ranges != null) for (Range<Integer> r : ranges) fps.put(r.getLower() + "-" + r.getUpper());

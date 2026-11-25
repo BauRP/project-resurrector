@@ -79,9 +79,10 @@ export function samePreviewPlacement(a:PreviewRect|null,b:PreviewRect|null):bool
  */
 export function nativePreviewSnapshot(
  rect:PreviewRect|null|undefined,viewport:PreviewViewport,regionGeometry?:string,
+ visible?:Parameters<typeof nativePreviewInsideVisibleViewport>[1],
 ):{placement:PreviewRect;viewport:PreviewViewport}|null {
  const placement=nativePreviewPlacement(rect,viewport,regionGeometry);
- return placement ? {placement,viewport:{width:viewport.width,height:viewport.height}} : null;
+ return placement && nativePreviewInsideVisibleViewport(placement,visible) ? {placement,viewport:{width:viewport.width,height:viewport.height}} : null;
 }
 
 /** A native overlay is not clipped by the keyboard or VisualViewport.
