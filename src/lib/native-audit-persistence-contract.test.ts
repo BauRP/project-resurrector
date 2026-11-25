@@ -336,3 +336,21 @@ describe("native Camera2 and fold audit persistence contract",()=>{
   expect(report).not.toContain('item["cameraId"]');
  });
 });
+
+describe("first-run camera audit resume contracts (source-level)",()=>{
+ const audit=readFileSync(nativeDir+"CameraAuditService.java","utf8");
+ const plan=readFileSync(nativeDir+"CameraAuditPlanStage.java","utf8");
+ const codec=readFileSync(nativeDir+"CameraAuditCodecStage.java","utf8");
+ it("does not accept a shortened plan as completed",()=>{
+   expect(audit).toContain("candidates.length() != Math.min(eligible, CameraAuditPlanStage.MAX_PLANS_PER_CAMERA)");
+ });
+ it("restores valid lens counts before resource checks and skips finished rows",()=>{
+   for(const [source,key] of [[plan,"planCompleted"],[codec,"codecCompleted"]] as const){
+     const count=source.indexOf('passport.put("'+key+'", completed)');
+     expect(count).toBeGreaterThan(0);
+     expect(source.indexOf("CameraAuditResourceGuard.pauseReason(context)",count)).toBeGreaterThan(count);
+     expect(source).toContain('completedIds.contains(ids.optString(i,""))');
+   }
+   expect(codec).toContain("if (completed < ids.length())");
+ });
+});

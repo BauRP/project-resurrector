@@ -57,11 +57,14 @@ export function nativePreviewPlacement(
    rect.left+rect.width > viewport.width+epsilon ||
    rect.top+rect.height > viewport.height+epsilon ||
    !previewFitsFoldRegion(rect,regionGeometry,viewport))return null;
- return {
-   left:Math.max(0,rect.left),top:Math.max(0,rect.top),
-   width:Math.min(rect.width,viewport.width-Math.max(0,rect.left)),
-   height:Math.min(rect.height,viewport.height-Math.max(0,rect.top)),
- };
+ // Clip both ends independently: a negative subpixel origin must not
+ // shift the far edge toward a control or hinge.
+ const left=Math.max(0,rect.left), top=Math.max(0,rect.top);
+ const width=Math.min(viewport.width,rect.left+rect.width)-left;
+ const height=Math.min(viewport.height,rect.top+rect.height)-top;
+ if(width<80||height<80)return null;
+ const placement={left,top,width,height};
+ return previewFitsFoldRegion(placement,regionGeometry,viewport) ? placement : null;
 }
 export function samePreviewPlacement(a:PreviewRect|null,b:PreviewRect|null):boolean {
  if(!a||!b)return a===b;

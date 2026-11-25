@@ -20,7 +20,7 @@ final class CameraAuditPlanStage {
 
     static void run(Context context) {
         JSONObject passport = CameraAuditService.read(context);
-        if (!"complete".equals(passport.optString("state")) ||
+        if (!CameraAuditService.completeCodecRows(passport) ||
                 !"complete".equals(passport.optString("codecState")) ||
                 passport.optInt("codecIntegrityVersion", 0) !=
                     CameraAuditCodecStage.INTEGRITY_VERSION) return;
@@ -33,13 +33,29 @@ final class CameraAuditPlanStage {
             JSONObject cameras = passport.optJSONObject("cameras");
             JSONArray ids = passport.optJSONArray("activeCameraIds");
             if (cameras == null || ids == null) throw new IllegalStateException("missing-camera-ids");
+            // Count durable valid rows before checking resource pressure:
+            // resume never visibly drops to zero or repeats finished lenses.
+            int completed = 0, candidates = 0;
+            Set<String> completedIds = new HashSet<>();
+            for (int i=0;i<ids.length();i++) {
+                String id = ids.optString(i,"");
+                JSONObject camera = cameras.optJSONObject(id);
+                if (CameraAuditService.completePlanRow(camera)) {
+                    completedIds.add(id);
+                    completed++;
+                    candidates += camera.optJSONArray("functionalPlan").length();
+                }
+            }
             passport.put("planState", "running");
             passport.put("planTotal", ids.length());
-            passport.put("planCompleted", 0);
-            passport.put("planCandidateCount", 0);
+            passport.put("planCompleted", completed);
+            passport.put("planCandidateCount", candidates);
+            passport.remove("planError");
+            passport.put("updatedAt", System.currentTimeMillis());
             CameraAuditService.persist(context, passport);
-            int completed = 0, candidates = 0;
             for (int i=0;i<ids.length();i++) {
+                if (Thread.currentThread().isInterrupted()) return;
+                if (completedIds.contains(ids.optString(i,""))) continue;
                 String pressure = CameraAuditResourceGuard.pauseReason(context);
                 if (pressure != null) {
                     passport.put("planState","retry");

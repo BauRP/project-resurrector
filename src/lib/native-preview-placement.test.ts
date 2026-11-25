@@ -77,3 +77,18 @@ describe("foldable native preview overlay boundaries",()=>{
  });
 
 });
+
+describe("native preview after small-window clipping", () => {
+ it("clips a negative subpixel origin without shifting its far edge",()=>{
+   expect(nativePreviewPlacement({left:-0.5,top:-0.5,width:100,height:100},screen))
+      .toEqual({left:0,top:0,width:99.5,height:99.5});
+ });
+ it("rejects surfaces that are too small after clipping at any edge",()=>{
+   for(const rect of [
+      {left:-0.5,top:100,width:80,height:100},
+      {left:320.5,top:100,width:80,height:100},
+      {left:100,top:-0.5,width:100,height:80},
+      {left:100,top:720.5,width:100,height:80}
+   ]) expect(nativePreviewPlacement(rect,screen)).toBeNull();
+ });
+});

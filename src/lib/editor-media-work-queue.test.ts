@@ -131,3 +131,22 @@ describe("cancelled editor decoder work is removed immediately", () => {
     expect(queue.queuedCount).toBe(0);
   });
 });
+
+describe("editor media jobs scheduled by completion callbacks", () => {
+  it("yields an event-loop turn even when the next job arrives after the queue empties", async () => {
+    vi.useFakeTimers();
+    try {
+      const queue = new EditorMediaWorkQueue();
+      expect(await queue.run(async () => 1)).toBe(1);
+      let started = false;
+      const next = queue.run(async () => { started = true; return 2; });
+      await Promise.resolve();
+      expect(started).toBe(false);
+      await vi.runOnlyPendingTimersAsync();
+      expect(await next).toBe(2);
+      expect(queue.queuedCount).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

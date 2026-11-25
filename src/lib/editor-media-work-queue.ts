@@ -43,7 +43,7 @@ export class EditorMediaWorkQueue {
         // The previous decoder has fully released its resources. Pending
         // tasks remain cancellable during this turn, and the renderer can
         // handle a click/paint instead of chaining work in microtasks.
-        if (this.pending.length && this.nextTurn === null) {
+        if (this.nextTurn === null) {
           this.nextTurn = setTimeout(() => {
             this.nextTurn = null;
             this.drain();

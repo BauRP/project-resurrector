@@ -51,6 +51,17 @@ final class CameraAuditCodecStage {
                 passport.put("activeCameraIds", ids);
                 CameraAuditService.persist(context, passport);
             }
+            // Restore the count of actual durable per-camera checkpoints
+            // before a pause or expensive codec catalog query.
+            int completed = 0;
+            Set<String> completedIds = new HashSet<>();
+            for (int i=0;i<ids.length();i++) {
+                String id = ids.optString(i,"");
+                if (!id.isEmpty() && CameraAuditService.completeCodecRow(cameras.optJSONObject(id)) &&
+                        completedIds.add(id)) completed++;
+            }
+            passport.put("codecTotal", ids.length());
+            passport.put("codecCompleted", completed);
             // A device in thermal/memory distress must not start expensive
             // codec metadata enumeration. Completed lens work stays on disk.
             String pressureBefore = CameraAuditResourceGuard.pauseReason(context);
@@ -61,11 +72,12 @@ final class CameraAuditCodecStage {
                 return;
             }
             // MediaCodecList is queried exactly once, never per lens/mode.
-            MediaCodecInfo[] codecs = new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos();
-            // Preload vendor codec capabilities once per job, not repeatedly
-            // for each Camera2 resolution and FPS combination.
-            EncoderCatalog catalog = collectEncoderCapabilities(codecs);
-            int completed = 0;
+            EncoderCatalog catalog = null;
+            if (completed < ids.length()) {
+                MediaCodecInfo[] codecs = new MediaCodecList(MediaCodecList.REGULAR_CODECS).getCodecInfos();
+                // Preload vendor capabilities once, only if there is missing work.
+                catalog = collectEncoderCapabilities(codecs);
+            }
             passport.put("codecTotal", ids.length());
             passport.put("codecState", "running");
             passport.remove("codecIntegrityVersion");
@@ -78,6 +90,8 @@ final class CameraAuditCodecStage {
             passport.put("planCandidateCount", 0);
             CameraAuditService.persist(context, passport);
             for (int i=0; i<ids.length(); i++) {
+                if (Thread.currentThread().isInterrupted()) return;
+                if (completedIds.contains(ids.optString(i,""))) continue;
                 String pressure = CameraAuditResourceGuard.pauseReason(context);
                 if (pressure != null) {
                     passport.put("codecState", "retry");

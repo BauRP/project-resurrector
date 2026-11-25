@@ -306,6 +306,15 @@ public final class CameraAuditService extends Service {
                 !"not-run".equals(chain.optString("export")) ||
                 !(candidates.length() > 0 ? "candidate-only" : "unknown")
                     .equals(chain.optString("encoder"))) return false;
+        // A truncated or empty plan cannot count as complete when the
+        // validated encoder snapshot contains more compatible candidates.
+        JSONArray checks = camera.optJSONArray("codecChecks");
+        int eligible = 0;
+        for (int i = 0; i < checks.length(); i++) {
+            if ("declared-compatible".equals(checks.optJSONObject(i).optString("status"))) eligible++;
+        }
+        if (candidates.length() != Math.min(eligible, CameraAuditPlanStage.MAX_PLANS_PER_CAMERA))
+            return false;
         java.util.Set<String> keys = new java.util.HashSet<>();
         for (int i = 0; i < candidates.length(); i++) {
             JSONObject candidate = candidates.optJSONObject(i);
