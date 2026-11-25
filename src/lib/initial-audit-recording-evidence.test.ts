@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {nextInitialAuditRecordingMode,matchInitialAuditRecordings} from "./initial-audit-recording-evidence";
+import {orderInitialAuditModes,nextInitialAuditRecordingMode,matchInitialAuditRecordings} from "./initial-audit-recording-evidence";
 import type {CameraAuditCheckpoint} from "./first-run-camera-audit";
 const passport:CameraAuditCheckpoint={schema:2,state:"complete",completed:1,total:1,advancedState:"pending",cameras:{
  rear:{cameraId:"rear",source:"android-camera2-metadata",state:"metadata-collected",verifiedRecording:false,codecCheckedAt:10,planCodecCheckedAt:10,planState:"complete",planVersion:2,
@@ -49,4 +49,12 @@ describe("durable practical diagnostic progress",()=>{
   expect(matchInitialAuditRecordings(passport,{entries:[],modeEntries:[row],maxEntries:24,omittedEarlier:80})[0]?.state).toBe("recorded");
   expect(matchInitialAuditRecordings(passport,{entries:[],modeEntries:[{...row,state:"error"}],maxEntries:24,omittedEarlier:80})[0]?.state).toBe("interrupted-or-unconfirmed");
  });
+});
+
+it("prioritizes untried lenses and modes after a failed capture without claiming completion",()=>{
+ const a={cameraId:"rear",size:"1920x1080",fps:30,recorded:false};
+ const b={cameraId:"front",size:"1280x720",fps:30,recorded:false};
+ const failed=match([{...row,state:"error"}]);
+ expect(orderInitialAuditModes([a,b],failed)).toEqual([b,a]);
+ expect(orderInitialAuditModes([a],failed)).toEqual([a]);
 });

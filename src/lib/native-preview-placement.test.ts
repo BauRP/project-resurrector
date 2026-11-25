@@ -116,3 +116,10 @@ it("produces an atomic safe submission across tablet rotation, keyboard and real
  expect(nativePreviewSnapshot({...rect,left:380},wide,"0,0,390,600;410,0,390,600",visible)).toBeNull();
  expect(nativePreviewSnapshot(rect,wide,undefined,visible)?.viewport).toEqual(wide);
 });
+
+it("keeps preview fully contained in a tablet split-screen pane after a fold-to-tablet rotation",()=>{
+ const viewport={width:960,height:600};
+ const visible={offsetLeft:0,offsetTop:0,width:960,height:600,scale:1};
+ expect(nativePreviewSnapshot({left:500,top:100,width:420,height:236},viewport,"0,0,470,600;490,0,470,600",visible)).not.toBeNull();
+ expect(nativePreviewSnapshot({left:500,top:100,width:420,height:236},{width:600,height:960},undefined,{...visible,width:600,height:960})).toBeNull();
+});

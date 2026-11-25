@@ -1,5 +1,5 @@
 import { expect, it, describe } from "vitest";
-import { diagnosticProbeLimit, evaluateDiagnosticSafety, nativeDiagnosticAvailability } from "./diagnostic-safety";
+import { diagnosticProbeLimit, evaluateDiagnosticSafety, nativeDiagnosticAvailability, nativeDiagnosticStatusAvailability } from "./diagnostic-safety";
 describe("bounded camera diagnostics", () => {
   it("defers extended probes on Android severe thermal throttling", () => {
     const result = evaluateDiagnosticSafety({thermalStatus:3,battery:{level:.9,charging:true},freeBytes:1024**3,extended:true});
@@ -48,4 +48,11 @@ describe("invalid device resource telemetry",()=>{
     const safety=evaluateDiagnosticSafety({thermalStatus:0,battery:{level:1.1,charging:true},freeBytes:-1,extended:true});
     expect(safety).toMatchObject({thermal:"safe",battery:"unknown",storage:"unknown"});
   });
+});
+
+it("does not acquire another sensor while a terminal-looking service still owns resources",()=>{
+ expect(nativeDiagnosticStatusAvailability({state:"saved",captureServiceActive:true})).toBe("busy");
+ expect(nativeDiagnosticStatusAvailability({state:"saved"})).toBe("unknown");
+ expect(nativeDiagnosticStatusAvailability({state:"saved",captureServiceActive:false})).toBe("free");
+ expect(nativeDiagnosticStatusAvailability({state:"recording",captureServiceActive:false})).toBe("busy");
 });

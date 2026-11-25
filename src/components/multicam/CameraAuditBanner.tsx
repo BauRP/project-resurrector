@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { isNative } from "@/lib/native";
 import { cameraAudit, cameraAuditPauseReason, cameraAuditPhase, cameraAuditPlanComplete, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
+import { nativeCapture } from "@/lib/native-capture";
+import { auditRecordingCoverage, AUDIT_EVIDENCE_CHANGED, type AuditRecordingCoverage } from "@/lib/initial-audit-coverage";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 
 /** Camera-only display of a separate-process read-only Camera2 metadata scan. */
-export function CameraAuditBanner() {
+export function CameraAuditBanner({onOpenDiagnostics}:{onOpenDiagnostics?:()=>void}={}) {
   const [audit, setAudit] = useState<CameraAuditCheckpoint | null>(null);
   const [problem, setProblem] = useState("");
   const startedHere = useRef(false);
   const [showCompleted, setShowCompleted] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [coverage,setCoverage]=useState<AuditRecordingCoverage|null>(null);
   useEffect(() => {
     if (!isNative()) return;
     let alive = true;
@@ -109,7 +112,40 @@ export function CameraAuditBanner() {
   // Full functional diagnosis has its own future completion state.
   const phase = audit ? cameraAuditPhase(audit) : "metadata";
   const complete = audit !== null && cameraAuditPlanComplete(audit);
-  if (!isNative() || (complete && !showCompleted)) return null;
+  useEffect(()=>{
+    if(!isNative()||!complete)return;
+    let alive=true,inFlight=false,dirty=false;
+    const refresh=async()=>{
+      if(!alive||document.hidden)return;
+      if(inFlight){dirty=true;return;}
+      inFlight=true;
+      try{
+        const [passport,history]=await Promise.all([cameraAudit.getPassport(),nativeCapture.auditHistory()]);
+        if(alive&&!document.hidden)setCoverage(cameraAuditPlanComplete(passport.audit)?auditRecordingCoverage(passport.audit,history):null);
+      }catch{if(alive)setCoverage(null);}
+      finally{inFlight=false;if(alive&&dirty){dirty=false;void refresh();}}
+    };
+    const onVisible=()=>{if(!document.hidden)void refresh();};
+    const cancel=scheduleAfterResponsivePaint(()=>void refresh(),{stableFrames:3,visibleOnly:true});
+    window.addEventListener(AUDIT_EVIDENCE_CHANGED,onVisible);
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>{alive=false;cancel();window.removeEventListener(AUDIT_EVIDENCE_CHANGED,onVisible);document.removeEventListener("visibilitychange",onVisible);};
+  },[complete]);
+  if (!isNative()) return null;
+  if(complete&&!showCompleted){
+    if(coverage&&coverage.total>0&&coverage.recorded===coverage.total)return null;
+    const percent=coverage&&coverage.total>0?Math.floor(coverage.recorded*100/coverage.total):0;
+    return <section className="camera-audit-banner mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3" aria-label="Практическая диагностика камер">
+      <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-semibold">
+        <span>Практическая диагностика камер</span><span className="tabular-nums">{coverage&&coverage.total>0?coverage.recorded+"/"+coverage.total+" видеорежимов":"План сохранён"}</span>
+      </div>
+      {coverage&&coverage.total>0&&<div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={percent} aria-label="Покрытие запланированных обычных AVC-режимов">
+        <div className="h-full rounded-full bg-primary" style={{width:percent+"%"}}/>
+      </div>}
+      <p className="mt-1 text-[11px] text-muted-foreground">{coverage&&coverage.total>0?"Сохранённые видеопробы не повторяются. Неподтверждённых режимов: "+coverage.unconfirmed+". Это не вся диагностика.":"Характеристики сохранены. Практические результаты пока недоступны или нет подходящих AVC-кандидатов."}</p>
+      {onOpenDiagnostics&&<button type="button" className="mt-1 min-h-11 max-w-full whitespace-normal rounded-md border border-border px-3 text-xs" onClick={onOpenDiagnostics}>Открыть практическую диагностику</button>}
+    </section>;
+  }
   // This is a count of three saved declaration stages, not functional recording.
   const percent = audit ? cameraAuditProgress(audit) : 0;
   const line = problem || (audit && cameraAuditPauseReason(audit)) || (complete

@@ -1940,3 +1940,8 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
 
 .native-recording-panel > [role="status"] { overflow-wrap:anywhere; min-width:0; }
 .native-recording-panel > button:focus-visible { outline-offset:2px; }
+
+/* Preserve room for the camera and touch controls even while the practical
+ * progress banner is present in a narrow fold or tablet multi-window. */
+.camera-audit-banner > div:first-child > span:first-child { min-width:0; overflow-wrap:anywhere; }
+.camera-audit-banner > button { min-width:0; overflow-wrap:anywhere; }

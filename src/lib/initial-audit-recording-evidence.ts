@@ -106,7 +106,16 @@ export function initialAuditRecordingModes(
       }
     }
   }
-  return result;
+  return orderInitialAuditModes(result,matchInitialAuditRecordings(passport,history));
+}
+
+/** Prioritize untried modes over unsuccessful ones, without marking a failure
+ * as completed. The user can retry those modes after other lenses. */
+export function orderInitialAuditModes(modes:readonly InitialAuditMode[],observations:readonly InitialAuditRecordingObservation[]):InitialAuditMode[]{
+ const failed=new Set(observations.filter(o=>o.state==="interrupted-or-unconfirmed")
+   .map(o=>JSON.stringify([o.cameraId,o.width+"x"+o.height,o.fps])));
+ const rank=(m:InitialAuditMode)=>m.recorded?2:failed.has(JSON.stringify([m.cameraId,m.size,m.fps]))?1:0;
+ return [...modes].sort((a,b)=>rank(a)-rank(b));
 }
 
 export function nextInitialAuditRecordingMode(

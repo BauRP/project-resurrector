@@ -702,3 +702,7 @@ The existing next-mode action now has an explicit companion action to capture on
 
 ### 2026-11-26: bounded foreground diagnostic clip sequence
 The native panel optionally runs up to three explicit, sequential four-second diagnostic clips. A pure disposition helper rejects stale/foreign acknowledgements and waits for the exact capture ID, matching mode, service destruction and durable finalized journal evidence. The next action rechecks resource/ownership and current lens availability; a failed result, timeout, stop, hidden tab or unmount prevents another clip. Ordinary recording remains independent. Native start rejects diagnostic clips while any previous service instance is still alive. Previous CI #45687861355 passed 1156 tests and published v1.0.1874.
+
+
+### 2026-11-26: restore practical camera coverage in the Camera-only banner
+After declaration stages finish, the top Camera banner reads bounded saved candidate and finalized recording evidence and shows ordinary AVC-mode coverage. It updates on visible entry and durable recording completion events, not a new polling loop. The action opens the existing Camera2 interface, never records without consent. Untried modes precede unsuccessful observations on the next invocation. All diagnostic ownership checks and explicit return to WebView reject a still-active native service, even with a terminal-looking state. Previous CI #45690605086 passed 1159 tests and published v1.0.1875.

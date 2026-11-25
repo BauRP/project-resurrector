@@ -1,5 +1,5 @@
 import { isNative, MultiCamNative, type NativeThermal } from "./native";
-import { nativeCapture, nativeRecorderOwnsCamera } from "./native-capture";
+import { nativeCapture, nativeRecorderOwnsCamera, type NativeCaptureStatus } from "./native-capture";
 import { bounded } from "./async";
 
 export interface DiagnosticSafety {
@@ -15,6 +15,12 @@ export function nativeDiagnosticAvailability(state: string | null): "free" | "bu
   if (state === null) return "unknown";
   if (nativeRecorderOwnsCamera(state) || ["saving","finalizing"].includes(state)) return "busy";
   return ["idle","stopped","error","completed","interrupted","saved","saved_interrupted"].includes(state) ? "free" : "unknown";
+}
+export function nativeDiagnosticStatusAvailability(status:Pick<NativeCaptureStatus,"state"|"captureServiceActive">|null):"free"|"busy"|"unknown" {
+ if(!status)return "unknown";
+ if(status.captureServiceActive===true)return "busy";
+ const state=nativeDiagnosticAvailability(status.state);
+ return state==="free"&&status.captureServiceActive!==false?"unknown":state;
 }
 export function evaluateDiagnosticSafety(input: {
   thermalStatus: number | null; battery: BatterySnapshot | null;
@@ -60,10 +66,10 @@ export function diagnosticProbeLimit(safety: DiagnosticSafety, requested: number
  */
 export async function checkDiagnosticSafety(extended: boolean): Promise<DiagnosticSafety> {
   if (isNative()) {
-    let state: string | null = null;
-    try { state = (await bounded(nativeCapture.status(), 2000, "Camera2 diagnostic ownership")).state; }
+    let state: NativeCaptureStatus | null = null;
+    try { state = await bounded(nativeCapture.status(), 2000, "Camera2 diagnostic ownership"); }
     catch { /* unknown native ownership must fail closed */ }
-    const ownership = nativeDiagnosticAvailability(state);
+    const ownership = nativeDiagnosticStatusAvailability(state);
     if (ownership !== "free") return {
       proceed: false,
       reason: ownership === "busy"

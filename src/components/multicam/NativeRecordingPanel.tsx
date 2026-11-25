@@ -5,6 +5,7 @@ import { getActiveFoldBaseline } from "@/lib/fold-recording-evidence";
 import { createSerializedAsyncActions } from "@/lib/serialized-preview-operations";
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
+import { AUDIT_EVIDENCE_CHANGED } from "@/lib/initial-audit-coverage";
 import { validDiagnosticMode, waitForDiagnosticClip } from "@/lib/native-diagnostic-sequence";
 import { diagnosticCaptureGate } from "@/lib/diagnostic-capture-gate";
 import { checkDiagnosticSafety, nativeDiagnosticAvailability } from "@/lib/diagnostic-safety";
@@ -54,6 +55,14 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      window.dispatchEvent(new Event("multicam-native-preview-ready"));
  },[status?.state]);
  const savedModeKey=useRef("");
+ const lastDurableNotification=useRef("");
+ useEffect(()=>{
+   if(status?.captureServiceActive!==false||!["saved","saved_interrupted","interrupted","error"].includes(status.state))return;
+   const key=[status.captureId,status.state,status.savedBytes].join("|");
+   if(lastDurableNotification.current===key)return;
+   lastDurableNotification.current=key;
+   window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));
+ },[status]);
  useEffect(()=>{
    if(!status||!["saved","saved_interrupted","interrupted","error"].includes(status.state))return;
    const evidence=nativeRecordedModeEvidence(status,Date.now());
@@ -508,6 +517,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
          }
          recorded++;
          setPlanModes(initialAuditRecordingModes(passport.audit,observedHistory,latestProfiles.current,trial.cameraId));
+         window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));
        }
        if(mounted.current)setPlanNotice("В этой последовательности подтверждено "+recorded+" видеопроб. Остальные можно продолжить позже.");
        return;
@@ -519,7 +529,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
  };
  const canRestoreMode=!!mode.size && (mode.size!==resolution||mode.fps!==fps);
  const applyCompatibleMode=()=>{
-   if(busy||nativeRecorderOwnsCamera(status?.state??""))return;
+   if(busy||planRequest.current||nativeRecorderOwnsCamera(status?.state??""))return;
    setResolution(mode.size);
    setFps(mode.fps);
  };

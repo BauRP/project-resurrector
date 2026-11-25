@@ -125,6 +125,7 @@ export function CameraWorkspace() {
         const status = await bounded(nativeCapture.status(), 2200, "Camera2 mode handoff");
         if (nativeRecorderOwnsCamera(status.state))
           throw Error("Нативная запись ещё работает. Остановите её перед открытием обычного предпросмотра.");
+        if(status.captureServiceActive!==false)throw Error("Camera2 ещё освобождает ресурсы. Повторите после завершения сохранения.");
       }
       // The native status request is async. A recording or fold remount may
       // have happened while it was pending: never steal camera ownership then.
@@ -144,7 +145,7 @@ export function CameraWorkspace() {
   }, [mode,switching,blocked]);
 
   return <div className={mode==="native"?"native-camera-fold-workspace flex h-full min-h-0 flex-col":"flex h-full min-h-0 flex-col"}>
-    <CameraAuditBanner />
+    <CameraAuditBanner {...(mode==="web"&&!blocked&&!switching?{onOpenDiagnostics:()=>void switchTo("native")}:{})} />
     {isNative() && mode === "native" && <div className="camera-mode-switch flex shrink-0 items-center justify-end gap-1 border-b border-border/40 bg-card/50 px-2 py-1" role="group" aria-label="Режим камеры">
       <span className="mr-auto truncate text-[10px] text-muted-foreground">Режим</span>
       <Button size="sm" className="h-7 min-h-0 px-2 text-[10px]" variant="outline"
