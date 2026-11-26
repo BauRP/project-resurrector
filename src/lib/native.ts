@@ -22,6 +22,7 @@ export interface NativeMp4Inspection {
   audioSampleTimestampDuplicates?: number; audioSampleInspectionFailed?: boolean;
   audioFidelityVerified?: false;
   outOfOrderPresentationTimes: number;
+  duplicatePresentationTimes?: number;
   estimatedSampleFps: number | null;
   sampleLimitReached: boolean;
   tailSamplesRead?: number; tailFirstPresentationTimeUs?: number | null;
