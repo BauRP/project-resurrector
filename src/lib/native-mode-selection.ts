@@ -72,3 +72,19 @@ export function declaredHighSpeedCandidates(
   }
   return result;
 }
+
+export interface HighSpeedRecordingOption {key:string;cameraId:string;size:string;fps:number}
+/** Snapshot the actual declared Camera2 mode independently of later lens removal. */
+export function highSpeedRecordingOptions(profiles:readonly Pick<NativeCameraProfile,"cameraId"|"highSpeed">[]):HighSpeedRecordingOption[]{
+ const result:HighSpeedRecordingOption[]=[],seen=new Set<string>();
+ for(const camera of profiles.slice(0,64)){
+  if(!camera?.cameraId)continue;
+  for(const mode of declaredHighSpeedCandidates(camera)){
+   if(mode.fps<120)continue;
+   const key=JSON.stringify([camera.cameraId,mode.size,mode.fps]);
+   if(seen.has(key))continue;
+   seen.add(key);result.push({key,cameraId:camera.cameraId,size:mode.size,fps:mode.fps});
+  }
+ }
+ return result;
+}

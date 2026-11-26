@@ -113,3 +113,10 @@ it("bounds the full-chain batch and stops on a failed media stage before another
  expect(stage).toContain("await finishDiagnosticPipeline(finalized");
  expect(stage).toContain("без повторной съёмки.\");return;");
 });
+
+it("keeps the actual high-speed selection snapshot until its MP4 is finalized",()=>{
+ const panel=readFileSync("src/components/multicam/CameraDiagnostics.tsx","utf8");
+ expect(panel).toContain("activeHighSpeedMode.current={...option}");
+ expect(panel).toContain("const selectedMode = activeHighSpeedMode.current");
+ expect(panel).toContain("activeHighSpeedMode.current=null");
+});

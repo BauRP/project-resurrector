@@ -13,23 +13,20 @@ export function highSpeedRecordedModeEvidence(
 ): ModeEvidence {
   const inspected = output.inspection;
   const requestedValid = !!cameraId && [requested.width, requested.height, requested.fps]
-    .every(n => Number.isFinite(n) && n > 0);
+    .every(n => Number.isSafeInteger(n) && n > 0);
   const filePresent = Number.isSafeInteger(output.bytes) && output.bytes >= 1024;
   const width = inspected?.width, height = inspected?.height;
   const inspectedDimensions = typeof width === "number" && typeof height === "number" &&
     Number.isSafeInteger(width) && Number.isSafeInteger(height) && width > 0 && height > 0;
-  const dimensionsMatch = inspectedDimensions && (
-    (width === requested.width && height === requested.height) ||
-    (width === requested.height && height === requested.width)
-  );
+  const dimensionsMatch = inspectedDimensions && width === requested.width && height === requested.height;
   const head = inspected?.estimatedSampleFps, tail = inspected?.tailEstimatedSampleFps;
   const sampleMatches = (fps: number | null | undefined) =>
     typeof fps === "number" && Number.isFinite(fps) &&
     Math.abs(fps - requested.fps) <= Math.max(2, requested.fps * 0.1);
   const bothSamplesMatch = sampleMatches(head) && sampleMatches(tail);
   const tailNearEnd = inspected?.tailSampleNearDeclaredEnd === true;
-  const state: ModeEvidence["state"] = !requestedValid || !filePresent
-    ? "unknown" : "recorded";
+  const state: ModeEvidence["state"] = requestedValid && filePresent && dimensionsMatch && bothSamplesMatch && tailNearEnd
+    ? "recorded" : "unknown";
   const details = !inspected ? "Анализ MP4 недоступен; разрешение и FPS кодека неизвестны." :
     !inspectedDimensions ? "Декодированное разрешение MP4 не получено." :
     !dimensionsMatch ? "Размер видеодорожки MP4 отличается от запрошенного режима." :

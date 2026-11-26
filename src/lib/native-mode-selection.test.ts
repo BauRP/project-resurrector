@@ -1,5 +1,5 @@
 import {describe,expect,it} from "vitest";
-import {nativeFpsCandidates,validNativeSelection,declaredAvcRecordingSupport,declaredHighSpeedCandidates} from "./native-mode-selection";
+import {nativeFpsCandidates,validNativeSelection,declaredAvcRecordingSupport,declaredHighSpeedCandidates,highSpeedRecordingOptions} from "./native-mode-selection";
 const camera={sizes:["1280x720","1920x1080"],fpsRanges:["15-30","30-60"],
  videoOutputSizes:[{width:1280,height:720,theoreticalMaxFps:60},{width:1920,height:1080,theoreticalMaxFps:30}]};
 describe("native per-lens candidate selection",()=>{
@@ -72,4 +72,13 @@ describe("constrained high-speed is declaration-only",()=>{
    expect(modes).toHaveLength(32);
    expect(modes.every(x=>x.evidence==="camera2-declared-only")).toBe(true);
  });
+});
+
+it("snapshots the actual high-speed mode independently of later lens removal or duplicate declarations",()=>{
+ const profiles=[{cameraId:"rear",highSpeed:[{size:"1280x720",fps:[120,120,60,NaN]}]}];
+ const selected=highSpeedRecordingOptions(profiles)[0]!;
+ expect(selected).toEqual({key:JSON.stringify(["rear","1280x720",120]),cameraId:"rear",size:"1280x720",fps:120});
+ profiles.splice(0,1);
+ expect(highSpeedRecordingOptions(profiles)).toEqual([]);
+ expect(selected.cameraId).toBe("rear");expect(selected.fps).toBe(120);
 });

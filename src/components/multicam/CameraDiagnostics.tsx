@@ -1,4 +1,5 @@
 import { recordModeEvidence } from "@/lib/camera-passport";
+import { highSpeedRecordingOptions,type HighSpeedRecordingOption } from "@/lib/native-mode-selection";
 import { highSpeedRecordedModeEvidence } from "@/lib/native-video-evidence";
 import { buildAnonymousCameraReport } from "@/lib/diagnostic-export";
 import { loadStabilizationEvidence, saveStabilizationEvidence } from "@/lib/stabilization-evidence-store";
@@ -49,6 +50,7 @@ export function CameraDiagnostics() {
   const [highSpeedMessage, setHighSpeedMessage] = useState("");
   const [lastMp4Inspection, setLastMp4Inspection] = useState<import("@/lib/native").NativeMp4Inspection | null>(null);
   const highSpeedSession = useRef(false);
+  const activeHighSpeedMode=useRef<HighSpeedRecordingOption|null>(null);
   const [highSpeedCamera, setHighSpeedCamera] = useState("");
   const [highSpeedMode, setHighSpeedMode] = useState("");
   const [availability, setAvailability] = useState<Record<string, boolean>>({});
@@ -260,12 +262,7 @@ export function CameraDiagnostics() {
       lease.release();
     }
   };
-  const highSpeedOptions = nativeCameras.flatMap(cam => cam.highSpeed.flatMap(mode =>
-    mode.fps.filter(fps => fps >= 120).map(fps => ({
-      key: cam.cameraId + "|" + mode.size + "|" + fps,
-      cameraId: cam.cameraId, size: mode.size, fps,
-    }))
-  ));
+  const highSpeedOptions = useMemo(()=>highSpeedRecordingOptions(nativeCameras),[nativeCameras]);
   const beginHighSpeed = async () => {
     const option = highSpeedOptions.find(x => x.key === highSpeedMode);
     if (!option || running || recording || highSpeedState !== "idle") return;
@@ -282,10 +279,12 @@ export function CameraDiagnostics() {
         return;
       }
       await MultiCamNative.startHighSpeedRecording({ cameraId: option.cameraId, width, height, fps: option.fps });
+      activeHighSpeedMode.current={...option};
       highSpeedSession.current = true;
       if (mounted.current) { setHighSpeedCamera(option.cameraId); setHighSpeedState("recording"); setHighSpeedMessage("Запись началась, остановите её вручную"); }
       else {
         highSpeedSession.current = false;
+        activeHighSpeedMode.current=null;
         await MultiCamNative.stopHighSpeedRecording().catch(() => undefined);
       }
     } catch (e) {
@@ -305,7 +304,7 @@ export function CameraDiagnostics() {
     try {
       const file = await MultiCamNative.stopHighSpeedRecording();
       if (mounted.current) setLastMp4Inspection(file.inspection ?? null);
-      const selectedMode = highSpeedOptions.find(x => x.cameraId === highSpeedCamera && x.key === highSpeedMode);
+      const selectedMode = activeHighSpeedMode.current;
       if (selectedMode) {
         const [requestedWidth,requestedHeight] = selectedMode.size.split("x").map(Number);
         const evidence = highSpeedRecordedModeEvidence(selectedMode.cameraId,
@@ -331,6 +330,7 @@ export function CameraDiagnostics() {
     } catch (e) {
       if (mounted.current) setHighSpeedMessage("Ошибка сохранения: " + String(e));
     } finally {
+      activeHighSpeedMode.current=null;
       highSpeedLease.current?.release();
       highSpeedLease.current = null;
       if (mounted.current) { setHighSpeedState("idle"); setHighSpeedCamera(""); }

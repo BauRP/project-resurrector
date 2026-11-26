@@ -726,3 +726,7 @@ One explicit action records a single bounded diagnostic MP4, waits for durable c
 
 ### 2026-11-26: bounded complete media-chain batch and linked progress
 An explicit action can run up to three sequential diagnostic media chains, with existing safety/ownership checks and stop on the first unconfirmed stage. The Camera-only banner shows editor/export counts matched to retained diagnostic capture IDs, mode and bytes; it no longer disappears on recording-only completion. Lightweight observation readers avoid importing render code for progress display. Previous CI #45714732378 passed 1176 tests, published v1.0.1880 and confirmed T-10.
+
+
+### 2026-11-26: Camera2 high-speed evidence and viewport anchor persistence
+High-speed capture freezes the actual selected camera/mode at start and only marks the requested mode recorded if encoded dimensions, head/tail sampled FPS and late samples match; otherwise the evidence remains unknown. Pending timeline anchor writes are cancelled on reflow. CI #45714732378 had passed 1176 tests and published v1.0.1880 before this package.

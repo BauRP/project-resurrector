@@ -13,7 +13,7 @@ describe("native high speed recording evidence",()=>{
  });
  it("does not silently certify a mismatched sensor output",()=>{
    const result=highSpeedRecordedModeEvidence("0",requested,{bytes:100000,inspection:{...base,width:1280}},123);
-   expect(result.state).toBe("recorded");
+   expect(result.state).toBe("unknown");
    expect(result.message).toContain("отличается");
  });
  it("preserves an unknown state when no file exists",()=>{
@@ -21,6 +21,12 @@ describe("native high speed recording evidence",()=>{
  });
  it("keeps missing output FPS explicitly unconfirmed",()=>{
    const result=highSpeedRecordedModeEvidence("0",requested,{bytes:100000,inspection:{...base,tailEstimatedSampleFps:null}},123);
+   expect(result.state).toBe("unknown");
    expect(result.message).toContain("не подтверждены");
  });
+});
+it("does not credit a missing tail, wrong FPS or swapped encoded dimensions as the selected high-speed mode",()=>{
+ for(const inspection of [{...base,tailSampleNearDeclaredEnd:false},{...base,estimatedSampleFps:60},{...base,width:1080,height:1920}]){
+  expect(highSpeedRecordedModeEvidence("rear",requested,{bytes:100000,inspection},123).state).toBe("unknown");
+ }
 });

@@ -1097,6 +1097,7 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       // actual scroll. A genuine user scroll below replaces it.
       lastTimelineView.current = {left:savedTime*zoom,zoom};
     } else lastTimelineView.current = {left:timeline.scrollLeft,zoom};
+    if(scrollSaveTimer.current!==null){window.clearTimeout(scrollSaveTimer.current);scrollSaveTimer.current=null;}
     appliedTimelineLeft.current=timeline.scrollLeft;
     setScrollX(timeline.scrollLeft);
     restoredScroll.current=true;
@@ -1221,7 +1222,10 @@ export function EditorPro({ chroma, audio }: { chroma?: ReactNode; audio?: React
       appliedTimelineLeft.current=null;
       lastTimelineView.current = { left, zoom };
       if (scrollSaveTimer.current !== null) window.clearTimeout(scrollSaveTimer.current);
-      scrollSaveTimer.current = window.setTimeout(() => saveTimelineAnchor(left, zoom), 160);
+      scrollSaveTimer.current = window.setTimeout(() => {
+        scrollSaveTimer.current=null;
+        saveTimelineAnchor(lastTimelineView.current.left,lastTimelineView.current.zoom);
+      }, 160);
     }} className={`w-full max-w-full ${items.length ? "overflow-x-auto" : "overflow-x-hidden"} overflow-y-hidden overscroll-x-contain rounded-md border border-border bg-timeline`} onPointerDown={() => { setSelected(null); setSelTr(null); }}>
       <div className="relative" style={{ width: timelineContentWidth(tlW, HEAD, mediaEnd, zoom) }}>
         <button aria-label={pinTl ? "Открепить таймлайн" : "Закрепить таймлайн"} aria-pressed={pinTl} onPointerDown={(e) => e.stopPropagation()} onClick={() => setPinTl(!pinTl)} className={`sticky left-0 z-20 float-left flex h-7 items-center justify-center bg-timeline ${pinTl ? "text-primary" : "text-muted-foreground"}`} style={{ width: HEAD }}>{pinTl ? <Pin className="size-3.5" /> : <PinOff className="size-3.5" />}</button>
