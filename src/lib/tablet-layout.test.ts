@@ -93,3 +93,15 @@ describe("minimum visible tablet workspace", () => {
     expect(decide({width:600,height:800,visibleWidth:600})).toBe("portrait");
   });
 });
+
+describe("tablet and fold touch accessibility",()=>{
+ it("keeps Settings controls and Editor tabs at a usable minimum size only in tablet/fold workspaces",()=>{
+  const styles=readFileSync("src/styles.css","utf8");
+  expect(styles).toContain(':root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-fold-workspace :is(button,select,[role="switch"])');
+  expect(styles).toContain(':root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-fold-workspace :is(button,select,[role="switch"])');
+  expect(styles).toContain('[data-fold-workspace="pane"] .settings-fold-workspace :is(button,select,[role="switch"])');
+  expect(styles).toContain('.editor-fold-workspace .editor-tab');
+  expect(styles).toContain('min-height: 2.75rem;');
+  expect(styles).toContain('min-width: 2.75rem;');
+ });
+});
