@@ -730,3 +730,7 @@ An explicit action can run up to three sequential diagnostic media chains, with 
 
 ### 2026-11-26: Camera2 high-speed evidence and viewport anchor persistence
 High-speed capture freezes the actual selected camera/mode at start and only marks the requested mode recorded if encoded dimensions, head/tail sampled FPS and late samples match; otherwise the evidence remains unknown. Pending timeline anchor writes are cancelled on reflow. CI #45714732378 had passed 1176 tests and published v1.0.1880 before this package.
+
+### 2026-11-26: release-signing gate and stronger media evidence
+
+Android CI no longer creates an ephemeral signing key. A GitHub Release is published only when all four persistent signing secrets are configured and both APK/AAB signatures verify; otherwise artifacts remain unsigned CI-only outputs. High-speed recording evidence requires clean bounded head and tail MP4 sample windows, monotonic/non-duplicate presentation timestamps, a matching video track, exact dimensions and matching sample FPS. Diagnostic editor/export history is deduplicated by capture ID; conflicting camera/mode identities are discarded. Tablet and measured fold Settings controls plus Editor tabs receive 44px minimum touch height; phone CSS is unchanged.
