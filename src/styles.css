@@ -1945,3 +1945,17 @@ html[data-active-multicam-tab="settings"] .settings-fold-workspace :is(
  * progress banner is present in a narrow fold or tablet multi-window. */
 .camera-audit-banner > div:first-child > span:first-child { min-width:0; overflow-wrap:anywhere; }
 .camera-audit-banner > button { min-width:0; overflow-wrap:anywhere; }
+
+/* Tablet and fold workspaces: dependable Settings and Editor touch targets
+   without changing the compact phone layout. */
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .settings-fold-workspace :is(button,select,[role="switch"]),
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .settings-fold-workspace :is(button,select,[role="switch"]),
+[data-fold-workspace="pane"] .settings-fold-workspace :is(button,select,[role="switch"]) {
+  min-height: 2.75rem;
+}
+:root[data-tablet-layout="portrait"]:not([data-separating-fold="true"]) .editor-fold-workspace .editor-tab,
+:root[data-tablet-layout="landscape"]:not([data-separating-fold="true"]) .editor-fold-workspace .editor-tab,
+[data-fold-workspace="pane"] .editor-fold-workspace .editor-tab {
+  min-height: 2.75rem;
+  min-width: 2.75rem;
+}
