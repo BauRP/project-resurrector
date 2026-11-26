@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { isNative } from "@/lib/native";
 import { cameraAudit, cameraAuditPauseReason, cameraAuditPhase, cameraAuditPlanComplete, cameraAuditProgress, type CameraAuditCheckpoint } from "@/lib/first-run-camera-audit";
 import { nativeCapture } from "@/lib/native-capture";
-import { auditRecordingCoverage, AUDIT_EVIDENCE_CHANGED, type AuditRecordingCoverage } from "@/lib/initial-audit-coverage";
+import { readDiagnosticEditorObservations,readDiagnosticExportObservations } from "@/lib/diagnostic-media-observations";
+import { auditMediaCoverage, AUDIT_EVIDENCE_CHANGED, type AuditMediaCoverage } from "@/lib/initial-audit-coverage";
 import { scheduleAfterResponsivePaint } from "@/lib/after-paint-task";
 
 /** Camera-only display of a separate-process read-only Camera2 metadata scan. */
@@ -13,7 +14,7 @@ export function CameraAuditBanner({onOpenDiagnostics}:{onOpenDiagnostics?:()=>vo
   const [showCompleted, setShowCompleted] = useState(false);
   const [attempt, setAttempt] = useState(0);
   const [paused, setPaused] = useState(false);
-  const [coverage,setCoverage]=useState<AuditRecordingCoverage|null>(null);
+  const [coverage,setCoverage]=useState<AuditMediaCoverage|null>(null);
   useEffect(() => {
     if (!isNative()) return;
     let alive = true;
@@ -121,7 +122,7 @@ export function CameraAuditBanner({onOpenDiagnostics}:{onOpenDiagnostics?:()=>vo
       inFlight=true;
       try{
         const [passport,history]=await Promise.all([cameraAudit.getPassport(),nativeCapture.auditHistory()]);
-        if(alive&&!document.hidden)setCoverage(cameraAuditPlanComplete(passport.audit)?auditRecordingCoverage(passport.audit,history):null);
+        if(alive&&!document.hidden)setCoverage(cameraAuditPlanComplete(passport.audit)?auditMediaCoverage(passport.audit,history,readDiagnosticEditorObservations(),readDiagnosticExportObservations()):null);
       }catch{if(alive)setCoverage(null);}
       finally{inFlight=false;if(alive&&dirty){dirty=false;void refresh();}}
     };
@@ -133,7 +134,7 @@ export function CameraAuditBanner({onOpenDiagnostics}:{onOpenDiagnostics?:()=>vo
   },[complete]);
   if (!isNative()) return null;
   if(complete&&!showCompleted){
-    if(coverage&&coverage.total>0&&coverage.recorded===coverage.total)return null;
+    if(coverage&&coverage.total>0&&coverage.exported===coverage.total)return null;
     const percent=coverage&&coverage.total>0?Math.floor(coverage.recorded*100/coverage.total):0;
     return <section className="camera-audit-banner mx-2 my-2 shrink-0 rounded-xl border border-border bg-card/95 p-3" aria-label="Практическая диагностика камер">
       <div className="flex flex-wrap items-center justify-between gap-1 text-xs font-semibold">
@@ -143,6 +144,7 @@ export function CameraAuditBanner({onOpenDiagnostics}:{onOpenDiagnostics?:()=>vo
         <div className="h-full rounded-full bg-primary" style={{width:percent+"%"}}/>
       </div>}
       <p className="mt-1 text-[11px] text-muted-foreground">{coverage&&coverage.total>0?"Сохранённые видеопробы не повторяются. Неподтверждённых режимов: "+coverage.unconfirmed+". Это не вся диагностика.":"Характеристики сохранены. Практические результаты пока недоступны или нет подходящих AVC-кандидатов."}</p>
+      {coverage&&coverage.total>0&&<p className="mt-1 break-words text-[11px] text-muted-foreground">Медиатека: {coverage.editor}/{coverage.total} · короткий экспорт: {coverage.exported}/{coverage.total}. По сохранённым совпадающим записям, не полная проверка всех кадров.</p>}
       {onOpenDiagnostics&&<button type="button" className="mt-1 min-h-11 max-w-full whitespace-normal rounded-md border border-border px-3 text-xs" onClick={onOpenDiagnostics}>Открыть практическую диагностику</button>}
     </section>;
   }

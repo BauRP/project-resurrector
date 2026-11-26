@@ -6,7 +6,7 @@ import { createSerializedAsyncActions } from "@/lib/serialized-preview-operation
 import { isFreshNativeFrame } from "@/lib/native-preview-freshness";
 import { validNativeSelection, declaredAvcRecordingSupport } from "@/lib/native-mode-selection";
 import { runDiagnosticPipeline } from "@/lib/native-diagnostic-pipeline";
-import { diagnosticExportCandidate } from "@/lib/native-diagnostic-export";
+import { diagnosticExportCandidate } from "@/lib/diagnostic-media-observations";
 import { eligibleDiagnosticEditorClip } from "@/lib/native-diagnostic-editor";
 import { AUDIT_EVIDENCE_CHANGED } from "@/lib/initial-audit-coverage";
 import { validDiagnosticMode, waitForDiagnosticClip } from "@/lib/native-diagnostic-sequence";
@@ -501,20 +501,21 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      if(recordTrial){
        if(!selectionCurrent()||!lease?.isCurrent())return;
        const limit=Math.min(8,Math.max(1,requestedCount));
-       const pending=modes.filter(m=>!m.recorded&&validDiagnosticMode(m)).slice(0,limit);
+       const pipelineLimit=fullPipeline?Math.min(3,limit):limit;
+       const pending=modes.filter(m=>!m.recorded&&validDiagnosticMode(m)).slice(0,pipelineLimit);
        if(!pending.length){setPlanNotice("Нет допустимых незавершённых режимов для штатного кодировщика.");return;}
-       if(!window.confirm(fullPipeline?"Записать одну короткую пробу без звука, проверить её в медиатеке редактора и выполнить реальный WebM-экспорт до 2 секунд? Оригинал и результат сохранятся отдельно.":"Записать до "+pending.length+" диагностических MP4 примерно по 4 секунды без звука? Файлы сохраняются как обычные записи. Можно остановить последовательность; при выходе из камеры новые пробы не начнутся."))return;
+       if(!window.confirm(fullPipeline?"Проверить до "+pending.length+" режимов последовательно: короткий MP4 без звука, медиатека и WebM-экспорт до 2 секунд для каждого. Оригиналы и результаты сохранятся отдельно. Можно остановить после любой стадии.":"Записать до "+pending.length+" диагностических MP4 примерно по 4 секунды без звука? Файлы сохраняются как обычные записи. Можно остановить последовательность; при выходе из камеры новые пробы не начнутся."))return;
        const permissions=await bridge.requestPermissions({permissions:["camera"]});
        if(permissions["camera"]!=="granted")throw Error("Нет разрешения на камеру");
        // Permission UI may briefly hide the Activity. Do not implicitly
        // resume after a hide/unmount; user can explicitly continue later.
        const canContinue=()=>mounted.current&&!document.hidden&&!planStop.current&&lease.isCurrent();
        if(!canContinue()||!selectionCurrent())return;
-       let recorded=0;
+       let recorded=0,completedPipelines=0;
        let observedHistory=history;
        for(const trial of pending){
          if(!canContinue())break;
-         const safety=await checkDiagnosticSafety(pending.length>3);
+         const safety=await checkDiagnosticSafety(pending.length>3||fullPipeline);
          if(!canContinue())break;
          if(!safety.proceed){setPlanNotice(safety.reason);return;}
          if(recorded>0&&[safety.thermal,safety.battery,safety.storage].includes("unknown")){
@@ -548,12 +549,13 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
            const timer=window.setTimeout(()=>controller.abort(),75000);
            try{
              await finishDiagnosticPipeline(finalized,controller,canContinue);
-             if(mounted.current)setEditorTrialNotice("Запись, медиатека и короткий экспорт подтверждены по выборочным кадрам. Проверка всех кадров и Downloads не выполнена.");
-           }catch{if(mounted.current)setEditorTrialNotice("Запись сохранена, последующие этапы не подтверждены. Продолжите проверку сохранённой записи без повторной съёмки.");}
+             completedPipelines++;
+             if(mounted.current)setEditorTrialNotice("Подтверждено цепочек: "+completedPipelines+"/"+pending.length+". Проверка всех кадров и Downloads не выполнена.");
+           }catch{if(mounted.current)setEditorTrialNotice("Запись сохранена, последующие этапы не подтверждены. Продолжите проверку сохранённой записи без повторной съёмки.");return;}
            finally{window.clearTimeout(timer);editorTrial.current=null;window.dispatchEvent(new Event("multicam-clips-changed"));window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));}
          }
        }
-       if(mounted.current)setPlanNotice("В этой последовательности подтверждено "+recorded+" видеопроб. Остальные можно продолжить позже.");
+       if(mounted.current)setPlanNotice("В этой последовательности подтверждено "+recorded+" видеопроб"+(fullPipeline?", цепочек редактора и экспорта: "+completedPipelines:"")+". Остальные можно продолжить позже.");
        return;
      }
      setCamera(candidate.cameraId);setResolution(candidate.size);setFps(candidate.fps);
@@ -627,6 +629,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
      window.clearTimeout(timer);
      editorTrial.current=null;lease.release();
      window.dispatchEvent(new Event("multicam-clips-changed"));
+     window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));
      if(mounted.current)setBusy(false);
    }
  };
@@ -649,6 +652,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    finally{
      window.clearTimeout(timer);editorTrial.current=null;lease.release();
      window.dispatchEvent(new Event("multicam-clips-changed"));
+     window.dispatchEvent(new Event(AUDIT_EVIDENCE_CHANGED));
      if(mounted.current)setBusy(false);
    }
  };
@@ -757,6 +761,7 @@ export function NativeRecordingPanel({ previewIntervalMs = 250 }: { previewInter
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true)}>Записать следующую диагностическую пробу (4 с)</Button>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,8)}>Продолжить до восьми видеопроб</Button>
    <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,1,true)}>Проверить запись → редактор → экспорт</Button>
+   <Button type="button" variant="outline" disabled={busy||planBusy||active||!cameras.length} onClick={()=>void prepareNextDiagnosticMode(true,3,true)}>Продолжить до трёх цепочек записи и экспорта</Button>
    {planBusy&&<Button type="button" variant="outline" onClick={()=>{planStop.current=true;editorTrial.current?.abort();setPlanNotice("Последовательность остановлена; текущая короткая запись завершится автоматически.");}}>Остановить последовательность</Button>}
    {status?.diagnosticClip===true&&active&&<p role="status" className="break-words">Диагностическая запись без звука. Android завершит её автоматически, либо нажмите «Остановить».</p>}
    {planNotice&&<p role="status" className="break-words">{planNotice}</p>}

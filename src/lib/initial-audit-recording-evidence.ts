@@ -17,6 +17,16 @@ export interface InitialAuditRecordingObservation {
 }
 const key=(id:string,w:number,h:number,fps:number)=>JSON.stringify([id,w,h,fps]);
 const positiveInt=(n:unknown):n is number=>typeof n==="number"&&Number.isSafeInteger(n)&&n>0;
+/** Only versioned, real finalized recording evidence, never a declaration. */
+export function confirmedInitialAuditRecordingRow(row:Record<string,unknown>):boolean{
+  if(!row||!positiveInt(row["captureId"])||!positiveInt(row["savedAt"]))return false;
+    const complete=row["evidenceVersion"]===2&&row["mp4TracksInspected"]===true&&
+      typeof row["audioRequested"]==="boolean"&&typeof row["mp4TailNearEnd"]==="boolean"&&
+      typeof row["mp4VideoTimestampRollbacks"]==="number"&&typeof row["mp4VideoTimestampDuplicates"]==="number"&&
+      typeof row["mp4SampledFps"]==="number"&&typeof row["mp4TailSampledFps"]==="number";
+    const evidence=complete?nativeRecordedModeEvidence(row as unknown as NativeCaptureStatus,row["savedAt"] as number):null;
+    return evidence?.state==="recorded";
+}
 export function matchInitialAuditRecordings(
   passport:CameraAuditCheckpoint|null|undefined, history:NativeAuditHistory|null|undefined,
 ):InitialAuditRecordingObservation[]{
@@ -47,12 +57,7 @@ export function matchInitialAuditRecordings(
     if(!["saved","saved_interrupted","interrupted","error"].includes(typeof row["state"]==="string"?row["state"]:""))continue;
     // Older history lacks complete timing fields; it cannot silently be
     // reclassified as a new, valid recording. No additional camera is opened.
-    const complete=row["evidenceVersion"]===2&&row["mp4TracksInspected"]===true&&
-      typeof row["audioRequested"]==="boolean"&&typeof row["mp4TailNearEnd"]==="boolean"&&
-      typeof row["mp4VideoTimestampRollbacks"]==="number"&&typeof row["mp4VideoTimestampDuplicates"]==="number"&&
-      typeof row["mp4SampledFps"]==="number"&&typeof row["mp4TailSampledFps"]==="number";
-    const evidence=complete?nativeRecordedModeEvidence(row as unknown as NativeCaptureStatus,row["savedAt"]):null;
-    const recorded=evidence?.state==="recorded";
+    const recorded=confirmedInitialAuditRecordingRow(row);
     if(!recorded&&result.get(id)?.state==="recorded")continue;
     result.set(id,{cameraId:row["cameraId"],width:row["width"],height:row["height"],fps:row["fps"],
       state:recorded?"recorded":"interrupted-or-unconfirmed",bytes:positiveInt(row["savedBytes"])?row["savedBytes"]:null,
@@ -76,7 +81,8 @@ export function initialAuditRecordingModes(
   if(!passport||passport.schema!==2||!Array.isArray(passport.activeCameraIds))return [];
   const result:InitialAuditMode[]=[];
   const seen=new Set<string>();
-  const confirmed=new Set(matchInitialAuditRecordings(passport,history)
+  const observations=matchInitialAuditRecordings(passport,history);
+  const confirmed=new Set(observations
     .filter(row=>row.state==="recorded").map(row=>key(row.cameraId,row.width,row.height,row.fps)));
   const ids=[preferredCameraId,...passport.activeCameraIds].filter((id,i,all)=>
     typeof id==="string"&&!!id&&passport.activeCameraIds!.includes(id)&&all.indexOf(id)===i).slice(0,64);
@@ -106,7 +112,7 @@ export function initialAuditRecordingModes(
       }
     }
   }
-  return orderInitialAuditModes(result,matchInitialAuditRecordings(passport,history));
+  return orderInitialAuditModes(result,observations);
 }
 
 /** Prioritize untried modes over unsuccessful ones, without marking a failure

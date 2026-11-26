@@ -3,11 +3,8 @@ import { nativeCapture, type NativeCaptureStatus, type NativeDiagnosticEditorSou
 import { nativeRecordedModeEvidence } from "./native-recorded-mode-evidence";
 import { saveRecordedClip, readPersistedClip, sampledClipBytesMatch, type RecordedClip } from "./clip-persistence";
 import { verifyDecodedVideoBlob, type DecodedVideoEvidence } from "./clip-playback";
-export const MAX_DIAGNOSTIC_EDITOR_BYTES=32*1024*1024;
-export interface DiagnosticEditorObservation {
- captureId:number;cameraId:string;width:number;height:number;fps:number;bytes:number;
- decodedWidth:number;decodedHeight:number;durationSeconds:number|null;checkedAt:number;
-}
+import { MAX_DIAGNOSTIC_EDITOR_BYTES, EDITOR_OBSERVATION_KEY, validObservation, readDiagnosticEditorObservations, type DiagnosticEditorObservation } from "./diagnostic-media-observations";
+export { MAX_DIAGNOSTIC_EDITOR_BYTES, readDiagnosticEditorObservations, type DiagnosticEditorObservation } from "./diagnostic-media-observations";
 export function eligibleDiagnosticEditorClip(s:NativeCaptureStatus|null):boolean{
  return !!s&&s.state==="saved"&&s.diagnosticClip===true&&s.captureServiceActive===false&&
  Number.isSafeInteger(s.captureId)&&(s.captureId??0)>0&&Number.isSafeInteger(s.savedBytes)&&
@@ -19,25 +16,10 @@ export function validDiagnosticEditorSource(s:NativeCaptureStatus,source:NativeD
  typeof source.path==="string"&&/^\/[^\r\n]+\/native-video\/[^/\r\n]+\.mp4$/.test(source.path)&&
  !source.path.split("/").some(p=>p===".."||p===".");
 }
-const KEY="multicam-diagnostic-editor-v1";
-function validObservation(value:unknown):value is DiagnosticEditorObservation{
- if(!value||typeof value!=="object"||Array.isArray(value))return false;
- const x=value as DiagnosticEditorObservation;
- const positive=(n:unknown)=>typeof n==="number"&&Number.isSafeInteger(n)&&n>0;
- return positive(x.captureId)&&typeof x.cameraId==="string"&&x.cameraId.length>0&&
- [x.width,x.height,x.fps,x.bytes,x.decodedWidth,x.decodedHeight,x.checkedAt].every(positive)&&
- x.bytes>=1024&&x.bytes<=MAX_DIAGNOSTIC_EDITOR_BYTES&&
- (x.durationSeconds===null||(typeof x.durationSeconds==="number"&&Number.isFinite(x.durationSeconds)&&x.durationSeconds>0));
-}
-export function readDiagnosticEditorObservations():DiagnosticEditorObservation[]{
- try{const raw=localStorage.getItem(KEY);if(!raw||raw.length>65536)return [];
- const rows:unknown=JSON.parse(raw);return Array.isArray(rows)?rows.slice(-64).filter(validObservation):[];
- }catch{return [];}
-}
 function persistObservation(row:DiagnosticEditorObservation):void{
  if(!validObservation(row))throw Error("Некорректные результаты редактора");
  const rows=readDiagnosticEditorObservations().filter(r=>r.captureId!==row.captureId);
- localStorage.setItem(KEY,JSON.stringify([...rows,row].slice(-64)));
+ localStorage.setItem(EDITOR_OBSERVATION_KEY,JSON.stringify([...rows,row].slice(-64)));
 }
 const ensureActive=(signal:AbortSignal)=>{if(signal.aborted)throw Error("Проверка редактора отменена");};
 export async function importDiagnosticEditorClip(

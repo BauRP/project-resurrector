@@ -722,3 +722,7 @@ An explicit second diagnostic action uses the already verified persisted MP4 and
 
 ### 2026-11-26: linked diagnostic media chain
 One explicit action records a single bounded diagnostic MP4, waits for durable completion and service destruction, then imports and decodes the exact capture and invokes the production short WebM render. A separate continuation action works on the latest saved clip without recording again. Each stage is cancellable and rechecks native ownership/resources. The existing individual stages and eight-clip recording-only sweep remain available. Editor timeline geometry changes retain a content-time anchor, including temporary clamping by wider windows. CI #45704529488 passed 1172 tests and published v1.0.1879.
+
+
+### 2026-11-26: bounded complete media-chain batch and linked progress
+An explicit action can run up to three sequential diagnostic media chains, with existing safety/ownership checks and stop on the first unconfirmed stage. The Camera-only banner shows editor/export counts matched to retained diagnostic capture IDs, mode and bytes; it no longer disappears on recording-only completion. Lightweight observation readers avoid importing render code for progress display. Previous CI #45714732378 passed 1176 tests, published v1.0.1880 and confirmed T-10.

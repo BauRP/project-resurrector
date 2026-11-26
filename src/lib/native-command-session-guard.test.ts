@@ -85,7 +85,7 @@ describe("short diagnostic recording on the actual Camera2 service",()=>{
   const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
   const action=panel.slice(panel.indexOf("const prepareNextDiagnosticMode="),panel.indexOf("const canRestoreMode="));
   expect(action).toContain("window.confirm(");
-  expect(action).toContain("checkDiagnosticSafety(pending.length>3)");
+  expect(action).toContain("checkDiagnosticSafety(pending.length>3||fullPipeline)");
   expect(action).toContain("Math.min(8,Math.max(1,requestedCount))");
   expect(action).toContain("waitForDiagnosticClip(");
   expect(action).toContain("current.captureServiceActive!==false");
@@ -103,4 +103,13 @@ it("runs the editor and export stages only after the durable native clip is conf
  expect(sequence).toContain("window.confirm(");
  expect(panel).toContain("editorTrial.current?.abort()");
  expect(panel).toContain("current.captureId===final.captureId");
+});
+
+it("bounds the full-chain batch and stops on a failed media stage before another capture",()=>{
+ const panel=readFileSync("src/components/multicam/NativeRecordingPanel.tsx","utf8");
+ expect(panel).toContain("const pipelineLimit=fullPipeline?Math.min(3,limit):limit");
+ expect(panel).toContain("onClick={()=>void prepareNextDiagnosticMode(true,3,true)}");
+ const stage=panel.slice(panel.indexOf("if(fullPipeline){\n           const controller"),panel.indexOf("if(mounted.current)setPlanNotice(\"В этой последовательности"));
+ expect(stage).toContain("await finishDiagnosticPipeline(finalized");
+ expect(stage).toContain("без повторной съёмки.\");return;");
 });

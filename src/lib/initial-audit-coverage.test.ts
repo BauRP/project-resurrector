@@ -1,5 +1,5 @@
 import {describe,it,expect} from "vitest";
-import {auditRecordingCoverage} from "./initial-audit-coverage";
+import {auditRecordingCoverage,auditMediaCoverage} from "./initial-audit-coverage";
 import type {CameraAuditCheckpoint} from "./first-run-camera-audit";
 const mode={key:"rear|1280|720|30",cameraId:"rear",width:1280,height:720,fps:30,encoderName:"avc",encoderMime:"video/avc",status:"not-run",verifiedRecording:false,evidence:"declared-compatible-only"} as const;
 const camera:CameraAuditCheckpoint["cameras"][string]={cameraId:"rear",source:"android-camera2-metadata",state:"metadata-collected",verifiedRecording:false,planState:"complete",planVersion:2,codecCheckedAt:10,planCodecCheckedAt:10,functionalPlan:[mode,mode],codecChecks:[{width:1280,height:720,fpsRequested:30,status:"declared-compatible",recordedAndVerified:false,encoders:[{name:"avc",mime:"video/avc",declaredOnly:true}]}]};
@@ -18,4 +18,16 @@ describe("restored practical diagnostic coverage",()=>{
   expect(auditRecordingCoverage({...passport,activeCameraIds:[]},{...h,modeEntries:[row]})).toEqual({total:0,recorded:0,unconfirmed:0});
   expect(auditRecordingCoverage({...passport,cameras:{rear:{...camera,planCodecCheckedAt:9}}},h).total).toBe(0);
  });
+});
+
+it("counts editor and export only for the same actual retained capture and mode",()=>{
+ const clip={...row,diagnosticClip:true};
+ const ed={captureId:1,cameraId:"rear",width:1280,height:720,fps:30,bytes:100000,decodedWidth:1280,decodedHeight:720,durationSeconds:4,checkedAt:110};
+ const ex={captureId:1,cameraId:"rear",width:1280,height:720,fps:30,outputWidth:1280,outputHeight:720,outputBytes:4096,durationSeconds:2,checkedAt:120};
+ const history={...h,modeEntries:[clip]};
+ expect(auditMediaCoverage(passport,history,[ed],[ex])).toEqual({total:1,recorded:1,unconfirmed:0,editor:1,exported:1});
+ expect(auditMediaCoverage(passport,history,[ed],[{...ex,captureId:2}]).exported).toBe(0);
+ expect(auditMediaCoverage(passport,history,[{...ed,bytes:2048}],[ex]).editor).toBe(0);
+ expect(auditMediaCoverage(passport,history,[ed],[{...ex,checkedAt:109}]).exported).toBe(0);
+ expect(auditMediaCoverage(passport,{...h,modeEntries:[row]},[ed],[ex]).editor).toBe(0);
 });
