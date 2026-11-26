@@ -3,10 +3,19 @@ name: Android APK
 on:
   push:
     branches: ["**"]
+    paths-ignore:
+      - "**.md"
+      - "docs/**"
   workflow_dispatch:
 
 permissions:
   contents: write
+
+# Keep only the latest code build for this branch. Documentation-only edits
+# don't rebuild Android binaries.
+concurrency:
+  group: android-build-${{ github.ref }}
+  cancel-in-progress: true
 
 env:
   APP_ID: app.lovable.multicampov
