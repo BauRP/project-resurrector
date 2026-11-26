@@ -164,3 +164,21 @@ describe("Astra hidden Android WebView startup", () => {
     expect(task).not.toHaveBeenCalled();
   });
 });
+
+describe("Astra renderer stability threshold",()=>{
+ it("requires consecutive animation frames within the configured cadence",()=>{
+  vi.useFakeTimers();
+  const frames:FrameRequestCallback[]=[];
+  vi.stubGlobal("requestAnimationFrame",(callback:FrameRequestCallback)=>{frames.push(callback);return frames.length;});
+  vi.stubGlobal("cancelAnimationFrame",vi.fn());
+  const task=vi.fn();
+  scheduleAfterResponsivePaint(task,{stableFrames:3,maxFrameGapMs:100,backgroundFallbackMs:1000,visibleOnly:true});
+  frames.shift()?.(10);
+  frames.shift()?.(150);
+  frames.shift()?.(170);
+  expect(task).not.toHaveBeenCalled();
+  frames.shift()?.(190);
+  vi.advanceTimersByTime(0);
+  expect(task).toHaveBeenCalledOnce();
+ });
+});
