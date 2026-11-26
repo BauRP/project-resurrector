@@ -98,7 +98,8 @@ jobs:
           echo "Android assets:" 
           find android/app/src/main/assets/public -maxdepth 3 -type f -printf '%p (%s bytes)\n' | sort
 
-      - name: Decode or create release keystore
+      - name: Load persistent Android release keystore (no temporary signing keys)
+        id: signing
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD_SECRET: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
@@ -107,29 +108,27 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          if [[ -n "${KEYSTORE_B64:-}" ]]; then
-            printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
-            keytool -list -keystore "$RUNNER_TEMP/upload.jks" -storepass "$KEYSTORE_PASSWORD_SECRET" >/dev/null
-            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
-            echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
-          else
-            echo "::warning::ANDROID_KEYSTORE_BASE64 is not configured; a temporary signing key will be generated."
-            keytool -genkeypair \
-              -keystore "$RUNNER_TEMP/upload.jks" \
-              -alias multicam \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass multicampov \
-              -keypass multicampov \
-              -dname "CN=MULTI-CAM POV"
-            echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
-            echo "ANDROID_KEYSTORE_PASSWORD=multicampov" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_ALIAS=multicam" >> "$GITHUB_ENV"
-            echo "ANDROID_KEY_PASSWORD=multicampov" >> "$GITHUB_ENV"
+          configured=0
+          for value in "$KEYSTORE_B64" "$KEYSTORE_PASSWORD_SECRET" "$KEY_ALIAS_SECRET" "$KEY_PASSWORD_SECRET"; do
+            [[ -n "$value" ]] && configured=$((configured + 1))
+          done
+          if [[ "$configured" -eq 0 ]]; then
+            echo "persistent=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::No persistent Android signing key is configured. APK/AAB remain CI artifacts; no GitHub Release will be published."
+            exit 0
           fi
+          if [[ "$configured" -ne 4 ]]; then
+            echo "::error::Android signing secrets are partially configured. Set all four secrets or leave all four empty."
+            exit 1
+          fi
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$RUNNER_TEMP/upload.jks"
+          chmod 600 "$RUNNER_TEMP/upload.jks"
+          keytool -list -keystore "$RUNNER_TEMP/upload.jks" -storepass "$KEYSTORE_PASSWORD_SECRET" -alias "$KEY_ALIAS_SECRET" >/dev/null
+          echo "ANDROID_KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+          echo "ANDROID_KEYSTORE_PASSWORD=$KEYSTORE_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_ALIAS=$KEY_ALIAS_SECRET" >> "$GITHUB_ENV"
+          echo "ANDROID_KEY_PASSWORD=$KEY_PASSWORD_SECRET" >> "$GITHUB_ENV"
+          echo "persistent=true" >> "$GITHUB_OUTPUT"
 
       - name: Build release APK and AAB
         working-directory: android
@@ -151,6 +150,14 @@ jobs:
           test -s "output/${{ env.AAB_NAME }}"
           unzip -l "output/${{ env.APK_NAME }}" | grep -q 'assets/public/index.html'
           ls -lh output/
+          if [[ "${{ steps.signing.outputs.persistent }}" == "true" ]]; then
+            APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+            test -n "$APKSIGNER"
+            "$APKSIGNER" verify --verbose "output/${{ env.APK_NAME }}"
+            jarsigner -verify "output/${{ env.AAB_NAME }}" >/dev/null
+          else
+            echo "Unsigned CI artifact only; no persistent signing key configured."
+          fi
 
       - name: Upload APK and AAB as workflow artifacts
         uses: actions/upload-artifact@v4
@@ -161,7 +168,20 @@ jobs:
             output/${{ env.APK_NAME }}
             output/${{ env.AAB_NAME }}
 
+      - name: Explain unsigned CI artifact
+        if: steps.signing.outputs.persistent != 'true'
+        shell: bash
+        run: |
+          {
+            echo "## APK/AAB built for CI only"
+            echo
+            echo "Artifacts are unsigned because no persistent Android release keystore is configured."
+            echo "They are not published as a GitHub Release and cannot update an installation signed with a different key."
+            echo "Configure all four repository Actions secrets to publish a signed release."
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Create GitHub Release and upload files
+        if: steps.signing.outputs.persistent == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
