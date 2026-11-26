@@ -17,7 +17,7 @@ describe("Android release signing and CI safeguards",()=>{
   expect(workflow).toContain('echo "persistent=true" >> "$GITHUB_OUTPUT"');
   expect(workflow).toContain('if: steps.signing.outputs.persistent == \'true\'');
   expect(workflow).toContain('if: steps.signing.outputs.persistent != \'true\'');
-  expect(workflow).toContain('apksigner" verify --verbose');
+  expect(workflow).toContain('"$APKSIGNER" verify --verbose');
   expect(workflow).toContain('jarsigner -verify');
  });
  it("avoids rebuilding Android for documentation-only edits and cancels superseded branch builds",()=>{
