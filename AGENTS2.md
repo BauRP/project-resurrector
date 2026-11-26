@@ -212,3 +212,11 @@ Commands correspond to `package.json`, `tsconfig.json`, and `.github/workflows/a
 11. Не включай в незавершённую программную работу действия, которые технически не можешь выполнить, например установку APK на мой телефон. Завершай доступную работу в коде, проводи автоматические проверки и сборку. Проверки, которые должен сделать я, указывай отдельно, не снижая из-за них процент готовности программной части.
 
 **Главная цель: максимальное количество полностью реализованных и автоматически проверенных требований и функций из двух текстовых документов за один запуск, а не максимальное количество коммитов, отчётов или мелких исправлений.**
+
+### 2026-11-26: package 21 release readiness rules
+
+- Never generate an ephemeral Android signing key for a release. Publish APK/AAB to GitHub Releases only when all four persistent signing secrets are configured and APK/AAB signature verification succeeds. Without them, keep unsigned files as clearly labelled CI artifacts only; partial configuration must fail.
+- A Camera2 high-speed MP4 is not credited from dimensions/FPS alone. Require sufficiently long and clean head/tail presentation-timestamp windows, no duplicate or reordered timestamps, requested video dimensions and matching sample rates. Unknown evidence remains unknown.
+- Diagnostic editor/export progress is counted once per capture ID; conflicting camera/mode observations are rejected.
+- Tablet/fold touch-target CSS is scoped to those workspaces. Do not change phone layout or raise T-17 without visual UI evidence.
+- Continue all six directions. Android15 SwiftShader remains open unless a real applicable runtime test passes.
